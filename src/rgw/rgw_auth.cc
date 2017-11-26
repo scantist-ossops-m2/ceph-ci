@@ -907,6 +907,9 @@ rgw::auth::AnonymousEngine::authenticate(const DoutPrefixProvider* dpp, const re
   } else {
     RGWUserInfo user_info;
     rgw_get_anon_user(user_info);
+    if (! s->account_name.empty()) {
+      s->bucket_tenant = s->account_name;
+    }
 
     auto apl = \
       apl_factory->create_apl_local(cct, s, user_info,
