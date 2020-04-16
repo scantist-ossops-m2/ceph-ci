@@ -13,6 +13,7 @@
  *
  */
 
+#include <time.h>
 #include "rgw_aio.h"
 #include "rgw_putobj_processor.h"
 #include "rgw_multi.h"
@@ -324,6 +325,42 @@ int AtomicObjectProcessor::complete(size_t accounted_size,
   if (!obj_op.meta.canceled) {
     // on success, clear the set of objects for deletion
     writer.clear_written();
+    
+    /* datacache */
+    if( store->ctx()->_conf->rgw_datacache_enabled){
+    cache_obj cacheObj;
+    cacheObj.owner =  op_target.get_bucket_info().owner.id;
+    cacheObj.bucket_name = op_target.get_obj().bucket.name;
+    cacheObj.obj_name = op_target.get_obj().key.name;
+//ldpp_dout(dpp, 1) << "ugur "<< cacheObj.bucket_name<<" " << cacheObj.obj_name << dendl;
+    
+	r = store->getRados()->objDirectory->getValue(&cacheObj);
+	if (r<0) {
+	  cacheObj.intermediate = false;
+	}
+	cacheObj.hosts_list.push_back("writecache");
+    cacheObj.home_location = CACHE;
+    cacheObj.size_in_bytes = manifest.get_obj_size();
+
+    cacheObj.dirty = true;
+    cacheObj.etag = etag;
+    time_t rawTime = time(NULL);
+    cacheObj.creationTime =  mktime(gmtime(&rawTime));
+    cacheObj.lastAccessTime = mktime(gmtime(&rawTime));
+    cacheObj.backendProtocol =  S3;
+    cacheObj.acl = "ugur_acl_test"; //FIXME
+    cacheObj.aclTimeStamp = mktime(gmtime(&rawTime)); //FIXME
+    cacheObj.offset = 0;
+	cacheObj.mapping_id = "";
+	r = store->getRados()->objDirectory->setValue(&cacheObj);
+    ldpp_dout(dpp, 1) << __func__ << "datacache bucket "<< op_target.get_obj().bucket.name << "" 
+   " obj " << op_target.get_obj().key.name <<" size " << manifest.get_obj_size() << dendl;
+	if(manifest.get_obj_size() >0)
+	  store->getRados()->datacache->put_obj(&cacheObj);
+    
+	/* datacache */
+    }
+
   }
   if (pcanceled) {
     *pcanceled = obj_op.meta.canceled;

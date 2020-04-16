@@ -88,8 +88,42 @@ int rgw_process_authenticated(RGWHandler_REST * const handler,
                               req_state * const s,
                               const bool skip_retarget)
 {
+
+   /* datacache
+   If data sits in the datalake
+   we issue remote_fetch operation
+   data is read from backend , stored in osds and also served back to client
+   */
+  
+  int ret;
+  ldpp_dout(op, 2) << "rgw_process_authenticated" << dendl;
+  if ( (strcmp("delete_obj",op->name()) == 0) && (s->cct->_conf->rgw_datacache_enabled) ){
+	 if ( (OP_DELETE == s->op) ) {
+		  bool a = op->object_in_cache();
+	 }
+  }
+
+
+   if ( (strcmp("get_obj",op->name()) == 0) && (s->cct->_conf->rgw_datacache_enabled) ){
+	if (s->op == OP_GET) {
+	  ret = op->cache_authorize();
+	  ldpp_dout(op, 2) << "get backend acls " << ret << dendl;
+	  if (!(ret)) {
+		s->err.http_ret = 404; //not found 401 not authorize
+		return -1;}
+      ldpp_dout(op, 2) << "executing" << dendl;
+      op->cache_execute(); 
+      ldpp_dout(op, 2) << "completing" << dendl;
+      op->complete();
+      return 0;
+    }
+
+  }
+
+  
+
   ldpp_dout(op, 2) << "init permissions" << dendl;
-  int ret = handler->init_permissions(op);
+  ret = handler->init_permissions(op);
   if (ret < 0) {
     return ret;
   }
@@ -113,7 +147,18 @@ int rgw_process_authenticated(RGWHandler_REST * const handler,
   ldpp_dout(op, 2) << "reading permissions" << dendl;
   ret = handler->read_permissions(op);
   if (ret < 0) {
-    return ret;
+	if (s->cct->_conf->rgw_datacache_enabled && s->op == OP_HEAD){
+	  if ( op->cache_head_op()){
+        ldpp_dout(op, 2) << "remote head executing" << dendl;
+		op->cache_execute();
+        ldpp_dout(op, 2) << "remote head completing" << dendl;
+	    op->complete();
+        return 0;
+	  } else 
+		return ret;
+	}
+	
+	return ret;	
   }
 
   ldpp_dout(op, 2) << "init op" << dendl;
@@ -314,6 +359,9 @@ done:
 
   dout(1) << "====== req done req=" << hex << req << dec
 	  << " op status=" << op_ret
+	  << " op type=" << s->op_type
+	  << " bucket_name=" << s->bucket_name
+	  << " obj_name=" << s->object.name
 	  << " http_status=" << s->err.http_ret
 	  << " latency=" << s->time_elapsed()
 	  << " ======"

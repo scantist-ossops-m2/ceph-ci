@@ -886,7 +886,6 @@ int RGWHTTPStreamRWRequest::receive_data(void *ptr, size_t len, bool *pause)
     in_data.append((const char *)ptr, len);
 
     size_t orig_in_data_len = in_data.length();
-
     int ret = cb->handle_data(in_data, pause);
     if (ret < 0)
       return ret;

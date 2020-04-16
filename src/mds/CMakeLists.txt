@@ -46,3 +46,8 @@ set(mds_srcs
 add_library(mds STATIC ${mds_srcs})
 target_link_libraries(mds PRIVATE
   heap_profiler cpu_profiler osdc liblua)
+
+if(WITH_CPP_REDIS)
+  target_include_directories(mds PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(mds PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()

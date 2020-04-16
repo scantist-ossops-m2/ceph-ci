@@ -190,6 +190,15 @@ public:
   virtual int verify_op_mask();
   virtual void pre_exec() {}
   virtual void execute() = 0;
+  /*datacache*/
+  virtual void cache_execute() {}  
+  virtual bool cache_head_op() {return true;}  
+  virtual bool cache_authorize() {return true;}  
+  virtual bool object_in_cache() {return true;}; /*datacache*/
+  cache_obj c_obj;
+//  RGWObjectDirectory objectDirectory;
+  /*datacache*/
+
   virtual void send_response() {}
   virtual void complete() {
     send_response();
@@ -340,6 +349,9 @@ public:
   int verify_permission() override;
   void pre_exec() override;
   void execute() override;
+  void cache_execute() override; // datacache
+  bool cache_authorize() override; // datacache
+  bool cache_head_op() override; //datacache 
   int parse_range();
   int read_user_manifest_part(
     rgw_bucket& bucket,
@@ -755,7 +767,7 @@ public:
 
   int verify_permission() override;
   void execute() override;
-
+  
   virtual int get_params() = 0;
   virtual void handle_listing_chunk(rgw::sal::RGWBucketList&& buckets) {
     /* The default implementation, used by e.g. S3, just generates a new
@@ -1403,6 +1415,7 @@ public:
   void pre_exec() override;
   void execute() override;
   int handle_slo_manifest(bufferlist& bl);
+  bool object_in_cache() override; /*datacache*/
 
   virtual int get_params() { return 0; }
   void send_response() override = 0;
