@@ -7000,7 +7000,107 @@ std::vector<Option> get_rgw_options() {
     .add_see_also("rgw_dmclock_metadata_wgt")
     .add_see_also("rgw_dmclock_metadata_lim"),
 
-    Option("rgw_dmclock_metadata_wgt", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
+    Option("rgw_cache_size", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(1073741824)
+    .set_description("rgw local read cache capacity"),
+
+    Option("rgw_datacache_enabled", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description("enabling rgw datacache"),
+
+    Option("rgw_lfuda", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description("enabling lfudafor datacache"),
+
+	Option("remote_cache_list", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("localhost:8000")
+    .set_description("d4n list of remote cache"),
+
+    Option("remote_cache_addr", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("localhost:8080")
+    .set_description("rgw address as a remote cache"),
+
+    Option("rgw_datacache_path", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("/tmp/")
+    .set_description("rgw datacache path"),
+
+    Option("rgw_directory_serverCount", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(3)
+    .set_description("rgw directory server count"),
+
+    Option("rgw_directory_address", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("127.0.0.1")
+    .set_description("rgw directory address"),
+
+    Option("rgw_directory_address2", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("127.0.0.1")
+    .set_description("rgw directory address"),
+
+    Option("rgw_directory_address3", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("127.0.0.1")
+    .set_description("rgw directory address"),
+
+    Option("rgw_directory_address4", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("127.0.0.1")
+    .set_description("rgw directory address"),
+
+    Option("rgw_directory_port", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(7000)
+    .set_description("rgw directory port"),
+
+    Option("rgw_directory_port2", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(7000)
+    .set_description("rgw directory port"),
+
+    Option("rgw_directory_port3", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(7000)
+    .set_description("rgw directory port"),
+
+    Option("rgw_directory_port4", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(7000)
+    .set_description("rgw directory port"),
+
+    Option("aging_interval_in_minutes", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(5)
+    .set_description("rgw write cache aging interval in minutes"),
+    
+	Option("coalesing_write_size", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(16777216)
+    .set_description("coalesing_write_size in bytes"),
+	
+	Option("enable_coalesing_write", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    .set_default(false)
+    .set_description("rge enable coalesing_writes to datalake"),
+
+	Option("coalesced_write_bucket_name", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("coalesed")
+    .set_description("rge enable coalesing_writes to datalake"),
+
+    Option("backend_url", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("localhost:8000")
+    .set_description("datalake url"),
+    
+    Option("cache_acl_timeout", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(1000000)
+    .set_description("timeout for the acls of an object stored in cache"),
+
+    Option("max_remote_retries", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(5)
+    .set_description("maximum retry count for remote cache requests"),
+
+    Option("cache_threadpool_size", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(32)
+    .set_description("cache threadpool size for remote requests"),
+
+    Option("cache_aging_threadpool_size", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(32)
+    .set_description("cache threadpool size for aging objects to storage"),
+    
+    Option("max_aging_retries", Option::TYPE_INT, Option::LEVEL_ADVANCED)
+    .set_default(5)
+    .set_description("cache threadpool size for aging objects to storage"),
+    
+	Option("rgw_dmclock_metadata_wgt", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(500.0)
     .set_description("mclock weight for metadata requests")
     .add_see_also("rgw_dmclock_metadata_res")

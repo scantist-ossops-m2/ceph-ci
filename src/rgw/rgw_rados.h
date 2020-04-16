@@ -7,7 +7,7 @@
 #include <functional>
 #include <boost/container/flat_map.hpp>
 
-#include "include/rados/librados.hpp"
+//#include "include/rados/librados.hpp"
 #include "include/Context.h"
 #include "common/RefCountedObj.h"
 #include "common/RWLock.h"
@@ -30,6 +30,18 @@
 #include "services/svc_rados.h"
 #include "services/svc_bi_rados.h"
 
+/*datacache*/
+#include <fcntl.h>
+#include <aio.h>
+#include "cpp_redis/cpp_redis"
+#include "rgw_cacherequest.h"
+#include "rgw_directory.h"
+#include "rgw_cache.h"
+/*datacache*/
+
+struct DataCache;
+class RGWObjectDirectory; 
+class RGWBlockDirectory; 
 class RGWWatcher;
 class SafeTimer;
 class ACLOwner;
@@ -48,6 +60,8 @@ class RGWReshard;
 class RGWReshardWait;
 
 class RGWSysObjectCtx;
+class RGWDirectory;
+class RGWObjectDirectory;
 
 /* flags for put_obj_meta() */
 #define PUT_OBJ_CREATE      0x01
@@ -506,6 +520,7 @@ protected:
   RGWIndexCompletionManager *index_completion_manager{nullptr};
 
   bool use_cache{false};
+  bool use_datacache{false};//datacache
 public:
   RGWRados(): timer(NULL),
                gc(NULL), lc(NULL), obj_expirer(NULL), use_gc_thread(false), use_lc_thread(false), quota_threads(false),
@@ -525,6 +540,12 @@ public:
     return *this;
   }
 
+/*datacache*/
+  RGWRados& set_use_datacache(bool status) {
+    use_datacache = status;
+    return *this;
+  }
+/*datacache*/
   RGWLC *get_lc() {
     return lc;
   }
@@ -621,6 +642,7 @@ public:
     set_context(_cct);
     return initialize();
   }
+   
   /** Initialize the RADOS instance and prepare to do other ops */
   int init_svc(bool raw);
   int init_ctl();
@@ -784,6 +806,11 @@ public:
       int read(int64_t ofs, int64_t end, bufferlist& bl, optional_yield y);
       int iterate(int64_t ofs, int64_t end, RGWGetDataCB *cb, optional_yield y);
       int get_attr(const char *name, bufferlist& dest, optional_yield y);
+       /* datacache */
+      int fetch_from_backend(RGWGetDataCB *cb, string owner, string dest_bucket_name, string dest_obj_name, string location); 
+      int read(int64_t ofs, int64_t end, RGWGetDataCB *cb, cache_obj& c_obj, optional_yield y); 
+      int read_from_local(int64_t ofs, int64_t end, RGWGetDataCB *cb, string dest_bucket_name, string dest_obj_name, optional_yield y); 
+       /* datacache */
     };
 
     struct Write {
@@ -992,7 +1019,8 @@ public:
 
       RGWRados::Bucket *target;
       rgw_obj_key next_marker;
-
+	  /*datacache*/
+	  //int get_remote_buckets(cache_obj& c_obj, vector<string> remote_bucket_list, string prefix, string marker);
       int list_objects_ordered(int64_t max,
 			       vector<rgw_bucket_dir_entry> *result,
 			       map<string, bool> *common_prefixes,
@@ -1080,6 +1108,28 @@ public:
     ATTRSMOD_REPLACE = 1,
     ATTRSMOD_MERGE   = 2
   };
+
+  /* datacache */
+
+  RGWObjectDirectory *objDirectory;
+  RGWBlockDirectory *blkDirectory;
+  DataCache *datacache;
+  int create_bucket(RGWRados *store, string userid, string dest_bucket_name, CephContext *cct, RGWBucketInfo& bucket_info, map<string, bufferlist>& bucket_attrs, RGWAccessKey& accesskey);
+  int get_s3_credentials(RGWRados *store, string userid, RGWAccessKey& s3_key);
+  int copy_remote(RGWRados *store, cache_obj* c_obj);
+  int copy_small_remote(RGWRados *store,string owner, uint64_t t_size, cache_obj* c_obj, list<string>& outstanding_small_write_list2);
+  int copy_small_remote(RGWRados *store, string owner, uint64_t t_size, cache_obj* c_obj,  list<string>& aged_list, bufferlist& bl);
+  int delete_writecache_obj(RGWRados *store, cache_obj* c_obj);
+  //int delete_cache_obj(RGWRados *store, string userid, string bucket_name, string obj_name);
+  int fetch_remote(RGWRados *store, string userid, string dest_bucket_name, string dest_obj_name, string location, RGWGetDataCB *cb, RGWObjectCtx& ctx);
+  int retrieve_oid(cache_obj& c_obj, rgw_raw_obj& read_obj, uint64_t obj_ofs, optional_yield y);
+  int retrieve_obj_acls(cache_obj& c_obj);
+  int retrieve_obj_size(cache_obj& c_obj, RGWRados *store);
+  int get_head_obj(cache_obj& c_obj);
+  vector<string> get_xml_data(string &text, string tag);
+  int get_remote_buckets(cache_obj& c_obj, vector<string>& remote_bucket_list, string prefix, string marker, int max_b, string& next_marker, vector<rgw_bucket_dir_entry>& remote_buckets);
+  bool get_obj(cache_obj *c_obj);
+  /* datacache */
 
   int rewrite_obj(RGWBucketInfo& dest_bucket_info, const rgw_obj& obj, const DoutPrefixProvider *dpp, optional_yield y);
 
@@ -1266,6 +1316,16 @@ public:
                          RGWObjState *astate, void *arg);
 
   void get_obj_aio_completion_cb(librados::completion_t cb, void *arg);
+
+  /* datacache */
+  int put_data(string key, bufferlist& bl, unsigned int len, cache_block *c_block);
+  using iterate_cache_obj_cb = int (*)(cache_block& c_block, off_t, off_t, off_t, void*, RGWRados *store); 
+  int iterate_obj(cache_obj& c_obj, off_t ofs, off_t end, uint64_t max_chunk_size, iterate_cache_obj_cb cb, void *arg, optional_yield y, RGWRados *store);
+  int get_cache_obj_iterate_cb(cache_block& c_block, off_t obj_ofs, off_t read_ofs, off_t read_len,  void *arg, RGWRados *store);
+
+  /* datacache */
+
+
 
   /**
    * a simple object read without keeping state
@@ -1542,5 +1602,8 @@ public:
   static uint32_t calc_ordered_bucket_list_per_shard(uint32_t num_entries,
 						     uint32_t num_shards);
 };
+
+
+
 
 #endif

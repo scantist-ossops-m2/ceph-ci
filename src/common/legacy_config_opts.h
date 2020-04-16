@@ -1241,6 +1241,31 @@ OPTION(rados_mon_op_timeout, OPT_DOUBLE) // how many seconds to wait for a respo
 OPTION(rados_osd_op_timeout, OPT_DOUBLE) // how many seconds to wait for a response from osds before returning an error from a rados operation. 0 means no limit.
 OPTION(rados_tracing, OPT_BOOL) // true if LTTng-UST tracepoints should be enabled
 
+OPTION(rgw_datacache_enabled, OPT_BOOL) // enable rgw object datacache
+OPTION(rgw_datacache_path, OPT_STR) // rgw local read cache path
+OPTION(remote_cache_addr, OPT_STR) // rgw local read cache path
+OPTION(aging_interval_in_minutes, OPT_INT) // rgw write cache aging interval in minutes
+OPTION(backend_url, OPT_STR) // url for backend data lake
+OPTION(cache_acl_timeout, OPT_INT) // timeout window for acls of cached object
+OPTION(max_remote_retries, OPT_INT) // maximum retry count for remote cache requests
+OPTION(max_aging_retries, OPT_INT) // maximum retry count for remote aging requests
+OPTION(cache_threadpool_size ,OPT_INT) // cache threadpool size for remote requests
+OPTION(cache_aging_threadpool_size ,OPT_INT) // cache threadpool size for aging objects to remote storage
+OPTION(rgw_cache_size ,OPT_INT) // rgw local read cache capacity
+OPTION(rgw_directory_address ,OPT_STR) // cache directory address 
+OPTION(rgw_directory_address2 ,OPT_STR) // cache directory address 
+OPTION(rgw_directory_address3 ,OPT_STR) // cache directory address 
+OPTION(rgw_directory_address4 ,OPT_STR) // cache directory address 
+OPTION(rgw_directory_port ,OPT_INT) // cache directory port
+OPTION(rgw_directory_port2 ,OPT_INT) // cache directory port
+OPTION(rgw_directory_port3 ,OPT_INT) // cache directory port
+OPTION(rgw_directory_port4 ,OPT_INT) // cache directory port
+OPTION(rgw_directory_serverCount,OPT_INT) // cache directory port
+OPTION(coalesing_write_size,OPT_INT) // cache directory port
+OPTION(enable_coalesing_write,OPT_BOOL) // cache directory port
+OPTION(rgw_lfuda,OPT_BOOL) // cache directory port
+OPTION(coalesced_write_bucket_name,OPT_STR) // cache directory port
+OPTION(remote_cache_list,OPT_STR) // list of remote caches
 
 OPTION(rgw_max_attr_name_len, OPT_SIZE)
 OPTION(rgw_max_attr_size, OPT_SIZE)
