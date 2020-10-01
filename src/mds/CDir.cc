@@ -1011,6 +1011,12 @@ void CDir::init_fragment_pins()
     get(PIN_SUBTREE);
 }
 
+bool CDir::should_split() const {
+  auto&& balancer = mdcache->mds->balancer;
+  auto split_size = balancer->get_bal_split_size();
+  return split_size > 0 && (int64_t)get_frag_size() > split_size;
+}
+
 void CDir::split(int bits, std::vector<CDir*>* subs, MDSContext::vec& waiters, bool replay)
 {
   dout(10) << "split by " << bits << " bits on " << *this << dendl;
@@ -3757,7 +3763,10 @@ std::string CDir::get_path() const
 bool CDir::should_split_fast() const
 {
   // Max size a fragment can be before trigger fast splitting
-  int fast_limit = g_conf()->mds_bal_split_size * g_conf()->mds_bal_fragment_fast_factor;
+  auto&& balancer = mdcache->mds->balancer;
+  auto split_size = balancer->get_bal_split_size();
+  auto fragment_fast_factor = balancer->get_bal_fragment_fast_factor();
+  int64_t fast_limit = split_size * fragment_fast_factor;
 
   // Fast path: the sum of accounted size and null dentries does not
   // exceed threshold: we definitely are not over it.
@@ -3794,7 +3803,10 @@ bool CDir::should_merge() const
       return false;
   }
 
-  return (int)get_frag_size() < g_conf()->mds_bal_merge_size;
+  auto&& balancer = mdcache->mds->balancer;
+  auto merge_size = balancer->get_bal_merge_size();
+
+  return (int)get_frag_size() < merge_size;
 }
 
 MEMPOOL_DEFINE_OBJECT_FACTORY(CDir, co_dir, mds_co);
