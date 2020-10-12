@@ -538,6 +538,7 @@ int RGWBucketReshardLock::renew(const Clock::time_point& now) {
 int RGWBucketReshard::do_reshard(int num_shards,
 				 RGWBucketInfo& new_bucket_info,
 				 int max_entries,
+         FaultInjector<std::string_view>& f,
 				 bool verbose,
 				 ostream *out,
 				 Formatter *formatter,
@@ -641,6 +642,8 @@ int RGWBucketReshard::do_reshard(int num_shards,
 	  return ret;
 	}
 
+  if (ret = f.check("before_target_shard_entry"); ret < 0) { return ret; }
+
 	int shard_index = (target_shard_id > 0 ? target_shard_id : 0);
 
 	ret = target_shards_mgr.add_entry(shard_index, entry, account,
@@ -648,6 +651,8 @@ int RGWBucketReshard::do_reshard(int num_shards,
 	if (ret < 0) {
 	  return ret;
 	}
+
+  if (ret = f.check("after_target_shard_entry"); ret < 0) { return ret; }
 
 	Clock::time_point now = Clock::now();
 	if (reshard_lock.should_renew(now)) {
@@ -710,10 +715,13 @@ int RGWBucketReshard::get_status(const DoutPrefixProvider *dpp, list<cls_rgw_buc
 }
 
 
-int RGWBucketReshard::execute(int num_shards, int max_op_entries,
+int RGWBucketReshard::execute(int num_shards,
+                              FaultInjector<std::string_view>& f,
+                              int max_op_entries,
                               const DoutPrefixProvider *dpp,
-                              bool verbose, ostream *out, Formatter *formatter,
-			      RGWReshard* reshard_log)
+                              bool verbose, ostream *out,
+                              Formatter *formatter,
+                              RGWReshard* reshard_log)
 {
   int ret = reshard_lock.lock();
   if (ret < 0) {
@@ -742,9 +750,7 @@ int RGWBucketReshard::execute(int num_shards, int max_op_entries,
     goto error_out;
   }
 
-  ret = do_reshard(num_shards,
-		   new_bucket_info,
-		   max_op_entries,
+  ret = do_reshard(num_shards, new_bucket_info, max_op_entries, f,
                    verbose, out, formatter, dpp);
   if (ret < 0) {
     goto error_out;
@@ -1077,8 +1083,9 @@ int RGWReshard::process_single_logshard(int logshard_num, const DoutPrefixProvid
 	}
 
 	RGWBucketReshard br(store, bucket_info, attrs, nullptr);
-	ret = br.execute(entry.new_num_shards, max_entries, dpp, false, nullptr,
-			 nullptr, this);
+  FaultInjector<std::string_view> f;
+	ret = br.execute(entry.new_num_shards, f, max_entries, dpp, false, nullptr,
+			             nullptr, this);
 	if (ret < 0) {
 	  ldpp_dout(dpp, 0) <<  __func__ <<
 	    ": Error during resharding bucket " << entry.bucket_name << ":" <<

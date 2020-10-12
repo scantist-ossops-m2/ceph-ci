@@ -21,6 +21,7 @@
 #include "cls/lock/cls_lock_client.h"
 
 #include "rgw_common.h"
+#include "common/fault_injector.h"
 
 
 class RGWReshard;
@@ -88,8 +89,9 @@ private:
 				 RGWBucketInfo& new_bucket_info,
                                  const DoutPrefixProvider *dpp);
   int do_reshard(int num_shards,
-		 RGWBucketInfo& new_bucket_info,
-		 int max_entries,
+                 RGWBucketInfo& new_bucket_info,
+                 int max_entries,
+                 FaultInjector<std::string_view>& f,
                  bool verbose,
                  ostream *os,
 		 Formatter *formatter,
@@ -102,8 +104,8 @@ public:
 		   const RGWBucketInfo& _bucket_info,
                    const std::map<string, bufferlist>& _bucket_attrs,
 		   RGWBucketReshardLock* _outer_reshard_lock);
-  int execute(int num_shards, int max_op_entries,
-              const DoutPrefixProvider *dpp,
+  int execute(int num_shards, FaultInjector<std::string_view>& f,
+              int max_op_entries, const DoutPrefixProvider *dpp,
               bool verbose = false, ostream *out = nullptr,
               Formatter *formatter = nullptr,
 	      RGWReshard *reshard_log = nullptr);
