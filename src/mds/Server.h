@@ -208,6 +208,7 @@ public:
 
   bool xlock_policylock(MDRequestRef& mdr, CInode *in,
 			bool want_layout=false, bool xlock_snaplock=false);
+  bool wrlock_nestlock(MDRequestRef& mdr, CInode *in);
   CInode* try_get_auth_inode(MDRequestRef& mdr, inodeno_t ino);
   void handle_client_setattr(MDRequestRef& mdr);
   void handle_client_setlayout(MDRequestRef& mdr);
@@ -425,7 +426,8 @@ private:
            xattr_name == "ceph.dir.subvolume" ||
            xattr_name == "ceph.dir.pin" ||
            xattr_name == "ceph.dir.pin.random" ||
-           xattr_name == "ceph.dir.pin.distributed";
+           xattr_name == "ceph.dir.pin.distributed" ||
+           xattr_name == "ceph.dir.rctime";
   }
 
   static bool is_ceph_dir_vxattr(std::string_view xattr_name) {
