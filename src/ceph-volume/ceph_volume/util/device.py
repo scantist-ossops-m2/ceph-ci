@@ -100,6 +100,13 @@ class Device(object):
         self.path = path
         # LVs can have a vg/lv path, while disks will have /dev/sda
         self.abspath = path
+        # check if we are a symlink
+        if os.path.islink(self.abspath):
+            temp_path = os.path.join(os.path.dirname(self.abspath),
+                                            os.readlink(self.abspath))
+            # check if we are not a device mapper
+            if "dm-" not in temp_path:
+                self.abspath = temp_path
         if not sys_info.devices:
             sys_info.devices = disk.get_devices()
         self.sys_api = sys_info.devices.get(self.abspath, {})
