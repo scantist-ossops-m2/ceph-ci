@@ -159,6 +159,7 @@ set(librgw_common_srcs
   rgw_oidc_provider.cc
   rgw_datalog.cc
   cls_fifo_legacy.cc
+  rgw_ioc_dispatch.cc
   rgw_lua_utils.cc
   rgw_lua.cc
   rgw_bucket_encryption.cc
@@ -194,6 +195,7 @@ endif()
 target_link_libraries(rgw_common
   PRIVATE
     ceph-common
+    ceph_immutable_object_cache_lib
     cls_2pc_queue_client
     cls_cmpomap_client
     cls_lock_client
