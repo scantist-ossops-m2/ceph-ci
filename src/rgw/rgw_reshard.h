@@ -29,6 +29,8 @@ namespace rgw { namespace sal {
   class RGWRadosStore;
 } }
 
+using ReshardFaultInjector = FaultInjector<std::string_view>;
+
 class RGWBucketReshardLock {
   using Clock = ceph::coarse_mono_clock;
 
@@ -90,11 +92,10 @@ private:
                                  const DoutPrefixProvider *dpp);
   int do_reshard(int num_shards,
                  RGWBucketInfo& new_bucket_info,
-                 int max_entries,
-                 FaultInjector<std::string_view>& f,
+                 int max_entries, const ReshardFaultInjector& f,
                  bool verbose,
                  ostream *os,
-		 Formatter *formatter,
+                 Formatter *formatter,
                  const DoutPrefixProvider *dpp);
 public:
 
@@ -104,7 +105,7 @@ public:
 		   const RGWBucketInfo& _bucket_info,
                    const std::map<string, bufferlist>& _bucket_attrs,
 		   RGWBucketReshardLock* _outer_reshard_lock);
-  int execute(int num_shards, FaultInjector<std::string_view>& f,
+  int execute(int num_shards, const ReshardFaultInjector& f,
               int max_op_entries, const DoutPrefixProvider *dpp,
               bool verbose = false, ostream *out = nullptr,
               Formatter *formatter = nullptr,
