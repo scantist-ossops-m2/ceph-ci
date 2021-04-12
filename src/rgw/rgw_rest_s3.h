@@ -912,6 +912,8 @@ namespace s3selectEngine
 {
 class s3select;
 class csv_object;
+class parquet_object;
+class rgw_s3select_api;
 }
 
 
@@ -1024,11 +1026,13 @@ private:
   std::string m_s3select_input;
   std::string m_s3select_output;
   std::unique_ptr<s3selectEngine::csv_object> m_s3_csv_object;
+  std::unique_ptr<s3selectEngine::parquet_object> m_s3_parquet_object;
   std::string m_column_delimiter;
   std::string m_quot;
   std::string m_row_delimiter;
   std::string m_compression_type;
   std::string m_escape_char;
+  std::unique_ptr<char[]>  m_buff_header;
   std::string m_header_info;
   std::string m_sql_query;
   std::string m_enable_progress;
@@ -1037,9 +1041,18 @@ private:
   std::string output_escape_char;
   std::string output_quote_fields;
   std::string output_row_delimiter;
-
   std::unique_ptr<aws_response_handler> m_aws_response_handler;
   bool enable_progress;
+
+  //parquet request 
+  bool m_parquet_type;
+  std::unique_ptr<s3selectEngine::rgw_s3select_api> m_rgw_api;
+  size_t m_request_range;//a request for range may statisfy by several calls to send_response_date (call back)
+  std::string requested_buffer;
+  std::string range_req_str;
+  std::function<int(std::string&)> fp_result_header_format;
+  std::function<int(std::string&)> fp_s3select_result_format;
+  int m_header_size;
 
 public:
   unsigned int chunk_number;
@@ -1051,15 +1064,26 @@ public:
 
   virtual int get_params(optional_yield y) override;
 
+  virtual void execute(optional_yield) override;
+
 private:
 
   int run_s3select(const char* query, const char* input, size_t input_length);
+
+  int run_s3select_on_parquet(const char* query);
 
   int extract_by_tag(std::string input, std::string tag_name, std::string& result);
 
   void convert_escape_seq(std::string& esc);
 
   int handle_aws_cli_parameters(std::string& sql_query);
+
+  int range_request(int64_t start,int64_t len,void *,optional_yield);
+
+  size_t get_obj_size();
+  std::function<int(int64_t,int64_t,void*,optional_yield*)> fp_range_req;
+  std::function<size_t(void)> fp_get_obj_size;
+
 };
 
 

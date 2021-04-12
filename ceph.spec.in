@@ -232,6 +232,8 @@ BuildRequires:	xfsprogs-devel
 BuildRequires:	xmlstarlet
 BuildRequires:	nasm
 BuildRequires:	lua-devel
+BuildRequires:	arrow-devel
+BuildRequires:	parquet-devel
 %if 0%{with seastar} || 0%{with jaeger}
 BuildRequires:  yaml-cpp-devel >= 0.6
 %endif

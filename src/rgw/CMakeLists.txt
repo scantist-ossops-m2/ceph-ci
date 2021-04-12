@@ -204,6 +204,7 @@ target_link_libraries(rgw_common
     ${CURL_LIBRARIES}
     ${EXPAT_LIBRARIES}
     ${LUA_LIBRARIES}
+    arrow parquet
   PUBLIC
     spawn)
 target_include_directories(rgw_common
@@ -302,6 +303,7 @@ target_link_libraries(rgw_a
     common_utf8 global
     ${CRYPTO_LIBS}
     ${LUA_LIBRARIES}
+    arrow parquet
     OATH::OATH
   PUBLIC
     rgw_common
