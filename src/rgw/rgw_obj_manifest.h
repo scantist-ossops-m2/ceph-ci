@@ -152,7 +152,6 @@ struct RGWObjTier {
     string name;
     RGWZoneGroupPlacementTier tier_placement;
     bool is_multipart_upload{false};
-    /* XXX: Add any multipart upload details */
 
     RGWObjTier(): name("none") {}
 
@@ -453,14 +452,14 @@ public:
       return tier_type;
   }
 
-  void set_tier_type(string value) {
+  inline void set_tier_type(string value) {
       /* Only "cloud-s3" tier-type is supported for now */
       if (value == "cloud-s3") {
         tier_type = value;
       }
   }
 
-  void set_tier_config(RGWObjTier t) {
+  inline void set_tier_config(RGWObjTier t) {
       /* Set only if tier_type set to "cloud-s3" */
       if (tier_type != "cloud-s3")
         return;
@@ -470,7 +469,7 @@ public:
       tier_config.is_multipart_upload = t.is_multipart_upload;
   }
 
-  const void get_tier_config(RGWObjTier* t) {
+  inline const void get_tier_config(RGWObjTier* t) {
       if (tier_type != "cloud-s3")
         return;
 
