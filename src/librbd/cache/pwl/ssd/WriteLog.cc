@@ -178,7 +178,7 @@ bool WriteLog<I>::initialize_pool(Context *on_finish,
     m_first_valid_entry = DATA_RING_BUFFER_OFFSET;
 
     auto new_root = std::make_shared<WriteLogPoolRoot>(pool_root);
-    new_root->layout_version = SSD_POOL_VERSION;
+    new_root->layout_version = SSD_LAYOUT_VERSION;
     new_root->pool_size = this->m_log_pool_size;
     new_root->flushed_sync_gen = this->m_flushed_sync_gen;
     new_root->block_size = MIN_WRITE_ALLOC_SSD_SIZE;
@@ -221,10 +221,10 @@ bool WriteLog<I>::initialize_pool(Context *on_finish,
                   << " flushed_sync_gen=" << pool_root.flushed_sync_gen
                   << dendl;
     ceph_assert(is_valid_pool_root(pool_root));
-    if (pool_root.layout_version != SSD_POOL_VERSION) {
+    if (pool_root.layout_version != SSD_LAYOUT_VERSION) {
       lderr(cct) << "Pool layout version is "
                  << pool_root.layout_version
-                 << " expected " << SSD_POOL_VERSION
+                 << " expected " << SSD_LAYOUT_VERSION
                  << dendl;
       goto error_handle;
     }
