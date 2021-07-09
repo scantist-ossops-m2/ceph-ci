@@ -67,7 +67,6 @@ void WriteLogCacheEntry::dump(Formatter *f) const {
   f->dump_unsigned("discard", discard);
   f->dump_unsigned("writesame", writesame);
   f->dump_unsigned("ws_datalen", ws_datalen);
-  f->dump_unsigned("entry_index", entry_index);
 }
 
 void WriteLogCacheEntry::generate_test_instances(std::list<WriteLogCacheEntry*>& ls) {
@@ -85,12 +84,10 @@ void WriteLogCacheEntry::generate_test_instances(std::list<WriteLogCacheEntry*>&
   ls.back()->discard = 1;
   ls.back()->writesame = 1;
   ls.back()->ws_datalen = 1;
-  ls.back()->entry_index = 1;
 }
 
 void WriteLogPoolRoot::dump(Formatter *f) const {
   f->dump_unsigned("layout_version", layout_version);
-  f->dump_unsigned("cur_sync_gen", cur_sync_gen);
   f->dump_unsigned("pool_size", pool_size);
   f->dump_unsigned("flushed_sync_gen", flushed_sync_gen);
   f->dump_unsigned("block_size", block_size);
@@ -102,7 +99,6 @@ void WriteLogPoolRoot::generate_test_instances(std::list<WriteLogPoolRoot*>& ls)
   ls.push_back(new WriteLogPoolRoot);
   ls.push_back(new WriteLogPoolRoot);
   ls.back()->layout_version = 2;
-  ls.back()->cur_sync_gen = 1;
   ls.back()->pool_size = 1024;
   ls.back()->flushed_sync_gen = 1;
   ls.back()->block_size = 4096;
@@ -124,8 +120,7 @@ std::ostream& operator<<(std::ostream& os,
      << "write_sequence_number=" << entry.write_sequence_number << ", "
      << "image_offset_bytes=" << entry.image_offset_bytes << ", "
      << "write_bytes=" << entry.write_bytes << ", "
-     << "ws_datalen=" << entry.ws_datalen << ", "
-     << "entry_index=" << entry.entry_index;
+     << "ws_datalen=" << entry.ws_datalen << ", ";
   return os;
 }
 
