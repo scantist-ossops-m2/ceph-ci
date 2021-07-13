@@ -60,6 +60,8 @@ extern "C" {
 #include "rgw_bucket_sync.h"
 #include "rgw_sync_checkpoint.h"
 #include "rgw_lua.h"
+#include "rgw_crypt.h"	// XXX temp
+#include "rgw_kms.h"	// XXX temp
 
 #include "services/svc_sync_modules.h"
 #include "services/svc_cls.h"
@@ -787,6 +789,7 @@ enum class OPT {
   SCRIPT_PACKAGE_ADD,
   SCRIPT_PACKAGE_RM,
   SCRIPT_PACKAGE_LIST
+, VAULT_CREATE_KEY , VAULT_DELETE_KEY
 };
 
 }
@@ -1008,6 +1011,7 @@ static SimpleCmd::Commands all_cmds = {
   { "script-package add", OPT::SCRIPT_PACKAGE_ADD },
   { "script-package rm", OPT::SCRIPT_PACKAGE_RM },
   { "script-package list", OPT::SCRIPT_PACKAGE_LIST },
+{"vault create key", OPT::VAULT_CREATE_KEY} , {"vault delete key", OPT::VAULT_DELETE_KEY},
 };
 
 static SimpleCmd::Aliases cmd_aliases = {
@@ -3871,6 +3875,9 @@ int main(int argc, const char **argv)
           metadata_key = extra_args[0];
           break;
         default:
+        for (auto& arg : extra_args) {
+          cerr << "totally ignoring: " << arg << std::endl;
+        }
           break;
       }
     }
@@ -9608,6 +9615,70 @@ next:
     cerr << "ERROR: listing lua packages in not permitted" << std::endl;
     return EPERM;
 #endif
+  }
+
+  if (opt_cmd == OPT::VAULT_CREATE_KEY) {
+      int err;
+      vector<string> v;
+      map<string, bufferlist> attrs;
+      std::string aname;
+      get_str_vec(secret_key, v);
+      cerr << "not yet creating kms keys size=" << v.size() << std::endl;
+      for (const auto& k : v) {
+	if (k == "-keyid") {
+	   aname = RGW_ATTR_CRYPT_KEYID;
+	   continue;
+	} else if (k == "-keysel") {
+	   aname = RGW_ATTR_CRYPT_KEYID;
+	   continue;
+	} else if (k == "-datakey") {
+	   aname = RGW_ATTR_CRYPT_DATAKEY;
+	   continue;
+	} else if (k == "-context") {
+	   aname = RGW_ATTR_CRYPT_CONTEXT;
+	   continue;
+	}
+	if (!aname.empty()) {
+	  set_attr(attrs, aname.c_str(), k);
+	  aname.clear();
+	  continue;
+	}
+        err = create_sse_s3_bucket_key(dpp(), store->ctx(), k);
+        if (err)
+		cerr << "Problem creating bucket key " << k << " err=" << err << std::endl;
+      }
+  }
+
+  if (opt_cmd == OPT::VAULT_DELETE_KEY) {
+      int err;
+    vector<string> v;
+      map<string, bufferlist> attrs;
+      std::string aname;
+    get_str_vec(secret_key, v);
+    cerr << "not yet deleting kms keys size=" << v.size() << std::endl;
+    for (const auto& k : v) {
+	if (k == "-keyid") {
+	   aname = RGW_ATTR_CRYPT_KEYID;
+	   continue;
+	} else if (k == "-keysel") {
+	   aname = RGW_ATTR_CRYPT_KEYID;
+	   continue;
+	} else if (k == "-datakey") {
+	   aname = RGW_ATTR_CRYPT_DATAKEY;
+	   continue;
+	} else if (k == "-context") {
+	   aname = RGW_ATTR_CRYPT_CONTEXT;
+	   continue;
+	}
+	if (!aname.empty()) {
+	  set_attr(attrs, aname.c_str(), k);
+	  aname.clear();
+	  continue;
+	}
+        err = remove_sse_s3_bucket_key(dpp(), store->ctx(), k);
+        if (err)
+		cerr << "Problem removing bucket key " << k << " err=" << err << std::endl;
+    }
   }
 
   return 0;
