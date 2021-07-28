@@ -11,7 +11,6 @@ Build-Depends: automake,
 # Jaeger       bison,
                cmake (>= 3.10.2),
                cpio,
-               cryptsetup-bin | cryptsetup,
                cython3,
                debhelper (>= 10),
                default-jdk,
@@ -124,7 +123,6 @@ Package: ceph-base
 Architecture: linux-any
 Depends: binutils,
          ceph-common (= ${binary:Version}),
-         cryptsetup-bin | cryptsetup,
          debianutils,
          e2fsprogs,
          findutils,
@@ -442,6 +440,7 @@ Package: ceph-volume
 Architecture: all
 Section: python
 Depends: ceph-osd (= ${binary:Version}),
+         cryptsetup-bin,
          lvm2,
          parted,
          ${misc:Depends},
