@@ -21,6 +21,11 @@ def remove_pool(mgr, pool_name):
                'yes_i_really_really_mean_it': True}
     return mgr.mon_command(command)
 
+def rename_pool(mgr, pool_name, new_pool_name):
+    command = {'prefix': 'osd pool rename', 'srcpool': pool_name,
+               'destpool': new_pool_name}
+    return mgr.mon_command(command)
+
 def create_filesystem(mgr, fs_name, metadata_pool, data_pool):
     command = {'prefix': 'fs new', 'fs_name': fs_name, 'metadata': metadata_pool,
                'data': data_pool}
@@ -33,6 +38,11 @@ def remove_filesystem(mgr, fs_name):
         return r, outb, outs
 
     command = {'prefix': 'fs rm', 'fs_name': fs_name, 'yes_i_really_mean_it': True}
+    return mgr.mon_command(command)
+
+def rename_filesystem(mgr, fs_name, new_fs_name):
+    command = {'prefix': 'fs rename', 'fs_name': fs_name, 'new_fs_name': new_fs_name,
+               'yes_i_really_mean_it': True}
     return mgr.mon_command(command)
 
 def create_mds(mgr, fs_name, placement):
@@ -49,6 +59,9 @@ def create_mds(mgr, fs_name, placement):
         # bubble out to the user
         log.exception("Failed to create MDS daemons")
         return -errno.EINVAL, "", str(e)
+    return 0, "", ""
+
+def rename_mds(mgr, fs_name, new_fs_name):
     return 0, "", ""
 
 def volume_exists(mgr, fs_name):
