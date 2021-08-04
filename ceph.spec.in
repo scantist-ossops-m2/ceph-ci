@@ -424,7 +424,6 @@ Requires:      ceph-selinux = %{_epoch_prefix}%{version}-%{release}
 Requires:      findutils
 Requires:      grep
 Requires:      logrotate
-Requires:      parted
 Requires:      psmisc
 Requires:      python%{python3_pkgversion}-setuptools
 Requires:      util-linux
