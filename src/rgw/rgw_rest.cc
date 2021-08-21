@@ -606,6 +606,7 @@ void end_header(req_state* s, RGWOp* op, const char *content_type,
   if (!force_no_error && s->is_err()) {
     dump_start(s);
     dump(s);
+    s->formatter->output_footer();
     dump_content_length(s, s->formatter ? s->formatter->get_len() : 0);
   } else {
     if (proposed_content_length == CHUNKED_TRANSFER_ENCODING) {
@@ -2319,7 +2320,7 @@ RGWHandler_REST* RGWREST::get_handler(
   }
 
   ldpp_dout(s, 20) << __func__ << " handler=" << typeid(*handler).name() << dendl;
-  
+
   *init_error = handler->init(driver, s, rio);
   if (*init_error < 0) {
     m->put_handler(handler);
