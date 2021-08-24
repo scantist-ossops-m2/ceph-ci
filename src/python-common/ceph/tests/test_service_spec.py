@@ -242,6 +242,17 @@ spec:
         assert yaml.dump(object) == y
         assert yaml.dump(ServiceSpec.from_json(object.to_json())) == y
 
+
+def test_repr():
+    val = """ServiceSpec.from_json(yaml.safe_load('''service_type: crash
+service_name: crash
+placement:
+  count: 42
+'''))"""
+    obj = eval(val)
+    assert obj.service_type == 'crash'
+    assert val == repr(obj)
+
 @pytest.mark.parametrize("spec1, spec2, eq",
                          [
                              (
