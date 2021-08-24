@@ -618,7 +618,8 @@ class ServiceSpec(object):
         if self.service_id:
             ret['service_id'] = self.service_id
         ret['service_name'] = self.service_name()
-        ret['placement'] = self.placement.to_json()
+        if self.placement.to_json():
+            ret['placement'] = self.placement.to_json()
         if self.unmanaged:
             ret['unmanaged'] = self.unmanaged
         if self.networks:
