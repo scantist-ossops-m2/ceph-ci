@@ -7,9 +7,7 @@ import pytest
 from tests.fixtures import with_cephadm_ctx, cephadm_fs
 
 with mock.patch('builtins.open', create=True):
-    from importlib.machinery import SourceFileLoader
-    cd = SourceFileLoader('cephadm', 'cephadm').load_module()
-
+    import cephadm as cd
 
 class TestCommandListNetworks:
     @pytest.mark.parametrize("test_input, expected", [
