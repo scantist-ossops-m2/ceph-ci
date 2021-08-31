@@ -197,7 +197,6 @@ int RGWLCCloudStreamGet::init(const DoutPrefixProvider *dpp)  {
   req_params.skip_decrypt = true;
 
   string etag;
-  real_time set_mtime;
 
   int ret = conn->get_obj(dpp, dest_obj, req_params, true /* send */, &in_req);
   if (ret < 0) {

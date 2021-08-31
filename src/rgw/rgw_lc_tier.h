@@ -24,17 +24,17 @@ struct RGWLCCloudTierCtx {
   rgw_bucket_dir_entry& o;
   rgw::sal::Store *store;
   RGWBucketInfo& bucket_info;
-  string storage_class;
+  std::string storage_class;
 
   std::unique_ptr<rgw::sal::Object> *obj;
   RGWObjectCtx& rctx;
 
   /* Remote */
   std::shared_ptr<RGWRESTConn> conn;
-  string target_bucket_name;
-  string target_storage_class;
+  std::string target_bucket_name;
+  std::string target_storage_class;
 
-  map<string, RGWTierACLMapping> acl_mappings;
+  std::map<std::string, RGWTierACLMapping> acl_mappings;
   uint64_t multipart_min_part_size;
   uint64_t multipart_sync_threshold;
 
@@ -43,8 +43,8 @@ struct RGWLCCloudTierCtx {
   RGWLCCloudTierCtx(CephContext* _cct, const DoutPrefixProvider *_dpp,
       rgw_bucket_dir_entry& _o, rgw::sal::Store *_store,
       RGWBucketInfo &_binfo, std::unique_ptr<rgw::sal::Object> *_obj,
-      RGWObjectCtx& _rctx, std::shared_ptr<RGWRESTConn> _conn, string _bucket,
-      string _storage_class) :
+      RGWObjectCtx& _rctx, std::shared_ptr<RGWRESTConn> _conn, std::string _bucket,
+      std::string _storage_class) :
     cct(_cct), dpp(_dpp), o(_o), store(_store), bucket_info(_binfo),
     obj(_obj), rctx(_rctx), conn(_conn), target_bucket_name(_bucket),
     target_storage_class(_storage_class) {}
@@ -54,7 +54,7 @@ struct rgw_lc_multipart_part_info {
   int part_num{0};
   uint64_t ofs{0};
   uint64_t size{0};
-  string etag;
+  std::string etag;
 
   void encode(bufferlist& bl) const {
     ENCODE_START(1, 1, bl);
@@ -78,15 +78,15 @@ WRITE_CLASS_ENCODER(rgw_lc_multipart_part_info)
 
 struct rgw_lc_obj_properties {
   ceph::real_time mtime;
-  string etag;
+  std::string etag;
   uint64_t versioned_epoch{0};
-  map<string, RGWTierACLMapping>& target_acl_mappings;
-  string target_storage_class;
+  std::map<std::string, RGWTierACLMapping>& target_acl_mappings;
+  std::string target_storage_class;
 
-  rgw_lc_obj_properties(ceph::real_time _mtime, string _etag,
-      uint64_t _versioned_epoch, map<string,
+  rgw_lc_obj_properties(ceph::real_time _mtime, std::string _etag,
+      uint64_t _versioned_epoch, std::map<std::string,
       RGWTierACLMapping>& _t_acl_mappings,
-      string _t_storage_class) :
+      std::string _t_storage_class) :
     mtime(_mtime), etag(_etag),
     versioned_epoch(_versioned_epoch),
     target_acl_mappings(_t_acl_mappings),
@@ -115,10 +115,10 @@ struct rgw_lc_obj_properties {
 WRITE_CLASS_ENCODER(rgw_lc_obj_properties)
 
 struct rgw_lc_multipart_upload_info {
-  string upload_id;
+  std::string upload_id;
   uint64_t obj_size;
   ceph::real_time mtime;
-  string etag;
+  std::string etag;
   uint32_t part_size{0};
   uint32_t num_parts{0};
 
@@ -167,9 +167,9 @@ class RGWLCCloudStreamGet
   rgw_lc_obj_properties obj_properties;
   std::shared_ptr<RGWRESTConn> conn;
   rgw::sal::Object *dest_obj;
-  string etag;
+  std::string etag;
   RGWRESTStreamRWRequest *in_req;
-  map<string, string> headers;
+  std::map<std::string, std::string> headers;
 
   int retcode;
 
@@ -190,7 +190,7 @@ class RGWLCStreamRead
 {
   CephContext *cct;
   const DoutPrefixProvider *dpp;
-  map<string, bufferlist> attrs;
+  std::map<std::string, bufferlist> attrs;
   uint64_t obj_size;
   std::unique_ptr<rgw::sal::Object> *obj;
   const real_time &mtime;
@@ -231,12 +231,12 @@ class RGWLCCloudStreamPut
   rgw_lc_obj_properties obj_properties;
   std::shared_ptr<RGWRESTConn> conn;
   rgw::sal::Object *dest_obj;
-  string etag;
+  std::string etag;
   RGWRESTStreamS3PutObj *out_req{nullptr};
 
   struct multipart_info {
     bool is_multipart{false};
-    string upload_id;
+    std::string upload_id;
     int part_num{0};
     uint64_t part_size;
   } multipart;
@@ -251,14 +251,14 @@ class RGWLCCloudStreamPut
     dpp(_dpp), obj_properties(_obj_properties), conn(_conn), dest_obj(_dest_obj) {
     }
   int init();
-  static bool keep_attr(const string& h);
+  static bool keep_attr(const std::string& h);
   static void init_send_attrs(const DoutPrefixProvider *dpp, const rgw_rest_obj& rest_obj,
       const rgw_lc_obj_properties& obj_properties,
-      map<string, string> *attrs);
+      std::map<std::string, std::string> *attrs);
   void send_ready(const DoutPrefixProvider *dpp, const rgw_rest_obj& rest_obj);
-  void handle_headers(const map<string, string>& headers);
-  bool get_etag(string *petag);
-  void set_multipart(const string& upload_id, int part_num, uint64_t part_size);
+  void handle_headers(const std::map<std::string, std::string>& headers);
+  bool get_etag(std::string *petag);
+  void set_multipart(const std::string& upload_id, int part_num, uint64_t part_size);
   int send();
   RGWGetDataCB *get_cb();
   int complete_request();
@@ -267,7 +267,7 @@ class RGWLCCloudStreamPut
 /* Read local copy and write to Cloud endpoint */
 class RGWLCCloudStreamRW {
   const DoutPrefixProvider *dpp;
-  string url;
+  std::string url;
   std::shared_ptr<RGWLCStreamRead> readf;
   std::shared_ptr<RGWLCCloudStreamPut> writef;
   bufferlist bl;
@@ -284,7 +284,7 @@ class RGWLCCloudStreamRW {
   public:
   RGWLCCloudStreamRW(const DoutPrefixProvider *_dpp,
       std::shared_ptr<RGWLCStreamRead>& _readf,
-      shared_ptr<RGWLCCloudStreamPut>& _writef) : dpp(_dpp),
+      std::shared_ptr<RGWLCCloudStreamPut>& _writef) : dpp(_dpp),
   readf(_readf), writef(_writef) {}
   ~RGWLCCloudStreamRW() {}
 
@@ -303,7 +303,7 @@ class RGWLCCloudStreamObjToPlain {
 
   rgw_lc_obj_properties obj_properties;
   RGWBucketInfo b;
-  string target_obj_name;
+  std::string target_obj_name;
 
   rgw::sal::Object *o;
 
@@ -321,11 +321,11 @@ class RGWLCCloudStreamObjToPlain {
 class RGWLCCloudStreamObjToMultipartPart {
   RGWLCCloudTierCtx& tier_ctx;
 
-  string upload_id;
+  std::string upload_id;
 
   rgw_lc_multipart_part_info part_info;
 
-  string *petag;
+  std::string *petag;
   std::shared_ptr<RGWLCStreamRead> readf;
   std::shared_ptr<RGWLCCloudStreamPut> writef;
   std::unique_ptr<RGWLCCloudStreamRW> rwf;
@@ -335,15 +335,15 @@ class RGWLCCloudStreamObjToMultipartPart {
 
   rgw_lc_obj_properties obj_properties;
   RGWBucketInfo b;
-  string target_obj_name;
+  std::string target_obj_name;
   off_t end;
 
   int retcode;
 
   public:
-  RGWLCCloudStreamObjToMultipartPart(RGWLCCloudTierCtx& _tier_ctx, const string& _upload_id,
+  RGWLCCloudStreamObjToMultipartPart(RGWLCCloudTierCtx& _tier_ctx, const std::string& _upload_id,
       const rgw_lc_multipart_part_info& _part_info,
-      string *_petag) : tier_ctx(_tier_ctx),
+      std::string *_petag) : tier_ctx(_tier_ctx),
   upload_id(_upload_id), part_info(_part_info), petag(_petag),
   obj_properties(tier_ctx.o.meta.mtime, tier_ctx.o.meta.etag,
       tier_ctx.o.versioned_epoch, tier_ctx.acl_mappings,
@@ -356,7 +356,7 @@ class RGWLCCloudAbortMultipart {
   RGWRESTConn *dest_conn;
   rgw_obj dest_obj;
 
-  string upload_id;
+  std::string upload_id;
 
   int retcode;
   bufferlist out_bl;
@@ -364,7 +364,7 @@ class RGWLCCloudAbortMultipart {
   public:
   RGWLCCloudAbortMultipart(const DoutPrefixProvider *_dpp,
       RGWRESTConn *_dest_conn, const rgw_obj& _dest_obj,
-      const string& _upload_id) :
+      const std::string& _upload_id) :
     dpp(_dpp),
     dest_conn(_dest_conn), dest_obj(_dest_obj),
     upload_id(_upload_id) {}
@@ -377,16 +377,16 @@ class RGWLCCloudInitMultipart {
   rgw_obj dest_obj;
 
   uint64_t obj_size;
-  map<string, string> attrs;
+  std::map<std::string, std::string> attrs;
 
   bufferlist out_bl;
 
-  string *upload_id;
+  std::string *upload_id;
 
   struct InitMultipartResult {
-    string bucket;
-    string key;
-    string upload_id;
+    std::string bucket;
+    std::string key;
+    std::string upload_id;
 
     void decode_xml(XMLObj *obj) {
       RGWXMLDecoder::decode_xml("Bucket", bucket, obj);
@@ -400,8 +400,8 @@ class RGWLCCloudInitMultipart {
   public:
   RGWLCCloudInitMultipart(const DoutPrefixProvider *_dpp,
       RGWRESTConn *_dest_conn, const rgw_obj& _dest_obj,
-      uint64_t _obj_size, const map<string, string>& _attrs,
-      string *_upload_id) : dpp(_dpp),
+      uint64_t _obj_size, const std::map<std::string, std::string>& _attrs,
+      std::string *_upload_id) : dpp(_dpp),
   dest_conn(_dest_conn),
   dest_obj(_dest_obj), obj_size(_obj_size),
   attrs(_attrs), upload_id(_upload_id) {}
@@ -415,14 +415,14 @@ class RGWLCCloudCompleteMultipart {
 
   bufferlist out_bl;
 
-  string upload_id;
+  std::string upload_id;
 
   int retcode;
 
   struct CompleteMultipartReq {
-    map<int, rgw_lc_multipart_part_info> parts;
+    std::map<int, rgw_lc_multipart_part_info> parts;
 
-    explicit CompleteMultipartReq(const map<int, rgw_lc_multipart_part_info>& _parts) : parts(_parts) {}
+    explicit CompleteMultipartReq(const std::map<int, rgw_lc_multipart_part_info>& _parts) : parts(_parts) {}
 
     void dump_xml(Formatter *f) const {
       for (const auto& p : parts) {
@@ -435,10 +435,10 @@ class RGWLCCloudCompleteMultipart {
   } req_enc;
 
   struct CompleteMultipartResult {
-    string location;
-    string bucket;
-    string key;
-    string etag;
+    std::string location;
+    std::string bucket;
+    std::string key;
+    std::string etag;
 
     void decode_xml(XMLObj *obj) {
       RGWXMLDecoder::decode_xml("Location", bucket, obj);
@@ -451,7 +451,7 @@ class RGWLCCloudCompleteMultipart {
   public:
   RGWLCCloudCompleteMultipart(const DoutPrefixProvider *_dpp,
       RGWRESTConn *_dest_conn, const rgw_obj& _dest_obj,
-      string _upload_id, const map<int, rgw_lc_multipart_part_info>& _parts) :
+      std::string _upload_id, const std::map<int, rgw_lc_multipart_part_info>& _parts) :
     dpp(_dpp), 
     dest_conn(_dest_conn), dest_obj(_dest_obj), upload_id(_upload_id),
     req_enc(_parts) {}
@@ -464,7 +464,7 @@ class RGWLCCloudStreamAbortMultipartUpload {
   const rgw_obj dest_obj;
   const rgw_raw_obj status_obj;
 
-  string upload_id;
+  std::string upload_id;
   std::unique_ptr<RGWLCCloudAbortMultipart> abort_mp;
 
   int retcode;
@@ -473,7 +473,7 @@ class RGWLCCloudStreamAbortMultipartUpload {
 
   RGWLCCloudStreamAbortMultipartUpload(RGWLCCloudTierCtx& _tier_ctx,
       const rgw_obj& _dest_obj, const rgw_raw_obj& _status_obj,
-      const string& _upload_id) :
+      const std::string& _upload_id) :
     tier_ctx(_tier_ctx), dest_obj(_dest_obj), status_obj(_status_obj),
     upload_id(_upload_id) {}
   int process();
@@ -487,19 +487,19 @@ class RGWLCCloudStreamObjToMultipart {
   rgw_obj dest_obj;
 
   uint64_t obj_size;
-  string src_etag;
+  std::string src_etag;
   rgw_rest_obj rest_obj;
 
   rgw_lc_multipart_upload_info status;
   std::shared_ptr<RGWLCStreamRead> readf;
 
-  map<string, string> new_attrs;
+  std::map<std::string, std::string> new_attrs;
 
   rgw_raw_obj status_obj;
 
   rgw_lc_obj_properties obj_properties;
   RGWBucketInfo b;
-  string target_obj_name;
+  std::string target_obj_name;
   rgw_bucket target_bucket;
   rgw::sal::RadosStore *rados;
 
@@ -523,7 +523,7 @@ class RGWLCCloudCheckObj {
   bool *already_tiered;
   rgw_lc_obj_properties obj_properties;
   RGWBucketInfo b;
-  string target_obj_name;
+  std::string target_obj_name;
   int ret = 0;
   std::unique_ptr<rgw::sal::Bucket> dest_bucket;
   std::unique_ptr<rgw::sal::Object> dest_obj;
@@ -548,7 +548,7 @@ class RGWLCCloudTier {
   std::unique_ptr<RGWLCCloudStreamObjToPlain> cloud_tier_plain;
   std::unique_ptr<RGWLCCloudStreamObjToMultipart> cloud_tier_mp;
   struct CreateBucketResult {
-    string code;
+    std::string code;
 
     void decode_xml(XMLObj *obj) {
       RGWXMLDecoder::decode_xml("Code", code, obj);

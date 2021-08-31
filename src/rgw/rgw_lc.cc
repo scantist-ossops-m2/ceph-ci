@@ -1310,24 +1310,25 @@ public:
     }
 
     attrs = oc.obj->get_attrs();
-    (*tier_ctx.obj)->set_atomic(&tier_ctx.rctx);
     
     RGWObjState *s = tier_ctx.rctx.get_state((*tier_ctx.obj)->get_obj());
-    std::unique_ptr<rgw::sal::Object::WriteOp> obj_op(oc.obj->get_write_op(&oc.rctx));
+    rgw::sal::RadosStore *rados = dynamic_cast<rgw::sal::RadosStore*>(oc.store);
+    RGWRados::Object op_target(rados->getRados(), oc.bucket->get_info(), oc.rctx, oc.obj->get_obj());
+    RGWRados::Object::Write obj_op(&op_target);
 
-    obj_op->params.modify_tail = true;
-    obj_op->params.flags = PUT_OBJ_CREATE;
-    obj_op->params.category = RGWObjCategory::CloudTiered;
-    obj_op->params.delete_at = real_time();
+    obj_op.meta.modify_tail = true;
+    obj_op.meta.flags = PUT_OBJ_CREATE;
+    obj_op.meta.category = RGWObjCategory::CloudTiered;
+    obj_op.meta.delete_at = real_time();
     bufferlist blo;
     blo.append("");
-    obj_op->params.data = &blo;
-    obj_op->params.if_match = NULL;
-    obj_op->params.if_nomatch = NULL;
-    obj_op->params.user_data = NULL;
-    obj_op->params.zones_trace = NULL;
-    obj_op->params.delete_at = real_time();
-    obj_op->params.olh_epoch = tier_ctx.o.versioned_epoch;
+    obj_op.meta.data = &blo;
+    obj_op.meta.if_match = NULL;
+    obj_op.meta.if_nomatch = NULL;
+    obj_op.meta.user_data = NULL;
+    obj_op.meta.zones_trace = NULL;
+    obj_op.meta.delete_at = real_time();
+    obj_op.meta.olh_epoch = tier_ctx.o.versioned_epoch;
     
     RGWObjManifest *pmanifest; 
 
@@ -1356,7 +1357,7 @@ public:
      * storage class. So maybe better to keep it the same way.
      */
 
-    obj_op->params.manifest = pmanifest;
+    obj_op.meta.manifest = pmanifest;
 
     /* update storage class */
     bufferlist bl;
@@ -1366,15 +1367,7 @@ public:
     attrs.erase(RGW_ATTR_ID_TAG);
     attrs.erase(RGW_ATTR_TAIL_TAG);
 
-    obj_op->params.attrs = &attrs;
-
-    r = obj_op->prepare(null_yield);
-    if (r < 0) {
-      return r;
-    }
-
-
-    r = obj_op->write_meta(oc.dpp, tier_ctx.o.meta.size, 0, null_yield);
+    r = obj_op.write_meta(oc.dpp, tier_ctx.o.meta.size, 0, attrs, null_yield);
     if (r < 0) {
       return r;
     }
