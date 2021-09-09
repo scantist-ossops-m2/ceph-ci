@@ -162,7 +162,6 @@ if(WITH_RADOSGW_KAFKA_ENDPOINT)
 endif()
 
 add_library(rgw_common OBJECT ${librgw_common_srcs})
-add_library(cpp_redis OBJECT ${CPP_REDIS_LIBRARIES})
 
 target_include_directories(rgw_common SYSTEM PUBLIC "services")
 target_include_directories(rgw_common PUBLIC "${CMAKE_SOURCE_DIR}/src/dmclock/support/src")
@@ -172,6 +171,14 @@ if(WITH_BOOST_CONTEXT)
   target_include_directories(rgw_common PRIVATE
     $<TARGET_PROPERTY:spawn,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
+
+if(WITH_CPP_REDIS)
+  add_dependencies(rgw_common cpp_redis)
+  target_link_libraries(rgw_common PRIVATE cpp_redis)
+  target_include_directories(rgw_common PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(rgw_common PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
 
 if(WITH_LTTNG)
   # rgw/rgw_op.cc includes "tracing/rgw_op.h"
@@ -225,6 +232,13 @@ add_dependencies(rgw_a civetweb_h)
 target_compile_definitions(rgw_a PUBLIC "-DCLS_CLIENT_HIDE_IOCTX")
 target_include_directories(rgw_a PUBLIC "${CMAKE_SOURCE_DIR}/src/dmclock/support/src")
 target_include_directories(rgw_a SYSTEM PUBLIC "../rapidjson/include")
+
+if(WITH_CPP_REDIS)
+  add_dependencies(rgw_a cpp_redis)
+  target_link_libraries(rgw_a PRIVATE cpp_redis)
+  target_include_directories(rgw_a PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(rgw_a PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
 
 if(WITH_RADOSGW_AMQP_ENDPOINT)
   find_package(RabbitMQ REQUIRED)
@@ -319,6 +333,7 @@ target_link_libraries(radosgwd radosgw librados
   ${FCGI_LIBRARY} ${LIB_RESOLV}
   ${CURL_LIBRARIES} ${EXPAT_LIBRARIES} ${BLKID_LIBRARIES}
   ${ALLOC_LIBS})
+
 set_target_properties(radosgwd PROPERTIES OUTPUT_NAME radosgw)
 install(TARGETS radosgwd DESTINATION bin)
 
@@ -333,6 +348,11 @@ target_link_libraries(radosgw-admin ${rgw_libs} librados
   global ${FCGI_LIBRARY} ${LIB_RESOLV}
   ${CURL_LIBRARIES} ${EXPAT_LIBRARIES} ${BLKID_LIBRARIES} ${CPP_REDIS_LIBRARIES})
 install(TARGETS radosgw-admin DESTINATION bin)
+
+if(WITH_CPP_REDIS)
+  add_dependencies(radosgw-admin cpp_redis)
+  target_link_libraries(radosgw-admin cpp_redis)
+endif()
 
 set(radosgw_es_srcs
   rgw_es_main.cc)
