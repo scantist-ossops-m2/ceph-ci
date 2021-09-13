@@ -1378,13 +1378,15 @@ Then run the following:
         host_offline = host in self.offline_hosts
 
         if host_offline and not offline:
-            return "{} is offline, please use --offline and --force to remove this host. This can potentially cause data loss".format(host)
+            raise OrchestratorValidationError(
+                "{} is offline, please use --offline and --force to remove this host. This can potentially cause data loss".format(host))
 
         if not host_offline and offline:
-            return "{} is online, please remove host without --offline.".format(host)
+            raise OrchestratorValidationError(
+                "{} is online, please remove host without --offline.".format(host))
 
         if offline and not force:
-            return "Removing an offline host requires --force"
+            raise OrchestratorValidationError("Removing an offline host requires --force")
 
         # check if there are daemons on the host
         if not force:
@@ -1941,7 +1943,8 @@ Then run the following:
                 msg = ''
                 for h, ls in osds_msg.items():
                     msg += f'\thost {h}: {" ".join([f"osd.{id}" for id in ls])}'
-                raise OrchestratorError(f'If {service_name} is removed then the following OSDs will remain, --force to proceed anyway\n{msg}')
+                raise OrchestratorError(
+                    f'If {service_name} is removed then the following OSDs will remain, --force to proceed anyway\n{msg}')
 
         found = self.spec_store.rm(service_name)
         if found and service_name.startswith('osd.'):
