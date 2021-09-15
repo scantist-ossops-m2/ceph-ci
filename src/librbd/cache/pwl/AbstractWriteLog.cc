@@ -639,6 +639,19 @@ void AbstractWriteLog<I>::shut_down(Context *on_finish) {
     });
   ctx = new LambdaContext(
     [this, ctx](int r) {
+      ldout(m_image_ctx.cct, 6) << "complete in flight operations" << dendl;
+      m_work_queue.queue(ctx, r);
+    });
+  ctx = new LambdaContext(
+    [this, ctx](int r) {
+      Context *next_ctx = override_ctx(r, ctx);
+      ldout(m_image_ctx.cct, 6) << "waiting for in flight operations" << dendl;
+      // Wait for in progress IOs to complete
+      next_ctx = util::create_async_context_callback(m_image_ctx, next_ctx);
+      m_async_op_tracker.wait_for_ops(next_ctx);
+    });
+  ctx = new LambdaContext(
+    [this, ctx](int r) {
       Context *next_ctx = override_ctx(r, ctx);
       {
         /* Sync with process_writeback_dirty_entries() */
@@ -652,14 +665,6 @@ void AbstractWriteLog<I>::shut_down(Context *on_finish) {
         }
       }
       flush_dirty_entries(next_ctx);
-    });
-  ctx = new LambdaContext(
-    [this, ctx](int r) {
-      Context *next_ctx = override_ctx(r, ctx);
-      ldout(m_image_ctx.cct, 6) << "waiting for in flight operations" << dendl;
-      // Wait for in progress IOs to complete
-      next_ctx = util::create_async_context_callback(m_image_ctx, next_ctx);
-      m_async_op_tracker.wait_for_ops(next_ctx);
     });
   ctx = new LambdaContext(
     [this, ctx](int r) {
