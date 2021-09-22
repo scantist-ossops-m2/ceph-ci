@@ -2376,6 +2376,8 @@ void BlueFS::_rewrite_log_and_layout_sync(bool allocate_with_fallback,
 
   _close_writer(log_writer);
 
+  // we will write it to super
+  log_file->fnode.allocated_commited = log_file->fnode.allocated;
   log_file->fnode.size = bl.length();
   vselector->sub_usage(log_file->vselector_hint, old_fnode);
   vselector->add_usage(log_file->vselector_hint, log_file->fnode);
@@ -2553,6 +2555,8 @@ void BlueFS::_compact_log_async(std::unique_lock<ceph::mutex>& l)
     new_log->fnode.append_extent(*from);
     ++from;
   }
+  // we will write it to super
+  new_log->fnode.allocated_commited = new_log->fnode.allocated;
 
   vselector->sub_usage(log_file->vselector_hint, log_file->fnode);
 

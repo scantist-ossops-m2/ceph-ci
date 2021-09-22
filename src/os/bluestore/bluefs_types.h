@@ -72,7 +72,7 @@ struct bluefs_fnode_t {
   uint64_t allocated;
   uint64_t allocated_commited;
 
-  bluefs_fnode_t() : ino(0), size(0), __unused__(0), allocated(0) {}
+  bluefs_fnode_t() : ino(0), size(0), __unused__(0), allocated(0), allocated_commited(0) {}
 
   uint64_t get_allocated() const {
     return allocated;
