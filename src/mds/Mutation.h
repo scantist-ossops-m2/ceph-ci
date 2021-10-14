@@ -260,6 +260,9 @@ public:
   bool aborted = false;
   bool killed = false;
 
+  // the fscrypt truncate objver
+  uint64_t objver = ULONG_MAX;
+
   // for applying projected inode changes
   std::set<MDSCacheObject*> projected_nodes;
   std::list<ScatterLock*> updated_locks;

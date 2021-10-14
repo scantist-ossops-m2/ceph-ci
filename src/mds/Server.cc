@@ -50,6 +50,7 @@
 #include "common/perf_counters.h"
 #include "include/compat.h"
 #include "osd/OSDMap.h"
+#include "fscrypt.h"
 
 #include <errno.h>
 
@@ -5015,6 +5016,34 @@ void Server::handle_client_file_readlock(MDRequestRef& mdr)
   respond_to_request(mdr, 0);
 }
 
+struct C_IO_MDC_ReadtruncFinish : public MDCacheIOContext {
+  CInode *in;
+  MDRequestRef mdr;
+  bufferlist *data;
+
+  C_IO_MDC_ReadtruncFinish(MDCache *c, CInode *i, MDRequestRef& m, bufferlist *d) :
+    MDCacheIOContext(c, false), in(i), mdr(m), data(d) {
+  }
+  void finish(int r) override {
+    auto mds = get_mds();
+    if (r < 0 && r != -CEPHFS_ENOENT && r != -EOVERFLOW && r != -ETIMEDOUT) {
+      dout(0) << "C_IO_MDC_ReadtruncFinish r = " << r << dendl;
+    }
+    ceph_assert(r >= 0 || r == -CEPHFS_ENOENT || r == -EOVERFLOW
+		|| r == -ETIMEDOUT);
+    mdr->retry++;
+    delete data;
+    if (r == -ETIMEDOUT) { // op timed out and let the client retry it
+      mds->server->respond_to_request(mdr, -CEPHFS_EAGAIN);
+    } else {
+      mdcache->dispatch_request(mdr);
+    }
+  }
+  void print(ostream& out) const override {
+    out << "read_trunc(" << in->ino() << ")";
+  }
+};
+
 void Server::handle_client_setattr(MDRequestRef& mdr)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
@@ -5033,6 +5062,10 @@ void Server::handle_client_setattr(MDRequestRef& mdr)
 
   __u32 mask = req->head.args.setattr.mask;
   __u32 access_mask = MAY_WRITE;
+
+  // Once read from Rados, the objver should equal to ULONG_MAX
+  if (mdr->objver != ULONG_MAX)
+    goto xlock_done;
 
   if (req->get_header().version < 6) {
     // No changes to fscrypted inodes by downrevved clients
@@ -5059,6 +5092,8 @@ void Server::handle_client_setattr(MDRequestRef& mdr)
   if (!mds->locker->acquire_locks(mdr, lov))
     return;
 
+xlock_done:
+
   if ((mask & CEPH_SETATTR_UID) && (cur->get_inode()->uid != req->head.args.setattr.uid))
     access_mask |= MAY_CHOWN;
 
@@ -5082,14 +5117,85 @@ void Server::handle_client_setattr(MDRequestRef& mdr)
 
   bool truncating_smaller = false;
   if (mask & CEPH_SETATTR_SIZE) {
-    truncating_smaller = req->head.args.setattr.size < old_size;
+    if (req->get_data().length() >
+        sizeof(struct ceph_fscrypt_last_block_header) + fscrypt_last_block_max_size) {
+      dout(10) << __func__ << ": the last block size is too large" << dendl;
+      respond_to_request(mdr, -CEPHFS_EINVAL);
+      return;
+    }
+
+    truncating_smaller = req->head.args.setattr.size < old_size ||
+	(req->head.args.setattr.size == old_size && req->get_data().length());
     if (truncating_smaller && pip->is_truncating()) {
       dout(10) << " waiting for pending truncate from " << pip->truncate_from
 	       << " to " << pip->truncate_size << " to complete on " << *cur << dendl;
       mds->locker->drop_locks(mdr.get());
       mdr->drop_local_auth_pins();
       cur->add_waiter(CInode::WAIT_TRUNC, new C_MDS_RetryRequest(mdcache, mdr));
+      // The xlock(filelock) has been dropped, reset the objver
+      mdr->objver = ULONG_MAX;
       return;
+    }
+
+    if (truncating_smaller && req->get_data().length()) {
+      struct ceph_fscrypt_last_block_header header;
+      memset(&header, 0, sizeof(header));
+      auto bl = req->get_data().cbegin();
+      bufferlist *data = new bufferlist();
+      DECODE_START(1, bl);
+      decode(header.objver, bl);
+      decode(header.file_offset, bl);
+      decode(header.block_size, bl);
+      DECODE_FINISH(bl);
+
+      dout(20) << __func__ << " mdr->objver:" << mdr->objver
+               << " mdr->retry:" << mdr->retry
+               << " header.objver: " << header.objver
+               << " header.file_offset: " << header.file_offset
+               << " header.block_size: " << header.block_size
+               << dendl;
+
+      // Always read Rados for the first time just after acquiring
+      // the xclock for the filelock to make sure that no client has
+      // changed the object during this time.
+      //
+      // To make sure that the objvers are the same or let the client
+      // retry the size trucate request.
+      if (mdr->objver != ULONG_MAX) {
+        if (mdr->objver != header.objver) {
+          dout(5) << __func__ << ": header.objver:" << header.objver
+                  << " != current objver:" << mdr->objver
+                  << ", let client retry it!" << dendl;
+          respond_to_request(mdr, -CEPHFS_EAGAIN);
+	  return;
+        }
+        // Reset the objver just in case later the request will be
+        // queued to retry by dropping the xlock(filelock).
+        mdr->objver = ULONG_MAX;
+      } else {
+        auto layout = pip->layout;
+        /*
+         * Try to get the object version after acquiring the xlock
+         * for filelock. During this it won't drop the locks when
+         * trying this to ban any client to update this object in
+         * Rados.
+         *
+         * The extents.size() will be 1, because kclient will forbid
+         * the fscrypt block size to be larger than an object's size.
+         * And also one block won't cross two different objects.
+         */
+        std::vector<ObjectExtent> extents;
+        Striper::file_to_extents(g_ceph_context, cur->ino(), &layout, header.file_offset,
+                                 header.block_size, pip->truncate_size, extents);
+	ceph_assert(extents.size() == 1);
+        mds->objecter->read_trunc(extents[0].oid, object_locator_t(layout.pool_id),
+                                  header.file_offset, (uint64_t)8, mdr->snapid, data,
+                                  0, pip->truncate_size, pip->truncate_seq,
+                                  new C_OnFinisher(new C_IO_MDC_ReadtruncFinish(mdcache, cur, mdr, data),
+                                                   mds->finisher),
+                                  &mdr->objver);
+        return;
+      }
     }
   }
 
@@ -5125,7 +5231,7 @@ void Server::handle_client_setattr(MDRequestRef& mdr)
     pi.inode->time_warp_seq++;   // maybe not a timewarp, but still a serialization point.
   if (mask & CEPH_SETATTR_SIZE) {
     if (truncating_smaller) {
-      pi.inode->truncate(old_size, req->head.args.setattr.size);
+      pi.inode->truncate(old_size, req->head.args.setattr.size, req->get_data());
       le->metablob.add_truncate_start(cur->ino());
     } else {
       pi.inode->size = req->head.args.setattr.size;
