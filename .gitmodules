@@ -74,4 +74,4 @@
 	url = https://github.com/JuliaStrings/utf8proc
 [submodule "src/SQLiteCpp"]
 	path = src/SQLiteCpp
-	url = https://github.com/SRombauts/SQLiteCpp
+	url = https://github.com/yehudasa/SQLiteCpp
