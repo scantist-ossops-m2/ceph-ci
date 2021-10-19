@@ -14,24 +14,25 @@
 // Include this first to get python headers earlier
 #include "Gil.h"
 
+#include "ActivePyModules.h"
+
+#include <rocksdb/version.h>
+
 #include "common/errno.h"
 #include "include/stringify.h"
 
-#include "PyFormatter.h"
-
-#include "osd/OSDMap.h"
 #include "mon/MonMap.h"
+#include "osd/OSDMap.h"
 #include "osd/osd_types.h"
-#include "mgr/MgrContext.h"
 
+#include "DaemonKey.h"
+#include "DaemonServer.h"
+#include "mgr/MgrContext.h"
+#include "PyFormatter.h"
 // For ::mgr_store_prefix
 #include "PyModule.h"
 #include "PyModuleRegistry.h"
 #include "PyUtil.h"
-
-#include "ActivePyModules.h"
-#include "DaemonKey.h"
-#include "DaemonServer.h"
 
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_mgr
@@ -984,6 +985,15 @@ PyObject* ActivePyModules::get_perf_schema_python(
               << svc_type << "." << svc_id << ")" << dendl;
   }
   return f.get();
+}
+
+PyObject* ActivePyModules::get_rocksdb_version()
+{
+  unsigned long version = 0;
+  version |= (ROCKSDB_MAJOR & 0xff) << 16;
+  version |= (ROCKSDB_MINOR & 0xff) << 8;
+  version |= (ROCKSDB_PATCH & 0xff);
+  return PyLong_FromUnsignedLong(version);
 }
 
 PyObject *ActivePyModules::get_context()

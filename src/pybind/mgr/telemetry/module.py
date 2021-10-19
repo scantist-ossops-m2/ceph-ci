@@ -889,6 +889,8 @@ class Module(MgrModule):
             report['io_rate'] = self.get_io_rate()
             report['osd_perf_histograms'] = self.get_osd_histograms()
 
+            report['rocksdb_version'] = self.get_rocksdb_version()
+
         # NOTE: We do not include the 'device' channel in this report; it is
         # sent to a different endpoint.
 
