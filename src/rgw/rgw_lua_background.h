@@ -64,9 +64,9 @@ public:
       open_standard_libs(L);
       set_package_path(L, luarocks_path);
       create_debug_action(L, cct->get());
-      runner = std::thread(&Background::run, this);
-      const auto rc = ceph_pthread_setname(runner.native_handle(), "lua_background");
-      ceph_assert(rc == 0);
+      //runner = std::thread(&Background::run, this);
+      //const auto rc = ceph_pthread_setname(runner.native_handle(), "lua_background");
+      //ceph_assert(rc == 0);
   }
 
   ~Background() = default;

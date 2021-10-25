@@ -8,7 +8,8 @@ namespace rgw::lua {
 
 void Background::shutdown(){
   this->stop();
-  runner.join();
+  //testing:
+  //runner.join();
 }
 void Background::stop(){
   stopped = true;
