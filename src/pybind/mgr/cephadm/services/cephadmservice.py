@@ -235,6 +235,22 @@ class CephadmService(metaclass=ABCMeta):
             })
             if err:
                 self.mgr.log.warning(f"Unable to fetch keyring for {entity}")
+
+        # strip down keyring
+        #  - don't include caps (auth get includes them; get-or-create does not)
+        #  - use pending key if present
+        key = None
+        for line in keyring.splitlines():
+            if ' = ' not in line:
+                continue
+            line = line.strip()
+            (ls, rs) = line.split(' = ', 1)
+            if ls == 'key' and not key:
+                key = rs
+            if ls == 'pending key':
+                key = rs
+        keyring = f'[{entity}]\nkey = {key}\n'
+
         return keyring
 
     def _inventory_get_addr(self, hostname: str) -> str:
