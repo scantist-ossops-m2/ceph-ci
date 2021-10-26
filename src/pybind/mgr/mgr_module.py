@@ -1526,6 +1526,22 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
 
         return r
 
+    def mds_command(self, cmd_dict: dict, inbuf: Optional[str] = None) -> Tuple[int, str, str]:
+        t1 = time.time()
+        result = CommandResult()
+        self.send_command(result, "mds", cmd_dict['id'], json.dumps(cmd_dict), "", inbuf)
+        r = result.wait()
+        t2 = time.time()
+        return r
+
+    def self_mgr_command(self, cmd_dict: dict, inbuf: Optional[str] = None) -> Tuple[int, str, str]:
+        t1 = time.time()
+        result = CommandResult()
+        self.send_command(result, "mgr", self.get_mgr_id(), json.dumps(cmd_dict), "", inbuf)
+        r = result.wait()
+        t2 = time.time()
+        return r
+
     def send_command(
             self,
             result: CommandResult,
