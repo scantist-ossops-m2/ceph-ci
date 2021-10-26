@@ -111,7 +111,8 @@ public:
       stat_errorator>;
   stat_ierrorator::future<> stat(
     const ObjectState& os,
-    OSDOp& osd_op);
+    OSDOp& osd_op,
+    object_stat_sum_t& delta_stats);
 
   // TODO: switch the entire write family to errorator.
   using write_ertr = crimson::errorator<
@@ -123,7 +124,8 @@ public:
   interruptible_future<> create(
     ObjectState& os,
     const OSDOp& osd_op,
-    ceph::os::Transaction& trans);
+    ceph::os::Transaction& trans,
+    object_stat_sum_t& delta_stats);
   interruptible_future<> remove(
     ObjectState& os,
     ceph::os::Transaction& txn);
@@ -131,17 +133,20 @@ public:
     ObjectState& os,
     const OSDOp& osd_op,
     ceph::os::Transaction& trans,
-    osd_op_params_t& osd_op_params);
+    osd_op_params_t& osd_op_params,
+    object_stat_sum_t& delta_stats);
   interruptible_future<> write_same(
     ObjectState& os,
     const OSDOp& osd_op,
     ceph::os::Transaction& trans,
-    osd_op_params_t& osd_op_params);
+    osd_op_params_t& osd_op_params,
+    object_stat_sum_t& delta_stats);
   interruptible_future<> writefull(
     ObjectState& os,
     const OSDOp& osd_op,
     ceph::os::Transaction& trans,
-    osd_op_params_t& osd_op_params);
+    osd_op_params_t& osd_op_params,
+    object_stat_sum_t& delta_stats);
   using append_errorator = crimson::errorator<
     crimson::ct_error::invarg>;
   using append_ierrorator =
@@ -152,17 +157,20 @@ public:
     ObjectState& os,
     OSDOp& osd_op,
     ceph::os::Transaction& trans,
-    osd_op_params_t& osd_op_params);
+    osd_op_params_t& osd_op_params,
+    object_stat_sum_t& delta_stats);
   write_iertr::future<> truncate(
     ObjectState& os,
     const OSDOp& osd_op,
     ceph::os::Transaction& trans,
-    osd_op_params_t& osd_op_params);
+    osd_op_params_t& osd_op_params,
+    object_stat_sum_t& delta_stats);
   write_iertr::future<> zero(
     ObjectState& os,
     const OSDOp& osd_op,
     ceph::os::Transaction& trans,
-    osd_op_params_t& osd_op_params);
+    osd_op_params_t& osd_op_params,
+    object_stat_sum_t& delta_stats);
   rep_op_fut_t mutate_object(
     std::set<pg_shard_t> pg_shards,
     crimson::osd::ObjectContextRef &&obc,
@@ -177,7 +185,8 @@ public:
   interruptible_future<> setxattr(
     ObjectState& os,
     const OSDOp& osd_op,
-    ceph::os::Transaction& trans);
+    ceph::os::Transaction& trans,
+    object_stat_sum_t& delta_stats);
   using get_attr_errorator = crimson::os::FuturizedStore::get_attr_errorator;
   using get_attr_ierrorator =
     ::crimson::interruptible::interruptible_errorator<
@@ -232,7 +241,8 @@ public:
     ObjectState& os,
     const OSDOp& osd_op,
     ceph::os::Transaction& trans,
-    osd_op_params_t& osd_op_params);
+    osd_op_params_t& osd_op_params,
+    object_stat_sum_t& delta_stats);
   ll_read_ierrorator::future<ceph::bufferlist> omap_get_header(
     const crimson::os::CollectionRef& c,
     const ghobject_t& oid) const;
@@ -242,11 +252,13 @@ public:
   interruptible_future<> omap_set_header(
     ObjectState& os,
     const OSDOp& osd_op,
-    ceph::os::Transaction& trans);
+    ceph::os::Transaction& trans,
+    object_stat_sum_t& delta_stats);
   interruptible_future<> omap_remove_range(
     ObjectState& os,
     const OSDOp& osd_op,
-    ceph::os::Transaction& trans);
+    ceph::os::Transaction& trans,
+    object_stat_sum_t& delta_stats);
   using omap_clear_ertr = crimson::errorator<crimson::ct_error::enoent>;
   using omap_clear_iertr =
     ::crimson::interruptible::interruptible_errorator<
@@ -275,6 +287,7 @@ protected:
     const osd_reqid_t& reqid,
     const eversion_t& at_version) = 0;
 public:
+  //object_stat_sum_t delta_stats;
   struct loaded_object_md_t {
     ObjectState os;
     std::optional<SnapSet> ss;
@@ -291,7 +304,9 @@ private:
     size_t length,
     uint32_t flags) = 0;
 
-  bool maybe_create_new_object(ObjectState& os, ceph::os::Transaction& txn);
+  bool maybe_create_new_object(ObjectState& os,
+    ceph::os::Transaction& txn,
+    object_stat_sum_t& delta_stats);
   virtual rep_op_fut_t
   _submit_transaction(std::set<pg_shard_t>&& pg_shards,
 		      const hobject_t& hoid,

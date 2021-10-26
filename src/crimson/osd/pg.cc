@@ -152,7 +152,7 @@ void PG::publish_stats_to_osd()
     return;
   if (auto new_pg_stats = peering_state.prepare_stats_for_publish(
         pg_stats,
-        object_stat_collection_t());
+        unstable_stats);
       new_pg_stats.has_value()) {
     pg_stats = std::move(new_pg_stats);
   }
@@ -671,11 +671,14 @@ PG::do_osd_ops_execute(
       "do_osd_ops_execute: object {} - handling op {}",
       ox->get_target(),
       ceph_osd_op_name(osd_op.op.op));
+    //note: ox delta_stats will be updated while executing
     return ox->execute_op(osd_op);
   }).safe_then_interruptible([this, ox, &op_info, &ops] {
     logger().debug(
       "do_osd_ops_execute: object {} all operations successful",
       ox->get_target());
+    //XXX: updating unstable_stats
+    unstable_stats.sum.add(ox->get_stats());
     return std::move(*ox).flush_changes_n_do_ops_effects(
       Ref<PG>{this},
       [this, &op_info, &ops] (auto&& txn,

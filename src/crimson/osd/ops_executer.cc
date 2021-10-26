@@ -489,40 +489,40 @@ OpsExecuter::execute_op(OSDOp& osd_op)
       return backend.rm_xattr(os, osd_op, txn);
     }, true);
   case CEPH_OSD_OP_CREATE:
-    return do_write_op([&osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.create(os, osd_op, txn);
+    return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
+      return backend.create(os, osd_op, txn, delta_stats);
     }, true);
   case CEPH_OSD_OP_WRITE:
     return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.write(os, osd_op, txn, *osd_op_params);
+      return backend.write(os, osd_op, txn, *osd_op_params, delta_stats);
     }, true);
   case CEPH_OSD_OP_WRITESAME:
     return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.write_same(os, osd_op, txn, *osd_op_params);
+      return backend.write_same(os, osd_op, txn, *osd_op_params, delta_stats);
     }, true);
   case CEPH_OSD_OP_WRITEFULL:
     return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.writefull(os, osd_op, txn, *osd_op_params);
+      return backend.writefull(os, osd_op, txn, *osd_op_params, delta_stats);
     }, true);
   case CEPH_OSD_OP_APPEND:
     return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.append(os, osd_op, txn, *osd_op_params);
+      return backend.append(os, osd_op, txn, *osd_op_params, delta_stats);
     }, true);
   case CEPH_OSD_OP_TRUNCATE:
     return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
       // FIXME: rework needed. Move this out to do_write_op(), introduce
       // do_write_op_no_user_modify()...
-      return backend.truncate(os, osd_op, txn, *osd_op_params);
+      return backend.truncate(os, osd_op, txn, *osd_op_params, delta_stats);
     }, true);
   case CEPH_OSD_OP_ZERO:
     return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.zero(os, osd_op, txn, *osd_op_params);
+      return backend.zero(os, osd_op, txn, *osd_op_params, delta_stats);
     }, true);
   case CEPH_OSD_OP_SETALLOCHINT:
     return osd_op_errorator::now();
   case CEPH_OSD_OP_SETXATTR:
-    return do_write_op([&osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.setxattr(os, osd_op, txn);
+    return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
+      return backend.setxattr(os, osd_op, txn, delta_stats);
     }, true);
   case CEPH_OSD_OP_DELETE:
     return do_write_op([] (auto& backend, auto& os, auto& txn) {
@@ -532,8 +532,8 @@ OpsExecuter::execute_op(OSDOp& osd_op)
     return this->do_op_call(osd_op);
   case CEPH_OSD_OP_STAT:
     // note: stat does not require RD
-    return do_const_op([&osd_op] (/* const */auto& backend, const auto& os) {
-      return backend.stat(os, osd_op);
+    return do_const_op([this, &osd_op] (/* const */auto& backend, const auto& os) {
+      return backend.stat(os, osd_op, delta_stats);
     });
   case CEPH_OSD_OP_TMAPUP:
     // TODO: there was an effort to kill TMAP in ceph-osd. According to
@@ -565,7 +565,7 @@ OpsExecuter::execute_op(OSDOp& osd_op)
     }
 #endif
     return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.omap_set_vals(os, osd_op, txn, *osd_op_params);
+      return backend.omap_set_vals(os, osd_op, txn, *osd_op_params, delta_stats);
     }, true);
   case CEPH_OSD_OP_OMAPSETHEADER:
 #if 0
@@ -573,8 +573,8 @@ OpsExecuter::execute_op(OSDOp& osd_op)
       return crimson::ct_error::operation_not_supported::make();
     }
 #endif
-    return do_write_op([&osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.omap_set_header(os, osd_op, txn);
+    return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
+      return backend.omap_set_header(os, osd_op, txn, delta_stats);
     }, true);
   case CEPH_OSD_OP_OMAPRMKEYRANGE:
 #if 0
@@ -582,8 +582,8 @@ OpsExecuter::execute_op(OSDOp& osd_op)
       return crimson::ct_error::operation_not_supported::make();
     }
 #endif
-    return do_write_op([&osd_op] (auto& backend, auto& os, auto& txn) {
-      return backend.omap_remove_range(os, osd_op, txn);
+    return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {
+      return backend.omap_remove_range(os, osd_op, txn, delta_stats);
     }, true);
   case CEPH_OSD_OP_OMAPCLEAR:
     return do_write_op([this, &osd_op] (auto& backend, auto& os, auto& txn) {

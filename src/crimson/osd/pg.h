@@ -110,6 +110,7 @@ public:
   const PGBackend& get_backend() const {
     return *backend;
   }
+
   // EpochSource
   epoch_t get_osdmap_epoch() const final {
     return peering_state.get_osdmap_epoch();
@@ -642,6 +643,7 @@ public:
   pg_stat_t get_stats() const;
 private:
   std::optional<pg_stat_t> pg_stats;
+  object_stat_collection_t unstable_stats;
 
 public:
   RecoveryBackend* get_recovery_backend() final {

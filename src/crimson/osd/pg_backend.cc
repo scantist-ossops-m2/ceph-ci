@@ -404,7 +404,8 @@ PGBackend::cmp_ext(const ObjectState& os, OSDOp& osd_op)
 PGBackend::stat_ierrorator::future<>
 PGBackend::stat(
   const ObjectState& os,
-  OSDOp& osd_op)
+  OSDOp& osd_op,
+  object_stat_sum_t& delta_stats)
 {
   if (os.exists/* TODO: && !os.is_whiteout() */) {
     logger().debug("stat os.oi.size={}, os.oi.mtime={}", os.oi.size, os.oi.mtime);
@@ -414,13 +415,14 @@ PGBackend::stat(
     logger().debug("stat object does not exist");
     return crimson::ct_error::enoent::make();
   }
+  delta_stats.num_rd++;
   return stat_errorator::now();
-  // TODO: ctx->delta_stats.num_rd++;
 }
 
 bool PGBackend::maybe_create_new_object(
   ObjectState& os,
-  ceph::os::Transaction& txn)
+  ceph::os::Transaction& txn,
+  object_stat_sum_t& delta_stats)
 {
   if (!os.exists) {
     ceph_assert(!os.oi.is_whiteout());
@@ -428,11 +430,11 @@ bool PGBackend::maybe_create_new_object(
     os.oi.new_object();
 
     txn.touch(coll->get_cid(), ghobject_t{os.oi.soid});
-    // TODO: delta_stats.num_objects++
+    delta_stats.num_objects++;
     return false;
   } else if (os.oi.is_whiteout()) {
     os.oi.clear_flag(object_info_t::FLAG_WHITEOUT);
-    // TODO: delta_stats.num_whiteouts--
+    delta_stats.num_whiteouts--;
   }
   return true;
 }
@@ -456,7 +458,8 @@ PGBackend::interruptible_future<> PGBackend::write(
     ObjectState& os,
     const OSDOp& osd_op,
     ceph::os::Transaction& txn,
-    osd_op_params_t& osd_op_params)
+    osd_op_params_t& osd_op_params,
+    object_stat_sum_t& delta_stats)
 {
   const ceph_osd_op& op = osd_op.op;
   uint64_t offset = op.extent.offset;
@@ -497,7 +500,7 @@ PGBackend::interruptible_future<> PGBackend::write(
     os.oi.truncate_seq = op.extent.truncate_seq;
     os.oi.truncate_size = op.extent.truncate_size;
   }
-  maybe_create_new_object(os, txn);
+  maybe_create_new_object(os, txn, delta_stats);
   if (length == 0) {
     if (offset > os.oi.size) {
       txn.truncate(coll->get_cid(), ghobject_t{os.oi.soid}, op.extent.offset);
@@ -519,7 +522,8 @@ PGBackend::interruptible_future<> PGBackend::write_same(
   ObjectState& os,
   const OSDOp& osd_op,
   ceph::os::Transaction& txn,
-  osd_op_params_t& osd_op_params)
+  osd_op_params_t& osd_op_params,
+  object_stat_sum_t& delta_stats)
 {
   const ceph_osd_op& op = osd_op.op;
   const uint64_t len = op.writesame.length;
@@ -535,7 +539,7 @@ PGBackend::interruptible_future<> PGBackend::write_same(
   for (uint64_t size = 0; size < len; size += op.writesame.data_length) {
     repeated_indata.append(osd_op.indata);
   }
-  maybe_create_new_object(os, txn);
+  maybe_create_new_object(os, txn, delta_stats);
   txn.write(coll->get_cid(), ghobject_t{os.oi.soid},
             op.writesame.offset, len,
             std::move(repeated_indata), op.flags);
@@ -548,14 +552,15 @@ PGBackend::interruptible_future<> PGBackend::writefull(
   ObjectState& os,
   const OSDOp& osd_op,
   ceph::os::Transaction& txn,
-  osd_op_params_t& osd_op_params)
+  osd_op_params_t& osd_op_params,
+  object_stat_sum_t& delta_stats)
 {
   const ceph_osd_op& op = osd_op.op;
   if (op.extent.length != osd_op.indata.length()) {
     throw crimson::osd::invalid_argument();
   }
 
-  const bool existing = maybe_create_new_object(os, txn);
+  const bool existing = maybe_create_new_object(os, txn, delta_stats);
   if (existing && op.extent.length < os.oi.size) {
     txn.truncate(coll->get_cid(), ghobject_t{os.oi.soid}, op.extent.length);
     osd_op_params.clean_regions.mark_data_region_dirty(op.extent.length,
@@ -575,13 +580,14 @@ PGBackend::append_ierrorator::future<> PGBackend::append(
   ObjectState& os,
   OSDOp& osd_op,
   ceph::os::Transaction& txn,
-  osd_op_params_t& osd_op_params)
+  osd_op_params_t& osd_op_params,
+  object_stat_sum_t& delta_stats)
 {
   const ceph_osd_op& op = osd_op.op;
   if (op.extent.length != osd_op.indata.length()) {
     return crimson::ct_error::invarg::make();
   }
-  maybe_create_new_object(os, txn);
+  maybe_create_new_object(os, txn, delta_stats);
   if (op.extent.length) {
     txn.write(coll->get_cid(), ghobject_t{os.oi.soid},
               os.oi.size /* offset */, op.extent.length,
@@ -597,7 +603,8 @@ PGBackend::write_iertr::future<> PGBackend::truncate(
   ObjectState& os,
   const OSDOp& osd_op,
   ceph::os::Transaction& txn,
-  osd_op_params_t& osd_op_params)
+  osd_op_params_t& osd_op_params,
+  object_stat_sum_t& delta_stats)
 {
   if (!os.exists || os.oi.is_whiteout()) {
     logger().debug("{} object dne, truncate is a no-op", __func__);
@@ -620,7 +627,7 @@ PGBackend::write_iertr::future<> PGBackend::truncate(
       os.oi.truncate_size = op.extent.truncate_size;
     }
   }
-  maybe_create_new_object(os, txn);
+  maybe_create_new_object(os, txn, delta_stats);
   if (os.oi.size != op.extent.offset) {
     txn.truncate(coll->get_cid(),
                  ghobject_t{os.oi.soid}, op.extent.offset);
@@ -639,7 +646,7 @@ PGBackend::write_iertr::future<> PGBackend::truncate(
     os.oi.clear_data_digest();
   }
   // TODO: truncate_update_size_and_usage()
-  // TODO: ctx->delta_stats.num_wr++;
+  delta_stats.num_wr++;
   // ----
   // do no set exists, or we will break above DELETE -> TRUNCATE munging.
   return write_ertr::now();
@@ -649,7 +656,8 @@ PGBackend::write_iertr::future<> PGBackend::zero(
   ObjectState& os,
   const OSDOp& osd_op,
   ceph::os::Transaction& txn,
-  osd_op_params_t& osd_op_params)
+  osd_op_params_t& osd_op_params,
+  object_stat_sum_t& delta_stats)
 {
   if (!os.exists || os.oi.is_whiteout()) {
     logger().debug("{} object dne, zero is a no-op", __func__);
@@ -667,7 +675,7 @@ PGBackend::write_iertr::future<> PGBackend::zero(
   // TODO: modified_ranges.union_of(zeroed);
   osd_op_params.clean_regions.mark_data_region_dirty(op.extent.offset,
 						     op.extent.length);
-  // TODO: ctx->delta_stats.num_wr++;
+  delta_stats.num_wr++;
   os.oi.clear_data_digest();
   return write_ertr::now();
 }
@@ -675,7 +683,8 @@ PGBackend::write_iertr::future<> PGBackend::zero(
 PGBackend::interruptible_future<> PGBackend::create(
   ObjectState& os,
   const OSDOp& osd_op,
-  ceph::os::Transaction& txn)
+  ceph::os::Transaction& txn,
+  object_stat_sum_t& delta_stats)
 {
   if (os.exists && !os.oi.is_whiteout() &&
       (osd_op.op.flags & CEPH_OSD_OP_FLAG_EXCL)) {
@@ -693,7 +702,7 @@ PGBackend::interruptible_future<> PGBackend::create(
       throw crimson::osd::invalid_argument();
     }
   }
-  maybe_create_new_object(os, txn);
+  maybe_create_new_object(os, txn, delta_stats);
   txn.nop();
   return seastar::now();
 }
@@ -751,7 +760,8 @@ PGBackend::list_objects(const hobject_t& start, uint64_t limit) const
 PGBackend::interruptible_future<> PGBackend::setxattr(
   ObjectState& os,
   const OSDOp& osd_op,
-  ceph::os::Transaction& txn)
+  ceph::os::Transaction& txn,
+  object_stat_sum_t& delta_stats)
 {
   if (local_conf()->osd_max_attr_size > 0 &&
       osd_op.op.xattr.value_len > local_conf()->osd_max_attr_size) {
@@ -764,7 +774,7 @@ PGBackend::interruptible_future<> PGBackend::setxattr(
     throw crimson::osd::make_error(-ENAMETOOLONG);
   }
 
-  maybe_create_new_object(os, txn);
+  maybe_create_new_object(os, txn, delta_stats);
 
   std::string name{"_"};
   ceph::bufferlist val;
@@ -776,8 +786,8 @@ PGBackend::interruptible_future<> PGBackend::setxattr(
   logger().debug("setxattr on obj={} for attr={}", os.oi.soid, name);
 
   txn.setattr(coll->get_cid(), ghobject_t{os.oi.soid}, name, val);
+  delta_stats.num_wr++;
   return seastar::now();
-  //ctx->delta_stats.num_wr++;
 }
 
 PGBackend::get_attr_ierrorator::future<> PGBackend::getxattr(
@@ -1175,9 +1185,10 @@ PGBackend::omap_set_vals(
   ObjectState& os,
   const OSDOp& osd_op,
   ceph::os::Transaction& txn,
-  osd_op_params_t& osd_op_params)
+  osd_op_params_t& osd_op_params,
+  object_stat_sum_t& delta_stats)
 {
-  maybe_create_new_object(os, txn);
+  maybe_create_new_object(os, txn, delta_stats);
 
   ceph::bufferlist to_set_bl;
   try {
@@ -1193,8 +1204,8 @@ PGBackend::omap_set_vals(
   //ctx->clean_regions.mark_omap_dirty();
 
   // TODO:
-  //ctx->delta_stats.num_wr++;
-  //ctx->delta_stats.num_wr_kb += shift_round_up(to_set_bl.length(), 10);
+  delta_stats.num_wr++;
+  delta_stats.num_wr_kb += shift_round_up(to_set_bl.length(), 10);
   os.oi.set_flag(object_info_t::FLAG_OMAP);
   os.oi.clear_omap_digest();
   osd_op_params.clean_regions.mark_omap_dirty();
@@ -1205,13 +1216,14 @@ PGBackend::interruptible_future<>
 PGBackend::omap_set_header(
   ObjectState& os,
   const OSDOp& osd_op,
-  ceph::os::Transaction& txn)
+  ceph::os::Transaction& txn,
+  object_stat_sum_t& delta_stats)
 {
-  maybe_create_new_object(os, txn);
+  maybe_create_new_object(os, txn, delta_stats);
   txn.omap_setheader(coll->get_cid(), ghobject_t{os.oi.soid}, osd_op.indata);
   //TODO:
   //ctx->clean_regions.mark_omap_dirty();
-  //ctx->delta_stats.num_wr++;
+  delta_stats.num_wr++;
   os.oi.set_flag(object_info_t::FLAG_OMAP);
   os.oi.clear_omap_digest();
   return seastar::now();
@@ -1220,7 +1232,8 @@ PGBackend::omap_set_header(
 PGBackend::interruptible_future<> PGBackend::omap_remove_range(
   ObjectState& os,
   const OSDOp& osd_op,
-  ceph::os::Transaction& txn)
+  ceph::os::Transaction& txn,
+  object_stat_sum_t& delta_stats)
 {
   std::string key_begin, key_end;
   try {
@@ -1232,7 +1245,7 @@ PGBackend::interruptible_future<> PGBackend::omap_remove_range(
   }
   txn.omap_rmkeyrange(coll->get_cid(), ghobject_t{os.oi.soid}, key_begin, key_end);
   //TODO:
-  //ctx->delta_stats.num_wr++;
+  delta_stats.num_wr++;
   os.oi.clear_omap_digest();
   return seastar::now();
 }
