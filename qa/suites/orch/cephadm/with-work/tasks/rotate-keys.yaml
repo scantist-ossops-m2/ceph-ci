@@ -1,0 +1,14 @@
+tasks:
+- cephadm.shell:
+    - |
+      set -ex
+      for f in osd.0 osd.1 osd.2 osd.3 osd.4 osd.5 osd.6 osd.7 mgr.y mgr.x mds.a mds.b
+      do
+          K=$(ceph auth get-key $f)
+          NK=""
+          ceph orch daemon rotate-key $f
+          while [ "$K" -ne "$NK" ]; do
+              sleep 5
+              NK=$(ceph auth get-key $f)
+          done
+      done
