@@ -8074,7 +8074,7 @@ void BlueStore::_fsck_check_object_omap(FSCKDepth depth,
 	  << " -> " << user_key << dendl;
 
 	final_key.resize(base_key_len);
-	final_key += it->key();
+	final_key += user_key;
 	auto v = it->value();
 	txn->set(new_omap_prefix, final_key, v);
 	txn_cost += final_key.length() + v.length();
