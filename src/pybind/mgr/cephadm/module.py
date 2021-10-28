@@ -1806,10 +1806,61 @@ Then run the following:
             for dd in dds
         ]
 
+    def _rotate_daemon_key(self, daemon_spec: CephadmDaemonDeploySpec) -> str:
+        self.log.info(f'Rotating authentication key for {daemon_spec.name()}')
+        rc, out, err = self.mon_command({
+            'prefix': 'auth get-or-create-pending',
+            'entity': daemon_spec.name(),
+            'format': 'json',
+        })
+        j = json.loads(out)
+        self.log.info(f'j {j}')
+        pending_key = j[0]['pending_key']
+        self.log.info(f'pending_key {pending_key}')
+
+        # deploy new keyring file
+        if daemon_spec.daemon_type != 'osd':
+            daemon_spec = self.cephadm_services[daemon_type_to_service(
+                daemon_spec.daemon_type)].prepare_create(daemon_spec)
+        CephadmServe(self)._create_daemon(daemon_spec, reconfig=True)
+        self.log.info(f'did reconfig')
+
+        if daemon_spec.daemon_type == 'osd':
+            # NOTE: we assume modern OSD with keyring in (bluestore) superblock
+            rc, out, err = self.osd_command(
+                {'prefix': 'rotate-stored-key', 'id': daemon_spec.daemon_id},
+                inbuf=pending_key
+            )
+            self.log.info(f'did tell 1')
+            rc, out, err = self.osd_command(
+                {'prefix': 'rotate-key', 'id': daemon_spec.daemon_id},
+                inbuf=pending_key
+            )
+            self.log.info(f'did tell 2')
+        elif daemon_spec.daemon_type == 'mds':
+            rc, out, err = self.mds_command(
+                {'prefix': 'rotate-key', 'id': daemon_spec.daemon_id},
+                inbuf=pending_key
+            )
+        elif (
+                daemon_spec.daemon_type == 'mgr'
+                and daemon_spec.daemon_id == self.get_mgr_id()
+        ):
+            rc, out, err = self.self_mgr_command(
+                {'prefix': 'rotate-key'},
+                inbuf=pending_key
+            )
+        else:
+            self._daemon_action(daemon_spec, 'restart', image)
+
+        self.log.info(f'Rotated key for {daemon_spec.name()}')
+        return f'Rotated key for {daemon_spec.name()}'
+
     def _daemon_action(self,
                        daemon_spec: CephadmDaemonDeploySpec,
                        action: str,
                        image: Optional[str] = None) -> str:
+        self.log.info(f'_daemon_action action {action} on {daemon_spec}')
         self._daemon_action_set_image(action, image, daemon_spec.daemon_type,
                                       daemon_spec.daemon_id)
 
@@ -1817,6 +1868,10 @@ Then run the following:
                                                                                  daemon_spec.daemon_id):
             self.mgr_service.fail_over()
             return ''  # unreachable
+
+        if action == 'rotate-key':
+            self.log.info('do rotate-key')
+            return self._rotate_daemon_key(daemon_spec)
 
         if action == 'redeploy' or action == 'reconfig':
             if daemon_spec.daemon_type != 'osd':
@@ -1869,6 +1924,12 @@ Then run the following:
                 and not self.mgr_service.mgr_map_has_standby():
             raise OrchestratorError(
                 f'Unable to schedule redeploy for {daemon_name}: No standby MGRs')
+
+        if action == 'rotate-key':
+            if d.daemon_type not in ['mgr', 'osd', 'mds']:
+                raise OrchestratorError(
+                    f'key rotation not supported for {d.daemon_type}'
+                )
 
         self._daemon_action_set_image(action, image, d.daemon_type, d.daemon_id)
 

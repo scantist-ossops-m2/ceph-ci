@@ -85,6 +85,7 @@ class CephadmServe:
                         continue
 
                     if self._apply_all_services():
+                        self.log.info('stopping serve loop, not checking daemons')
                         continue  # did something, refresh
 
                     self._check_daemons()
@@ -543,6 +544,7 @@ class CephadmServe:
         for spec in specs:
             try:
                 if self._apply_service(spec):
+                    self.log.warning(f'did something with {spec}')
                     r = True
             except Exception as e:
                 msg = f'Failed to apply {spec.service_name()} spec {spec}: {str(e)}'
@@ -876,10 +878,11 @@ class CephadmServe:
         return r
 
     def _check_daemons(self) -> None:
-
+        self.log.info('_check_daemons')
         daemons = self.mgr.cache.get_daemons()
         daemons_post: Dict[str, List[orchestrator.DaemonDescription]] = defaultdict(list)
         for dd in daemons:
+            self.log.info(f' checking daemon {dd.name()}')
             # orphan?
             spec = self.mgr.spec_store.active_specs.get(dd.service_name(), None)
             assert dd.hostname is not None
@@ -893,10 +896,12 @@ class CephadmServe:
 
             # ignore unmanaged services
             if spec and spec.unmanaged:
+                self.log.info(f'  unmanaged: {dd.name()}')
                 continue
 
             # ignore daemons for deleted services
             if dd.service_name() in self.mgr.spec_store.spec_deleted:
+                self.log.info('deleted')
                 continue
 
             if dd.daemon_type == 'agent':
@@ -924,6 +929,7 @@ class CephadmServe:
             if last_deps is None:
                 last_deps = []
             action = self.mgr.cache.get_scheduled_daemon_action(dd.hostname, dd.name())
+            self.log.info(f' action {action}')
             if not last_config:
                 self.log.info('Reconfiguring %s (unknown last config time)...' % (
                     dd.name()))
@@ -952,11 +958,13 @@ class CephadmServe:
                     self.mgr._daemon_action(daemon_spec, action=action)
                     self.mgr.cache.rm_scheduled_daemon_action(dd.hostname, dd.name())
                 except OrchestratorError as e:
+                    self.log.exception(e)
                     self.mgr.events.from_orch_error(e)
                     if dd.daemon_type in daemons_post:
                         del daemons_post[dd.daemon_type]
                     # continue...
                 except Exception as e:
+                    self.log.exception(e)
                     self.mgr.events.for_daemon_from_exception(dd.name(), e)
                     if dd.daemon_type in daemons_post:
                         del daemons_post[dd.daemon_type]
