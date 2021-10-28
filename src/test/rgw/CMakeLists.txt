@@ -28,6 +28,13 @@ add_executable(unittest_rgw_period_history test_rgw_period_history.cc)
 add_ceph_unittest(unittest_rgw_period_history)
 target_link_libraries(unittest_rgw_period_history ${rgw_libs})
 
+#if(WITH_CPP_REDIS)
+#  add_dependencies(unittest_rgw_period_history cpp_redis)
+#  target_link_libraries(unittest_rgw_period_history PRIVATE cpp_redis)
+#  target_include_directories(unittest_rgw_period_history PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+#  target_include_directories(unittest_rgw_period_history PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+#endif()
+
 # unitttest_rgw_compression
 add_executable(unittest_rgw_compression
   test_rgw_compression.cc

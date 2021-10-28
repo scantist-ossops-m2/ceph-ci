@@ -162,6 +162,7 @@ if(WITH_RADOSGW_KAFKA_ENDPOINT)
 endif()
 
 add_library(rgw_common OBJECT ${librgw_common_srcs})
+#add_library(cpp_redis OBJECT ${CPP_REDIS_LIBRARIES})
 
 target_include_directories(rgw_common SYSTEM PUBLIC "services")
 target_include_directories(rgw_common PUBLIC "${CMAKE_SOURCE_DIR}/src/dmclock/support/src")
