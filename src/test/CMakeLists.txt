@@ -278,6 +278,14 @@ target_link_libraries(ceph_test_librgw_file_gp
 add_executable(ceph_test_librgw_file_nfsns
   librgw_file_nfsns.cc
   )
+
+if(WITH_CPP_REDIS)
+  add_dependencies(ceph_test_librgw_file_nfsns cpp_redis)
+  target_link_libraries(ceph_test_librgw_file_nfsns PRIVATE cpp_redis)
+  target_include_directories(ceph_test_librgw_file_nfsns PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(ceph_test_librgw_file_nfsns PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
 if(WITH_RADOSGW_FCGI_FRONTEND)
 target_include_directories(ceph_test_librgw_file_nfsns SYSTEM PRIVATE ${FCGI_INCLUDE_DIR})
 endif(WITH_RADOSGW_FCGI_FRONTEND)
