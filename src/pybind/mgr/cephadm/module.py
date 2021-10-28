@@ -1815,7 +1815,7 @@ Then run the following:
         })
         j = json.loads(out)
         self.log.info(f'j {j}')
-        pending_key = j[0]['pending_key'];
+        pending_key = j[0]['pending_key']
         self.log.info(f'pending_key {pending_key}')
 
         # deploy new keyring file
