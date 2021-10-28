@@ -1587,7 +1587,7 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
 
     if (prefix == "auth get-or-create-pending") {
       KeyRing kr;
-      if (entity_auth.pending_key.empty()) {
+      if (!entity_auth.pending_key.empty()) {
 	kr.add(entity, entity_auth.key, entity_auth.pending_key);
       } else {
 	KeyServerData::Incremental auth_inc;
