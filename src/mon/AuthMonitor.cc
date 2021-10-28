@@ -1542,8 +1542,10 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
 
     if (prefix == "auth get-or-create-pending") {
       KeyRing kr;
+      bool exists = false;
       if (!entity_auth.pending_key.empty()) {
 	kr.add(entity, entity_auth.key, entity_auth.pending_key);
+	exists = true;
       } else {
 	KeyServerData::Incremental auth_inc;
 	auth_inc.op = KeyServerData::AUTH_INC_ADD;
@@ -1559,7 +1561,7 @@ bool AuthMonitor::prepare_command(MonOpRequestRef op)
       } else {
 	kr.encode_plaintext(rdata);
       }
-      if (entity_auth.pending_key.empty()) {
+      if (exists) {
 	goto done;
       }
     } else if (prefix == "auth clear-pending") {
