@@ -144,7 +144,7 @@ class DriveGroupSpec(ServiceSpec):
         "data_devices", "db_devices", "wal_devices", "journal_devices",
         "data_directories", "osds_per_device", "objectstore", "osd_id_claims",
         "journal_size", "unmanaged", "filter_logic", "preview_only",
-        "data_allocate_fraction"
+        "data_allocate_fraction", "method"
     ]
 
     def __init__(self,
@@ -169,6 +169,7 @@ class DriveGroupSpec(ServiceSpec):
                  filter_logic='AND',  # type: str
                  preview_only=False,  # type: bool
                  data_allocate_fraction=None,  # type: Optional[float]
+                 method=None,  # type: Optional[str]
                  ):
         assert service_type is None or service_type == 'osd'
         super(DriveGroupSpec, self).__init__('osd', service_id=service_id,
@@ -229,6 +230,8 @@ class DriveGroupSpec(ServiceSpec):
 
         #: Allocate a fraction of the data device (0,1.0]
         self.data_allocate_fraction = data_allocate_fraction
+
+        self.method = method
 
     @classmethod
     def _from_json_impl(cls, json_drive_group):
@@ -315,6 +318,11 @@ class DriveGroupSpec(ServiceSpec):
 
         if self.filter_logic not in ['AND', 'OR']:
             raise DriveGroupValidationError('filter_logic must be either <AND> or <OR>')
+
+        if self.method not in [None, 'lvm', 'raw']:
+            raise DriveGroupValidationError('method must be one of None, lvm, raw')
+        if self.method == 'raw' and self.objectstore == 'filestore':
+            raise DriveGroupValidationError('method raw only supports bluestore')
 
     def __repr__(self) -> str:
         keys = [
