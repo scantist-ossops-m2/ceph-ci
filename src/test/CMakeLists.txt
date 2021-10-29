@@ -239,6 +239,14 @@ if(${WITH_RADOSGW})
 add_executable(ceph_test_librgw_file
   librgw_file.cc
   )
+
+
+if(WITH_CPP_REDIS)
+  add_dependencies(ceph_test_librgw_file cpp_redis)
+  target_include_directories(ceph_test_librgw_file PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(ceph_test_librgw_file PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
 if(WITH_RADOSGW_FCGI_FRONTEND)
 target_include_directories(ceph_test_librgw_file SYSTEM PRIVATE ${FCGI_INCLUDE_DIR})
 endif(WITH_RADOSGW_FCGI_FRONTEND)
@@ -255,6 +263,13 @@ target_link_libraries(ceph_test_librgw_file
 add_executable(ceph_test_librgw_file_cd
   librgw_file_cd.cc
   )
+
+if(WITH_CPP_REDIS)
+  add_dependencies(ceph_test_librgw_file_cd cpp_redis)
+  target_include_directories(ceph_test_librgw_file_cd PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(ceph_test_librgw_file_cd PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
 target_link_libraries(ceph_test_librgw_file_cd
   rgw
   librados
@@ -276,6 +291,13 @@ target_link_libraries(ceph_test_librgw_file_cd
 add_executable(ceph_test_librgw_file_gp
   librgw_file_gp.cc
   )
+
+if(WITH_CPP_REDIS)
+  add_dependencies(ceph_test_librgw_file_gp cpp_redis)
+  target_include_directories(ceph_test_librgw_file_gp PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(ceph_test_librgw_file_gp PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
 target_link_libraries(ceph_test_librgw_file_gp
   rgw
   librados
@@ -317,6 +339,15 @@ endif()
 add_executable(ceph_test_librgw_file_aw
   librgw_file_aw.cc
   )
+
+if(WITH_CPP_REDIS)
+  add_dependencies(ceph_test_librgw_file_aw cpp_redis)
+  target_include_directories(ceph_test_librgw_file_aw PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(ceph_test_librgw_file_aw PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
+
+
 target_link_libraries(ceph_test_librgw_file_aw
   rgw
   librados
@@ -330,6 +361,13 @@ target_link_libraries(ceph_test_librgw_file_aw
 add_executable(ceph_test_librgw_file_marker
   librgw_file_marker.cc
   )
+
+if(WITH_CPP_REDIS)
+  add_dependencies(ceph_test_librgw_file_marker cpp_redis)
+  target_include_directories(ceph_test_librgw_file_marker PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(ceph_test_librgw_file_marker PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
 target_link_libraries(ceph_test_librgw_file_marker
   rgw
   librados
@@ -346,6 +384,14 @@ endif()
 add_executable(ceph_test_rgw_token
   test_rgw_token.cc
   )
+
+
+if(WITH_CPP_REDIS)
+  add_dependencies(ceph_test_rgw_token cpp_redis)
+  target_include_directories(ceph_test_rgw_token PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(ceph_test_rgw_token PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
 target_link_libraries(ceph_test_rgw_token
   rgw
   ceph-common
@@ -359,6 +405,14 @@ add_executable(test_rgw_ldap
   ${CMAKE_SOURCE_DIR}/src/rgw/rgw_ldap.cc
   test_rgw_ldap.cc
   )
+
+
+if(WITH_CPP_REDIS)
+  add_dependencies(test_rgw_ldap cpp_redis)
+  target_include_directories(test_rgw_ldap PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(test_rgw_ldap PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
 target_link_libraries(test_rgw_ldap
   librados
   ceph-common
@@ -402,6 +456,13 @@ install(TARGETS
 add_executable(ceph_test_filejournal
   test_filejournal.cc
   )
+
+if(WITH_CPP_REDIS)
+  add_dependencies(ceph_test_filejournal cpp_redis)
+  target_include_directories(ceph_test_filejournal PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/includes")
+  target_include_directories(ceph_test_filejournal PUBLIC "${CMAKE_SOURCE_DIR}/src/cpp_redis/tacopie/includes")
+endif()
+
 target_link_libraries(ceph_test_filejournal
   os
   ceph-common
