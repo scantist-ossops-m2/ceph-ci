@@ -1,4 +1,4 @@
-# Ceph - a scalable distributed storage system
+# Ceph - a scalable distributed storage system just to chnage hash
 
 Please see http://ceph.com/ for current info.
 
