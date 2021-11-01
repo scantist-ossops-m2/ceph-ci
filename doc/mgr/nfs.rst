@@ -239,16 +239,16 @@ Create CephFS Export
 
 .. code:: bash
 
-    $ ceph nfs export create cephfs <fsname> <cluster_id> <pseudo_path> [--readonly] [--path=/path/in/cephfs] [--client_addr <value>...] [--squash <value>]
+    $ ceph nfs export create cephfs --cluster-id <cluster_id> --pseudo-path <pseudo_path> --fsname <fsname> [--readonly] [--path=/path/in/cephfs] [--client_addr <value>...] [--squash <value>]
 
 This creates export RADOS objects containing the export block, where
-
-``<fsname>`` is the name of the FS volume used by the NFS Ganesha cluster
-that will serve this export.
 
 ``<cluster_id>`` is the NFS Ganesha cluster ID.
 
 ``<pseudo_path>`` is the export position within the NFS v4 Pseudo Filesystem where the export will be available on the server. It must be an absolute path and unique.
+
+``<fsname>`` is the name of the FS volume used by the NFS Ganesha cluster
+that will serve this export.
 
 ``<path>`` is the path within cephfs. Valid path should be given and default
 path is '/'. It need not be unique. Subvolume path can be fetched using:
@@ -275,23 +275,23 @@ To export a bucket
 
 .. code::
 
-   $ ceph nfs export create rgw <bucket_name> <cluster_id> <pseudo_path> [--readonly] [--client_addr <value>...] [--squash <value>]
+   $ ceph nfs export create rgw --cluster-id <cluster_id> --pseudo-path <pseudo_path> --bucket <bucket_name> [--readonly] [--client_addr <value>...] [--squash <value>]
 
 For example, to export *mybucket* via NFS cluster *mynfs* at the pseudo-path */bucketdata* to any host in the ``192.168.10.0/24`` network
 
 .. code::
 
-   $ ceph nfs export create rgw mybucket mynfs /bucketdata --client_addr 192.168.10.0/24
+   $ ceph nfs export create rgw --cluster-id mynfs --pseudo-path /bucketdata --bucket mybucket --client_addr 192.168.10.0/24
 
 .. note:: Export creation is supported only for NFS Ganesha clusters deployed using nfs interface.
-
-``<bucket_name>`` is the name of the bucket that will be exported.
-
-.. note:: Currently, if multi-site RGW is enabled, Ceph can only export RGW buckets in the default realm.
 
 ``<cluster_id>`` is the NFS Ganesha cluster ID.
 
 ``<pseudo_path>`` is the export position within the NFS v4 Pseudo Filesystem where the export will be available on the server. It must be an absolute path and unique.
+
+``<bucket_name>`` is the name of the bucket that will be exported.
+
+.. note:: Currently, if multi-site RGW is enabled, Ceph can only export RGW buckets in the default realm.
 
 ``<client_addr>`` is the list of client address for which these export
 permissions will be applicable. By default all clients can access the export
