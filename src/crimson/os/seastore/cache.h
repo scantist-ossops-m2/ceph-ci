@@ -17,6 +17,7 @@
 #include "crimson/os/seastore/cached_extent.h"
 #include "crimson/os/seastore/root_block.h"
 #include "crimson/os/seastore/segment_cleaner.h"
+#include "crimson/os/seastore/random_block_manager.h"
 
 namespace crimson::os::seastore {
 
@@ -89,7 +90,7 @@ public:
     crimson::ct_error::input_output_error>;
   using base_iertr = trans_iertr<base_ertr>;
 
-  Cache(SegmentManager &segment_manager);
+  Cache(ExtentReader &reader);
   ~Cache();
 
   /// Creates empty transaction by source
@@ -251,9 +252,13 @@ public:
     paddr_t offset,
     extent_types_t type) {
     CachedExtentRef ret;
+    LOG_PREFIX(Cache::get_extent_if_cached);
     auto result = t.get_extent(offset, &ret);
     if (result != Transaction::get_extent_ret::ABSENT) {
       // including get_extent_ret::RETIRED
+      DEBUGT(
+	"Found extent at offset {} on transaction: {}",
+	t, offset, *ret);
       return get_extent_if_cached_iertr::make_ready_future<
         CachedExtentRef>(ret);
     }
@@ -264,11 +269,17 @@ public:
     if (!ret ||
         // retired_placeholder is not really cached yet
         ret->get_type() == extent_types_t::RETIRED_PLACEHOLDER) {
+      DEBUGT(
+	"No extent at offset {}, retired_placeholder: {}",
+	t, offset, !!ret);
       return get_extent_if_cached_iertr::make_ready_future<
         CachedExtentRef>();
     }
 
     // present in cache and is not a retired_placeholder
+    DEBUGT(
+      "Found extent at offset {} in cache: {}",
+      t, offset, *ret);
     t.add_to_read_set(ret);
     return ret->wait_io().then([ret] {
       return get_extent_if_cached_iertr::make_ready_future<
@@ -293,28 +304,34 @@ public:
     paddr_t offset,
     segment_off_t length) {
     CachedExtentRef ret;
+    LOG_PREFIX(Cache::get_extent);
     auto result = t.get_extent(offset, &ret);
     if (result != Transaction::get_extent_ret::ABSENT) {
       assert(result != Transaction::get_extent_ret::RETIRED);
+      DEBUGT(
+	"Found extent at offset {} on transaction: {}",
+	t, offset, *ret);
       return seastar::make_ready_future<TCachedExtentRef<T>>(
 	ret->cast<T>());
     } else {
       auto metric_key = std::make_pair(t.get_src(), T::TYPE);
       return trans_intr::make_interruptible(
 	get_extent<T>(offset, length, &metric_key)
-      ).si_then(
-	[&t, this](auto ref) {
-	  if (!ref->is_valid()) {
-	    LOG_PREFIX(Cache::get_extent);
-	    DEBUGT("got invalid extent: {}", t, ref);
-	    this->invalidate(t, *ref.get());
-	    return get_extent_iertr::make_ready_future<TCachedExtentRef<T>>();
-	  } else {
-	    t.add_to_read_set(ref);
-	    return get_extent_iertr::make_ready_future<TCachedExtentRef<T>>(
-	      std::move(ref));
-	  }
-	});
+      ).si_then([this, FNAME, offset, &t](auto ref) {
+	(void)this; // silence incorrect clang warning about capture
+	if (!ref->is_valid()) {
+	  DEBUGT("got invalid extent: {}", t, ref);
+	  mark_transaction_conflicted(t, *ref);
+	  return get_extent_iertr::make_ready_future<TCachedExtentRef<T>>();
+	} else {
+	  DEBUGT(
+	    "Found extent at offset {} in cache: {}",
+	    t, offset, *ref);
+	  t.add_to_read_set(ref);
+	  return get_extent_iertr::make_ready_future<TCachedExtentRef<T>>(
+	    std::move(ref));
+	}
+      });
     }
   }
 
@@ -356,7 +373,7 @@ public:
         if (!ret->is_valid()) {
           LOG_PREFIX(Cache::get_extent_by_type);
           DEBUGT("got invalid extent: {}", t, ret);
-          invalidate(t, *ret.get());
+          mark_transaction_conflicted(t, *ret.get());
           return get_extent_ertr::make_ready_future<CachedExtentRef>();
         } else {
           t.add_to_read_set(ret);
@@ -370,18 +387,32 @@ public:
   /**
    * alloc_new_extent
    *
-   * Allocates a fresh extent.  addr will be relative until commit.
+   * Allocates a fresh extent. if delayed is true, addr will be alloc'd later
    */
   template <typename T>
   TCachedExtentRef<T> alloc_new_extent(
-    Transaction &t,      ///< [in, out] current transaction
-    segment_off_t length ///< [in] length
+    Transaction &t,       ///< [in, out] current transaction
+    segment_off_t length, ///< [in] length
+    bool delayed = false  ///< [in] whether the paddr allocation of extent is delayed
   ) {
     auto ret = CachedExtent::make_cached_extent_ref<T>(
       alloc_cache_buf(length));
-    t.add_fresh_extent(ret);
+    t.add_fresh_extent(ret, delayed);
     ret->state = CachedExtent::extent_state_t::INITIAL_WRITE_PENDING;
     return ret;
+  }
+
+  void mark_delayed_extent_inline(
+    Transaction& t,
+    LogicalCachedExtentRef& ref) {
+    t.mark_delayed_extent_inline(ref);
+  }
+
+  void mark_delayed_extent_ool(
+    Transaction& t,
+    LogicalCachedExtentRef& ref,
+    paddr_t final_addr) {
+    t.mark_delayed_extent_ool(ref, final_addr);
   }
 
   /**
@@ -392,7 +423,8 @@ public:
   CachedExtentRef alloc_new_extent_by_type(
     Transaction &t,       ///< [in, out] current transaction
     extent_types_t type,  ///< [in] type tag
-    segment_off_t length  ///< [in] length
+    segment_off_t length, ///< [in] length
+    bool delayed = false  ///< [in] whether delay addr allocation
     );
 
   /**
@@ -487,6 +519,9 @@ public:
     Transaction &t,
     F &&f)
   {
+    // journal replay should has been finished at this point,
+    // Cache::root should have been inserted to the dirty list
+    assert(root->is_dirty());
     std::vector<CachedExtentRef> dirty;
     for (auto &e : extents) {
       dirty.push_back(CachedExtentRef(&e));
@@ -520,6 +555,7 @@ public:
 	return t.root;
       } else {
 	t.add_to_read_set(extent);
+	t.root = extent->cast<RootBlock>();
 	return extent;
       }
     } else {
@@ -545,11 +581,17 @@ public:
     return out;
   }
 
-  /// returns extents with get_dirty_from() < seq
-  using get_next_dirty_extents_ertr = crimson::errorator<>;
-  using get_next_dirty_extents_ret = get_next_dirty_extents_ertr::future<
+  /**
+   * get_next_dirty_extents
+   *
+   * Returns extents with get_dirty_from() < seq and adds to read set of
+   * t.
+   */
+  using get_next_dirty_extents_iertr = base_iertr;
+  using get_next_dirty_extents_ret = get_next_dirty_extents_iertr::future<
     std::vector<CachedExtentRef>>;
   get_next_dirty_extents_ret get_next_dirty_extents(
+    Transaction &t,
     journal_seq_t seq,
     size_t max_bytes);
 
@@ -571,7 +613,7 @@ public:
   void dump_contents();
 
 private:
-  SegmentManager &segment_manager; ///< ref to segment_manager
+  ExtentReader &reader;	   	   ///< ref to extent reader
   RootBlockRef root;               ///< ref to current root
   ExtentIndex extents;             ///< set of live extents
 
@@ -597,7 +639,7 @@ private:
    *
    * Each effort_t represents the effort of a set of extents involved in the
    * transaction, classified by read, mutate, retire and allocate behaviors,
-   * see trans_efforts_t.
+   * see XXX_trans_efforts_t.
    */
   struct effort_t {
     uint64_t extents = 0;
@@ -609,38 +651,79 @@ private:
     }
   };
 
-  struct trans_efforts_t {
+  template <typename CounterT>
+  using counter_by_extent_t = std::array<CounterT, EXTENT_TYPES_MAX>;
+
+  struct invalid_trans_efforts_t {
     effort_t read;
     effort_t mutate;
     uint64_t mutate_delta_bytes = 0;
     effort_t retire;
     effort_t fresh;
+    effort_t fresh_ool_written;
+    counter_by_extent_t<uint64_t> num_trans_invalidated;
+    uint64_t num_ool_records = 0;
+    uint64_t ool_record_overhead_bytes = 0;
   };
 
-  template <typename CounterT>
-  using counter_by_extent_t = std::array<CounterT, EXTENT_TYPES_MAX>;
-
-  struct trans_byextent_efforts_t {
+  struct commit_trans_efforts_t {
     counter_by_extent_t<effort_t> read_by_ext;
     counter_by_extent_t<effort_t> mutate_by_ext;
     counter_by_extent_t<uint64_t> delta_bytes_by_ext;
     counter_by_extent_t<effort_t> retire_by_ext;
-    counter_by_extent_t<effort_t> fresh_by_ext;
+    counter_by_extent_t<effort_t> fresh_invalid_by_ext;
+    counter_by_extent_t<effort_t> fresh_inline_by_ext;
+    counter_by_extent_t<effort_t> fresh_ool_by_ext;
+    uint64_t num_trans = 0; // the number of inline records
+    uint64_t num_ool_records = 0;
+    uint64_t ool_record_overhead_bytes = 0;
+    uint64_t inline_record_overhead_bytes = 0;
+  };
+
+  struct success_read_trans_efforts_t {
+    effort_t read;
+    uint64_t num_trans = 0;
+  };
+
+  struct tree_efforts_t {
+    uint64_t num_inserts = 0;
+    uint64_t num_erases = 0;
+
+    void increment(const Transaction::tree_stats_t& incremental) {
+      num_inserts += incremental.num_inserts;
+      num_erases += incremental.num_erases;
+    }
   };
 
   template <typename CounterT>
   using counter_by_src_t = std::array<CounterT, Transaction::SRC_MAX>;
 
+  struct fill_stat_t {
+    uint64_t filled_bytes = 0;
+    uint64_t total_bytes = 0;
+  };
+
+  struct record_header_fullness_t {
+    fill_stat_t inline_stats;
+    fill_stat_t ool_stats;
+  };
+
   struct {
     counter_by_src_t<uint64_t> trans_created_by_src;
-    counter_by_src_t<uint64_t> trans_committed_by_src;
-    counter_by_src_t<trans_byextent_efforts_t>      committed_efforts_by_src;
-    counter_by_src_t<counter_by_extent_t<uint64_t>> trans_invalidated;
-    counter_by_src_t<trans_efforts_t>  invalidated_efforts_by_src;
+    counter_by_src_t<commit_trans_efforts_t> committed_efforts_by_src;
+    counter_by_src_t<invalid_trans_efforts_t> invalidated_efforts_by_src;
     counter_by_src_t<query_counters_t> cache_query_by_src;
-    uint64_t read_transactions_successful;
-    effort_t read_effort_successful;
-    uint64_t dirty_bytes;
+    counter_by_src_t<record_header_fullness_t> record_header_fullness_by_src;
+    success_read_trans_efforts_t success_read_efforts;
+    uint64_t dirty_bytes = 0;
+
+    uint64_t onode_tree_depth = 0;
+    counter_by_src_t<tree_efforts_t> committed_onode_tree_efforts;
+    counter_by_src_t<tree_efforts_t> invalidated_onode_tree_efforts;
+
+    uint64_t lba_tree_depth = 0;
+    counter_by_src_t<tree_efforts_t> committed_lba_tree_efforts;
+    counter_by_src_t<tree_efforts_t> invalidated_lba_tree_efforts;
   } stats;
 
   template <typename CounterT>
@@ -694,10 +777,11 @@ private:
   void replace_extent(CachedExtentRef next, CachedExtentRef prev);
 
   /// Invalidate extent and mark affected transactions
-  void invalidate(CachedExtent &extent);
+  void invalidate_extent(CachedExtent &extent);
 
   /// Mark a valid transaction as conflicted
-  void invalidate(Transaction& t, CachedExtent& conflicting_extent);
+  void mark_transaction_conflicted(
+    Transaction& t, CachedExtent& conflicting_extent);
 
   /// Introspect transaction when it is being destructed
   void on_transaction_destruct(Transaction& t);
@@ -707,7 +791,7 @@ private:
     TCachedExtentRef<T>&& extent
   ) {
     extent->set_io_wait();
-    return segment_manager.read(
+    return reader.read(
       extent->get_paddr(),
       extent->get_length(),
       extent->get_bptr()

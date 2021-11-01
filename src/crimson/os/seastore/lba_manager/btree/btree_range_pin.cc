@@ -16,14 +16,15 @@ namespace crimson::os::seastore::lba_manager::btree {
 void btree_range_pin_t::take_pin(btree_range_pin_t &other)
 {
   ceph_assert(other.extent);
-  ceph_assert(other.pins);
-  other.pins->replace_pin(*this, other);
-  pins = other.pins;
-  other.pins = nullptr;
+  if (other.pins) {
+    other.pins->replace_pin(*this, other);
+    pins = other.pins;
+    other.pins = nullptr;
 
-  if (other.has_ref()) {
-    other.drop_ref();
-    acquire_ref();
+    if (other.has_ref()) {
+      other.drop_ref();
+      acquire_ref();
+    }
   }
 }
 
@@ -112,7 +113,13 @@ void btree_pin_set_t::add_pin(btree_range_pin_t &pin)
 
   auto [prev, inserted] = pins.insert(pin);
   if (!inserted) {
-    logger().error("{}: unable to add {}, found {}", __func__, pin, *prev);
+    logger().error(
+      "{}: unable to add {} ({}), found {} ({})",
+      __func__,
+      pin,
+      *(pin.extent),
+      *prev,
+      *(prev->extent));
     ceph_assert(0 == "impossible");
     return;
   }

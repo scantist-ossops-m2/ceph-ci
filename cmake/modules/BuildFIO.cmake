@@ -16,7 +16,7 @@ function(build_fio)
     GIT_REPOSITORY "https://github.com/ceph/fio.git"
     GIT_CONFIG advice.detachedHead=false
     GIT_SHALLOW 1
-    GIT_TAG "quincy-with-cxx"
+    GIT_TAG "fio-3.27-cxx"
     SOURCE_DIR ${source_dir}
     BUILD_IN_SOURCE 1
     CONFIGURE_COMMAND <SOURCE_DIR>/configure

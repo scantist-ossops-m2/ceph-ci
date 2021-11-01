@@ -38,6 +38,7 @@
 #include "cls/rgw/cls_rgw_types.h"
 #include "include/rados/librados.hpp"
 #include "rgw_public_access.h"
+#include "rgw_tracer.h"
 
 namespace ceph {
   class Formatter;
@@ -1537,6 +1538,8 @@ struct req_state : DoutPrefixProvider {
   std::string bucket_tenant;
   std::string bucket_name;
 
+  /* bucket is only created in rgw_build_bucket_policies() and should never be
+   * overwritten */
   std::unique_ptr<rgw::sal::Bucket> bucket;
   std::unique_ptr<rgw::sal::Object> object;
   std::string src_tenant_name;
@@ -1646,6 +1649,11 @@ struct req_state : DoutPrefixProvider {
   std::vector<std::string> token_claims;
 
   std::vector<rgw::IAM::Policy> session_policies;
+
+  jspan trace;
+
+  //Principal tags that come in as part of AssumeRoleWithWebIdentity
+  std::vector<std::pair<std::string, std::string>> principal_tags;
 
   req_state(CephContext* _cct, RGWEnv* e, uint64_t id);
   ~req_state();

@@ -79,21 +79,23 @@ struct fltree_onode_manager_test_t
     TMTestState::_destroy();
   }
 
-  virtual seastar::future<> _mkfs() final {
+  virtual FuturizedStore::mkfs_ertr::future<> _mkfs() final {
     return TMTestState::_mkfs(
-    ).then([this] {
+    ).safe_then([this] {
       return tm->mount(
       ).safe_then([this] {
-	return seastar::do_with(
-	  create_mutate_transaction(),
-	  [this](auto &ref_t) {
-	    return with_trans_intr(*ref_t, [&](auto &t) {
-	      return manager->mkfs(t
-	      ).si_then([this, &t] {
-	        return submit_transaction_fut2(t);
+	return repeat_eagain([this] {
+	  return seastar::do_with(
+	    create_mutate_transaction(),
+	    [this](auto &ref_t) {
+	      return with_trans_intr(*ref_t, [&](auto &t) {
+		return manager->mkfs(t
+		).si_then([this, &t] {
+		  return submit_transaction_fut2(t);
+		});
 	      });
-	    });
 	  });
+	});
       }).safe_then([this] {
 	return tm->close();
       }).handle_error(

@@ -43,6 +43,9 @@
 
 * OSD: Ceph now uses mclock_scheduler as its default osd_op_queue to provide QoS.
 
+* CephFS: Failure to replay the journal by a standby-replay daemon will now
+  cause the rank to be marked damaged.
+
 * RGW: S3 bucket notification events now contain an `eTag` key instead of `etag`,
   and eventName values no longer carry the `s3:` prefix, fixing deviations from
   the message format observed on AWS.
@@ -56,6 +59,13 @@
   CompleteMultipartUpload notification is sent at the end of the multipart upload. 
   The POST notification at the beginning of the upload, and PUT notifications that 
   were sent on each part are not sent anymore.
+
+* MGR: The pg_autoscaler has a new default 'scale-down' profile which provides more
+  performance from the start for new pools (for newly created clusters).
+  Existing clusters will retain the old behavior, now called the 'scale-up' profile.
+  For more details, see:
+
+  https://docs.ceph.com/en/latest/rados/operations/placement-groups/
 
 >=16.0.0
 --------
@@ -386,3 +396,8 @@
   from Octopus) will be automatically migrated when the cluster is
   upgraded.  Note that the NFS ganesha daemons will be redeployed and
   it is possible that their IPs will change.
+
+* RGW now requires a secure connection to the monitor by default
+  (``auth_client_required=cephx`` and ``ms_mon_client_mode=secure``).
+  If you have cephx authentication disabled on your cluster, you may
+  need to adjust these settings for RGW.

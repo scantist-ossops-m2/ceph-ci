@@ -1438,7 +1438,7 @@ class ObjectStoreTool:
             if self.osd == "primary":
                 self.osd = self.manager.get_object_primary(self.pool,
                                                            self.object_name)
-        assert self.osd
+        assert self.osd is not None
         if self.object_name:
             self.pgid = self.manager.get_object_pg_with_shard(self.pool,
                                                               self.object_name,
@@ -1515,8 +1515,7 @@ class CephManager:
         self.controller = controller
         self.next_pool_id = 0
         self.cluster = cluster
-        self.cephadm = cephadm
-        self.rook = rook
+
         if (logger):
             self.log = lambda x: logger.info(x)
         else:
@@ -1526,8 +1525,21 @@ class CephManager:
                 """
                 print(x)
             self.log = tmp
+
         if self.config is None:
             self.config = dict()
+
+        # NOTE: These variables are meant to be overriden by vstart_runner.py.
+        self.rook = rook
+        self.cephadm = cephadm
+        self.testdir = teuthology.get_testdir(self.ctx)
+        self.run_cluster_cmd_prefix = [
+            'sudo', 'adjust-ulimits', 'ceph-coverage',
+            f'{self.testdir}/archive/coverage', 'timeout', '120', 'ceph',
+            '--cluster', self.cluster]
+        self.run_ceph_w_prefix = ['sudo', 'daemon-helper', 'kill', 'ceph',
+                                  '--cluster', self.cluster]
+
         pools = self.list_pools()
         self.pools = {}
         for pool in pools:
@@ -1557,6 +1569,8 @@ class CephManager:
         """
         if isinstance(kwargs['args'], str):
             kwargs['args'] = shlex.split(kwargs['args'])
+        elif isinstance(kwargs['args'], tuple):
+            kwargs['args'] = list(kwargs['args'])
 
         if self.cephadm:
             return shell(self.ctx, self.cluster, self.controller,
@@ -1569,11 +1583,7 @@ class CephManager:
                            stdout=StringIO(),
                            check_status=kwargs.get('check_status', True))
 
-        testdir = teuthology.get_testdir(self.ctx)
-        prefix = ['sudo', 'adjust-ulimits', 'ceph-coverage',
-                  f'{testdir}/archive/coverage', 'timeout', '120', 'ceph',
-                  '--cluster', self.cluster]
-        kwargs['args'] = prefix + list(kwargs['args'])
+        kwargs['args'] = self.run_cluster_cmd_prefix + kwargs['args']
         return self.controller.run(**kwargs)
 
     def raw_cluster_cmd(self, *args, **kwargs) -> str:
@@ -1594,14 +1604,7 @@ class CephManager:
         kwargs['check_status'] = False
         return self.run_cluster_cmd(**kwargs).exitstatus
 
-    # XXX: Setting "shell" to True for LocalCephManager.run_ceph_w(), doesn't
-    # work with vstart_runner.py; see https://tracker.ceph.com/issues/49644.
-    # shell=False as default parameter is just to maintain compatibility
-    # between interfaces of CephManager.run_ceph_w() and
-    # LocalCephManager.run_ceph_w(). This doesn't affect how "ceph -w" process
-    # is launched by this method since this parameters remains unused in
-    # this method.
-    def run_ceph_w(self, watch_channel=None, shell=False):
+    def run_ceph_w(self, watch_channel=None):
         """
         Execute "ceph -w" in the background with stdout connected to a BytesIO,
         and return the RemoteProcess.
@@ -1610,13 +1613,7 @@ class CephManager:
                               'cluster', 'audit', ...
         :type watch_channel: str
         """
-        args = ["sudo",
-                "daemon-helper",
-                "kill",
-                "ceph",
-                '--cluster',
-                self.cluster,
-                "-w"]
+        args = self.run_ceph_w_prefix + ['-w']
         if watch_channel is not None:
             args.append("--watch-channel")
             args.append(watch_channel)
@@ -1717,11 +1714,10 @@ class CephManager:
         if remote is None:
             remote = self.controller
 
-        testdir = teuthology.get_testdir(self.ctx)
         pre = [
             'adjust-ulimits',
             'ceph-coverage',
-            '{tdir}/archive/coverage'.format(tdir=testdir),
+           f'{self.testdir}/archive/coverage',
             'rados',
             '--cluster',
             self.cluster,
@@ -1833,12 +1829,11 @@ class CephManager:
         if self.rook:
             assert False, 'not implemented'
 
-        testdir = teuthology.get_testdir(self.ctx)
         args = [
             'sudo',
             'adjust-ulimits',
             'ceph-coverage',
-            '{tdir}/archive/coverage'.format(tdir=testdir),
+           f'{self.testdir}/archive/coverage',
             'timeout',
             str(timeout),
             'ceph',
@@ -2336,6 +2331,24 @@ class CephManager:
             return j['pg_map']['pg_stats']
         except KeyError:
             return j['pg_stats']
+
+    def get_osd_df(self, osdid):
+        """
+        Get the osd df stats
+        """
+        out = self.raw_cluster_cmd('osd', 'df', 'name', 'osd.{}'.format(osdid),
+                                   '--format=json')
+        j = json.loads('\n'.join(out.split('\n')[1:]))
+        return j['nodes'][0]
+
+    def get_pool_df(self, name):
+        """
+        Get the pool df stats
+        """
+        out = self.raw_cluster_cmd('df', 'detail', '--format=json')
+        j = json.loads('\n'.join(out.split('\n')[1:]))
+        return next((p['stats'] for p in j['pools'] if p['name'] == name),
+                    None)
 
     def get_pgids_to_force(self, backfill):
         """

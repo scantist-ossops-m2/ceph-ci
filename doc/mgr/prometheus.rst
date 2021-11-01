@@ -33,6 +33,7 @@ Configuration
 .. confval:: server_addr
 .. confval:: server_port
 .. confval:: scrape_interval
+.. confval:: cache
 .. confval:: stale_cache_strategy
 .. confval:: rbd_stats_pools
 .. confval:: rbd_stats_pools_refresh_interval
@@ -53,7 +54,7 @@ is registered with Prometheus's `registry
 
     The :confval:`mgr/prometheus/scrape_interval` of this module should always be set to match
     Prometheus' scrape interval to work properly and not cause any issues.
-    
+
 The scrape interval in the module is used for caching purposes
 and to determine when a cache is stale.
 
@@ -67,13 +68,12 @@ To set a different scrape interval in the Prometheus module, set
     ceph config set mgr mgr/prometheus/scrape_interval 20
 
 On large clusters (>1000 OSDs), the time to fetch the metrics may become
-significant.  Without the cache, the Prometheus manager module could,
-especially in conjunction with multiple Prometheus instances, overload the
-manager and lead to unresponsive or crashing Ceph manager instances.  Hence,
-the cache is enabled by default and cannot be disabled.  This means that there
-is a possibility that the cache becomes stale.  The cache is considered stale
-when the time to fetch the metrics from Ceph exceeds the configured
-``scrape_interval``.
+significant.  Without the cache, the Prometheus manager module could, especially
+in conjunction with multiple Prometheus instances, overload the manager and lead
+to unresponsive or crashing Ceph manager instances.  Hence, the cache is enabled
+by default.  This means that there is a possibility that the cache becomes
+stale.  The cache is considered stale when the time to fetch the metrics from
+Ceph exceeds the configured :confval:``mgr/prometheus/scrape_interval``.
 
 If that is the case, **a warning will be logged** and the module will either
 
@@ -92,7 +92,48 @@ To tell the module to respond with "service unavailable", set it to ``fail``::
 
     ceph config set mgr mgr/prometheus/stale_cache_strategy fail
 
+If you are confident that you don't require the cache, you can disable it::
+
+    ceph config set mgr mgr/prometheus/cache false
+
 .. _prometheus-rbd-io-statistics:
+
+Ceph Health Checks
+------------------
+
+The mgr/prometheus module also tracks and maintains a history of Ceph health checks,
+exposing them to the Prometheus server as discrete metrics. This allows Prometheus
+alert rules to be configured for specific health check events.
+
+The metrics take the following form;
+
+::
+
+    # HELP ceph_health_detail healthcheck status by type (0=inactive, 1=active)
+    # TYPE ceph_health_detail gauge
+    ceph_health_detail{name="OSDMAP_FLAGS",severity="HEALTH_WARN"} 0.0
+    ceph_health_detail{name="OSD_DOWN",severity="HEALTH_WARN"} 1.0
+    ceph_health_detail{name="PG_DEGRADED",severity="HEALTH_WARN"} 1.0
+
+The health check history is made available through the following commands;
+
+::
+
+    healthcheck history ls [--format {plain|json|json-pretty}]
+    healthcheck history clear
+
+The ``ls`` command provides an overview of the health checks that the cluster has
+encountered, or since the last ``clear`` command was issued. The example below;
+
+::
+
+    [ceph: root@c8-node1 /]# ceph healthcheck history ls
+    Healthcheck Name          First Seen (UTC)      Last seen (UTC)       Count  Active
+    OSDMAP_FLAGS              2021/09/16 03:17:47   2021/09/16 22:07:40       2    No
+    OSD_DOWN                  2021/09/17 00:11:59   2021/09/17 00:11:59       1   Yes
+    PG_DEGRADED               2021/09/17 00:11:59   2021/09/17 00:11:59       1   Yes
+    3 health check(s) listed
+
 
 RBD IO statistics
 -----------------
@@ -307,8 +348,8 @@ node_targets.yml
 Notes
 =====
 
-Counters and gauges are exported; currently histograms and long-running 
-averages are not.  It's possible that Ceph's 2-D histograms could be 
+Counters and gauges are exported; currently histograms and long-running
+averages are not.  It's possible that Ceph's 2-D histograms could be
 reduced to two separate 1-D histograms, and that long-running averages
 could be exported as Prometheus' Summary type.
 

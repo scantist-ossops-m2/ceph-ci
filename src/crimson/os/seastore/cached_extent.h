@@ -17,9 +17,13 @@
 
 namespace crimson::os::seastore {
 
+class ool_record_t;
 class Transaction;
 class CachedExtent;
 using CachedExtentRef = boost::intrusive_ptr<CachedExtent>;
+class SegmentedAllocator;
+class TransactionManager;
+class ExtentPlacementManager;
 
 // #define DEBUG_CACHED_EXTENT_REF
 #ifdef DEBUG_CACHED_EXTENT_REF
@@ -320,6 +324,15 @@ public:
 
   virtual ~CachedExtent();
 
+  /// type of the backend device that will hold this extent
+  device_type_t backend_type = device_type_t::NONE;
+
+  /// hint for allocators
+  placement_hint_t hint = placement_hint_t::NUM_HINTS;
+
+  bool is_inline() const {
+    return poffset.is_relative();
+  }
 private:
   template <typename T>
   friend class read_set_item_t;
@@ -340,6 +353,10 @@ private:
   using index = boost::intrusive::set<CachedExtent, index_member_options>;
   friend class ExtentIndex;
   friend class Transaction;
+
+  bool is_linked() {
+    return extent_index_hook.is_linked();
+  }
 
   /// hook for intrusive ref list (mainly dirty or lru list)
   boost::intrusive::list_member_hook<> primary_ref_list_hook;
@@ -456,6 +473,10 @@ protected:
     }
   }
 
+  friend class crimson::os::seastore::ool_record_t;
+  friend class crimson::os::seastore::SegmentedAllocator;
+  friend class crimson::os::seastore::TransactionManager;
+  friend class crimson::os::seastore::ExtentPlacementManager;
 };
 
 std::ostream &operator<<(std::ostream &, CachedExtent::extent_state_t);
@@ -530,12 +551,18 @@ public:
   }
 
   void clear() {
-    extent_index.clear();
+    struct cached_extent_disposer {
+      void operator() (CachedExtent* extent) {
+	extent->parent_index = nullptr;
+      }
+    };
+    extent_index.clear_and_dispose(cached_extent_disposer());
     bytes = 0;
   }
 
   void insert(CachedExtent &extent) {
     // sanity check
+    ceph_assert(!extent.parent_index);
     auto [a, b] = get_overlap(
       extent.get_paddr(),
       extent.get_length());
@@ -550,12 +577,13 @@ public:
 
   void erase(CachedExtent &extent) {
     assert(extent.parent_index);
-    auto erased = extent_index.erase(extent);
+    assert(extent.is_linked());
+    [[maybe_unused]] auto erased = extent_index.erase(
+      extent_index.s_iterator_to(extent));
     extent.parent_index = nullptr;
 
-    if (erased) {
-      bytes -= extent.get_length();
-    }
+    assert(erased);
+    bytes -= extent.get_length();
   }
 
   void replace(CachedExtent &to, CachedExtent &from) {

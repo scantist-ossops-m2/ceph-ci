@@ -15,10 +15,6 @@
 #include "include/uuid.h"
 #include "osd/osd_types.h"
 
-namespace seastar::alien {
-class instance;
-}
-
 namespace ceph::os {
 class Transaction;
 }
@@ -57,8 +53,7 @@ public:
 
   static std::unique_ptr<FuturizedStore> create(const std::string& type,
                                                 const std::string& data,
-                                                const ConfigValues& values,
-                                                seastar::alien::instance& alien);
+                                                const ConfigValues& values);
   FuturizedStore() = default;
   virtual ~FuturizedStore() = default;
 
@@ -70,10 +65,13 @@ public:
     return seastar::now();
   }
   virtual seastar::future<> stop() = 0;
-  virtual seastar::future<> mount() = 0;
+
+  using mount_ertr = crimson::errorator<crimson::stateful_ec>;
+  virtual mount_ertr::future<> mount() = 0;
   virtual seastar::future<> umount() = 0;
 
-  virtual seastar::future<> mkfs(uuid_d new_osd_fsid) = 0;
+  using mkfs_ertr = crimson::errorator<crimson::stateful_ec>;
+  virtual mkfs_ertr::future<> mkfs(uuid_d new_osd_fsid) = 0;
   virtual seastar::future<store_statfs_t> stat() const = 0;
 
   using CollectionRef = boost::intrusive_ptr<FuturizedCollection>;

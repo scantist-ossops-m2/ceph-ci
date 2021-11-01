@@ -145,6 +145,7 @@ public:
 
 private:
   seastar::future<> _write_superblock();
+  seastar::future<> _write_key_meta();
   seastar::future<> start_boot();
   seastar::future<> _preboot(version_t oldest_osdmap, version_t newest_osdmap);
   seastar::future<> _send_boot();
@@ -201,7 +202,7 @@ private:
                                        version_t last,
                                        Ref<MOSDMap> m);
 
-  void check_osdmap_features();
+  seastar::future<> check_osdmap_features();
 
   seastar::future<> handle_command(crimson::net::ConnectionRef conn,
 				   Ref<MCommand> m);

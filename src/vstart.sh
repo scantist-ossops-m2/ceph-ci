@@ -141,6 +141,7 @@ extra_conf=""
 new=0
 standby=0
 debug=0
+trace=0
 ip=""
 nodaemon=0
 redirect=0
@@ -179,6 +180,7 @@ with_mgr_restful=false
 filestore_path=
 kstore_path=
 declare -a block_devs
+declare -a secondary_block_devs
 
 VSTART_SEC="client.vstart.sh"
 
@@ -197,6 +199,7 @@ read -r -d '' usage <<EOF || true
 usage: $0 [option]... \nex: MON=3 OSD=1 MDS=1 MGR=1 RGW=1 NFS=1 $0 -n -d
 options:
 	-d, --debug
+        -t, --trace
 	-s, --standby_mds: Generate standby-replay MDS for each active
 	-l, --localhost: use localhost instead of hostname
 	-i <ip>: bind to specific ip
@@ -233,6 +236,7 @@ options:
 	--msgr2: use msgr2 only
 	--msgr21: use msgr2 and msgr1
 	--crimson: use crimson-osd instead of ceph-osd
+    --crimson-foreground: use crimson-osd, but run it in the foreground
 	--osd-args: specify any extra osd specific options
 	--bluestore-devs: comma-separated list of blockdevs to use for bluestore
 	--bluestore-zoned: blockdevs listed by --bluestore-devs are zoned devices (HM-SMR HDD or ZNS SSD)
@@ -242,6 +246,7 @@ options:
 	--no-parallel: dont start all OSDs in parallel
 	--jaeger: use jaegertracing for tracing
 	--seastore-devs: comma-separated list of blockdevs to use for seastore
+        --seastore-secondary-des: comma-separated list of secondary blockdevs to use for seastore
 EOF
 
 usage_exit() {
@@ -264,10 +269,28 @@ parse_block_devs() {
     done
 }
 
+parse_secondary_devs() {
+    local opt_name=$1
+    shift
+    local devs=$1
+    shift
+    local dev
+    IFS=',' read -r -a secondary_block_devs <<< "$devs"
+    for dev in "${secondary_block_devs[@]}"; do
+        if [ ! -b $dev ] || [ ! -w $dev ]; then
+            echo "All $opt_name must refer to writable block devices"
+            exit 1
+        fi
+    done
+}
+
 while [ $# -ge 1 ]; do
 case $1 in
     -d | --debug)
         debug=1
+        ;;
+    -t | --trace)
+        trace=1
         ;;
     -s | --standby_mds)
         standby=1
@@ -301,6 +324,13 @@ case $1 in
         ;;
     --crimson)
         ceph_osd=crimson-osd
+        nodaemon=1
+        msgr=2
+        ;;
+    --crimson-foreground)
+        ceph_osd=crimson-osd
+        nodaemon=0
+        msgr=2
         ;;
     --osd-args)
         extra_osd_args="$2"
@@ -460,6 +490,10 @@ case $1 in
         ;;
     --seastore-devs)
         parse_block_devs --seastore-devs "$2"
+        shift
+        ;;
+    --seastore-secondary-devs)
+        parse_secondary_devs --seastore-devs "$2"
         shift
         ;;
     --bluestore-spdk)
@@ -733,6 +767,7 @@ $DAEMONOPTS
         mds root ino gid = `id -g`
         $(format_conf "${extra_conf}")
 [mgr]
+        mgr disabled modules = rook
         mgr data = $CEPH_DEV_DIR/mgr.\$id
         mgr module path = $MGR_PYTHON_PATH
         cephadm path = $CEPH_ROOT/src/cephadm/cephadm
@@ -768,7 +803,6 @@ $COSDSHORT
 [mon]
         mon_data_avail_crit = 1
         mgr initial modules = $mgr_modules
-        mgr disabled modules = rook
 $DAEMONOPTS
 $CMONDEBUG
         $(format_conf "${extra_conf}")
@@ -910,6 +944,9 @@ start_osd() {
 	    if [ "$debug" -ne 0 ]; then
 		extra_seastar_args+=" --debug"
 	    fi
+            if [ "$trace" -ne 0]; then
+                extra_seastar_args+=" --trace"
+            fi
 	fi
 	if [ "$new" -eq 1 -o $inc_osd_num -gt 0 ]; then
             wconf <<EOF
@@ -935,6 +972,10 @@ EOF
                 if [ -n "${block_devs[$osd]}" ]; then
                     dd if=/dev/zero of=${block_devs[$osd]} bs=1M count=1
                     ln -s ${block_devs[$osd]} $CEPH_DEV_DIR/osd$osd/block
+                fi
+                if [ -n "${secondary_block_devs[$osd]}" ]; then
+                    dd if=/dev/zero of=${secondary_block_devs[$osd]} bs=1M count=1
+                    ln -s ${secondary_block_devs[$osd]} $CEPH_DEV_DIR/osd$osd/block.segmented.1
                 fi
             fi
             if [ "$objectstore" == "bluestore" ]; then
@@ -1245,10 +1286,6 @@ EOF
 
         echo "$test_user ganesha daemon $name started on port: $port"
     done
-
-    if $with_mgr_dashboard; then
-        ceph_adm dashboard set-ganesha-clusters-rados-pool-namespace "$cluster_id:$pool_name/$cluster_id"
-    fi
 }
 
 if [ "$debug" -eq 0 ]; then

@@ -183,6 +183,20 @@ seastar::future<> fetch_config()
   });
 }
 
+static void override_seastar_opts(std::vector<const char*>& args)
+{
+  if (auto found = std::find_if(std::begin(args), std::end(args),
+                                [] (auto* arg) { return "--smp"sv == arg; });
+      found == std::end(args)) {
+    // TODO: we don't have a way to communicate the resource requirements
+    // with the deployment tools, like cephadm and rook, which don't set, for
+    // instance, aio-max-nr for us. but we should fix this, once crimson is able
+    // to run on a multi-core system, i.e., once m-to-n problem is resolved.
+    args.emplace_back("--smp");
+    args.emplace_back("1");
+  }
+}
+
 int main(int argc, char* argv[])
 {
   seastar::app_template::config app_cfg;
@@ -194,6 +208,7 @@ int main(int argc, char* argv[])
               "This is normally used in combination with --mkfs")
     ("mkfs", "create a [new] data directory")
     ("debug", "enable debug output on all loggers")
+    ("trace", "enable trace output on all loggers")
     ("no-mon-config", "do not retrieve configuration from monitors on boot")
     ("prometheus_port", bpo::value<uint16_t>()->default_value(0),
      "Prometheus port. Set to zero to disable")
@@ -208,6 +223,7 @@ int main(int argc, char* argv[])
     usage(argv[0]);
     return EXIT_SUCCESS;
   }
+  override_seastar_opts(app_args);
   std::string cluster_name{"ceph"};
   std::string conf_file_list;
   // ceph_argparse_early_args() could _exit(), while local_conf() won't ready
@@ -232,6 +248,11 @@ int main(int argc, char* argv[])
               seastar::log_level::debug
             );
           }
+	  if (config.count("trace")) {
+	    seastar::global_logger_registry().set_all_loggers_level(
+              seastar::log_level::trace
+            );
+	  }
           sharded_conf().start(init_params.name, cluster_name).get();
           auto stop_conf = seastar::defer([] {
             sharded_conf().stop().get();
@@ -241,6 +262,7 @@ int main(int argc, char* argv[])
             sharded_perf_coll().stop().get();
           });
           local_conf().parse_config_files(conf_file_list).get();
+          local_conf().parse_env().get();
           local_conf().parse_argv(ceph_args).get();
           if (const auto ret = pidfile_write(local_conf()->pid_file);
               ret == -EACCES || ret == -EAGAIN) {
@@ -292,8 +314,7 @@ int main(int argc, char* argv[])
           auto store = crimson::os::FuturizedStore::create(
             local_conf().get_val<std::string>("osd_objectstore"),
             local_conf().get_val<std::string>("osd_data"),
-            local_conf().get_config_values(),
-            app.alien());
+            local_conf().get_config_values());
 
           osd.start_single(whoami, nonce,
                            std::ref(*store),

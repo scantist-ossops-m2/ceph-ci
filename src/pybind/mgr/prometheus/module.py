@@ -7,14 +7,14 @@ import os
 import re
 import threading
 import time
-from mgr_module import CLIReadCommand, MgrModule, MgrStandbyModule, PG_STATES, Option, ServiceInfoT
-from mgr_util import get_default_addr, profile_method
+import enum
+from mgr_module import CLIReadCommand, MgrModule, MgrStandbyModule, PG_STATES, Option, ServiceInfoT, HandleCommandResult, CLIWriteCommand
+from mgr_util import get_default_addr, profile_method, build_url
 from rbd import RBD
 from collections import namedtuple
-try:
-    from typing import DefaultDict, Optional, Dict, Any, Set, cast, Tuple, Union, List
-except ImportError:
-    pass
+import yaml
+
+from typing import DefaultDict, Optional, Dict, Any, Set, cast, Tuple, Union, List
 
 # Defaults for the Prometheus HTTP server.  Can also set in config-key
 # see https://github.com/prometheus/prometheus/wiki/Default-port-allocations
@@ -116,6 +116,189 @@ alert_metric = namedtuple('alert_metric', 'name description')
 HEALTH_CHECKS = [
     alert_metric('SLOW_OPS', 'OSD or Monitor requests taking a long time to process'),
 ]
+
+HEALTHCHECK_DETAIL = ('name', 'severity')
+
+
+class Severity(enum.Enum):
+    ok = "HEALTH_OK"
+    warn = "HEALTH_WARN"
+    error = "HEALTH_ERR"
+
+
+class Format(enum.Enum):
+    plain = 'plain'
+    json = 'json'
+    json_pretty = 'json-pretty'
+    yaml = 'yaml'
+
+
+class HealthCheckEvent:
+
+    def __init__(self, name: str, severity: Severity, first_seen: float, last_seen: float, count: int, active: bool = True):
+        self.name = name
+        self.severity = severity
+        self.first_seen = first_seen
+        self.last_seen = last_seen
+        self.count = count
+        self.active = active
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Return the instance as a dictionary."""
+        return self.__dict__
+
+
+class HealthHistory:
+    kv_name = 'health_history'
+    titles = "{healthcheck_name:<24}  {first_seen:<20}  {last_seen:<20}  {count:>5}  {active:^6}"
+    date_format = "%Y/%m/%d %H:%M:%S"
+
+    def __init__(self, mgr: MgrModule):
+        self.mgr = mgr
+        self.lock = threading.Lock()
+        self.healthcheck: Dict[str, HealthCheckEvent] = {}
+        self._load()
+
+    def _load(self) -> None:
+        """Load the current state from the mons KV store."""
+        data = self.mgr.get_store(self.kv_name)
+        if data:
+            try:
+                healthcheck_data = json.loads(data)
+            except json.JSONDecodeError:
+                self.mgr.log.warn(
+                    f"INVALID data read from mgr/prometheus/{self.kv_name}. Resetting")
+                self.reset()
+                return
+            else:
+                for k, v in healthcheck_data.items():
+                    self.healthcheck[k] = HealthCheckEvent(
+                        name=k,
+                        severity=v.get('severity'),
+                        first_seen=v.get('first_seen', 0),
+                        last_seen=v.get('last_seen', 0),
+                        count=v.get('count', 1),
+                        active=v.get('active', True))
+        else:
+            self.reset()
+
+    def reset(self) -> None:
+        """Reset the healthcheck history."""
+        with self.lock:
+            self.mgr.set_store(self.kv_name, "{}")
+            self.healthcheck = {}
+
+    def save(self) -> None:
+        """Save the current in-memory healthcheck history to the KV store."""
+        with self.lock:
+            self.mgr.set_store(self.kv_name, self.as_json())
+
+    def check(self, health_checks: Dict[str, Any]) -> None:
+        """Look at the current health checks and compare existing the history.
+
+        Args:
+            health_checks (Dict[str, Any]): current health check data
+        """
+
+        current_checks = health_checks.get('checks', {})
+        changes_made = False
+
+        # first turn off any active states we're tracking
+        for seen_check in self.healthcheck:
+            check = self.healthcheck[seen_check]
+            if check.active and seen_check not in current_checks:
+                check.active = False
+                changes_made = True
+
+        # now look for any additions to track
+        now = time.time()
+        for name, info in current_checks.items():
+            if name not in self.healthcheck:
+                # this healthcheck is new, so start tracking it
+                changes_made = True
+                self.healthcheck[name] = HealthCheckEvent(
+                    name=name,
+                    severity=info.get('severity'),
+                    first_seen=now,
+                    last_seen=now,
+                    count=1,
+                    active=True
+                )
+            else:
+                # seen it before, so update its metadata
+                check = self.healthcheck[name]
+                if check.active:
+                    # check has been registered as active already, so skip
+                    continue
+                else:
+                    check.last_seen = now
+                    check.count += 1
+                    check.active = True
+                    changes_made = True
+
+        if changes_made:
+            self.save()
+
+    def __str__(self) -> str:
+        """Print the healthcheck history.
+
+        Returns:
+            str: Human readable representation of the healthcheck history
+        """
+        out = []
+
+        if len(self.healthcheck.keys()) == 0:
+            out.append("No healthchecks have been recorded")
+        else:
+            out.append(self.titles.format(
+                healthcheck_name="Healthcheck Name",
+                first_seen="First Seen (UTC)",
+                last_seen="Last seen (UTC)",
+                count="Count",
+                active="Active")
+            )
+            for k in sorted(self.healthcheck.keys()):
+                check = self.healthcheck[k]
+                out.append(self.titles.format(
+                    healthcheck_name=check.name,
+                    first_seen=time.strftime(self.date_format, time.localtime(check.first_seen)),
+                    last_seen=time.strftime(self.date_format, time.localtime(check.last_seen)),
+                    count=check.count,
+                    active="Yes" if check.active else "No")
+                )
+            out.extend([f"{len(self.healthcheck)} health check(s) listed", ""])
+
+        return "\n".join(out)
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Return the history in a dictionary.
+
+        Returns:
+            Dict[str, Any]: dictionary indexed by the healthcheck name
+        """
+        return {name: self.healthcheck[name].as_dict() for name in self.healthcheck}
+
+    def as_json(self, pretty: bool = False) -> str:
+        """Return the healthcheck history object as a dict (JSON).
+
+        Args:
+            pretty (bool, optional): whether to json pretty print the history. Defaults to False.
+
+        Returns:
+            str: str representation of the healthcheck in JSON format
+        """
+        if pretty:
+            return json.dumps(self.as_dict(), indent=2)
+        else:
+            return json.dumps(self.as_dict())
+
+    def as_yaml(self) -> str:
+        """Return the healthcheck history in yaml format.
+
+        Returns:
+            str: YAML representation of the healthcheck history
+        """
+        return yaml.safe_dump(self.as_dict(), explicit_start=True, default_flow_style=False)
 
 
 class Metric(object):
@@ -288,6 +471,11 @@ class Module(MgrModule):
             default='log'
         ),
         Option(
+            'cache',
+            type='bool',
+            default=True,
+        ),
+        Option(
             'rbd_stats_pools',
             default=''
         ),
@@ -308,6 +496,7 @@ class Module(MgrModule):
         self.collect_lock = threading.Lock()
         self.collect_time = 0.0
         self.scrape_interval: float = 15.0
+        self.cache = True
         self.stale_cache_strategy: str = self.STALE_CACHE_FAIL
         self.collect_cache: Optional[str] = None
         self.rbd_stats = {
@@ -331,6 +520,7 @@ class Module(MgrModule):
         global _global_instance
         _global_instance = self
         self.metrics_thread = MetricCollectionThread(_global_instance)
+        self.health_history = HealthHistory(self)
 
     def _setup_static_metrics(self) -> Dict[str, Metric]:
         metrics = {}
@@ -432,6 +622,13 @@ class Module(MgrModule):
             ('pool_id',)
         )
 
+        metrics['health_detail'] = Metric(
+            'gauge',
+            'health_detail',
+            'healthcheck status by type (0=inactive, 1=active)',
+            HEALTHCHECK_DETAIL
+        )
+
         for flag in OSD_FLAGS:
             path = 'osd_flag_{}'.format(flag)
             metrics[path] = Metric(
@@ -521,7 +718,7 @@ class Module(MgrModule):
         )
 
         # Examine the health to see if any health checks triggered need to
-        # become a metric.
+        # become a specific metric with a value from the health detail
         active_healthchecks = health.get('checks', {})
         active_names = active_healthchecks.keys()
 
@@ -552,6 +749,15 @@ class Module(MgrModule):
                 else:
                     # health check is not active, so give it a default of 0
                     self.metrics[path].set(0)
+
+        self.health_history.check(health)
+        for name, info in self.health_history.healthcheck.items():
+            v = 1 if info.active else 0
+            self.metrics['health_detail'].set(
+                v, (
+                    name,
+                    str(info.severity))
+            )
 
     @profile_method()
     def get_pool_stats(self) -> None:
@@ -1323,6 +1529,11 @@ class Module(MgrModule):
 
             @staticmethod
             def _metrics(instance: 'Module') -> Optional[str]:
+                if not self.cache:
+                    self.log.debug('Cache disabled, collecting and returning without cache')
+                    cherrypy.response.headers['Content-Type'] = 'text/plain'
+                    return self.collect()
+
                 # Return cached data if available
                 if not instance.collect_cache:
                     raise cherrypy.HTTPError(503, 'No cached data available yet')
@@ -1369,28 +1580,33 @@ class Module(MgrModule):
                                              self.STALE_CACHE_RETURN]:
             self.stale_cache_strategy = self.STALE_CACHE_FAIL
 
-        server_addr = self.get_localized_module_option(
-            'server_addr', get_default_addr())
-        server_port = self.get_localized_module_option(
-            'server_port', DEFAULT_PORT)
+        server_addr = cast(str, self.get_localized_module_option(
+            'server_addr', get_default_addr()))
+        server_port = cast(int, self.get_localized_module_option(
+            'server_port', DEFAULT_PORT))
         self.log.info(
             "server_addr: %s server_port: %s" %
             (server_addr, server_port)
         )
 
-        self.metrics_thread.start()
-
-        # Publish the URI that others may use to access the service we're
-        # about to start serving
-        if server_addr in ['::', '0.0.0.0']:
-            server_addr = self.get_mgr_ip()
-        self.set_uri('http://{0}:{1}/'.format(server_addr, server_port))
+        self.cache = cast(bool, self.get_localized_module_option('cache', True))
+        if self.cache:
+            self.log.info('Cache enabled')
+            self.metrics_thread.start()
+        else:
+            self.log.info('Cache disabled')
 
         cherrypy.config.update({
             'server.socket_host': server_addr,
             'server.socket_port': server_port,
             'engine.autoreload.on': False
         })
+        # Publish the URI that others may use to access the service we're
+        # about to start serving
+        if server_addr in ['::', '0.0.0.0']:
+            server_addr = self.get_mgr_ip()
+        self.set_uri(build_url(scheme='http', host=server_addr, port=server_port, path='/'))
+
         cherrypy.tree.mount(Root(), "/")
         self.log.info('Starting engine...')
         cherrypy.engine.start()
@@ -1409,6 +1625,37 @@ class Module(MgrModule):
     def shutdown(self) -> None:
         self.log.info('Stopping engine...')
         self.shutdown_event.set()
+
+    @CLIReadCommand('healthcheck history ls')
+    def _list_healthchecks(self, format: Format = Format.plain) -> HandleCommandResult:
+        """List all the healthchecks being tracked
+
+        The format options are parsed in ceph_argparse, before they get evaluated here so
+        we can safely assume that what we have to process is valid. ceph_argparse will throw
+        a ValueError if the cast to our Format class fails.
+
+        Args:
+            format (Format, optional): output format. Defaults to Format.plain.
+
+        Returns:
+            HandleCommandResult: return code, stdout and stderr returned to the caller
+        """
+
+        out = ""
+        if format == Format.plain:
+            out = str(self.health_history)
+        elif format == Format.yaml:
+            out = self.health_history.as_yaml()
+        else:
+            out = self.health_history.as_json(format == Format.json_pretty)
+
+        return HandleCommandResult(retval=0, stdout=out)
+
+    @CLIWriteCommand('healthcheck history clear')
+    def _clear_healthchecks(self) -> HandleCommandResult:
+        """Clear the healthcheck history"""
+        self.health_history.reset()
+        return HandleCommandResult(retval=0, stdout="healthcheck history cleared")
 
 
 class StandbyModule(MgrStandbyModule):

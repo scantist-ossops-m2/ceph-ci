@@ -69,18 +69,6 @@ public:
     laddr_t offset) = 0;
 
   /**
-   * Finds unmapped laddr extent of len len
-   */
-  using find_hole_iertr = base_iertr;
-  using find_hole_ret = find_hole_iertr::future<
-    std::pair<laddr_t, extent_len_t>
-    >;
-  virtual find_hole_ret find_hole(
-    Transaction &t,
-    laddr_t hint,
-    extent_len_t) = 0;
-
-  /**
    * Allocates a new mapping referenced by LBARef
    *
    * Offset will be relative to the block offset of the record
@@ -94,18 +82,6 @@ public:
     laddr_t hint,
     extent_len_t len,
     paddr_t addr) = 0;
-
-  /**
-   * Creates a new absolute mapping.
-   *
-   * off~len must be unreferenced
-   */
-  using set_extent_iertr = base_iertr::extend<
-    crimson::ct_error::invarg>;
-  using set_extent_ret = set_extent_iertr::future<LBAPinRef>;
-  virtual set_extent_ret set_extent(
-    Transaction &t,
-    laddr_t off, extent_len_t len, paddr_t addr) = 0;
 
   struct ref_update_result_t {
     unsigned refcount = 0;
@@ -163,7 +139,7 @@ public:
     scan_mappings_func_t &&f) = 0;
 
   /**
-   * Calls f for each mapped space usage in [begin, end)
+   * Calls f for each mapped space usage
    */
   using scan_mapped_space_iertr = base_iertr::extend_ertr<
     SegmentManager::read_ertr>;
@@ -185,6 +161,18 @@ public:
     Transaction &t,
     CachedExtentRef extent) = 0;
 
+  /**
+   * delayed_update_mapping
+   *
+   * update lba mapping for delayed allocated extents
+   */
+  using update_le_mapping_iertr = base_iertr;
+  using update_le_mapping_ret = base_iertr::future<>;
+  virtual update_le_mapping_ret update_mapping(
+    Transaction& t,
+    laddr_t laddr,
+    paddr_t prev_addr,
+    paddr_t paddr) = 0;
   /**
    * get_physical_extent_if_live
    *

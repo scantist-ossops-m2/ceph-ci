@@ -8,12 +8,14 @@ import xml.etree.ElementTree as ET  # noqa: N814
 from distutils.util import strtobool
 from subprocess import SubprocessError
 
+from mgr_util import build_url
+
 from .. import mgr
 from ..awsauth import S3Auth
 from ..exceptions import DashboardException
 from ..rest_client import RequestException, RestClient
 from ..settings import Settings
-from ..tools import build_url, dict_contains_path, dict_get, json_str_to_object
+from ..tools import dict_contains_path, dict_get, json_str_to_object
 
 try:
     from typing import Any, Dict, List, Optional, Tuple, Union
@@ -305,6 +307,9 @@ class RgwClient(RestClient):
     def _get_realms_info(self):  # type: () -> dict
         return json_str_to_object(self.proxy('GET', 'realm?list', None, None))
 
+    def _get_realm_info(self, realm_id: str) -> Dict[str, Any]:
+        return json_str_to_object(self.proxy('GET', f'realm?id={realm_id}', None, None))
+
     @staticmethod
     def _rgw_settings():
         return (Settings.RGW_API_ACCESS_KEY,
@@ -385,10 +390,10 @@ class RgwClient(RestClient):
                            service_url=self.service_url)
 
     def __init__(self,
-                 access_key,
-                 secret_key,
-                 daemon_name,
-                 user_id=None):
+                 access_key: str,
+                 secret_key: str,
+                 daemon_name: str,
+                 user_id: Optional[str] = None) -> None:
         try:
             daemon = RgwClient._daemons[daemon_name]
         except KeyError as error:
@@ -576,6 +581,16 @@ class RgwClient(RestClient):
             return realms_info['realms']
 
         return []
+
+    def get_default_realm(self) -> str:
+        realms_info = self._get_realms_info()
+        if 'default_info' in realms_info and realms_info['default_info']:
+            realm_info = self._get_realm_info(realms_info['default_info'])
+            if 'name' in realm_info and realm_info['name']:
+                return realm_info['name']
+        raise DashboardException(msg='Default realm not found.',
+                                 http_status_code=404,
+                                 component='rgw')
 
     @RestClient.api_get('/{bucket_name}?versioning')
     def get_bucket_versioning(self, bucket_name, request=None):

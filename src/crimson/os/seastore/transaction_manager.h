@@ -27,6 +27,7 @@
 #include "crimson/os/seastore/segment_manager.h"
 #include "crimson/os/seastore/lba_manager.h"
 #include "crimson/os/seastore/journal.h"
+#include "crimson/os/seastore/extent_placement_manager.h"
 
 namespace crimson::os::seastore {
 class Journal;
@@ -69,7 +70,9 @@ public:
     SegmentCleanerRef segment_cleaner,
     JournalRef journal,
     CacheRef cache,
-    LBAManagerRef lba_manager);
+    LBAManagerRef lba_manager,
+    ExtentPlacementManagerRef&& epm,
+    ExtentReader& scanner);
 
   /// Writes initial metadata to disk
   using mkfs_ertr = base_ertr;
@@ -272,7 +275,7 @@ public:
    * alloc_extent
    *
    * Allocates a new block of type T with the minimum lba range of size len
-   * greater than hint.
+   * greater than laddr_hint.
    */
   using alloc_extent_iertr = LBAManager::alloc_extent_iertr;
   template <typename T>
@@ -280,20 +283,30 @@ public:
   template <typename T>
   alloc_extent_ret<T> alloc_extent(
     Transaction &t,
-    laddr_t hint,
+    laddr_t laddr_hint,
     extent_len_t len) {
-    auto ext = cache->alloc_new_extent<T>(
+    placement_hint_t placement_hint;
+    if constexpr (T::TYPE == extent_types_t::OBJECT_DATA_BLOCK ||
+                  T::TYPE == extent_types_t::COLL_BLOCK) {
+      placement_hint = placement_hint_t::COLD;
+    } else {
+      placement_hint = placement_hint_t::HOT;
+    }
+    auto ext = epm->alloc_new_extent<T>(
       t,
-      len);
+      len,
+      placement_hint);
     return lba_manager->alloc_extent(
       t,
-      hint,
+      laddr_hint,
       len,
       ext->get_paddr()
-    ).si_then([ext=std::move(ext), len, this](auto &&ref) mutable {
+    ).si_then([ext=std::move(ext), len, laddr_hint, &t, this](auto &&ref) mutable {
+      LOG_PREFIX(TransactionManager::alloc_extent);
       ext->set_pin(std::move(ref));
       stats.extents_allocated_total++;
       stats.extents_allocated_bytes += len;
+      DEBUGT("new extent: {}, laddr_hint: {}", t, *ext, laddr_hint);
       return alloc_extent_iertr::make_ready_future<TCachedExtentRef<T>>(
 	std::move(ext));
     });
@@ -310,20 +323,6 @@ public:
       hint,
       len,
       zero_paddr());
-  }
-
-  using find_hole_iertr = LBAManager::find_hole_iertr;
-  using find_hole_ret = LBAManager::find_hole_iertr::future<
-    std::pair<laddr_t, extent_len_t>
-    >;
-  find_hole_ret find_hole(
-    Transaction &t,
-    laddr_t hint,
-    extent_len_t len) {
-    return lba_manager->find_hole(
-      t,
-      hint,
-      len);
   }
 
   /* alloc_extents
@@ -370,6 +369,7 @@ public:
 
   using SegmentCleaner::ExtentCallbackInterface::get_next_dirty_extents_ret;
   get_next_dirty_extents_ret get_next_dirty_extents(
+    Transaction &t,
     journal_seq_t seq,
     size_t max_bytes) final;
 
@@ -385,18 +385,6 @@ public:
     paddr_t addr,
     laddr_t laddr,
     segment_off_t len) final;
-
-  using scan_extents_cursor =
-    SegmentCleaner::ExtentCallbackInterface::scan_extents_cursor;
-  using scan_extents_ertr =
-    SegmentCleaner::ExtentCallbackInterface::scan_extents_ertr;
-  using scan_extents_ret =
-    SegmentCleaner::ExtentCallbackInterface::scan_extents_ret;
-  scan_extents_ret scan_extents(
-    scan_extents_cursor &cursor,
-    extent_len_t bytes_to_read) final {
-    return journal->scan_extents(cursor, bytes_to_read);
-  }
 
   using release_segment_ret =
     SegmentCleaner::ExtentCallbackInterface::release_segment_ret;
@@ -512,16 +500,35 @@ public:
     return segment_cleaner->stat();
   }
 
+  void add_segment_manager(SegmentManager* sm) {
+    LOG_PREFIX(TransactionManager::add_segment_manager);
+    DEBUG("adding segment manager {}", sm->get_device_id());
+    scanner.add_segment_manager(sm);
+    epm->add_allocator(
+      device_type_t::SEGMENTED,
+      std::make_unique<SegmentedAllocator>(
+	*segment_cleaner,
+	*sm,
+	*lba_manager,
+	*journal,
+	*cache));
+  }
+
   ~TransactionManager();
 
 private:
   friend class Transaction;
 
+  // although there might be multiple devices backing seastore,
+  // only one of them are supposed to hold the journal. This
+  // segment manager is that device
   SegmentManager &segment_manager;
   SegmentCleanerRef segment_cleaner;
   CacheRef cache;
   LBAManagerRef lba_manager;
   JournalRef journal;
+  ExtentPlacementManagerRef epm;
+  ExtentReader& scanner;
 
   WritePipeline write_pipeline;
 
@@ -536,6 +543,9 @@ private:
   seastar::metrics::metric_group metrics;
   void register_metrics();
 
+  rewrite_extent_ret rewrite_logical_extent(
+    Transaction& t,
+    LogicalCachedExtentRef extent);
 public:
   // Testing interfaces
   auto get_segment_cleaner() {
