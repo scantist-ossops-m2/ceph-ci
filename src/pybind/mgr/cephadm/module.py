@@ -1855,7 +1855,7 @@ Then run the following:
         self.log.info(f'Rotating authentication key for {daemon_spec.name()}')
         rc, out, err = self.mon_command({
             'prefix': 'auth get-or-create-pending',
-            'entity': daemon_spec.name(),
+            'entity': daemon_spec.entity_name(),
             'format': 'json',
         })
         j = json.loads(out)
@@ -1965,7 +1965,8 @@ Then run the following:
                 f'Unable to schedule redeploy for {daemon_name}: No standby MGRs')
 
         if action == 'rotate-key':
-            if d.daemon_type not in ['mgr', 'osd', 'mds']:
+            if d.daemon_type not in ['mgr', 'osd', 'mds',
+                                     'rgw', 'crash', 'nfs', 'rbd-mirror', 'iscsi']:
                 raise OrchestratorError(
                     f'key rotation not supported for {d.daemon_type}'
                 )
