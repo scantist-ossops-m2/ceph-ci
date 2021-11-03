@@ -574,9 +574,7 @@ endif()
 #following dependencies are run inside make check unit tests
 add_dependencies(tests
   ceph-mon
-if(WITH_CPP_REDIS)
-  cpp_redis
-endif()
+  #cpp_redis
   ceph-authtool
   get_command_descriptions
   crushtool
