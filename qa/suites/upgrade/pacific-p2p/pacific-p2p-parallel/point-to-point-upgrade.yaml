@@ -91,39 +91,53 @@ tasks:
       tag: v16.2.6
     mon.b:
       tag: v16.2.6
-- parallel:
-   - workload_pacific
-   - upgrade-sequence_pacific
-- print: "**** done parallel pacific v16.2.5"
+- sequential:
+   - parallel:
+      - workload_pacific
+      - upgrade-sequence_pacific
+   - workload_autoscale
+- print: "**** done parallel pacific v16.2.6"
 
 ####  upgrade to latest pacific
 - install.upgrade:
     mon.a:
     mon.b:
-- parallel:
-   - workload_pacific
-   - upgrade-sequence_pacific
+- sequential:
+   - parallel:
+      - workload_pacific
+      - upgrade-sequence_pacific
+   - workload_autoscale
 - print: "**** done parallel pacific branch"
 
 #######################
+
+workload_autoscale:
+   sequential:
+   - workunit:
+       clients:
+         client.0:
+           - mgr/test_autoscale_profile_create_pool.sh
+   - print: "*** done mgr/test_autoscale_profile_create_pool.sh"
+
 workload:
    sequential:
    - workunit:
        clients:
          client.0:
            - suites/blogbench.sh
+
 workload_pacific:
    full_sequential:
-   - workunit:
-       branch: pacific
-       #tag: v16.2.1
-       clients:
-         client.1:
-         - rados/test.sh
-         - cls
-       env:
-         CLS_RBD_GTEST_FILTER: '*:-TestClsRbd.snapshots_namespaces'
-   - print: "**** done rados/test.sh &  cls workload_pacific"
+   #- workunit:
+   #    branch: pacific
+   #    #tag: v16.2.1
+   #    clients:
+   #      client.1:
+   #      - rados/test.sh
+   #      - cls
+   #    env:
+   #      CLS_RBD_GTEST_FILTER: '*:-TestClsRbd.snapshots_namespaces'
+   #- print: "**** done rados/test.sh &  cls workload_pacific"
    - sequential:
      - rgw: [client.0]
      - print: "**** done rgw workload_pacific"
