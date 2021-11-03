@@ -254,7 +254,9 @@ target_link_libraries(ceph_test_librgw_file
   rgw
   librados
   ceph-common
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   )
@@ -274,7 +276,9 @@ target_link_libraries(ceph_test_librgw_file_cd
   rgw
   librados
   ceph-common
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   )
@@ -302,7 +306,9 @@ target_link_libraries(ceph_test_librgw_file_gp
   rgw
   librados
   ceph-common
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   )
@@ -326,7 +332,9 @@ target_link_libraries(ceph_test_librgw_file_nfsns
   rgw
   librados
   ceph-common
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   )
@@ -352,7 +360,9 @@ target_link_libraries(ceph_test_librgw_file_aw
   rgw
   librados
   ceph-common
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   )
@@ -372,7 +382,9 @@ target_link_libraries(ceph_test_librgw_file_marker
   rgw
   librados
   ceph-common
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   )
@@ -395,7 +407,9 @@ endif()
 target_link_libraries(ceph_test_rgw_token
   rgw
   ceph-common
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   )
@@ -416,7 +430,9 @@ endif()
 target_link_libraries(test_rgw_ldap
   librados
   ceph-common
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ${OPENLDAP_LIBRARIES}
   ${UNITTEST_LIBS}
   )
@@ -466,7 +482,9 @@ endif()
 target_link_libraries(ceph_test_filejournal
   os
   ceph-common
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ${UNITTEST_LIBS}
   global
   ${EXTRALIBS}
@@ -556,7 +574,9 @@ endif()
 #following dependencies are run inside make check unit tests
 add_dependencies(tests
   ceph-mon
+if(WITH_CPP_REDIS)
   cpp_redis
+endif()
   ceph-authtool
   get_command_descriptions
   crushtool
