@@ -451,6 +451,7 @@ int LRemIoCtxImpl::execute_aio_operations(const std::string& oid,
   if (m_client->is_blocklisted()) {
     ret = -EBLOCKLISTED;
   } else {
+auto mtime = real_clock::now().time_since_epoch();
     auto trans = init_transaction(oid);
     for (ObjectOperations::iterator it = ops->ops.begin();
          it != ops->ops.end(); ++it) {
@@ -462,6 +463,8 @@ int LRemIoCtxImpl::execute_aio_operations(const std::string& oid,
       }
       ++trans->op_id;
     }
+auto ts = real_clock::now().time_since_epoch() - mtime;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): aio_op ts=" << ts << dendl;
   }
   m_pending_ops--;
   ops->put();

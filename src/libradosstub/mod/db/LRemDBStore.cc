@@ -268,7 +268,11 @@ void LRemDBOps::flush() {
     return;
   }
 
+auto flush_mtime = real_clock::now().time_since_epoch();
+auto mtime = real_clock::now().time_since_epoch();
   std::unique_lock locker{flush_lock};
+auto ts = real_clock::now().time_since_epoch() - mtime;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): transaction locked ts=" << ts << dendl;
 
   Transaction t(*db, trans_lock);
 
@@ -283,6 +287,8 @@ void LRemDBOps::flush() {
 
   deferred_statements.clear();
   statement_keys.clear();
+auto flush_ts = real_clock::now().time_since_epoch() - flush_mtime;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): transaction total ts=" << flush_ts << dendl;
 }
 
 class DBOpsCache {
@@ -318,6 +324,7 @@ LRemDBOps::Transaction::Transaction(SQLite::Database& db,
 }
 
 LRemDBOps::Transaction::~Transaction() {
+auto mtime = real_clock::now().time_since_epoch();
   std::unique_lock locker{*lock};
 
   if (!trans) {
@@ -328,6 +335,8 @@ LRemDBOps::Transaction::~Transaction() {
     trans->commit();
   }
   trans.reset();
+auto ts = real_clock::now().time_since_epoch() - mtime;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): transaction finish ts=" << ts << dendl;
 }
 
 int LRemDBOps::create_table(const string& name, const string& defs)
@@ -345,7 +354,10 @@ int LRemDBOps::exec(const string& sql)
 {
   try {
     dout(20) << "SQL: " << sql << dendl;
+auto mtime = real_clock::now().time_since_epoch();
     db->exec(sql);
+auto ts = real_clock::now().time_since_epoch() - mtime;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): exec ts=" << ts << dendl;
     /* return code is not interesting */
   } catch (SQLite::Exception& e) {
     dout(0) << "exception: " << e.what() << " ret=" << e.getExtendedErrorCode() << " db=" << db.get() << dendl;
@@ -364,8 +376,11 @@ int LRemDBOps::exec(SQLite::Statement& stmt)
 
     try {
       retry = false;
-      dout(20) << "SQL: " << stmt.getExpandedSQL() << dendl;
+      dout(20) << "SQL: " << stmt.getQuery() << dendl;
+auto mtime = real_clock::now().time_since_epoch();
       r = stmt.exec();
+auto ts = real_clock::now().time_since_epoch() - mtime;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): exec ts=" << ts << dendl;
       /* return code is not interesting */
     } catch (SQLite::Exception& e) {
       dout(0) << "exception: " << e.what() << " ret=" << e.getExtendedErrorCode() << " db=" << db.get() << dendl;
@@ -381,8 +396,12 @@ int LRemDBOps::exec(SQLite::Statement& stmt)
 
 int LRemDBOps::exec_step(SQLite::Statement& stmt)
 {
-  dout(20) << "SQL: " << stmt.getExpandedSQL() << dendl;
-  return stmt.executeStep();
+  dout(20) << "SQL: " << stmt.getQuery() << dendl;
+auto mtime = real_clock::now().time_since_epoch();
+  int r = stmt.executeStep();
+auto ts = real_clock::now().time_since_epoch() - mtime;
+dout(0) << __FILE__ << ":" << __LINE__ << ":" << __func__ << "(): exec step ts=" << ts << dendl;
+  return r;
 }
 
 static uint32_t do_hash(const string& s) {
