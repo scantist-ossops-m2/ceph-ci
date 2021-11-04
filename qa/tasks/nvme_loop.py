@@ -29,6 +29,8 @@ def task(ctx, config):
                 run.Raw('&&'),
                 'sudo', 'mkdir', '-p', f'{base}/ports/{port}',
                 run.Raw('&&'),
+                'grep', 'loop', f'{base}/ports/{port}/addr_trtype',
+                run.Raw('||'),
                 'echo', 'loop', run.Raw('|'),
                 'sudo', 'tee', f'{base}/ports/{port}/addr_trtype',
             ]
