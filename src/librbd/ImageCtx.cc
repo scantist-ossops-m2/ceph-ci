@@ -883,6 +883,19 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
     return new Journal<ImageCtx>(*this);
   }
 
+  crypto::CryptoInterface* ImageCtx::get_crypto() const {
+    std::shared_lock image_locker{image_lock};
+    if (crypto != nullptr) {
+      crypto->get();
+    }
+    return crypto;
+  }
+
+  void ImageCtx::set_crypto(crypto::CryptoInterface* new_crypto) {
+    std::unique_lock image_locker{image_lock};
+    crypto = new_crypto;
+  }
+
   void ImageCtx::set_image_name(const std::string &image_name) {
     // update the name so rename can be invoked repeatedly
     std::shared_lock owner_locker{owner_lock};
