@@ -115,7 +115,6 @@ workload:
 workload_pacific:
    full_sequential:
    - workunit:
-       branch: pacific
        #tag: v16.2.1
        clients:
          client.1:
@@ -124,6 +123,11 @@ workload_pacific:
        env:
          CLS_RBD_GTEST_FILTER: '*:-TestClsRbd.snapshots_namespaces'
    - print: "**** done rados/test.sh &  cls workload_pacific"
+   - workunit:
+       clients:
+         client.0:
+         - mgr/test_autoscale_profile_create_pool.sh
+   - print: "*** done mgr/test_autoscale_profile_create_pool.sh"
    - sequential:
      - rgw: [client.0]
      - print: "**** done rgw workload_pacific"
