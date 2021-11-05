@@ -1925,34 +1925,11 @@ Then run the following:
             if self.spec_store[service_name].spec.service_type in ('mon', 'mgr'):
                 return f'Unable to remove {service_name} service.\n' \
                        f'Note, you might want to mark the {service_name} service as "unmanaged"'
-
-        # Report list of affected OSDs
-        osds_msg = {}
-        if service_name.startswith('osd.'):
-            for h, dm in self.cache.get_daemons_with_volatile_status():
-                osds_to_remove = []
-                for name, dd in dm.items():
-                    if dd.daemon_type == 'osd' and (dd.service_name() == service_name or not dd.osdspec_affinity):
-                        osds_to_remove.append(str(dd.daemon_id))
-                if osds_to_remove:
-                    osds_msg[h] = osds_to_remove
-
-        found = self.spec_store.rm(service_name) or osds_msg
-        if found:
-            self._kick_serve_loop()
-            if osds_msg:
-                return f'The service {service_name} will be deleted once the following OSDs: {osds_msg} ' \
-                       f'will be deleted manually.'
-            else:
-                return f'Removed service {service_name}'
-        else:
-            # must be idempotent: still a success.
-            try:
-                self.cache.get_daemon(service_name)
-                return (f'Failed to remove service <{service_name}>. "{service_name}" is the name of a daemon, not a service. '
-                        + 'Running service names can be found with "ceph orch ls"')
-            except OrchestratorError:
-                return f'Failed to remove service. <{service_name}> was not found. Running service names can be found with "ceph orch ls"'
+        found = self.spec_store.rm(service_name)
+        if found and service_name.startswith('osd.'):
+            self.spec_store.finally_rm(service_name)
+        self._kick_serve_loop()
+        return f'Removed service {service_name}'
 
     @handle_orch_error
     def get_inventory(self, host_filter: Optional[orchestrator.InventoryFilter] = None, refresh: bool = False) -> List[orchestrator.InventoryHost]:
