@@ -33,6 +33,11 @@ namespace crimson::net {
   class Messenger;
 }
 
+enum class log_flushing_t {
+  NO_FLUSH,
+  FLUSH
+};
+
 int parse_log_client_options(CephContext *cct,
 			     std::map<std::string,std::string> &log_to_monitors,
 			     std::map<std::string,std::string> &log_to_syslog,
@@ -186,7 +191,7 @@ public:
   virtual ~LogClient() = default;
 
   seastar::future<> handle_log_ack(Ref<MLogAck> m);
-  MessageURef get_mon_log_message(bool flush);
+  MessageURef get_mon_log_message(log_flushing_t flush_flag);
   bool are_pending() const;
 
   LogChannelRef create_channel() {

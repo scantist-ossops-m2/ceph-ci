@@ -481,10 +481,8 @@ seastar::future<> Client::wait_for_send_log() {
 }
 
 seastar::future<> Client::send_log(log_flushing_t flush_flag) {
-  bool flush = (flush_flag == log_flushing_t::FLUSH);
   if (log_client) {
-    auto lm = log_client->get_mon_log_message(flush);
-    if (lm) {
+    if (auto lm = log_client->get_mon_log_message(flush_flag); lm) {
       return send_message(std::move(lm));
     }
     more_log_pending = log_client->are_pending();

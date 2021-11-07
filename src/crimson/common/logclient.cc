@@ -231,11 +231,11 @@ void LogChannel::do_log(clog_type prio, const std::string& s)
   }
 }
 
-MessageURef LogClient::get_mon_log_message(bool flush)
+MessageURef LogClient::get_mon_log_message(log_flushing_t flush_flag)
 {
-  if (flush) {
+  if (flush_flag == log_flushing_t::FLUSH) {
     if (log_queue.empty()) {
-      return nullptr;
+      return {};
     }
     // reset session
     last_log_sent = log_queue.front().seq;
@@ -263,18 +263,18 @@ MessageURef LogClient::_get_mon_log_message()
   }
 
   // limit entries per message
-  int64_t num_unsent = last_log - last_log_sent;
-  int64_t num_send;
+  const int64_t num_unsent = last_log - last_log_sent;
+  int64_t num_to_send;
   if (local_conf()->mon_client_max_log_entries_per_message > 0) {
-    num_send = std::min(num_unsent,
+    num_to_send = std::min(num_unsent,
 		 local_conf()->mon_client_max_log_entries_per_message);
   } else {
-    num_send = num_unsent;
+    num_to_send = num_unsent;
   }
 
   logger().debug("log_queue is {} last_log {} sent {} num {} unsent {}"
 		" sending {}", log_queue.size(), last_log,
-		last_log_sent, log_queue.size(), num_unsent, num_send);
+		last_log_sent, log_queue.size(), num_unsent, num_to_send);
   ceph_assert((unsigned)num_unsent <= log_queue.size());
   auto log_iter = log_queue.begin();
   std::deque<LogEntry> out_log_queue; /* will send the logs contained here */
@@ -282,7 +282,7 @@ MessageURef LogClient::_get_mon_log_message()
     ++log_iter;
     ceph_assert(log_iter != log_queue.end());
   }
-  while (num_send--) {
+  while (num_to_send--) {
     ceph_assert(log_iter != log_queue.end());
     out_log_queue.push_back(*log_iter);
     last_log_sent = log_iter->seq;

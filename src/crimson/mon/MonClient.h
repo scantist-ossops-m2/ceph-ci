@@ -44,10 +44,7 @@ struct MMonCommandAck;
 struct MLogAck;
 struct MConfig;
 
-enum class log_flushing_t {
-  NO_FLUSH,
-  FLUSH
-};
+enum class log_flushing_t;
 
 namespace crimson::mon {
 
