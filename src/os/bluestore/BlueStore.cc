@@ -6345,14 +6345,19 @@ void BlueStore::_close_db_and_around()
   if (db) {
     _close_db();
   }
+  utime_t  start_time_bluefs = ceph_clock_now();
   if (bluefs) {
     _close_bluefs();
   }
+  utime_t  start_time_fm = ceph_clock_now();
   _close_fm();
   _close_alloc();
+  utime_t  start_time_bdev = ceph_clock_now();
   _close_bdev();
+  utime_t  start_time_fsid = ceph_clock_now();
   _close_fsid();
   _close_path();
+  dout(0) <<"close_db_and_around time: bluefs=" << start_time_fm   -start_time_bluefs << " bdev  =" << start_time_fsid -start_time_bdev << dendl;
 }
 
 int BlueStore::open_db_environment(KeyValueDB **pdb, bool to_repair)
@@ -7582,12 +7587,15 @@ int BlueStore::umount()
 {
   dout(5) << __func__ << "::NCB::entered" << dendl;
   ceph_assert(_kv_only || mounted);
+  utime_t  start_time_func = ceph_clock_now();
   _osr_drain_all();
 
   mounted = false;
 
   ceph_assert(alloc);
 
+  utime_t  start_time_kv        = ceph_clock_now();
+  utime_t  start_shutdown_cache = start_time_kv;
   if (!_kv_only) {
     mempool_thread.shutdown();
 #ifdef HAVE_LIBZBD
@@ -7598,11 +7606,17 @@ int BlueStore::umount()
 #endif
     dout(20) << __func__ << " stopping kv thread" << dendl;
     _kv_stop();
-    _shutdown_cache();
+    start_shutdown_cache = ceph_clock_now();
+    if (!cct->_conf->osd_fast_shutdown) {
+      _shutdown_cache();
+    }
     dout(20) << __func__ << " closing" << dendl;
   }
+  utime_t  start_time_close = ceph_clock_now();
+  _close_db_and_around(false);
+  dout(0) <<"umount time: close=" << ceph_clock_now()-start_time_close << " umount time: kvmem=" <<
+    start_time_store - start_time_kv  << " drain=" << start_time_kv-start_time_func << dendl;
 
-  _close_db_and_around();
   if (cct->_conf->bluestore_fsck_on_umount) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
     int rc = fsck(cct->_conf->bluestore_fsck_on_umount_deep);
@@ -10018,6 +10032,23 @@ int BlueStore::get_numa_node(
     *out_failed = failed;
   }
   return 0;
+}
+
+void BlueStore::prepare_for_fast_shutdown() 
+{
+  m_fast_shutdown = true;
+  // TBD:  disable deferred_try_submit()
+  // TBD2: maybe disable _deferred_submit_unlock()
+  // TBD3: disable queue_transactions()
+#if 0
+  _osr_drain_all();
+  ceph_assert(db);
+  delete db;
+  db = nullptr;
+  store_allocator(shared_alloc.a);
+#else
+  umount();
+#endif
 }
 
 int BlueStore::get_devices(set<string> *ls)
@@ -13643,6 +13674,11 @@ int BlueStore::queue_transactions(
   TrackedOpRef op,
   ThreadPool::TPHandle *handle)
 {
+  if (m_fast_shutdown) {
+    //dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
+  }
+
+  
   FUNCTRACE(cct);
   list<Context *> on_applied, on_commit, on_applied_sync;
   ObjectStore::Transaction::collect_contexts(
@@ -17980,7 +18016,7 @@ int BlueStore::store_allocator(Allocator* src_allocator)
 
   uint64_t file_size = p_handle->file->fnode.size;
   uint64_t allocated = p_handle->file->fnode.get_allocated();
-  dout(5) << "file_size=" << file_size << ", allocated=" << allocated << dendl;
+  dout(10) << "file_size=" << file_size << ", allocated=" << allocated << dendl;
 
   unique_ptr<Allocator> allocator(clone_allocator_without_bluefs(src_allocator));
   if (!allocator) {
@@ -18058,8 +18094,8 @@ int BlueStore::store_allocator(Allocator* src_allocator)
   bluefs->fsync(p_handle);
 
   utime_t duration = ceph_clock_now() - start_time;
-  dout(5) <<"WRITE-extent_count=" << extent_count << ", file_size=" << p_handle->file->fnode.size << dendl;
-  dout(5) <<"p_handle->pos=" << p_handle->pos << " WRITE-duration=" << duration << " seconds" << dendl;
+  dout(10) <<"WRITE-extent_count=" << extent_count << ", file_size=" << p_handle->file->fnode.size << dendl;
+  dout(10) <<"p_handle->pos=" << p_handle->pos << " WRITE-duration=" << duration << " seconds" << dendl;
 
   bluefs->close_writer(p_handle);
   need_to_destage_allocation_file = false;
