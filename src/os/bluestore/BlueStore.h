@@ -2052,6 +2052,10 @@ private:
   int fsid_fd = -1;  ///< open handle (locked) to $path/fsid
   bool mounted = false;
 
+  // store open_db options:
+  bool db_was_opened_read_only = true;
+  bool need_to_destage_allocation_file = false;
+  
   ceph::shared_mutex coll_lock = ceph::make_shared_mutex("BlueStore::coll_lock");  ///< rwlock to protect coll_map
   mempool::bluestore_cache_other::unordered_map<coll_t, CollectionRef> coll_map;
   bool collections_had_errors = false;
@@ -3542,7 +3546,7 @@ private:
   int  read_allocation_from_onodes(Allocator* allocator, read_alloc_stats_t& stats);
   int  commit_to_null_manager();
   int  commit_to_real_manager();
-  int  db_cleanup(int ret);
+  int  db_cleanup(bool read_only, int ret);
   int  reset_fm_for_restore();
   int  verify_rocksdb_allocations(Allocator *allocator);
   Allocator* clone_allocator_without_bluefs(Allocator *src_allocator);
