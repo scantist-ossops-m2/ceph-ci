@@ -2629,7 +2629,7 @@ public:
 
 private:
   int32_t ondisk_format = 0;  ///< value detected on mount
-
+  bool    m_fast_shutdown = false;
   int _upgrade_super();  ///< upgrade (called during open_super)
   uint64_t _get_ondisk_reserved() const;
   void _prepare_ondisk_format_super(KeyValueDB::Transaction& t);
@@ -2647,6 +2647,8 @@ public:
   bool needs_journal() override { return false; };
   bool wants_journal() override { return false; };
   bool allows_journal() override { return false; };
+
+  void prepare_for_fast_shutdown() override;
 
   uint64_t get_min_alloc_size() const override {
     return min_alloc_size;
