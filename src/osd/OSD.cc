@@ -4246,14 +4246,6 @@ PerfCounters* OSD::create_recoverystate_perf()
 
 int OSD::shutdown()
 {
-  if (cct->_conf->osd_fast_shutdown) {
-    derr << "*** Immediate shutdown (osd_fast_shutdown=true) ***" << dendl;
-    if (cct->_conf->osd_fast_shutdown_notify_mon)
-      service.prepare_to_stop();
-    cct->_log->flush();
-    _exit(0);
-  }
-
   if (!service.prepare_to_stop())
     return 0; // already shutting down
   osd_lock.lock();
@@ -4261,8 +4253,9 @@ int OSD::shutdown()
     osd_lock.unlock();
     return 0;
   }
-  dout(0) << "shutdown" << dendl;
+  dout(0) << "shutdown 1" << dendl;
 
+  // don't accept new task for this OSD
   set_state(STATE_STOPPING);
 
   // Debugging
@@ -4274,7 +4267,34 @@ int OSD::shutdown()
     cct->_conf.set_val("debug_ms", "100");
     cct->_conf.apply_changes(nullptr);
   }
+  dout(0) << "shutdown 2 : cct->_conf->osd_fast_shutdown = " << cct->_conf->osd_fast_shutdown << dendl;
+  
+  if (cct->_conf->osd_fast_shutdown || 1) {
+    dout(0) << "shutdown osd_fast_shutdown !!!" << dendl;
+    derr << "*** Immediate shutdown (osd_fast_shutdown=true) ***" << dendl;
+    if (cct->_conf->osd_fast_shutdown_notify_mon)
+      service.prepare_to_stop();
 
+    // first, stop new task from being taken from op_shardedwq
+    op_shardedwq.stop_for_fast_shutdown();
+    
+    osd_lock.unlock();
+
+    // then, wait on osd_op_tp to drain with a timeout
+    osd_op_tp.drain();//timeout);
+    osd_op_tp.stop();//timeout-passed);
+    dout(0) << "op sharded tp stopped" << dendl;
+
+    cct->_log->flush();
+
+    // write allocation map (or maybe do a full umount ???)
+    store->prepare_for_fast_shutdown();
+
+    // now it is safe to exit
+    _exit(0);
+  }
+
+  dout(0) << "shutdown 3" << dendl;
   // stop MgrClient earlier as it's more like an internal consumer of OSD
   mgrc.shutdown();
 
@@ -10707,15 +10727,18 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
       if (sdata->scheduler->empty() &&
          !(is_smallest_thread_index && !sdata->context_queue.empty())) {
 	sdata->shard_lock.unlock();
+	dout(0) << __func__ << " empty q, return" << dendl;
 	return;
       }
       // found a work item; reapply default wq timeouts
       osd->cct->get_heartbeat_map()->reset_timeout(hb,
         timeout_interval, suicide_interval);
+      dout(0) << __func__ << " new work_item, process" << dendl;
     } else {
       dout(20) << __func__ << " need return immediately" << dendl;
       wait_lock.unlock();
       sdata->shard_lock.unlock();
+      dout(0) << __func__ << " stop waiting!!, return immediately!!!" << dendl;
       return;
     }
   }
@@ -10723,8 +10746,9 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
   list<Context *> oncommits;
   if (is_smallest_thread_index) {
     sdata->context_queue.move_to(oncommits);
+    dout(0) << __func__ << " is_smallest_thread_index, process oncommits" << dendl;
   }
-
+    
   WorkItem work_item;
   while (!std::get_if<OpSchedulerItem>(&work_item)) {
     if (sdata->scheduler->empty()) {
@@ -10742,6 +10766,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
     }
 
     work_item = sdata->scheduler->dequeue();
+    dout(0) << __func__ << " got work_item from queue" << dendl;
     if (osd->is_stopping()) {
       sdata->shard_lock.unlock();
       for (auto c : oncommits) {
@@ -11014,54 +11039,99 @@ void OSD::ShardedOpWQ::_enqueue(OpSchedulerItem&& item) {
   uint32_t shard_index =
     item.get_ordering_token().hash_to_shard(osd->shards.size());
 
-  dout(20) << __func__ << " " << item << dendl;
-
-  OSDShard* sdata = osd->shards[shard_index];
-  assert (NULL != sdata);
-
-  bool empty = true;
-  {
-    std::lock_guard l{sdata->shard_lock};
-    empty = sdata->scheduler->empty();
-    sdata->scheduler->enqueue(std::move(item));
-  }
-
-  {
-    std::lock_guard l{sdata->sdata_wait_lock};
-    if (empty) {
-      sdata->sdata_cond.notify_all();
-    } else if (sdata->waiting_threads) {
-      sdata->sdata_cond.notify_one();
+  if (!m_fast_shutdown) {
+    dout(0) << __func__ << " (enqueue)" << item << dendl;
+    
+    OSDShard* sdata = osd->shards[shard_index];
+    assert (NULL != sdata);
+    
+    bool empty = true;
+    {
+      std::lock_guard l{sdata->shard_lock};
+      empty = sdata->scheduler->empty();
+      sdata->scheduler->enqueue(std::move(item));
     }
+    
+    {
+      std::lock_guard l{sdata->sdata_wait_lock};
+      if (empty) {
+	sdata->sdata_cond.notify_all();
+      } else if (sdata->waiting_threads) {
+	sdata->sdata_cond.notify_one();
+      }
+    }
+  } else {
+    dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
   }
 }
 
 void OSD::ShardedOpWQ::_enqueue_front(OpSchedulerItem&& item)
 {
   auto shard_index = item.get_ordering_token().hash_to_shard(osd->shards.size());
-  auto& sdata = osd->shards[shard_index];
-  ceph_assert(sdata);
-  sdata->shard_lock.lock();
-  auto p = sdata->pg_slots.find(item.get_ordering_token());
-  if (p != sdata->pg_slots.end() &&
-      !p->second->to_process.empty()) {
-    // we may be racing with _process, which has dequeued a new item
-    // from scheduler, put it on to_process, and is now busy taking the
-    // pg lock.  ensure this old requeued item is ordered before any
-    // such newer item in to_process.
-    p->second->to_process.push_front(std::move(item));
-    item = std::move(p->second->to_process.back());
-    p->second->to_process.pop_back();
-    dout(20) << __func__
-	     << " " << p->second->to_process.front()
-	     << " shuffled w/ " << item << dendl;
+  if (!m_fast_shutdown) {
+    dout(0) << __func__ << "::(_enqueue) " << dendl;
+    auto& sdata = osd->shards[shard_index];
+    ceph_assert(sdata);
+    sdata->shard_lock.lock();
+    auto p = sdata->pg_slots.find(item.get_ordering_token());
+    if (p != sdata->pg_slots.end() &&
+	!p->second->to_process.empty()) {
+      // we may be racing with _process, which has dequeued a new item
+      // from scheduler, put it on to_process, and is now busy taking the
+      // pg lock.  ensure this old requeued item is ordered before any
+      // such newer item in to_process.
+      p->second->to_process.push_front(std::move(item));
+      item = std::move(p->second->to_process.back());
+      p->second->to_process.pop_back();
+      dout(20) << __func__
+	       << " " << p->second->to_process.front()
+	       << " shuffled w/ " << item << dendl;
+    } else {
+      dout(20) << __func__ << " " << item << dendl;
+    }
+    sdata->scheduler->enqueue_front(std::move(item));
+    sdata->shard_lock.unlock();
+    std::lock_guard l{sdata->sdata_wait_lock};
+    sdata->sdata_cond.notify_one();
   } else {
-    dout(20) << __func__ << " " << item << dendl;
+    dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
   }
-  sdata->scheduler->enqueue_front(std::move(item));
-  sdata->shard_lock.unlock();
-  std::lock_guard l{sdata->sdata_wait_lock};
-  sdata->sdata_cond.notify_one();
+}
+
+void OSD::ShardedOpWQ::stop_for_fast_shutdown()
+{
+  uint32_t shard_index = 0;
+  m_fast_shutdown = true;
+  dout(0) << __func__ << "::fast_shutdown flag was set!" << dendl;
+
+  for (; shard_index < osd->num_shards; shard_index++) {
+    auto& sdata = osd->shards[shard_index];
+    ceph_assert(sdata);
+    dout(0) << __func__ << "::fast_shutdown check shard_index " << shard_index << dendl;
+    sdata->shard_lock.lock();
+    int work_count = 0;
+    while(! sdata->scheduler->empty() ) {
+      auto work_item = sdata->scheduler->dequeue();
+      work_count++;
+      // TBD - do we need to delete the work_item ???
+    }
+
+    if (!sdata->context_queue.empty()) {
+      dout(0) << __func__ << "\n::fast_shutdown <<!sdata->context_queue.empty()>>\n" << dendl;
+    }
+    
+    sdata->shard_lock.unlock();
+    if (work_count ) {
+      dout(0) << __func__ << "::fast_shutdown removed " << work_count << " work items from scheduler queue" << dendl;
+    }
+
+    //bool is_smallest_thread_index = thread_index < osd->num_shards;
+  }
+#if 0
+  dout(0) << __func__ << "::fast_shutdown calling return_waiting_threads()" << dendl;
+  return_waiting_threads();
+  dout(0) << __func__ << "::fast_shutdown after   return_waiting_threads()" << dendl;
+#endif
 }
 
 namespace ceph::osd_cmds {
