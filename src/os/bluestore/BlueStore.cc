@@ -10004,6 +10004,23 @@ int BlueStore::get_numa_node(
   return 0;
 }
 
+void BlueStore::prepare_for_fast_shutdown() 
+{
+  m_fast_shutdown = true;
+  // TBD:  disable deferred_try_submit()
+  // TBD2: maybe disable _deferred_submit_unlock()
+  // TBD3: disable queue_transactions()
+#if 0
+  _osr_drain_all();
+  ceph_assert(db);
+  delete db;
+  db = nullptr;
+  store_allocator(shared_alloc.a);
+#else
+  umount();
+#endif
+}
+
 int BlueStore::get_devices(set<string> *ls)
 {
   if (bdev) {
@@ -13627,6 +13644,11 @@ int BlueStore::queue_transactions(
   TrackedOpRef op,
   ThreadPool::TPHandle *handle)
 {
+  if (m_fast_shutdown) {
+    dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
+  }
+
+  
   FUNCTRACE(cct);
   list<Context *> on_applied, on_commit, on_applied_sync;
   ObjectStore::Transaction::collect_contexts(
@@ -17938,6 +17960,7 @@ int BlueStore::store_allocator(Allocator* src_allocator)
   utime_t  start_time = ceph_clock_now();
   int ret = 0;
 
+  dout(0) << "entered" << dendl;
   // create dir if doesn't exist already
   if (!bluefs->dir_exists(allocator_dir) ) {
     ret = bluefs->mkdir(allocator_dir);
@@ -17960,7 +17983,7 @@ int BlueStore::store_allocator(Allocator* src_allocator)
 
   uint64_t file_size = p_handle->file->fnode.size;
   uint64_t allocated = p_handle->file->fnode.get_allocated();
-  dout(5) << "file_size=" << file_size << ", allocated=" << allocated << dendl;
+  dout(0) << "file_size=" << file_size << ", allocated=" << allocated << dendl;
 
   unique_ptr<Allocator> allocator(clone_allocator_without_bluefs(src_allocator));
   if (!allocator) {
@@ -18038,8 +18061,8 @@ int BlueStore::store_allocator(Allocator* src_allocator)
   bluefs->fsync(p_handle);
 
   utime_t duration = ceph_clock_now() - start_time;
-  dout(5) <<"WRITE-extent_count=" << extent_count << ", file_size=" << p_handle->file->fnode.size << dendl;
-  dout(5) <<"p_handle->pos=" << p_handle->pos << " WRITE-duration=" << duration << " seconds" << dendl;
+  dout(0) <<"WRITE-extent_count=" << extent_count << ", file_size=" << p_handle->file->fnode.size << dendl;
+  dout(0) <<"p_handle->pos=" << p_handle->pos << " WRITE-duration=" << duration << " seconds" << dendl;
 
   bluefs->close_writer(p_handle);
   return 0;
