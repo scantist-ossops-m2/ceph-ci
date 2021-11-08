@@ -34,7 +34,7 @@
 %ifarch x86_64 ppc64le
 %bcond_without rbd_rwl_cache
 %bcond_without rbd_ssd_cache
-%global _system_pmdk 1
+%global _system_pmdk 0
 %else
 %bcond_with rbd_rwl_cache
 %bcond_with rbd_ssd_cache
@@ -60,7 +60,7 @@
 %bcond_with libradosstriper
 %ifarch x86_64 aarch64 ppc64le
 %bcond_without lttng
-%global _system_pmdk 1
+%global _system_pmdk 0
 %bcond_without rbd_rwl_cache
 %bcond_without rbd_ssd_cache
 %else
