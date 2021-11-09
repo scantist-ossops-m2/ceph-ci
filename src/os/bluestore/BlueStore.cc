@@ -6141,7 +6141,7 @@ int BlueStore::_is_bluefs(bool create, bool* ret)
 */
 int BlueStore::_open_db_and_around(bool read_only, bool to_repair)
 {
-  dout(5) << __func__ << "::NCB::read_only=" << read_only << ", to_repair=" << to_repair << dendl;
+  dout(0) << __func__ << "::NCB::read_only=" << read_only << ", to_repair=" << to_repair << dendl;
   {
     string type;
     int r = read_meta("type", &type);
@@ -6160,7 +6160,6 @@ int BlueStore::_open_db_and_around(bool read_only, bool to_repair)
   // SMR devices may require a freelist adjustment, but that can only happen after
   // the db is read-write. we'll stash pending changes here.
   std::map<uint64_t, uint64_t> zone_adjustments;
-
   int r = _open_path();
   if (r < 0)
     return r;
@@ -6264,6 +6263,7 @@ out_fm:
 
 void BlueStore::_close_db_and_around(bool read_only)
 {
+  dout(0) << __func__ << "::NCB::db_was_opened_read_only=" << db_was_opened_read_only << "/" << read_only << dendl;
   if (db) {
     _close_db(read_only);
   }
@@ -6511,20 +6511,21 @@ void BlueStore::_close_db_leave_bluefs()
 
 void BlueStore::_close_db(bool cold_close)
 {
-  dout(0) << __func__ << "db_was_opened_read_only=" << db_was_opened_read_only << "@read_only_param=" << cold_close << dendl;
+  dout(0) << __func__ << "::NCB::db_was_opened_read_only=" << db_was_opened_read_only << "/" << cold_close << dendl;
   if (db_was_opened_read_only != cold_close) {
-    derr << __func__ << "db_was_opened_read_only=" << db_was_opened_read_only << "@read_only_param=" << cold_close << dendl;
+    derr << __func__ << "::NCB::db_was_opened_read_only=" << db_was_opened_read_only << "@read_only_param=" << cold_close << dendl;
     ceph_assert(db_was_opened_read_only == cold_close);
   }
 
   _close_db_leave_bluefs();
-    
+
+  dout(0) << __func__ << "::NCB::fm=" << fm << " need_to_destage_allocation_file=" << need_to_destage_allocation_file << dendl;
   if (fm && fm->is_null_manager() && !cold_close) {
     dout(0) << __func__ << "::NCB::need_to_destage_allocation_file=" << need_to_destage_allocation_file << dendl;
-    
+    ceph_assert(need_to_destage_allocation_file);
     int ret = store_allocator(alloc);
     if (ret == 0) {
-      dout(5) << __func__ << "::NCB::store_allocator() completed successfully" << dendl;
+      dout(0) << __func__ << "::NCB::store_allocator() completed successfully" << dendl;
     } else {
       derr << __func__ << "::NCB::store_allocator() failed (continue with bitmapFreelistManager)" << dendl;
     }
@@ -7398,8 +7399,12 @@ int BlueStore::_mount()
 {
   dout(5) << __func__ << "NCB:: path " << path << dendl;
   _kv_only = false;
+#if 1
+  cct->_conf->bluestore_fsck_on_mount      = true;
+  cct->_conf->bluestore_fsck_on_mount_deep = FSCK_DEEP;
+#endif
   if (cct->_conf->bluestore_fsck_on_mount) {
-    dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
+    dout(0) << __func__ << "::NCB::calling fsck()" << dendl;
     int rc = fsck(cct->_conf->bluestore_fsck_on_mount_deep);
     if (rc < 0)
       return rc;
@@ -7416,7 +7421,7 @@ int BlueStore::_mount()
     return -EINVAL;
   }
 
-  dout(5) << __func__ << "::NCB::calling open_db_and_around(read/write)" << dendl;
+  dout(0) << __func__ << "::NCB::calling open_db_and_around(read/write)" << dendl;
   int r = _open_db_and_around(false);
   if (r < 0) {
     return r;
@@ -7517,8 +7522,12 @@ int BlueStore::umount()
     dout(20) << __func__ << " closing" << dendl;
   }
   //GBH - is this a problem that we store the allocation-file in kv_only mode ???
+  dout(0) << __func__ << "::***>>>calling _close_db_and_around(false)" << dendl; 
   _close_db_and_around(false);
-
+#if 1
+  cct->_conf->bluestore_fsck_on_umount      = true;
+  cct->_conf->bluestore_fsck_on_umount_deep = FSCK_DEEP;
+#endif
   if (cct->_conf->bluestore_fsck_on_umount) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
     int rc = fsck(cct->_conf->bluestore_fsck_on_umount_deep);
@@ -8684,7 +8693,7 @@ Detection stage (in processing order):
 */
 int BlueStore::_fsck(BlueStore::FSCKDepth depth, bool repair)
 {
-  dout(5) << __func__ << "::NCB::depth=" << depth << ", repair="<< repair << dendl;
+  dout(0) << __func__ << "::NCB::depth=" << depth << ", repair="<< repair << dendl;
   dout(5) << __func__
     << (repair ? " repair" : " check")
     << (depth == FSCK_DEEP ? " (deep)" :
@@ -8693,12 +8702,13 @@ int BlueStore::_fsck(BlueStore::FSCKDepth depth, bool repair)
 
   // in deep mode we need R/W write access to be able to replay deferred ops
   const bool read_only = !(repair || depth == FSCK_DEEP);
-  dout(5) << __func__ << "::NCB::calling open_db_and_around()" << dendl;
+  dout(0) << __func__ << "::NCB::calling open_db_and_around()" << dendl;
   int r = _open_db_and_around(read_only);
   if (r < 0) {
     return r;
   }
   auto close_db = make_scope_guard([&] {
+    dout(0) << __func__ << "::NCB::calling _close_db_and_around(" << read_only << ")" << dendl;
     _close_db_and_around(read_only);
   });
 
