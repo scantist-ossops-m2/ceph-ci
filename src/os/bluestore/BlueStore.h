@@ -2381,7 +2381,7 @@ private:
   * in the proper order
   */
   int _open_db_and_around(bool read_only, bool to_repair = false);
-  void _close_db_and_around(bool read_only);
+  void _close_db_and_around();
 
   int _prepare_db_environment(bool create, bool read_only,
 			      std::string* kv_dir, std::string* kv_backend);
@@ -2393,7 +2393,7 @@ private:
   int _open_db(bool create,
 	       bool to_repair_db=false,
 	       bool read_only = false);
-  void _close_db(bool read_only);
+  void _close_db();
   void _close_db_leave_bluefs();
   int _open_fm(KeyValueDB::Transaction t, bool read_only, bool fm_restore = false);
   void _close_fm();
