@@ -12,7 +12,7 @@ from orchestrator import OrchestratorError, DaemonDescription
 if TYPE_CHECKING:
     from .module import CephadmOrchestrator
 
-LAST_MIGRATION = 3
+LAST_MIGRATION = 4
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,10 @@ class Migrations:
         if self.mgr.migration_current == 2 and not startup:
             if self.migrate_2_3():
                 self.set(3)
+
+        if self.mgr.migration_current == 3:
+            if self.migrate_3_4():
+                self.set(4)
 
     def migrate_0_1(self) -> bool:
         """
@@ -258,6 +262,38 @@ class Migrations:
             if ret:
                 self.mgr.log.warning(f'Failed to migrate export ({ret}): {err}\nExport was:\n{ex}')
         self.mgr.log.info(f'Done migrating nfs.{service_id}')
+
+    def migrate_3_4(self) -> bool:
+        registry_url = self.mgr.get_module_option('registry_url')
+        registry_username = self.mgr.get_module_option('registry_username')
+        registry_password = self.mgr.get_module_option('registry_password')
+        if registry_url and registry_username and registry_password:
+
+            registry_credentials = {'url': registry_url,
+                                    'username': registry_username, 'password': registry_password}
+            self.mgr.set_store('registry_credentials', json.dumps(registry_credentials))
+
+            self.mgr.set_module_option('registry_url', None)
+            self.mgr.check_mon_command({
+                'prefix': 'config rm',
+                'who': 'mgr',
+                'key': 'mgr/cephadm/registry_url',
+            })
+            self.mgr.set_module_option('registry_username', None)
+            self.mgr.check_mon_command({
+                'prefix': 'config rm',
+                'who': 'mgr',
+                'key': 'mgr/cephadm/registry_username',
+            })
+            self.mgr.set_module_option('registry_password', None)
+            self.mgr.check_mon_command({
+                'prefix': 'config rm',
+                'who': 'mgr',
+                'key': 'mgr/cephadm/registry_password',
+            })
+
+            self.mgr.log.info('Done migrating registry login info')
+        return True
 
 
 def queue_migrate_nfs_spec(mgr: "CephadmOrchestrator", spec_dict: Dict[Any, Any]) -> None:
