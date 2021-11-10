@@ -6,7 +6,7 @@ from threading import Thread
 from contextlib import contextmanager
 from io import StringIO
 from shlex import quote
-from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, Iterator, Coroutine, TypeVar, Awaitable
+from typing import TYPE_CHECKING, Optional, List, Tuple, Dict, Iterator, TypeVar, Awaitable
 from orchestrator import OrchestratorError
 
 try:
