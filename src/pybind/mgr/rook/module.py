@@ -1,5 +1,6 @@
-from logging import error
+import datetime
 import logging
+import re
 import threading
 import functools
 import os
@@ -9,7 +10,7 @@ from ceph.deployment import inventory
 from ceph.deployment.service_spec import ServiceSpec, NFSServiceSpec, RGWSpec, PlacementSpec
 from ceph.utils import datetime_now
 
-from typing import List, Dict, Optional, Callable, Any, TypeVar, Tuple
+from typing import List, Dict, Optional, Callable, Any, TypeVar, Tuple, TYPE_CHECKING
 
 try:
     from ceph.deployment.drive_group import DriveGroupSpec
@@ -33,7 +34,7 @@ except ImportError:
     client = None
     config = None
 
-from mgr_module import MgrModule, Option
+from mgr_module import MgrModule, Option, NFS_POOL_NAME
 import orchestrator
 from orchestrator import handle_orch_error, OrchResult, raise_if_exception
 
@@ -81,6 +82,12 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
             default='local',
             desc='storage class name for LSO-discovered PVs',
         ),
+        Option(
+            'drive_group_interval',
+            type='float',
+            default=300.0,
+            desc='interval in seconds between re-application of applied drive_groups',
+        ),
     ]
 
     @staticmethod
@@ -115,8 +122,13 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
         self._rook_cluster: Optional[RookCluster] = None
         self._rook_env = RookEnv()
         self._k8s_AppsV1_api: Optional[client.AppsV1Api] = None
-        self.storage_class = self.get_module_option('storage_class')
 
+        self.config_notify()
+        if TYPE_CHECKING:
+            self.storage_class = 'foo'
+            self.drive_group_interval = 10.0
+
+        self._load_drive_groups()
         self._shutdown = threading.Event()
         
     def config_notify(self) -> None:
@@ -132,7 +144,10 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
             self.log.debug(' mgr option %s = %s',
                            opt['name'], getattr(self, opt['name']))  # type: ignore
         assert isinstance(self.storage_class, str)
-        self.rook_cluster.storage_class = self.storage_class
+        assert isinstance(self.drive_group_interval, float)
+
+        if self._rook_cluster:
+            self._rook_cluster.storage_class = self.storage_class
 
     def shutdown(self) -> None:
         self._shutdown.set()
@@ -194,9 +209,11 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
             self.storage_class)
 
         self._initialized.set()
+        self.config_notify()
 
         while not self._shutdown.is_set():
-            self._shutdown.wait(5)
+            self._apply_drivegroups(list(self._drive_group_map.values()))
+            self._shutdown.wait(self.drive_group_interval)
 
     @handle_orch_error
     def get_inventory(self, host_filter: Optional[orchestrator.InventoryFilter] = None, refresh: bool = False) -> List[orchestrator.InventoryHost]:
@@ -263,7 +280,11 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
                 container_image_name=image_name,
                 last_refresh=now,
             )
-        if not cl['spec'].get('crashCollector', {}).get('disable', False):
+
+        if (
+            service_type == 'crash' or service_type is None
+            and not cl['spec'].get('crashCollector', {}).get('disable', False)
+        ):
             spec['crash'] = orchestrator.ServiceDescription(
                 spec=ServiceSpec(
                     'crash',
@@ -328,12 +349,16 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
         if service_type == 'nfs' or service_type is None:
             # CephNFSes
             all_nfs = self.rook_cluster.get_resource("cephnfses")
+            nfs_pods = self.rook_cluster.describe_pods('nfs', None, None)
             for nfs in all_nfs:
+                if nfs['spec']['rados']['pool'] != NFS_POOL_NAME:
+                    continue
                 nfs_name = nfs['metadata']['name']
                 svc = 'nfs.' + nfs_name
                 if svc in spec:
                     continue
                 active = nfs['spec'].get('server', {}).get('active')
+                creation_timestamp = datetime.datetime.strptime(nfs['metadata']['creationTimestamp'], '%Y-%m-%dT%H:%M:%SZ')
                 spec[svc] = orchestrator.ServiceDescription(
                     spec=NFSServiceSpec(
                         service_id=nfs_name,
@@ -341,20 +366,34 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
                     ),
                     size=active,
                     last_refresh=now,
+                    running=len([1 for pod in nfs_pods if pod['labels']['ceph_nfs'] == nfs_name]),
+                    created=creation_timestamp.astimezone(tz=datetime.timezone.utc)
                 )
         if service_type == 'osd' or service_type is None:
             # OSDs
+            # FIXME: map running OSDs back to their respective services...
+
+            # the catch-all unmanaged
             all_osds = self.rook_cluster.get_osds()
             svc = 'osd'
             spec[svc] = orchestrator.ServiceDescription(
                 spec=DriveGroupSpec(
+                    unmanaged=True,
                     service_type='osd',
-                    placement=PlacementSpec(count=len(all_osds), hosts=[osd.metadata.labels['topology-location-host'] for osd in all_osds]),
                 ),
                 size=len(all_osds),
                 last_refresh=now,
-            running= sum(osd.status.phase == 'Running' for osd in all_osds)
+                running=sum(osd.status.phase == 'Running' for osd in all_osds)
             )
+
+            # drivegroups
+            for name, dg in self._drive_group_map.items():
+                spec[f'osd.{name}'] = orchestrator.ServiceDescription(
+                    spec=dg,
+                    last_refresh=now,
+                    size=0,
+                    running=0,
+                )
         
         if service_type == 'rbd-mirror' or service_type is None:
             # rbd-mirrors
@@ -466,15 +505,32 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
     def remove_service(self, service_name: str, force: bool = False) -> str:
         if service_name == 'rbd-mirror':
             return self.rook_cluster.rm_service('cephrbdmirrors', 'default-rbd-mirror')
-        service_type, service_name = service_name.split('.', 1)
+        service_type, service_id = service_name.split('.', 1)
         if service_type == 'mds':
-            return self.rook_cluster.rm_service('cephfilesystems', service_name)
+            return self.rook_cluster.rm_service('cephfilesystems', service_id)
         elif service_type == 'rgw':
-            return self.rook_cluster.rm_service('cephobjectstores', service_name)
+            return self.rook_cluster.rm_service('cephobjectstores', service_id)
         elif service_type == 'nfs':
-            return self.rook_cluster.rm_service('cephnfses', service_name)
+            ret, out, err = self.mon_command({
+                'prefix': 'auth ls'
+            })
+            matches = re.findall(rf'client\.nfs-ganesha\.{service_id}\..*', out)
+            for match in matches:
+                self.check_mon_command({
+                    'prefix': 'auth rm',
+                    'entity': match
+                })
+            return self.rook_cluster.rm_service('cephnfses', service_id)
         elif service_type == 'rbd-mirror':
-            return self.rook_cluster.rm_service('cephrbdmirrors', service_name)
+            return self.rook_cluster.rm_service('cephrbdmirrors', service_id)
+        elif service_type == 'osd':
+            if service_id in self._drive_group_map:
+                del self._drive_group_map[service_id]
+                self._save_drive_groups()
+            return f'Removed {service_name}'
+        elif service_type == 'ingress':
+            self.log.info("{0} service '{1}' does not exist".format('ingress', service_id))
+            return 'The Rook orchestrator does not currently support ingress'
         else:
             raise orchestrator.OrchestratorError(f'Service type {service_type} not supported')
 
@@ -516,17 +572,29 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
     @handle_orch_error
     def apply_nfs(self, spec):
         # type: (NFSServiceSpec) -> str
-        return self.rook_cluster.apply_nfsgw(spec)
+        try:
+            return self.rook_cluster.apply_nfsgw(spec, self)
+        except Exception as e:
+            logging.error(e)
+            return "Unable to create NFS daemon, check logs for more traceback\n" + str(e.with_traceback(None))
 
     @handle_orch_error
     def remove_daemons(self, names: List[str]) -> List[str]:
         return self.rook_cluster.remove_pods(names)
 
     def apply_drivegroups(self, specs: List[DriveGroupSpec]) -> OrchResult[List[str]]:
-        result_list = []
-        all_hosts = raise_if_exception(self.get_hosts())
         for drive_group in specs:
-            matching_hosts = drive_group.placement.filter_matching_hosts(lambda label=None, as_hostspec=None: all_hosts)
+            self._drive_group_map[str(drive_group.service_id)] = drive_group
+        self._save_drive_groups()
+        return OrchResult(self._apply_drivegroups(specs))
+
+    def _apply_drivegroups(self, ls: List[DriveGroupSpec]) -> List[str]:
+        all_hosts = raise_if_exception(self.get_hosts())
+        result_list: List[str] = []
+        for drive_group in ls:
+            matching_hosts = drive_group.placement.filter_matching_hosts(
+                lambda label=None, as_hostspec=None: all_hosts
+            )
 
             if not self.rook_cluster.node_exists(matching_hosts[0]):
                 raise RuntimeError("Node '{0}' is not in the Kubernetes "
@@ -538,7 +606,23 @@ class RookOrchestrator(MgrModule, orchestrator.Orchestrator):
                 raise RuntimeError("Rook cluster configuration does not "
                                 "support OSD creation.")
             result_list.append(self.rook_cluster.add_osds(drive_group, matching_hosts))
-        return OrchResult(result_list)
+        return result_list
+
+    def _load_drive_groups(self) -> None:
+        stored_drive_group = self.get_store("drive_group_map")
+        self._drive_group_map: Dict[str, DriveGroupSpec] = {}
+        if stored_drive_group:
+            for name, dg in json.loads(stored_drive_group).items():
+                try:
+                    self._drive_group_map[name] = DriveGroupSpec.from_json(dg)
+                except ValueError as e:
+                    self.log.error(f'Failed to load drive group {name} ({dg}): {e}')
+
+    def _save_drive_groups(self) -> None:
+        json_drive_group_map = {
+            name: dg.to_json() for name, dg in self._drive_group_map.items()
+        }
+        self.set_store("drive_group_map", json.dumps(json_drive_group_map))
 
     def remove_osds(self, osd_ids: List[str], replace: bool = False, force: bool = False, zap: bool = False) -> OrchResult[str]:
         assert self._rook_cluster is not None
