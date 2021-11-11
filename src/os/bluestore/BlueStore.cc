@@ -13645,7 +13645,7 @@ int BlueStore::queue_transactions(
   ThreadPool::TPHandle *handle)
 {
   if (m_fast_shutdown) {
-    dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
+    //dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
   }
 
   
@@ -17960,7 +17960,6 @@ int BlueStore::store_allocator(Allocator* src_allocator)
   utime_t  start_time = ceph_clock_now();
   int ret = 0;
 
-  dout(0) << "entered" << dendl;
   // create dir if doesn't exist already
   if (!bluefs->dir_exists(allocator_dir) ) {
     ret = bluefs->mkdir(allocator_dir);
@@ -17983,7 +17982,7 @@ int BlueStore::store_allocator(Allocator* src_allocator)
 
   uint64_t file_size = p_handle->file->fnode.size;
   uint64_t allocated = p_handle->file->fnode.get_allocated();
-  dout(0) << "file_size=" << file_size << ", allocated=" << allocated << dendl;
+  dout(10) << "file_size=" << file_size << ", allocated=" << allocated << dendl;
 
   unique_ptr<Allocator> allocator(clone_allocator_without_bluefs(src_allocator));
   if (!allocator) {
@@ -18061,8 +18060,8 @@ int BlueStore::store_allocator(Allocator* src_allocator)
   bluefs->fsync(p_handle);
 
   utime_t duration = ceph_clock_now() - start_time;
-  dout(0) <<"WRITE-extent_count=" << extent_count << ", file_size=" << p_handle->file->fnode.size << dendl;
-  dout(0) <<"p_handle->pos=" << p_handle->pos << " WRITE-duration=" << duration << " seconds" << dendl;
+  dout(10) <<"WRITE-extent_count=" << extent_count << ", file_size=" << p_handle->file->fnode.size << dendl;
+  dout(10) <<"p_handle->pos=" << p_handle->pos << " WRITE-duration=" << duration << " seconds" << dendl;
 
   bluefs->close_writer(p_handle);
   return 0;
