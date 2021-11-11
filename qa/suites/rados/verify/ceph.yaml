@@ -10,9 +10,6 @@ overrides:
         mon osdmap full prune txsize: 2
       osd:
         debug monc: 20
-  workunit:
-    env:
-      LSAN_OPTIONS: "report_objects=1"
 tasks:
 - install:
 - ceph:
