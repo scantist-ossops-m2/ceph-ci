@@ -1398,6 +1398,8 @@ def run_daemon(ctx, config, type_):
                 run_cmd = get_valgrind_args(testdir, role, run_cmd, valgrind_args,
                     exit_on_first_error=exit_on_first_error)
 
+            if type_ == 'osd':
+                run_cmd.extend(['env', 'LSAN_OPTIONS=report_objects=1'])
             run_cmd.extend(run_cmd_tail)
             log_path = f'/var/log/ceph/{cluster_name}-{type_}.{id_}.log'
             create_log_cmd, run_cmd = \
