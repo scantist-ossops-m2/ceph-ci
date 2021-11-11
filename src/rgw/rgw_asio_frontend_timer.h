@@ -15,7 +15,8 @@ struct timeout_handler {
 
   void operator()(boost::system::error_code ec) {
     if (!ec) { // wait was not canceled
-      stream->close();
+      boost::system::error_code ec_ignored;
+      stream->close(ec_ignored);
     }
   }
 };
