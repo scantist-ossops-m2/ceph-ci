@@ -980,6 +980,7 @@ void AsioFrontend::accept(Listener& l, boost::system::error_code ec)
         }
         auto bytes = stream.async_handshake(ssl::stream_base::server,
                                             buffer->data(), yield[ec]);
+        timeout.cancel();
         if (ec) {
           ldout(ctx(), 1) << "ssl handshake failed: " << ec.message() << dendl;
           return;
