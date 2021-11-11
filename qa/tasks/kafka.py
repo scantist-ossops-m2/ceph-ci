@@ -3,6 +3,7 @@ Deploy and configure Kafka for Teuthology
 """
 import contextlib
 import logging
+import time
 
 from teuthology import misc as teuthology
 from teuthology import contextutil
@@ -109,6 +110,10 @@ def run_kafka(ctx,config):
         for (client, _) in config.items():
             (remote,) = ctx.cluster.only(client).remotes.keys()
 
+            ctx.cluster.only(client).run(args=['pgrep', 'kafka'])
+
+            ctx.cluster.only(client).run(args=['pgrep', 'zookeeper'])
+
             ctx.cluster.only(client).run(
                 args=['cd', '{tdir}/bin'.format(tdir=get_kafka_dir(ctx, config)), run.Raw('&&'),
                  './kafka-server-stop.sh',  
@@ -116,12 +121,20 @@ def run_kafka(ctx,config):
                 ],
             )
 
+            time.sleep(90)
+
             ctx.cluster.only(client).run(
                 args=['cd', '{tdir}/bin'.format(tdir=get_kafka_dir(ctx, config)), run.Raw('&&'), 
                  './zookeeper-server-stop.sh',
                  '{tir}/config/zookeeper.properties'.format(tir=get_kafka_dir(ctx, config)),
                 ],
             )
+
+            time.sleep(30)
+
+            ctx.cluster.only(client).run(args=['pgrep', 'kafka'])
+
+            ctx.cluster.only(client).run(args=['pgrep', 'zookeeper'])
 
 @contextlib.contextmanager
 def run_admin_cmds(ctx,config):
