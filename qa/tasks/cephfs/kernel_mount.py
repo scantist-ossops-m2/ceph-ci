@@ -62,6 +62,21 @@ class KernelMount(CephFSMount):
 
         self.mounted = True
 
+    def dmesg(self):
+        cmd = ['dmesg']
+        so, se = StringIO(), StringIO()
+        self.client_remote.run(args=cmd, timeout=(1*60),
+                               stdout=so, stderr=se, omit_sudo=False)
+        log.info(f'modprobe: so: {so.getvalue()}, se: {se.getvalue()}')
+
+    def dump_for_debug(self):
+        dumpcmd = ['ls', '-l', '/sys/module/ceph/parameters']
+        so, se = StringIO(), StringIO()
+        self.client_remote.run(args=dumpcmd, timeout=(1*60),
+                               stdout=so, stderr=se, omit_sudo=False)
+        log.info(f'dd: so: {so.getvalue()}, se: {se.getvalue()}')
+        self.dmesg()
+
     def _run_mount_cmd(self, mntopts, check_status):
         mount_cmd = self._get_mount_cmd(mntopts)
         mountcmd_stdout, mountcmd_stderr = StringIO(), StringIO()
@@ -72,6 +87,7 @@ class KernelMount(CephFSMount):
                                    stderr=mountcmd_stderr, omit_sudo=False)
         except CommandFailedError as e:
             log.info('mount command failed')
+            self.dump_for_debug()
             if check_status:
                 raise
             else:
@@ -81,7 +97,9 @@ class KernelMount(CephFSMount):
 
     def _get_mount_cmd(self, mntopts):
         opts = 'norequire_active_mds'
+        log.info(f'DBG: {self.client_keyring_path}, {type(self.client_id)}')
         if self.client_keyring_path and self.client_id:
+            log.info(f'DBG SECRET: {self.get_key_from_keyfile()}')
             opts += ',secret=' + self.get_key_from_keyfile()
         if self.config_path:
             opts += ',conf=' + self.config_path
