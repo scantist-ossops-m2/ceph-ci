@@ -8496,7 +8496,7 @@ int main(int argc, char **argv) {
   g_ceph_context->_conf.set_val_or_die("bluestore_debug_randomize_serial_transaction",
 				 "10");
 
-  g_ceph_context->_conf.set_val_or_die("bdev_debug_aio", "true");
+  //g_ceph_context->_conf.set_val_or_die("bdev_debug_aio", "true");
 
   // specify device size
   g_ceph_context->_conf.set_val_or_die("bluestore_block_size",
