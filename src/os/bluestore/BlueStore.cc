@@ -6339,17 +6339,27 @@ out_fm:
 
 void BlueStore::_close_db_and_around(bool read_only)
 {
+  utime_t  start_time_func = ceph_clock_now();
   if (db) {
     _close_db_leave_bluefs();
   }
+  utime_t  start_time_bluefs = ceph_clock_now();
   if (bluefs) {
     _close_bluefs(read_only);
   }
+  utime_t  start_time_fm = ceph_clock_now();
   _close_fm();
   _close_alloc();
+  utime_t  start_time_bdev = ceph_clock_now();
   _close_bdev();
+  utime_t  start_time_fsid = ceph_clock_now();
   _close_fsid();
   _close_path();
+  utime_t  end_time = ceph_clock_now();
+  dout(0) <<"close_db_and_around time: total =" << end_time        -start_time_func   << " close_db =" << start_time_bluefs-start_time_func << dendl;
+  dout(0) <<"close_db_and_around time: bluefs=" << start_time_fm   -start_time_bluefs << " alloc/fm =" << start_time_bdev  -start_time_fm   << dendl;
+  dout(0) <<"close_db_and_around time: bdev  =" << start_time_fsid -start_time_bdev   << " fsid/path=" << end_time         -start_time_fsid << dendl;
+
 }
 
 int BlueStore::open_db_environment(KeyValueDB **pdb, bool to_repair)
@@ -7551,12 +7561,14 @@ int BlueStore::umount()
   dout(5) << __func__ << "::NCB::entered" << dendl;
   ceph_assert(_kv_only || mounted);
   bool was_mounted = mounted;
+
+  utime_t  start_time_func = ceph_clock_now();
   _osr_drain_all();
 
   mounted = false;
 
   ceph_assert(alloc);
-
+  utime_t  start_time_kv = ceph_clock_now();
   if (!_kv_only) {
     mempool_thread.shutdown();
 #ifdef HAVE_LIBZBD
@@ -7570,7 +7582,7 @@ int BlueStore::umount()
     _shutdown_cache();
     dout(20) << __func__ << " closing" << dendl;
   }
-
+  utime_t  start_time_store = ceph_clock_now();
   _close_db_leave_bluefs();
   // GBH - Vault the allocation state
   dout(5) << "NCB::BlueStore::umount->store_allocation_state_on_bluestore() " << dendl;
@@ -7584,9 +7596,11 @@ int BlueStore::umount()
     }
     dout(5) << __func__ << "::NCB::store_allocator() completed successfully" << dendl;
   }
-
+  utime_t  start_time_close = ceph_clock_now();
   _close_db_and_around(false);
 
+  dout(0) <<"umount time: close=" << ceph_clock_now()-start_time_close << " store=" << start_time_close-start_time_store << dendl;
+  dout(0) <<"umount time: kvmem=" << start_time_store - start_time_kv  << " drain=" << start_time_kv-start_time_func << dendl;
   if (cct->_conf->bluestore_fsck_on_umount) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
     int rc = fsck(cct->_conf->bluestore_fsck_on_umount_deep);
