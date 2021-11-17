@@ -293,6 +293,7 @@ namespace librbd {
 
     crypto::CryptoInterface* get_crypto() const;
     void set_crypto(crypto::CryptoInterface* new_crypto);
+    uint64_t get_data_offset() const;
 
     void add_snap(cls::rbd::SnapshotNamespace in_snap_namespace,
 		  std::string in_snap_name,

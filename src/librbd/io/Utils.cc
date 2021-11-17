@@ -185,33 +185,28 @@ template <typename I>
 void file_to_extents(I* image_ctx, uint64_t offset, uint64_t length,
                      uint64_t buffer_offset,
                      striper::LightweightObjectExtents* object_extents) {
-  Extents extents = {{offset, length}};
-  image_ctx->io_image_dispatcher->remap_extents(
-          extents, IMAGE_EXTENTS_MAP_TYPE_LOGICAL_TO_PHYSICAL);
-  for (auto [off, len] : extents) {
-    Striper::file_to_extents(image_ctx->cct, &image_ctx->layout, off, len, 0,
-                             buffer_offset, object_extents);
-  }
+  offset += image_ctx->get_data_offset();
+  Striper::file_to_extents(image_ctx->cct, &image_ctx->layout, offset, length,
+                           0, buffer_offset, object_extents);
 }
 
 template <typename I>
 void extent_to_file(I* image_ctx, uint64_t object_no, uint64_t offset,
                     uint64_t length,
                     std::vector<std::pair<uint64_t, uint64_t> >& extents) {
+  uint64_t data_offset = image_ctx->get_data_offset();
   Striper::extent_to_file(image_ctx->cct, &image_ctx->layout, object_no,
                           offset, length, extents);
-  image_ctx->io_image_dispatcher->remap_extents(
-          extents, IMAGE_EXTENTS_MAP_TYPE_PHYSICAL_TO_LOGICAL);
+  for (unsigned i = 0; i < extents.size(); ++i) {
+    extents[i].first -= data_offset;
+  }
 }
 
 template <typename I>
 uint64_t get_file_offset(I* image_ctx, uint64_t object_no, uint64_t offset) {
   auto off = Striper::get_file_offset(image_ctx->cct, &image_ctx->layout,
                                       object_no, offset);
-  Extents extents = {{off, 0}};
-  image_ctx->io_image_dispatcher->remap_extents(
-          extents, IMAGE_EXTENTS_MAP_TYPE_PHYSICAL_TO_LOGICAL);
-  return extents[0].first;
+  return off - image_ctx->get_data_offset();
 }
 
 } // namespace util

@@ -4,6 +4,7 @@
 #include "include/neorados/RADOS.hpp"
 #include "test/librbd/mock/MockImageCtx.h"
 #include "test/librbd/mock/MockSafeTimer.h"
+#include "librbd/crypto/CryptoInterface.h"
 #include "librbd/io/AsyncOperation.h"
 
 static MockSafeTimer *s_timer;
@@ -51,6 +52,10 @@ IOContext MockImageCtx::get_data_io_context() {
 
 IOContext MockImageCtx::duplicate_data_io_context() {
   return std::make_shared<neorados::IOContext>(*get_data_io_context());
+}
+
+uint64_t MockImageCtx::get_data_offset() const {
+  return crypto == nullptr ? 0 : crypto->get_data_offset();
 }
 
 } // namespace librbd
