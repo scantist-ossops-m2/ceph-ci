@@ -5142,7 +5142,7 @@ options:
     mode is used when either the device gets fragmented or when it is low on free
     space. When free space is smaller than ''bluestore_avl_alloc_bf_free_pct'', best-fit
     mode is used.'
-  default: 4
+  default: 95
   see_also:
   - bluestore_avl_alloc_bf_threshold
 - name: bluestore_hybrid_alloc_mem_cap
