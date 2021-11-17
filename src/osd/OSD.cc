@@ -4281,8 +4281,10 @@ int OSD::shutdown()
   if (cct->_conf->osd_fast_shutdown) {
     //dout(0) << "shutdown osd_fast_shutdown !!!" << dendl;
     //derr << "*** Immediate shutdown (osd_fast_shutdown=true) ***" << dendl;
-    if (cct->_conf->osd_fast_shutdown_notify_mon)
+    if (cct->_conf->osd_fast_shutdown_notify_mon) {
+      dout(0) << "shutdown2-> service.prepare_to_stop()"  << dendl;
       service.prepare_to_stop();
+    }
 
     // first, stop new task from being taken from op_shardedwq
     op_shardedwq.stop_for_fast_shutdown();
