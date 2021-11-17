@@ -45,6 +45,35 @@ ceph osd pool set b pg_autoscale_mode on
 # get num pools again since we created more pools
 NUM_POOLS=$(ceph osd pool ls | wc -l)
 
+# get profiles of pool a and b
+PROFILE1=$(ceph osd pool autoscale-status | grep 'a' | grep -o -m 1 'scale-up\|scale-down' || true)
+PROFILE2=$(ceph osd pool autoscale-status | grep 'b' | grep -o -m 1 'scale-up\|scale-down' || true)
+
+# evaluate the default profile a
+if [[ $PROFILE1 = "scale-up" ]]
+then
+  echo "Success: pool a PROFILE is scale-up"
+else
+  echo "Error: a PROFILE is scale-down"
+  exit 1
+fi
+
+# evaluate the default profile of pool b
+if [[ $PROFILE2 = "scale-up" ]]
+then
+  echo "Success: pool b PROFILE is scale-up"
+else
+  echo "Error: b PROFILE is scale-down"
+  exit 1
+fi
+
+# This part of this code will now evaluate the accuracy of
+# scale-down profile
+
+# change to scale-down profile
+
+ceph osd pool set autoscale-profile scale-down 
+
 # get pool size
 POOL_SIZE_A=$(ceph osd pool get a size| grep -Eo '[0-9]{1,4}')
 POOL_SIZE_B=$(ceph osd pool get b size| grep -Eo '[0-9]{1,4}')
