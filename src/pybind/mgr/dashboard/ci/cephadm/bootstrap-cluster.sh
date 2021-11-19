@@ -3,8 +3,7 @@
 export PATH=/root/bin:$PATH
 mkdir /root/bin
 
-cp /mnt/{{ ceph_dev_folder }}/src/cephadm/cephadm /root/bin/cephadm
-chmod +x /root/bin/cephadm
+/mnt/{{ ceph_dev_folder }}/src/cephadm/build.sh /root/bin/cephadm
 mkdir -p /etc/ceph
 mon_ip=$(ifconfig eth0  | grep 'inet ' | awk '{ print $2}')
 
