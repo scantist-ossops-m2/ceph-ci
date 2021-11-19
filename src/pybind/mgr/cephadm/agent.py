@@ -450,24 +450,6 @@ class CephadmAgentHelpers:
                 f'Delaying checking agent on {host} until cephadm endpoint finished creating root cert')
             return False
         if self.mgr.agent_helpers._agent_down(host):
-            if host not in self.mgr.offline_hosts:
-                self.mgr.cache.metadata_up_to_date[host] = False
-                # In case host is actually offline, it's best to reset the connection to avoid
-                # a long timeout trying to use an existing connection to an offline host
-                self.mgr.ssh._reset_con(host)
-
-                try:
-                    # try to schedule redeploy of agent in case it is individually down
-                    agent = self.mgr.cache.get_daemons_by_type('agent', host=host)[0]
-                    with self.mgr.agent_helpers.agent_lock(host):
-                        daemon_spec = CephadmDaemonDeploySpec.from_daemon_description(agent)
-                        self.mgr._daemon_action(daemon_spec, action='redeploy')
-                except AgentLockException:
-                    self.mgr.log.debug(
-                        f'Could not redeploy agent on host {host}. Someone else holds agent\'s lock')
-                except Exception as e:
-                    self.mgr.log.debug(
-                        f'Failed to redeploy agent on host {host}. Agent possibly never deployed: {e}')
             return True
         else:
             try:
