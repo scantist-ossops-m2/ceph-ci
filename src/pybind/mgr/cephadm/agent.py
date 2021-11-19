@@ -371,9 +371,9 @@ class CephadmAgentHelpers:
             self.mgr.cache.agent_timestamp[host] = datetime_now()
             if host in self.mgr.offline_hosts:
                 return False
-        # agent hasn't reported in 2.5 * it's refresh rate. Something is likely wrong with it.
+        # agent hasn't reported in 3 * it's refresh rate. Something is likely wrong with it.
         time_diff = datetime_now() - self.mgr.cache.agent_timestamp[host]
-        if time_diff.total_seconds() > 2.5 * float(self.mgr.agent_refresh_rate):
+        if time_diff.total_seconds() > 3 * float(self.mgr.agent_refresh_rate):
             return True
         return False
 
@@ -383,7 +383,7 @@ class CephadmAgentHelpers:
             detail: List[str] = []
             for agent in down_agent_hosts:
                 detail.append((f'Cephadm agent on host {agent} has not reported in '
-                              f'{2.5 * self.mgr.agent_refresh_rate} seconds. Agent is assumed '
+                              f'{3 * self.mgr.agent_refresh_rate} seconds. Agent is assumed '
                                'down and host may be offline.'))
             for dd in [d for d in self.mgr.cache.get_daemons_by_type('agent') if d.hostname in down_agent_hosts]:
                 dd.status = DaemonDescriptionStatus.error
@@ -450,24 +450,6 @@ class CephadmAgentHelpers:
                 f'Delaying checking agent on {host} until cephadm endpoint finished creating root cert')
             return False
         if self.mgr.agent_helpers._agent_down(host):
-            if host not in self.mgr.offline_hosts:
-                self.mgr.cache.metadata_up_to_date[host] = False
-                # In case host is actually offline, it's best to reset the connection to avoid
-                # a long timeout trying to use an existing connection to an offline host
-                self.mgr.ssh._reset_con(host)
-
-                try:
-                    # try to schedule redeploy of agent in case it is individually down
-                    agent = self.mgr.cache.get_daemons_by_type('agent', host=host)[0]
-                    with self.mgr.agent_helpers.agent_lock(host):
-                        daemon_spec = CephadmDaemonDeploySpec.from_daemon_description(agent)
-                        self.mgr._daemon_action(daemon_spec, action='redeploy')
-                except AgentLockException:
-                    self.mgr.log.debug(
-                        f'Could not redeploy agent on host {host}. Someone else holds agent\'s lock')
-                except Exception as e:
-                    self.mgr.log.debug(
-                        f'Failed to redeploy agent on host {host}. Agent possibly never deployed: {e}')
             return True
         else:
             try:
