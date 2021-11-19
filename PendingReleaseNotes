@@ -41,6 +41,13 @@
   quick-fix/repair commands are invoked.
   Relevant tracker: https://tracker.ceph.com/issues/53062
 
+* MGR: The pg_autoscaler will start out with a default 'scale-up' profile
+  until we implement a feature that allows us to impose a limit on the maximum
+  number of PGs in the device_health_metrics or. mgr pool.
+  The reason for this is because scale-down mode can sometimes scale the PGs too
+  large and might run into issues such as failed pool creation due to
+  exceeding mon_max_pg_per_osd limit.
+
 >=16.2.6
 --------
 
