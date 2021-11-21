@@ -20,7 +20,7 @@
 
 using namespace std::chrono;
 using namespace std::chrono_literals;
-namespace sc = boost::statechart;
+//namespace sc = boost::statechart;
 
 #define DECLARE_LOCALS                                           \
   ScrubMachineListener* scrbr = context<ScrubMachine>().m_scrbr; \
@@ -365,6 +365,14 @@ sc::result WaitReplicas::react(const GotReplicas&)
   } else {
     return discard_event();
   }
+}
+
+sc::result WaitReplicas::react(const DigestUpdate&)
+{
+  // should not be called!! the event must be from a previous session
+  DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
+  dout(10) << "!!!!!!!!!!!!!!!!!!! WaitReplicas::react(const DigestUpdate&)" << dendl;
+  return discard_event();
 }
 
 // ----------------------- WaitDigestUpdate -----------------------------------

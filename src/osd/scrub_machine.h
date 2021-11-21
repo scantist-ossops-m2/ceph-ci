@@ -271,9 +271,11 @@ struct WaitReplicas : sc::state<WaitReplicas, ActiveScrubbing> {
   explicit WaitReplicas(my_context ctx);
 
   using reactions =
-    mpl::list<sc::custom_reaction<GotReplicas>, sc::deferral<DigestUpdate>>;
+    mpl::list<sc::custom_reaction<GotReplicas>, sc::custom_reaction<DigestUpdate>>;
+    //mpl::list<sc::custom_reaction<GotReplicas>, sc::deferral<DigestUpdate>>;
 
   sc::result react(const GotReplicas&);
+  sc::result react(const DigestUpdate&);
 };
 
 struct WaitDigestUpdate : sc::state<WaitDigestUpdate, ActiveScrubbing> {

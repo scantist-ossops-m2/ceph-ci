@@ -546,13 +546,16 @@ void PrimaryLogScrub::scrub_snapshot_metadata(ScrubMap& scrubmap,
 
     ++num_digest_updates_pending;
 
+    dout(25) << __func__ << " num_pending^ now: " << num_digest_updates_pending << dendl;
+
+    //auto debug_ep = get_osdmap_epoch();
     auto cb = new LambdaContext(
-      [this, osds = m_osds, cnt_was = num_digest_updates_pending, ep_was=17]([[maybe_unused]] int r) 
+      [this, osds = m_osds/*, cnt_was = num_digest_updates_pending, ep_was=debug_ep*/]([[maybe_unused]] int r) 
         mutable
         {
-          dout(20) << "updating scrub digest: ep was: " << ep_was
-          << " pending: " << cnt_was << " -> " << num_digest_updates_pending << dendl;
-          if (--num_digest_updates_pending <= 0) {
+          //dout(20) << "updating scrub digest: ep was: " << ep_was
+          //<< " pending: " << cnt_was << " -> " << num_digest_updates_pending << dendl;
+          if (num_digest_updates_pending > 0 && --num_digest_updates_pending == 0) {
 	    osds->queue_scrub_digest_update(m_pl_pg, m_pl_pg->is_scrub_blocking_ops());
           }
         });
