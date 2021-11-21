@@ -584,7 +584,10 @@ int radosgw_Main(int argc, const char **argv)
 
   int fe_count = 0;
 
-  rgw::lua::Background lua_background(&dp, store, cct.get(), store->get_luarocks_path());
+  rgw::lua::Background* lua_background =
+    new rgw::lua::Background(&dp, store, cct.get(), store->get_luarocks_path());
+
+  //rgw::lua::Background lua_background(&dp, store, cct.get(), store->get_luarocks_path());
 
   for (multimap<string, RGWFrontendConfig *>::iterator fiter = fe_map.begin();
        fiter != fe_map.end(); ++fiter, ++fe_count) {
@@ -604,7 +607,7 @@ int radosgw_Main(int argc, const char **argv)
       std::string uri_prefix;
       config->get_val("prefix", "", &uri_prefix);
 
-      RGWProcessEnv env = { store, &rest, olog, port, uri_prefix, auth_registry, &lua_background };
+      RGWProcessEnv env = { store, &rest, olog, port, uri_prefix, auth_registry, lua_background };
 
       fe = new RGWLoadGenFrontend(env, config);
     }
@@ -614,7 +617,7 @@ int radosgw_Main(int argc, const char **argv)
       std::string uri_prefix;
       config->get_val("prefix", "", &uri_prefix);
       
-      RGWProcessEnv env{ store, &rest, olog, port, uri_prefix, auth_registry, &lua_background };
+      RGWProcessEnv env{ store, &rest, olog, port, uri_prefix, auth_registry, lua_background };
       fe = new RGWAsioFrontend(env, config, sched_ctx);
     }
 
@@ -714,7 +717,8 @@ int radosgw_Main(int argc, const char **argv)
   rgw::kafka::shutdown();
 #endif
 
-  lua_background.shutdown();
+  lua_background->shutdown();
+  delete lua_background;
 
   rgw_perf_stop(g_ceph_context);
 
