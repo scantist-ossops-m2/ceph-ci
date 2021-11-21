@@ -20,7 +20,7 @@ template <class T> static ostream& _prefix(std::ostream* _dout, T* t)
 }
 
 using namespace Scrub;
-using Scrub::ScrubMachine;
+//using Scrub::ScrubMachine;
 
 bool PrimaryLogScrub::get_store_errors(const scrub_ls_arg_t& arg,
 				       scrub_ls_result_t& res_inout) const
@@ -545,11 +545,30 @@ void PrimaryLogScrub::scrub_snapshot_metadata(ScrubMap& scrubmap,
     m_pl_pg->finish_ctx(ctx.get(), pg_log_entry_t::MODIFY);
 
     ++num_digest_updates_pending;
-    ctx->register_on_success([this]() {
-      dout(20) << "updating scrub digest " << num_digest_updates_pending << dendl;
-      if (--num_digest_updates_pending <= 0) {
-	m_osds->queue_scrub_digest_update(m_pl_pg, m_pl_pg->is_scrub_blocking_ops());
-      }
+
+    auto cb = new LambdaContext(
+      [this, osds = m_osds, cnt_was = num_digest_updates_pending, ep_was=17]([[maybe_unused]] int r) 
+        mutable
+        {
+          dout(20) << "updating scrub digest: ep was: " << ep_was
+          << " pending: " << cnt_was << " -> " << num_digest_updates_pending << dendl;
+          if (--num_digest_updates_pending <= 0) {
+	    osds->queue_scrub_digest_update(m_pl_pg, m_pl_pg->is_scrub_blocking_ops());
+          }
+        });
+    
+
+
+    ctx->register_on_success([this, cb]() {
+      dout(20) << "updating scrub digest " << num_digest_updates_pending << " - slp " << dendl;
+      std::lock_guard l(m_osds->sleep_lock);
+      m_osds->sleep_timer.add_event_after(5.0, cb);
+
+//     ctx->register_on_success([this]() {
+//       dout(20) << "updating scrub digest " << num_digest_updates_pending << dendl;
+//       if (--num_digest_updates_pending <= 0) {
+// 	m_osds->queue_scrub_digest_update(m_pl_pg, m_pl_pg->is_scrub_blocking_ops());
+//       }
     });
 
     m_pl_pg->simple_opc_submit(std::move(ctx));
