@@ -29,6 +29,7 @@
 #include "librbd/asio/ContextWQ.h"
 #include "librbd/exclusive_lock/AutomaticPolicy.h"
 #include "librbd/exclusive_lock/StandardPolicy.h"
+#include "librbd/crypto/CryptoInterface.h"
 #include "librbd/io/AioCompletion.h"
 #include "librbd/io/AsyncOperation.h"
 #include "librbd/io/ImageDispatcher.h"
@@ -541,10 +542,14 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
       return 0;
     }
 
-    io::Extents extents = {{raw_size, 0}};
-    io_image_dispatcher->remap_extents(
-            extents, io::IMAGE_EXTENTS_MAP_TYPE_PHYSICAL_TO_LOGICAL);
-    return extents.front().first;
+    auto crypto = get_crypto();
+    if (crypto != nullptr) {
+      auto data_offset = crypto->get_data_offset();
+      ceph_assert(raw_size >= data_offset);
+      raw_size -= data_offset;
+    }
+
+    return raw_size;
   }
 
   uint64_t ImageCtx::get_object_count(snap_t in_snap_id) const {
@@ -881,6 +886,23 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
 
   Journal<ImageCtx> *ImageCtx::create_journal() {
     return new Journal<ImageCtx>(*this);
+  }
+
+  crypto::CryptoInterface* ImageCtx::get_crypto() const {
+    std::shared_lock image_locker{image_lock};
+    if (crypto != nullptr) {
+      crypto->get();
+    }
+    return crypto;
+  }
+
+  void ImageCtx::set_crypto(crypto::CryptoInterface* new_crypto) {
+    std::unique_lock image_locker{image_lock};
+    crypto = new_crypto;
+  }
+
+  uint64_t ImageCtx::get_data_offset() const {
+    return crypto == nullptr ? 0 : crypto->get_data_offset();
   }
 
   void ImageCtx::set_image_name(const std::string &image_name) {

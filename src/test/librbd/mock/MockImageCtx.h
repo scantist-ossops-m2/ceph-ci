@@ -318,6 +318,13 @@ struct MockImageCtx {
   ZTracer::Endpoint trace_endpoint;
 
   crypto::CryptoInterface* crypto = nullptr;
+  crypto::CryptoInterface* get_crypto() const {
+    return crypto;
+  }
+  void set_crypto(crypto::CryptoInterface* new_crypto) {
+    crypto = new_crypto;
+  }
+  uint64_t get_data_offset() const;
 
   uint64_t sparse_read_threshold_bytes;
   uint32_t discard_granularity_bytes;
