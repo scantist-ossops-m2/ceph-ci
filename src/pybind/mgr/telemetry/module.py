@@ -58,46 +58,46 @@ REVISION = 3
 #   - crush map stats
 
 class Collection(str, enum.Enum):
-    legacy_basic = 'legacy_basic'
-    legacy_device = 'legacy_device'
-    legacy_crash = 'legacy_crash'
-    legacy_ident = 'legacy_ident'
-    perf = 'perf'
-    mds_metadata = 'mds_metadata'
+    basic_base = 'basic_base'
+    device_base = 'device_base'
+    crash_base = 'crash_base'
+    ident_base = 'ident_base'
+    perf_perf = 'perf_perf'
+    basic_mds_metadata = 'basic_mds_metadata'
 
 MODULE_COLLECTION = [
     {
-        "name": Collection.legacy_basic,
+        "name": Collection.basic_base,
         "description": "Basic information about the cluster (capacity, number and type of daemons, version, etc.)",
         "channel": "basic",
         "nag": False
     },
     {
-        "name": Collection.legacy_device, 
+        "name": Collection.device_base,
         "description": "Information about device health metrics",
         "channel": "device",
         "nag": False
     },
     {
-        "name": Collection.legacy_crash,
+        "name": Collection.crash_base,
         "description": "Information about daemon crashes (daemon type and version, backtrace, etc.)",
         "channel": "crash",
         "nag": False
     },
     {
-        "name": Collection.legacy_ident,
+        "name": Collection.ident_base,
         "description": "User-provided identifying information about the cluster",
         "channel": "ident",
         "nag": False
     },
     {
-        "name": Collection.perf,
+        "name": Collection.perf_perf,
         "description": "Information about performance counters of the cluster",
         "channel": "perf",
         "nag": True
     },
     {
-        "name": Collection.mds_metadata,
+        "name": Collection.basic_mds_metadata,
         "description": "MDS metadata",
         "channel": "basic",
         "nag": False
@@ -202,7 +202,7 @@ class Module(MgrModule):
             self.channel_crash = True
             self.channel_device = True
             self.channel_perf = False
-            self.db_collection = ['legacy_basic', 'legacy_device']
+            self.db_collection = ['basic_base', 'device_base']
             self.last_opted_in_ceph_version = 17
             self.last_opted_out_ceph_version = 0
 
@@ -300,7 +300,7 @@ class Module(MgrModule):
     def gather_mds_metadata(self) -> Dict[str, Dict[str, int]]:
         metadata: Dict[str, Dict[str, int]] = dict()
 
-        res = self.get('mds_metadata') # metadata of *all* mds daemons
+        res = self.get('mds_metadata')  # metadata of *all* mds daemons
         if res is None or not res:
             self.log.debug('Could not get metadata for mds daemons')
             return metadata
@@ -687,7 +687,7 @@ class Module(MgrModule):
 
             for collection in all_perf_counters[daemon]:
                 # Split the collection to avoid redundancy in final report; i.e.:
-                #   bluestore.kv_flush_lat, bluestore.kv_final_lat --> 
+                #   bluestore.kv_flush_lat, bluestore.kv_final_lat -->
                 #   bluestore: kv_flush_lat, kv_final_lat
                 col_0, col_1 = collection.split('.')
 
@@ -1001,7 +1001,7 @@ class Module(MgrModule):
             report['metadata']['osd'] = self.gather_osd_metadata(osd_map)
             report['metadata']['mon'] = self.gather_mon_metadata(mon_map)
 
-            if self.is_enabled_collection(Collection.mds_metadata):
+            if self.is_enabled_collection(Collection.basic_mds_metadata):
                 report['metadata']['mds'] = self.gather_mds_metadata()
 
             # host counts
@@ -1118,7 +1118,7 @@ class Module(MgrModule):
                     new_collection.append(v)
 
         return new_collection
-    
+
     def is_major_upgrade(self) -> bool:
         '''
         Returns True only if the user last opted-in to an older major
@@ -1170,7 +1170,7 @@ class Module(MgrModule):
 
     def init_collection(self) -> None:
         # We fetch from db the collections the user had already opted-in to.
-        # During the transition the results will be empty, but the user might 
+        # During the transition the results will be empty, but the user might
         # be opted-in to an older version (e.g. revision = 3)
 
         collection = self.get_store('collection')
@@ -1188,8 +1188,8 @@ class Module(MgrModule):
                 # user is opted-in, verify the revision:
                 if self.last_opt_revision == REVISION:
                     self.log.debug(f"telemetry revision is {REVISION}")
-                    legacy_collection = [Collection.legacy_basic.name, Collection.legacy_device.name, Collection.legacy_crash.name, Collection.legacy_ident.name]
-                    self.set_store('collection', json.dumps(legacy_collection))
+                    base_collection = [Collection.basic_base.name, Collection.device_base.name, Collection.crash_base.name, Collection.ident_base.name]
+                    self.set_store('collection', json.dumps(base_collection))
                 else:
                     # user is opted-in to an older version, meaning they need
                     # to re-opt in regardless
@@ -1206,9 +1206,9 @@ class Module(MgrModule):
     def is_enabled_collection(self, collection: Collection) -> bool:
         return collection.name in self.db_collection
 
-    def set_collection(self) -> None:
+    def opt_in_all_collections(self) -> None:
         """
-        Opt-in to collection; Update db with the currently available collections in the module
+        Opt-in to all collections; Update db with the currently available collections in the module
         """
         for c in MODULE_COLLECTION:
             for k, v in c.items():
@@ -1334,7 +1334,7 @@ class Module(MgrModule):
 To enable, add '--license {LICENSE}' to the 'ceph telemetry on' command.'''
         else:
             self.set_module_option('enabled', True)
-            self.set_collection()
+            self.opt_in_all_collections()
 
             # for major releases upgrade nagging
             mon_map = self.get('mon_map')
@@ -1359,7 +1359,7 @@ To enable, add '--license {LICENSE}' to the 'ceph telemetry on' command.'''
         mon_min = mon_map.get("min_mon_release", 0)
         self.set_store('last_opted_out_ceph_version', str(mon_min))
         self.last_opted_out_ceph_version = mon_min
-        
+
         return 0, '', ''
 
     @CLICommand('telemetry send')
