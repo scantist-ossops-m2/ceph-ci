@@ -1318,6 +1318,15 @@ class Module(MgrModule):
 
         return 0, msg, ''
 
+    def restore_default_opt_setting(self, opt_name) -> None:
+        for o in self.MODULE_OPTIONS:
+            if o['name'] == opt_name:
+                default_val = o.get('default', None)
+                self.set_module_option(opt_name, default_val)
+                setattr(self,
+                        opt_name,
+                        default_val)
+
     @CLIReadCommand('telemetry status')
     def status(self) -> Tuple[int, str, str]:
         '''
@@ -1362,6 +1371,7 @@ class Module(MgrModule):
 To enable, add '--license {LICENSE}' to the 'ceph telemetry on' command.'''
         else:
             self.set_module_option('enabled', True)
+            self.enabled = True
             self.opt_in_all_collections()
 
             # for major releases upgrade nagging
@@ -1370,14 +1380,33 @@ To enable, add '--license {LICENSE}' to the 'ceph telemetry on' command.'''
             self.set_store('last_opted_in_ceph_version', str(mon_min))
             self.last_opted_in_ceph_version = mon_min
 
-            return 0, '', ''
+            msg = 'Telemetry is on.'
+            disabled_channels = ''
+            active_channels = self.get_active_channels()
+            for c in ALL_CHANNELS:
+                if c not in active_channels and c != 'ident':
+                    disabled_channels = f"{disabled_channels} {c}"
+
+            if len(disabled_channels) > 0:
+                msg = f"{msg}\nSome channels are disabled, please enable with:\n"\
+                        f"`ceph telemetry enable channel{disabled_channels}`"
+
+            return 0, msg, ''
 
     @CLICommand('telemetry off')
     def off(self) -> Tuple[int, str, str]:
         '''
         Disable telemetry reports from this cluster
         '''
+        if not self.enabled:
+            # telemetry is already off
+            msg = 'Telemetry is currently not enabled, nothing to turn off. '\
+                    'Please consider opting-in with `ceph telemetry on`.\n' \
+                  'Preview sample reports with `ceph telemetry preview`.'
+            return 0, msg, ''
+
         self.set_module_option('enabled', False)
+        self.enabled = False
         self.set_store('collection', json.dumps([]))
         self.db_collection = []
 
@@ -1388,7 +1417,11 @@ To enable, add '--license {LICENSE}' to the 'ceph telemetry on' command.'''
         self.set_store('last_opted_out_ceph_version', str(mon_min))
         self.last_opted_out_ceph_version = mon_min
 
-        return 0, '', ''
+        for c in ALL_CHANNELS:
+            self.restore_default_opt_setting(f"channel_{c}")
+
+        msg = 'Telemetry is now disabled. Channels settings are restored to default.'
+        return 0, msg, ''
 
     @CLIReadCommand('telemetry enable channel')
     def enable_channel(self, channels: Optional[List[str]] = None) -> Tuple[int, str, str]:
