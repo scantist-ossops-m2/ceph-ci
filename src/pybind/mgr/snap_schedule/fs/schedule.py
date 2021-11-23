@@ -241,7 +241,7 @@ class Schedule(object):
                                (f'{path}',))
             return [cls._from_db_row(row, fs) for row in c.fetchall()]
 
-    INSERT_SCHEDULE = '''INSERT OR IGNORE INTO
+    INSERT_SCHEDULE = '''INSERT INTO
         schedules(path, subvol, retention, rel_path)
         Values(?, ?, ?, ?);'''
     INSERT_SCHEDULE_META = '''INSERT INTO
