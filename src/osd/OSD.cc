@@ -1307,6 +1307,13 @@ bool OSDService::prepare_to_stop()
   if (osdmap && osdmap->is_up(whoami)) {
     dout(0) << __func__ << " telling mon we are shutting down" << dendl;
     set_state(PREPARING_TO_STOP);
+#if 1
+    monc->send_mon_message(
+      new MOSDMarkMeDead(
+	monc->get_fsid(),
+	whoami,
+	osdmap->get_epoch()));
+#else
     monc->send_mon_message(
       new MOSDMarkMeDown(
 	monc->get_fsid(),
@@ -1315,6 +1322,7 @@ bool OSDService::prepare_to_stop()
 	osdmap->get_epoch(),
 	true  // request ack
 	));
+#endif
     const auto timeout = ceph::make_timespan(cct->_conf->osd_mon_shutdown_timeout);
     is_stopping_cond.wait_for(l, timeout,
       [this] { return get_state() == STOPPING; });
@@ -4251,11 +4259,11 @@ int OSD::shutdown()
   dout(0) << "shutdown test - cct->_conf->bluestore_avl_alloc_bf_free_pct = " << cct->_conf.get_val<uint64_t>("bluestore_avl_alloc_bf_free_pct") << dendl;
   utime_t  start_time_func = ceph_clock_now();
 
-  if (!cct->_conf->osd_fast_shutdown) {
+  //if (!cct->_conf->osd_fast_shutdown) {
     dout(0) << "shutdown service.prepare_to_stop()"  << dendl;
     if (!service.prepare_to_stop())
       return 0; // already shutting down
-  }
+    //}
   utime_t  start_time_osd_lock = ceph_clock_now();
   osd_lock.lock();
   if (is_stopping()) {

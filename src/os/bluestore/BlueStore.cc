@@ -7562,7 +7562,8 @@ int BlueStore::umount()
   mounted = false;
 
   ceph_assert(alloc);
-  utime_t  start_time_kv = ceph_clock_now();
+  utime_t  start_time_kv        = ceph_clock_now();
+  utime_t  start_shutdown_cache = start_time_kv;
   if (!_kv_only) {
     mempool_thread.shutdown();
 #ifdef HAVE_LIBZBD
@@ -7573,6 +7574,7 @@ int BlueStore::umount()
 #endif
     dout(20) << __func__ << " stopping kv thread" << dendl;
     _kv_stop();
+    start_shutdown_cache = ceph_clock_now();
     _shutdown_cache();
     dout(20) << __func__ << " closing" << dendl;
   }
@@ -7592,8 +7594,9 @@ int BlueStore::umount()
   }
   utime_t  start_time_close = ceph_clock_now();
   _close_db_and_around(false);
-
-  dout(0) <<"umount time: close=" << ceph_clock_now()-start_time_close << " kvmem=" << start_time_store - start_time_kv  << dendl;
+  dout(0) <<"umount time: close=" << ceph_clock_now()-start_time_close << " kvstop=" << start_shutdown_cache - start_time_kv <<
+    " shutdown_cache=" << start_time_store - start_shutdown_cache << dendl;
+  //dout(0) <<"umount time: close=" << ceph_clock_now()-start_time_close << " kvmem=" << start_time_store - start_time_kv  << dendl;
   if (cct->_conf->bluestore_fsck_on_umount) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
     int rc = fsck(cct->_conf->bluestore_fsck_on_umount_deep);
