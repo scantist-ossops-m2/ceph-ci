@@ -6955,6 +6955,9 @@ paths:
                         pg_num_min:
                           description: ''
                           type: integer
+                        pg_num_max:
+                          description: ''
+                          type: integer
                       required:
                       - pg_num_min
                       type: object
