@@ -7,7 +7,6 @@
 #include "common/errno.h"
 #include "librbd/ImageCtx.h"
 #include "librbd/crypto/BlockCrypto.h"
-#include "librbd/crypto/CryptoImageDispatch.h"
 #include "librbd/crypto/CryptoObjectDispatch.h"
 #include "librbd/crypto/openssl/DataCryptor.h"
 #include "librbd/io/ImageDispatcherInterface.h"
@@ -25,9 +24,7 @@ template <typename I>
 void set_crypto(I *image_ctx, ceph::ref_t<CryptoInterface> crypto) {
   image_ctx->set_crypto(crypto.get());
   auto object_dispatch = CryptoObjectDispatch<I>::create(image_ctx, crypto);
-  auto image_dispatch = CryptoImageDispatch::create(crypto->get_data_offset());
   image_ctx->io_object_dispatcher->register_dispatch(object_dispatch);
-  image_ctx->io_image_dispatcher->register_dispatch(image_dispatch);
 }
 
 int build_crypto(

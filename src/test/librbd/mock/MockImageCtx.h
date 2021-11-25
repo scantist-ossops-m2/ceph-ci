@@ -339,6 +339,7 @@ struct MockImageCtx {
       old_crypto->put();
     }
   }
+  uint64_t get_data_offset() const;
 
   uint64_t sparse_read_threshold_bytes;
   uint32_t discard_granularity_bytes;
