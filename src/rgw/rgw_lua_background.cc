@@ -19,7 +19,7 @@ void Background::stop(){
 //(3) Sleep (configurable)
 void Background::run() {
   lua_State* const L = luaL_newstate();
-  rgw::lua::lua_state_guard lguard(L);
+  //rgw::lua::lua_state_guard lguard(L);
   open_standard_libs(L);
   set_package_path(L, luarocks_path);
   create_debug_action(L, cct->get());
@@ -47,6 +47,7 @@ void Background::run() {
     }
     std::this_thread::sleep_for(std::chrono::seconds(execute_interval));
   }
+  lua_close(L);
 }
 
 void Background::create_background_metatable(lua_State* L) {
