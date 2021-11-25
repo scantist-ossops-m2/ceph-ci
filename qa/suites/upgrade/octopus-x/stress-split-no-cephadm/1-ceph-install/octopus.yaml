@@ -23,7 +23,7 @@ tasks:
       - evicting unresponsive client
 - exec:
     osd.0:
-      - ceph osd require-osd-release octopus
+      #- ceph osd require-osd-release octopus
       - ceph osd set-require-min-compat-client octopus
 - print: "**** done ceph"
 - rgw:
