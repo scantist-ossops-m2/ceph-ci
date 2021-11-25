@@ -180,6 +180,10 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
     delete state;
 
     delete plugin_registry;
+
+    if (crypto != nullptr) {
+      crypto->put();
+    }
   }
 
   void ImageCtx::init() {
@@ -881,6 +885,26 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
 
   Journal<ImageCtx> *ImageCtx::create_journal() {
     return new Journal<ImageCtx>(*this);
+  }
+
+  crypto::CryptoInterface* ImageCtx::get_crypto() const {
+    std::shared_lock image_locker{image_lock};
+    if (crypto != nullptr) {
+      crypto->get();
+    }
+    return crypto;
+  }
+
+  void ImageCtx::set_crypto(crypto::CryptoInterface* new_crypto) {
+    std::unique_lock image_locker{image_lock};
+    if (new_crypto != nullptr) {
+      new_crypto->get();
+    }
+    auto old_crypto = crypto;
+    crypto = new_crypto;
+    if (old_crypto != nullptr) {
+      old_crypto->put();
+    }
   }
 
   void ImageCtx::set_image_name(const std::string &image_name) {

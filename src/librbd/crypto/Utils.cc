@@ -23,11 +23,7 @@ namespace util {
 
 template <typename I>
 void set_crypto(I *image_ctx, ceph::ref_t<CryptoInterface> crypto) {
-  {
-    std::unique_lock image_locker{image_ctx->image_lock};
-    ceph_assert(image_ctx->crypto == nullptr);
-    image_ctx->crypto = crypto.get();
-  }
+  image_ctx->set_crypto(crypto.get());
   auto object_dispatch = CryptoObjectDispatch<I>::create(image_ctx, crypto);
   auto image_dispatch = CryptoImageDispatch::create(crypto->get_data_offset());
   image_ctx->io_object_dispatcher->register_dispatch(object_dispatch);

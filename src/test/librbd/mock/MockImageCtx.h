@@ -19,6 +19,7 @@
 #include "common/WorkQueue.h"
 #include "common/zipkin_trace.h"
 #include "librbd/ImageCtx.h"
+#include "librbd/crypto/CryptoInterface.h"
 #include "gmock/gmock.h"
 #include <string>
 
@@ -94,6 +95,7 @@ struct MockImageCtx {
       image_watcher(NULL), object_map(NULL),
       exclusive_lock(NULL), journal(NULL),
       trace_endpoint(image_ctx.trace_endpoint),
+      crypto(image_ctx.crypto),
       sparse_read_threshold_bytes(image_ctx.sparse_read_threshold_bytes),
       discard_granularity_bytes(image_ctx.discard_granularity_bytes),
       mirroring_replay_delay(image_ctx.mirroring_replay_delay),
@@ -130,6 +132,9 @@ struct MockImageCtx {
     delete plugin_registry;
     delete io_image_dispatcher;
     delete io_object_dispatcher;
+    if (crypto != nullptr) {
+      crypto->put();
+    }
   }
 
   void wait_for_async_ops();
@@ -318,6 +323,22 @@ struct MockImageCtx {
   ZTracer::Endpoint trace_endpoint;
 
   crypto::CryptoInterface* crypto = nullptr;
+  crypto::CryptoInterface* get_crypto() const {
+    if (crypto != nullptr) {
+      crypto->get();
+    }
+    return crypto;
+  }
+  void set_crypto(crypto::CryptoInterface* new_crypto) {
+    if (new_crypto != nullptr) {
+      new_crypto->get();
+    }
+    auto old_crypto = crypto;
+    crypto = new_crypto;
+    if (old_crypto != nullptr) {
+      old_crypto->put();
+    }
+  }
 
   uint64_t sparse_read_threshold_bytes;
   uint32_t discard_granularity_bytes;

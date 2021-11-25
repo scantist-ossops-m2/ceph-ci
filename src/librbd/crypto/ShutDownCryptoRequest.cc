@@ -91,8 +91,7 @@ void ShutDownCryptoRequest<I>::handle_shut_down_image_dispatch(int r) {
 template <typename I>
 void ShutDownCryptoRequest<I>::finish(int r) {
   if (r == 0) {
-    std::unique_lock image_locker{m_image_ctx->image_lock};
-    m_image_ctx->crypto = nullptr;
+    m_image_ctx->set_crypto(nullptr);
   }
 
   m_on_finish->complete(r);
