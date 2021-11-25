@@ -64,7 +64,9 @@ struct TestMockCryptoLoadRequest : public TestMockFixture {
   }
 
   void TearDown() override {
-    crypto->put();
+    if (mock_image_ctx->crypto != crypto) {
+      crypto->put();
+    }
     delete mock_image_ctx;
     TestMockFixture::TearDown();
   }
