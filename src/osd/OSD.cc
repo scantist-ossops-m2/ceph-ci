@@ -1307,7 +1307,7 @@ bool OSDService::prepare_to_stop()
   if (osdmap && osdmap->is_up(whoami)) {
     dout(0) << __func__ << " telling mon we are shutting down" << dendl;
     set_state(PREPARING_TO_STOP);
-#if 1
+#if 0
     monc->send_mon_message(
       new MOSDMarkMeDead(
 	monc->get_fsid(),
@@ -4259,11 +4259,11 @@ int OSD::shutdown()
   dout(0) << "shutdown test - cct->_conf->bluestore_avl_alloc_bf_free_pct = " << cct->_conf.get_val<uint64_t>("bluestore_avl_alloc_bf_free_pct") << dendl;
   utime_t  start_time_func = ceph_clock_now();
 
-  //if (!cct->_conf->osd_fast_shutdown) {
+  if (!cct->_conf->osd_fast_shutdown) {
     dout(0) << "shutdown service.prepare_to_stop()"  << dendl;
     if (!service.prepare_to_stop())
       return 0; // already shutting down
-    //}
+  }
   utime_t  start_time_osd_lock = ceph_clock_now();
   osd_lock.lock();
   if (is_stopping()) {
