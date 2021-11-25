@@ -46,7 +46,7 @@ High Level Design
   - When called on a balanced system (capacity wise) with pools with identical devices it will create near optimal workload split among the OSDs
   - Calling workload balancer on an unbalanced system (capacity wise) may yield non optimal results, and in some cases may give worse performance than before the call
 
-Helper functioality
--------------------
+Helper functionality
+--------------------
 
 - Set a seed for random generation in ``osdmaptool`` (For regression tests)
