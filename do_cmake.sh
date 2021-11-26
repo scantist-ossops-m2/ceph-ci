@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 #dummy
+
+#dummy 2
 set -ex
 
 if [ -d .git ]; then
