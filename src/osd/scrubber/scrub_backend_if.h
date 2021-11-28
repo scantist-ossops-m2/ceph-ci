@@ -59,6 +59,8 @@ class ScrubBackendIF {
 
   virtual void scan_snaps(ScrubMap& smap) = 0;
 
+  virtual void replica_clean_meta(ScrubMap& smap, bool max_reached, const hobject_t& start) = 0;
+
   // tbd - stats handling
 
   virtual int get_num_digest_updates_pending() const = 0;

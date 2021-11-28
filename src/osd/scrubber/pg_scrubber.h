@@ -90,7 +90,7 @@ class LocalReservation {
   bool m_holding_local_reservation{false};
 
  public:
-  LocalReservation(OSDService* osds);
+  explicit LocalReservation(OSDService* osds);
   ~LocalReservation();
   bool is_reserved() const { return m_holding_local_reservation; }
 };
@@ -524,11 +524,6 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
 
   void requeue_waiting() const { m_pg->requeue_ops(m_pg->waiting_for_scrub); }
 
-  // for the replicas, and only for now. The Primary handles that thru ScrubBackend
-  void _scan_snaps(ScrubMap& smap);
-
-  ScrubMap clean_meta_map();
-
   /**
    *  mark down some parameters of the initiated scrub:
    *  - the epoch when started;
@@ -759,9 +754,6 @@ private:
   ScrubMapBuilder m_primary_scrubmap_pos;
 
   std::map<pg_shard_t, ScrubMap> m_received_maps;
-
-  /// Cleaned std::map pending snap metadata scrub
-  ScrubMap m_cleaned_meta_map;
 
   void _request_scrub_map(pg_shard_t replica,
 			  eversion_t version,

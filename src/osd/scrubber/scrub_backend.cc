@@ -1,10 +1,8 @@
-// -*- m_mode_desc:C++; tab-width:8; c-basic-offset:2; indent-tabs-m_mode_desc:t -*-
-// vim: ts=2 sw=2 smarttab
+// -*- m_mode_desc:C++; tab-width:8; c-basic-offset:2; indent-tabs-m_mode_desc:t
+// -*- vim: ts=2 sw=2 smarttab
 
 #include "./scrub_backend.h"
 
-#include <fmt/core.h>
-#include <fmt/format.h>
 
 #include <algorithm>
 
@@ -35,30 +33,12 @@ using namespace std::literals;
 
 #define dout_prefix ScrubBackend::logger_prefix(_dout, this)
 
-std::ostream& ScrubBackend::logger_prefix(std::ostream* out, ScrubBackend* t)
+std::ostream& ScrubBackend::logger_prefix(std::ostream* out,
+                                          const ScrubBackend* t)
 {
   return t->m_scrubber.gen_prefix(*out) << " b.e.: ";
 }
 
-// ---------------------  auth_selection_t  ------------------------------------
-
-template <>
-struct fmt::formatter<auth_selection_t> {
-  template <typename ParseContext>
-  constexpr auto parse(ParseContext& ctx)
-  {
-    return ctx.begin();
-  }
-
-  template <typename FormatContext>
-  auto format(auth_selection_t const& aus, FormatContext& ctx)
-  {
-    return fmt::format_to(ctx.out(), " {{AU-S: {}->{:x} OI({:x}:{}) {} dm:{}}} ",
-			  aus.auth->first, (uint64_t)(&aus.auth->second),
-			  (uint64_t)(&aus.auth_oi), aus.auth_oi,
-			  aus.shard_map.size(), aus.digest_match);
-  }
-};
 
 // ////////////////////////////////////////////////////////////////////////// //
 
@@ -74,14 +54,15 @@ inline static const char* sep(bool& prev_err)
 
 // ////////////////////////////////////////////////////////////////////////// //
 
+// for a Primary
 ScrubBackend::ScrubBackend(PgScrubber& scrubber,
-			   PGBackend& backend,
-			   PG& pg,
-			   pg_shard_t i_am,
-			   bool repair,
-			   scrub_level_t shallow_or_deep,
-			   ScrubMap* primary_map,
-			   std::set<pg_shard_t> acting)
+                           PGBackend& backend,
+                           PG& pg,
+                           pg_shard_t i_am,
+                           bool repair,
+                           scrub_level_t shallow_or_deep,
+                           ScrubMap* primary_map,
+                           const std::set<pg_shard_t>& acting)
     : m_scrubber{scrubber}
     , m_pgbe{backend}
     , m_pg{pg}
@@ -93,33 +74,54 @@ ScrubBackend::ScrubBackend(PgScrubber& scrubber,
     , m_conf{m_scrubber.get_pg_cct()->_conf}
     , clog{m_scrubber.m_osds->clog}
 {
-  {
-    // create the formatted ID string
-    char buf[spg_t::calc_name_buf_size];
-    buf[spg_t::calc_name_buf_size - 1] =
-      '\0';  // RRR copied - and I don't like the orig
-    m_formatted_id = m_pg_id.calc_name(buf + spg_t::calc_name_buf_size - 1, "");
-  }
+  m_formatted_id = m_pg_id.calc_name_sring();
 
   m_acting_but_me.reserve(acting.size());
-  std::copy_if(acting.begin(), acting.end(), std::back_inserter(m_acting_but_me),
-	       [i_am](const pg_shard_t& shard) { return shard != i_am; });
+  std::copy_if(acting.begin(),
+               acting.end(),
+               std::back_inserter(m_acting_but_me),
+               [i_am](const pg_shard_t& shard) { return shard != i_am; });
 
   m_is_replicated = m_pg.get_pool().info.is_replicated();
   m_mode_desc =
     (m_repair ? "repair"sv
-	      : (m_depth == scrub_level_t::deep ? "deep-scrub"sv : "scrub"sv));
+              : (m_depth == scrub_level_t::deep ? "deep-scrub"sv : "scrub"sv));
+}
+
+// for a Replica
+ScrubBackend::ScrubBackend(PgScrubber& scrubber,
+                           PGBackend& backend,
+                           PG& pg,
+                           pg_shard_t i_am,
+                           bool repair,
+                           scrub_level_t shallow_or_deep)
+    : m_scrubber{scrubber}
+    , m_pgbe{backend}
+    , m_pg{pg}
+    , m_pg_whoami{i_am}
+    , m_repair{repair}
+    , m_depth{shallow_or_deep}
+    , m_pg_id{scrubber.m_pg_id}
+    , m_primary_map{nullptr}
+    , m_conf{m_scrubber.get_pg_cct()->_conf}
+    , clog{m_scrubber.m_osds->clog}
+{
+  m_formatted_id = m_pg_id.calc_name_sring();
+  m_is_replicated = m_pg.get_pool().info.is_replicated();
+  m_mode_desc =
+    (m_repair ? "repair"sv
+              : (m_depth == scrub_level_t::deep ? "deep-scrub"sv : "scrub"sv));
 }
 
 void ScrubBackend::update_repair_status(bool should_repair)
 {
   dout(15) << __func__
-	   << ": repair state set to :" << (should_repair ? "true" : "false")
-	   << dendl;
+           << ": repair state set to :" << (should_repair ? "true" : "false")
+           << dendl;
   m_repair = should_repair;
   m_mode_desc =
     (m_repair ? "repair"sv
-	      : (m_depth == scrub_level_t::deep ? "deep-scrub"sv : "scrub"sv));
+              : (m_depth == scrub_level_t::deep ? "deep-scrub"sv : "scrub"sv));
 }
 
 void ScrubBackend::new_chunk()
@@ -133,19 +135,22 @@ void ScrubBackend::new_chunk()
 void ScrubBackend::merge_to_master_set()
 {
   dout(15) << __func__ << dendl;
+  ceph_assert(m_pg.is_primary());
   ceph_assert(this_chunk->master_set.empty() &&
-	      "the scrubber-backend should be empty");
+              "the scrubber-backend should be empty");
 
   for (const auto& i : m_acting_but_me) {
     dout(15) << __func__ << ": replica " << i << " has "
-	     << this_chunk->m_received_maps[i].objects.size() << " items" << dendl;
-    this_chunk->maps[i] = &this_chunk->m_received_maps[i];
+             << this_chunk->received_maps[i].objects.size() << " items"
+             << dendl;
+    this_chunk->maps[i] = &this_chunk->received_maps[i];
   }
 
   // Construct the master set of objects
   for (const auto& map : this_chunk->maps) {
     std::transform(
-      map.second->objects.begin(), map.second->objects.end(),
+      map.second->objects.begin(),
+      map.second->objects.end(),
       std::inserter(this_chunk->master_set, this_chunk->master_set.end()),
       [](const auto& i) { return i.first; });
   }
@@ -153,15 +158,29 @@ void ScrubBackend::merge_to_master_set()
 
 
 void ScrubBackend::decode_received_map(pg_shard_t from,
-				       const MOSDRepScrubMap& msg,
-				       int64_t pool)
+                                       const MOSDRepScrubMap& msg,
+                                       int64_t pool)
 {
   auto p = const_cast<bufferlist&>(msg.get_data()).cbegin();
-  this_chunk->m_received_maps[from].decode(p, pool);
+  this_chunk->received_maps[from].decode(p, pool);
 
   dout(15) << __func__ << ": decoded map from : " << from
-	   << ": versions: " << this_chunk->m_received_maps[from].valid_through
-	   << " / " << msg.get_map_epoch() << dendl;
+           << ": versions: " << this_chunk->received_maps[from].valid_through
+           << " / " << msg.get_map_epoch() << dendl;
+}
+
+
+void ScrubBackend::replica_clean_meta(ScrubMap& repl_map,
+                                      bool max_reached,
+                                      const hobject_t& start)
+{
+  dout(15) << __func__ << ": REPL META # " << m_cleaned_meta_map.objects.size()
+           << " objects" << dendl;
+  ceph_assert(!m_cleaned_meta_map.objects.size());
+  m_cleaned_meta_map.clear_from(start);  // RRR how can that be?
+  m_cleaned_meta_map.insert(repl_map);
+  auto for_meta_scrub = clean_meta_map(m_cleaned_meta_map, max_reached);
+  scan_snaps(for_meta_scrub);
 }
 
 
@@ -171,10 +190,10 @@ void ScrubBackend::decode_received_map(pg_shard_t from,
 //
 // /////////////////////////////////////////////////////////////////////////////
 
-
 void ScrubBackend::scrub_compare_maps(bool max_reached)
 {
   dout(10) << __func__ << " has maps, analyzing" << dendl;
+  ceph_assert(m_pg.is_primary());
 
   // construct authoritative scrub map for type-specific scrubbing
 
@@ -207,7 +226,9 @@ void ScrubBackend::scrub_compare_maps(bool max_reached)
       dout(10) << __func__ << ": updating scrub object" << dendl;
       ObjectStore::Transaction t;
       m_scrubber.m_store->flush(&t);
-      m_scrubber.m_osds->store->queue_transaction(m_pg.ch, std::move(t), nullptr);
+      m_scrubber.m_osds->store->queue_transaction(m_pg.ch,
+                                                  std::move(t),
+                                                  nullptr);
     }
   }
 }
@@ -218,7 +239,9 @@ void ScrubBackend::scrub_compare_maps(bool max_reached)
 void ScrubBackend::omap_checks()
 {
   const bool needs_omap_check = std::any_of(
-    this_chunk->maps.begin(), this_chunk->maps.end(), [](const auto& m) -> bool {
+    this_chunk->maps.begin(),
+    this_chunk->maps.end(),
+    [](const auto& m) -> bool {
       return m.second->has_large_omap_object_errors || m.second->has_omap_keys;
     });
 
@@ -233,28 +256,29 @@ void ScrubBackend::omap_checks()
 
     for (const auto& [srd, smap] : this_chunk->maps) {
       if (srd != m_pg.get_primary()) {
-	// Only set omap stats for the primary
-	continue;
+        // Only set omap stats for the primary
+        continue;
       }
 
       auto it = smap->objects.find(ho);
       if (it == smap->objects.end())
-	continue;
+        continue;
 
       ScrubMap::object& smap_obj = it->second;
       m_omap_stats.omap_bytes += smap_obj.object_omap_bytes;
       m_omap_stats.omap_keys += smap_obj.object_omap_keys;
       if (smap_obj.large_omap_object_found) {
-	auto osdmap = m_pg.get_osdmap();
-	pg_t pg;
-	osdmap->map_to_pg(ho.pool, ho.oid.name, ho.get_key(), ho.nspace, &pg);
-	pg_t mpg = osdmap->raw_pg_to_pg(pg);
-	m_omap_stats.large_omap_objects++;
-	wss << "Large omap object found. Object: " << ho << " PG: " << pg << " ("
-	    << mpg << ")"
-	    << " Key count: " << smap_obj.large_omap_object_key_count
-	    << " Size (bytes): " << smap_obj.large_omap_object_value_size << '\n';
-	break;
+        auto osdmap = m_pg.get_osdmap();
+        pg_t pg;
+        osdmap->map_to_pg(ho.pool, ho.oid.name, ho.get_key(), ho.nspace, &pg);
+        pg_t mpg = osdmap->raw_pg_to_pg(pg);
+        m_omap_stats.large_omap_objects++;
+        wss << "Large omap object found. Object: " << ho << " PG: " << pg
+            << " (" << mpg << ")"
+            << " Key count: " << smap_obj.large_omap_object_key_count
+            << " Size (bytes): " << smap_obj.large_omap_object_value_size
+            << '\n';
+        break;
       }
     }
   }
@@ -334,13 +358,16 @@ void ScrubBackend::repair_oinfo_oid(ScrubMap& smap)
       OSDriver::OSTransaction _t(m_pg.osdriver.get_transaction(&t));
 
       // shrd.get_osd() ?
-      clog->error() << "osd." << m_pg_whoami << " found object info error on pg "
-		    << m_pg.info.pgid << " oid " << hoid
-		    << " oid in object info: " << oi.soid << "...repaired";
+      clog->error() << "osd." << m_pg_whoami
+                    << " found object info error on pg " << m_pg.info.pgid
+                    << " oid " << hoid << " oid in object info: " << oi.soid
+                    << "...repaired";
       // Fix object info
       oi.soid = hoid;
       bl.clear();
-      encode(oi, bl, m_pg.get_osdmap()->get_features(CEPH_ENTITY_TYPE_OSD, nullptr));
+      encode(oi,
+             bl,
+             m_pg.get_osdmap()->get_features(CEPH_ENTITY_TYPE_OSD, nullptr));
 
       bufferptr bp(bl.c_str(), bl.length());
       o.attrs[OI_ATTR] = bp;
@@ -348,17 +375,20 @@ void ScrubBackend::repair_oinfo_oid(ScrubMap& smap)
       t.setattr(m_pg.coll, ghobject_t(hoid), OI_ATTR, bl);
       int r = m_pg.osd->store->queue_transaction(m_pg.ch, std::move(t));
       if (r != 0) {
-	derr << __func__ << ": queue_transaction got " << cpp_strerror(r) << dendl;
+        derr << __func__ << ": queue_transaction got " << cpp_strerror(r)
+             << dendl;
       }
     }
   }
 }
 
-
 int ScrubBackend::scrub_process_inconsistent()
 {
-  dout(20) << fmt::format("{}: {} (m_repair:{}) good peers tbl #: {}", __func__, m_mode_desc,
-                          m_repair, m_scrubber.m_authoritative.size())
+  dout(20) << fmt::format("{}: {} (m_repair:{}) good peers tbl #: {}",
+                          __func__,
+                          m_mode_desc,
+                          m_repair,
+                          m_scrubber.m_authoritative.size())
            << dendl;
 
   // authoritative only store objects which are missing or inconsistent.
@@ -368,9 +398,11 @@ int ScrubBackend::scrub_process_inconsistent()
 
   // some tests expect an error message that does not contain the __func__ and
   // PG:
-  auto err_msg =
-    fmt::format("{} {} {} missing, {} inconsistent objects", m_formatted_id,
-                m_mode_desc, m_missing.size(), m_inconsistent.size());
+  auto err_msg = fmt::format("{} {} {} missing, {} inconsistent objects",
+                             m_formatted_id,
+                             m_mode_desc,
+                             m_missing.size(),
+                             m_inconsistent.size());
 
   dout(2) << err_msg << dendl;
   clog->error() << fmt::to_string(err_msg);
@@ -406,17 +438,19 @@ void ScrubBackend::repair_object(
   const list<pair<ScrubMap::object, pg_shard_t>>& ok_peers,
   const set<pg_shard_t>& bad_peers)
 {
-  set<pg_shard_t> ok_shards; // the shards from the ok_peers list
+  set<pg_shard_t> ok_shards;  // the shards from the ok_peers list
   for (auto&& peer : ok_peers) {
     ok_shards.insert(peer.second);
   }
 
-  // logger().info("{}: repair_object {} bad_peers osd.{{ {} }}, ok_peers osd.{{ {}
+  // logger().info("{}: repair_object {} bad_peers osd.{{ {} }}, ok_peers osd.{{
+  // {}
   // }}",
   //		__func__, soid, bad_peers, ok_shards);
 
-  dout(10) << "repair_object " << soid << " bad_peers osd.{" << bad_peers << "},"
-	   << " ok_peers osd.{" << ok_shards << "}" << dendl;
+  dout(10) << "repair_object " << soid << " bad_peers osd.{" << bad_peers
+           << "},"
+           << " ok_peers osd.{" << ok_shards << "}" << dendl;
 
   const ScrubMap::object& po = ok_peers.back().first;
   object_info_t oi;
@@ -428,8 +462,9 @@ void ScrubBackend::repair_object(
     auto bliter = bv.cbegin();
     decode(oi, bliter);
   } catch (...) {
-    dout(0) << __func__ << ": Need version of replica, bad object_info_t: " << soid
-	    << dendl;
+    dout(0) << __func__
+            << ": Need version of replica, bad object_info_t: " << soid
+            << dendl;
     ceph_abort();
   }
 
@@ -464,10 +499,10 @@ static inline int dcount(const object_info_t& oi)
  * maps are taken from this_chunk->maps;
  */
 auth_selection_t ScrubBackend::select_auth_object(const hobject_t& ho,
-						  stringstream& errstream)
+                                                  stringstream& errstream)
 {
-  // Create list of shards (with the Primary first, so that it will be auth-copy, all
-  // other things being equal)
+  // Create list of shards (with the Primary first, so that it will be
+  // auth-copy, all other things being equal)
   std::list<pg_shard_t> shards;
   for (const auto& [srd, smap] : this_chunk->maps) {
     if (srd != m_pg_whoami) {
@@ -486,44 +521,46 @@ auth_selection_t ScrubBackend::select_auth_object(const hobject_t& ho,
 
     // digest_match will only be true if computed digests are the same
     if (auth_version != eversion_t() &&
-	ret_auth.auth->second->objects[ho].digest_present &&
-	shard_ret.digest.has_value() &&
-	ret_auth.auth->second->objects[ho].digest != *shard_ret.digest) {
+        ret_auth.auth->second->objects[ho].digest_present &&
+        shard_ret.digest.has_value() &&
+        ret_auth.auth->second->objects[ho].digest != *shard_ret.digest) {
       ret_auth.digest_match = false;
-      dout(10) << __func__ << " digest_match = false, " << ho << " data_digest 0x"
-	       << std::hex << ret_auth.auth->second->objects[ho].digest
-	       << " != data_digest 0x" << *shard_ret.digest << std::dec << dendl;
+      dout(10) << __func__ << " digest_match = false, " << ho
+               << " data_digest 0x" << std::hex
+               << ret_auth.auth->second->objects[ho].digest
+               << " != data_digest 0x" << *shard_ret.digest << std::dec
+               << dendl;
     }
 
     if (shard_ret.possible_auth == shard_as_auth_t::usable_t::not_usable) {
 
       // Don't use this particular shard due to previous errors
-      // XXX: For now we can't pick one shard for repair and another's object info or
-      // snapset
+      // XXX: For now we can't pick one shard for repair and another's object
+      // info or snapset
 
       errstream << m_pg_id.pgid << " shard " << l << " soid " << ho << " : "
-		<< shard_ret.error_text << "\n";
+                << shard_ret.error_text << "\n";
 
     } else {
 
       // consider using this shard as authoritative
       dout(9) << __func__ << " RRR consider using " << l
-	      << " srv: " << shard_ret.oi.version
-	      << " oi soid: " << shard_ret.oi.soid << dendl;
+              << " srv: " << shard_ret.oi.version
+              << " oi soid: " << shard_ret.oi.soid << dendl;
 
       if (auth_version == eversion_t() || shard_ret.oi.version > auth_version ||
-	  (shard_ret.oi.version == auth_version &&
-	   dcount(shard_ret.oi) > dcount(ret_auth.auth_oi))) {
+          (shard_ret.oi.version == auth_version &&
+           dcount(shard_ret.oi) > dcount(ret_auth.auth_oi))) {
 
-	dout(9) << __func__ << " RRR using " << l << " moved auth oi " << std::hex
-		<< (uint64_t)(&ret_auth.auth_oi) << " <-> "
-		<< (uint64_t)(&shard_ret.oi) << std::dec << dendl;
+        dout(9) << __func__ << " RRR using " << l << " moved auth oi "
+                << std::hex << (uint64_t)(&ret_auth.auth_oi) << " <-> "
+                << (uint64_t)(&shard_ret.oi) << std::dec << dendl;
 
-	ret_auth.auth = shard_ret.auth_iter;
-	ret_auth.auth_shard = ret_auth.auth->first;
-	ret_auth.auth_oi = shard_ret.oi;
-	auth_version = shard_ret.oi.version;
-	ret_auth.is_auth_available = true;
+        ret_auth.auth = shard_ret.auth_iter;
+        ret_auth.auth_shard = ret_auth.auth->first;
+        ret_auth.auth_oi = shard_ret.oi;
+        auth_version = shard_ret.oi.version;
+        ret_auth.is_auth_available = true;
       }
     }
   }
@@ -535,12 +572,12 @@ using set_sinfo_err_t = void (shard_info_wrapper::*)();
 
 // retval: should we continue with the tests
 static inline bool dup_error_cond(bool& prev_err,
-				  bool continue_on_err,
-				  bool pred,
-				  shard_info_wrapper& si,
-				  set_sinfo_err_t sete,
-				  std::string_view msg,
-				  stringstream& errstream)
+                                  bool continue_on_err,
+                                  bool pred,
+                                  shard_info_wrapper& si,
+                                  set_sinfo_err_t sete,
+                                  std::string_view msg,
+                                  stringstream& errstream)
 {
   if (pred) {
     (si.*sete)();
@@ -556,8 +593,8 @@ static inline bool dup_error_cond(bool& prev_err,
  * Returns a copy of the error status.
  */
 static inline bool test_error_cond(bool error_pred,
-				   shard_info_wrapper& si,
-				   set_sinfo_err_t sete)
+                                   shard_info_wrapper& si,
+                                   set_sinfo_err_t sete)
 {
   if (error_pred) {
     (si.*sete)();
@@ -566,8 +603,8 @@ static inline bool test_error_cond(bool error_pred,
 }
 
 shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
-						  pg_shard_t& srd,
-						  shard_info_map_t& shard_map)
+                                                  pg_shard_t& srd,
+                                                  shard_info_map_t& shard_map)
 {
   //  'maps' (called with this_chunk->maps originaly): this_chunk->maps
   //  'auth_oi' (called with 'auth_oi', which wasn't initialized at call site)
@@ -591,25 +628,43 @@ shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
   }
 
   //  dout(9) << __func__ << " RRR X " << obj << " shard info: " << std::hex
-  //	  << (uint64_t)(&shard_info) << std::dec << " js: " << j_shard << m_pg_whoami
-  //	  << " smapobj: " << std::hex << (uint64_t)(&smap_obj) << std::dec << dendl;
+  //	  << (uint64_t)(&shard_info) << std::dec << " js: " << j_shard <<
+  // m_pg_whoami
+  //	  << " smapobj: " << std::hex << (uint64_t)(&smap_obj) << std::dec <<
+  // dendl;
 
   stringstream errstream;  // for this shard
 
   bool err{false};
-  dup_error_cond(err, true, smap_obj.read_error, shard_info,
-		 &shard_info_wrapper::set_read_error, "candidate had a read error"sv,
-		 errstream);
-  dup_error_cond(err, true, smap_obj.ec_hash_mismatch, shard_info,
-		 &shard_info_wrapper::set_ec_hash_mismatch,
-		 "candidate had an ec hash mismatch"sv, errstream);
-  dup_error_cond(err, true, smap_obj.ec_size_mismatch, shard_info,
-		 &shard_info_wrapper::set_ec_size_mismatch,
-		 "candidate had an ec size mismatch"sv, errstream);
+  dup_error_cond(err,
+                 true,
+                 smap_obj.read_error,
+                 shard_info,
+                 &shard_info_wrapper::set_read_error,
+                 "candidate had a read error"sv,
+                 errstream);
+  dup_error_cond(err,
+                 true,
+                 smap_obj.ec_hash_mismatch,
+                 shard_info,
+                 &shard_info_wrapper::set_ec_hash_mismatch,
+                 "candidate had an ec hash mismatch"sv,
+                 errstream);
+  dup_error_cond(err,
+                 true,
+                 smap_obj.ec_size_mismatch,
+                 shard_info,
+                 &shard_info_wrapper::set_ec_size_mismatch,
+                 "candidate had an ec size mismatch"sv,
+                 errstream);
 
-  if (!dup_error_cond(err, false, smap_obj.stat_error, shard_info,
-		      &shard_info_wrapper::set_stat_error,
-		      "candidate had a stat error"sv, errstream)) {
+  if (!dup_error_cond(err,
+                      false,
+                      smap_obj.stat_error,
+                      shard_info,
+                      &shard_info_wrapper::set_stat_error,
+                      "candidate had a stat error"sv,
+                      errstream)) {
     // With stat_error no further checking
     // We don't need to also see a missing_object_info_attr
     return shard_as_auth_t{errstream.str()};
@@ -622,26 +677,35 @@ shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
 
   if (obj.is_head()) {
     auto k = smap_obj.attrs.find(SS_ATTR);
-    if (dup_error_cond(err, false, (k == smap_obj.attrs.end()), shard_info,
-		       &shard_info_wrapper::set_snapset_missing,
-		       "candidate had a missing snapset key"sv, errstream)) {
+    if (dup_error_cond(err,
+                       false,
+                       (k == smap_obj.attrs.end()),
+                       shard_info,
+                       &shard_info_wrapper::set_snapset_missing,
+                       "candidate had a missing snapset key"sv,
+                       errstream)) {
       bufferlist ss_bl;
       SnapSet snapset;
       ss_bl.push_back(k->second);
       try {
-	auto bliter = ss_bl.cbegin();
-	decode(snapset, bliter);
+        auto bliter = ss_bl.cbegin();
+        decode(snapset, bliter);
       } catch (...) {
-	// invalid snapset, probably corrupt
-	dup_error_cond(err, false, true, shard_info,
-		       &shard_info_wrapper::set_snapset_corrupted,
-		       "candidate had a corrupt snapset"sv, errstream);
+        // invalid snapset, probably corrupt
+        dup_error_cond(err,
+                       false,
+                       true,
+                       shard_info,
+                       &shard_info_wrapper::set_snapset_corrupted,
+                       "candidate had a corrupt snapset"sv,
+                       errstream);
       }
     } else {
       // debug@dev only
       dout(8) << __func__ << " RRR missing snap addr: " << std::hex
-	      << (uint64_t)(&smap_obj) << " shard_info: " << (uint64_t)(&shard_info)
-	      << " er: " << shard_info.errors << std::dec << dendl;
+              << (uint64_t)(&smap_obj)
+              << " shard_info: " << (uint64_t)(&shard_info)
+              << " er: " << shard_info.errors << std::dec << dendl;
     }
   }
 
@@ -649,19 +713,27 @@ shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
 
   if (!m_is_replicated) {
     auto k = smap_obj.attrs.find(ECUtil::get_hinfo_key());
-    if (dup_error_cond(err, false, (k == smap_obj.attrs.end()), shard_info,
-		       &shard_info_wrapper::set_hinfo_missing,
-		       "candidate had a missing hinfo key"sv, errstream)) {
+    if (dup_error_cond(err,
+                       false,
+                       (k == smap_obj.attrs.end()),
+                       shard_info,
+                       &shard_info_wrapper::set_hinfo_missing,
+                       "candidate had a missing hinfo key"sv,
+                       errstream)) {
       bufferlist hk_bl;
       ECUtil::HashInfo hi;
       hk_bl.push_back(k->second);
       try {
-	auto bliter = hk_bl.cbegin();
-	decode(hi, bliter);
+        auto bliter = hk_bl.cbegin();
+        decode(hi, bliter);
       } catch (...) {
-	dup_error_cond(err, false, true, shard_info,
-		       &shard_info_wrapper::set_hinfo_corrupted,
-		       "candidate had a corrupt hinfo"sv, errstream);
+        dup_error_cond(err,
+                       false,
+                       true,
+                       shard_info,
+                       &shard_info_wrapper::set_hinfo_corrupted,
+                       "candidate had a corrupt hinfo"sv,
+                       errstream);
       }
     }
   }
@@ -672,9 +744,13 @@ shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
 
   {
     auto k = smap_obj.attrs.find(OI_ATTR);
-    if (!dup_error_cond(err, false, (k == smap_obj.attrs.end()), shard_info,
-			&shard_info_wrapper::set_info_missing,
-			"candidate had a missing info key"sv, errstream)) {
+    if (!dup_error_cond(err,
+                        false,
+                        (k == smap_obj.attrs.end()),
+                        shard_info,
+                        &shard_info_wrapper::set_info_missing,
+                        "candidate had a missing info key"sv,
+                        errstream)) {
       // no object info on object, probably corrupt
       return shard_as_auth_t{errstream.str()};
     }
@@ -684,14 +760,18 @@ shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
     try {
       auto bliter = bl.cbegin();
       decode(oi, bliter);
-      // dout(16) << __func__ << fmt::format(" RRR OI: {} {:p}", oi, (void*)(&oi)) <<
-      // dendl;
+      // dout(16) << __func__ << fmt::format(" RRR OI: {} {:p}", oi,
+      // (void*)(&oi)) << dendl;
     } catch (...) {
       // invalid object info, probably corrupt
-      if (!dup_error_cond(err, false, true, shard_info,
-			  &shard_info_wrapper::set_info_corrupted,
-			  "candidate had a corrupt info"sv, errstream)) {
-	return shard_as_auth_t{errstream.str()};
+      if (!dup_error_cond(err,
+                          false,
+                          true,
+                          shard_info,
+                          &shard_info_wrapper::set_info_corrupted,
+                          "candidate had a corrupt info"sv,
+                          errstream)) {
+        return shard_as_auth_t{errstream.str()};
       }
     }
   }
@@ -702,11 +782,12 @@ shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
   // l.1015
 
   if (test_error_cond(smap_obj.size != m_pgbe.be_get_ondisk_size(oi.size),
-		      shard_info, &shard_info_wrapper::set_obj_size_info_mismatch)) {
+                      shard_info,
+                      &shard_info_wrapper::set_obj_size_info_mismatch)) {
 
     errstream << sep(err) << "candidate size " << smap_obj.size << " info size "
-	      << m_pgbe.be_get_ondisk_size(oi.size)
-	      << " mismatch";  // RRR diff from orig (oi_size)
+              << m_pgbe.be_get_ondisk_size(oi.size)
+              << " mismatch";  // RRR diff from orig (oi_size)
   }
 
   std::optional<uint32_t> digest;
@@ -715,12 +796,14 @@ shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
   }
 
   if (shard_info.errors) {
-    // RRR an assert I've added to understand how can we have shard_info.errors!=err
+    // RRR an assert I've added to understand how can we have
+    // shard_info.errors!=err
     ceph_assert(err);
     return shard_as_auth_t{errstream.str(), digest};
   }
 
-  // RRR an assert I've added to understand how can we have shard_info.errors!=err
+  // RRR an assert I've added to understand how can we have
+  // shard_info.errors!=err
   ceph_assert(!err);
   return shard_as_auth_t{oi, j, errstream.str(), digest};
 }
@@ -729,11 +812,12 @@ shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
 std::stringstream ScrubBackend::compare_smaps()
 {
   dout(10) << __func__ << ": master-set #: " << this_chunk->master_set.size()
-	   << dendl;
+           << dendl;
 
   std::stringstream errstream;
   std::for_each(
-    this_chunk->master_set.begin(), this_chunk->master_set.end(),
+    this_chunk->master_set.begin(),
+    this_chunk->master_set.end(),
     [this, &errstream](const auto& ho) { compare_obj_in_maps(ho, errstream); });
 
   return errstream;
@@ -742,7 +826,8 @@ std::stringstream ScrubBackend::compare_smaps()
 
 // called from the refactored
 // PGBackend::be_compare_scrubmaps()/PgScrubber::compare_smaps()
-void ScrubBackend::compare_obj_in_maps(const hobject_t& ho, stringstream& errstream)
+void ScrubBackend::compare_obj_in_maps(const hobject_t& ho,
+                                       stringstream& errstream)
 {
   // clear per-object data:
   this_chunk->cur_inconsistent.clear();
@@ -752,17 +837,20 @@ void ScrubBackend::compare_obj_in_maps(const hobject_t& ho, stringstream& errstr
   auto auth_res = select_auth_object(ho, errstream);
 
   {
-    dout(11) << __func__ << " RRR auth ret: " << fmt::format("{}", auth_res) << ho
-	     << dendl;
+    dout(11) << __func__ << " RRR auth ret: " << fmt::format("{}", auth_res)
+             << ho << dendl;
   }
 
   inconsistent_obj_wrapper object_error{ho};
   if (!auth_res.is_auth_available) {
     // no auth selected
     object_error.set_version(0);
-    object_error.set_auth_missing(ho, this_chunk->maps, auth_res.shard_map,
-				  m_scrubber.m_shallow_errors,
-				  m_scrubber.m_deep_errors, m_pg_whoami);
+    object_error.set_auth_missing(ho,
+                                  this_chunk->maps,
+                                  auth_res.shard_map,
+                                  m_scrubber.m_shallow_errors,
+                                  m_scrubber.m_deep_errors,
+                                  m_pg_whoami);
 
     if (object_error.has_deep_errors()) {
       ++m_scrubber.m_deep_errors;
@@ -772,9 +860,9 @@ void ScrubBackend::compare_obj_in_maps(const hobject_t& ho, stringstream& errstr
 
     m_scrubber.m_store->add_object_error(ho.pool, object_error);
     dout(20) << " RRR " << m_scrubber.m_pg_id.pgid << " soid " << ho
-	     << " : failed to pick suitable object info" << dendl;
+             << " : failed to pick suitable object info" << dendl;
     errstream << m_scrubber.m_pg_id.pgid << " soid " << ho
-	      << " : failed to pick suitable object info\n";
+              << " : failed to pick suitable object info\n";
     return;
   }
 
@@ -786,21 +874,30 @@ void ScrubBackend::compare_obj_in_maps(const hobject_t& ho, stringstream& errstr
   ScrubMap::object& auth_object = auth->second->objects[ho];
   ceph_assert(!this_chunk->fix_digest);
 
-  auto [auths, objerrs] = match_in_shards(ho, auth_res, object_error, errstream);
+  auto [auths, objerrs] =
+    match_in_shards(ho, auth_res, object_error, errstream);
 
-  auto opt_ers = for_empty_auth_list(std::forward<std::list<pg_shard_t>>(auths),
-				     std::forward<std::set<pg_shard_t>>(objerrs),
-				     auth, ho, errstream);
+  auto opt_ers =
+    for_empty_auth_list(std::forward<std::list<pg_shard_t>>(auths),
+                        std::forward<std::set<pg_shard_t>>(objerrs),
+                        auth,
+                        ho,
+                        errstream);
 
   if (opt_ers.has_value()) {  // l. 1192
 
     // At this point auth_list is populated, so we add the object error
     // shards as inconsistent.
-    inconsistents(ho, auth_object, auth_res.auth_oi, std::move(*opt_ers), errstream);
+    inconsistents(ho,
+                  auth_object,
+                  auth_res.auth_oi,
+                  std::move(*opt_ers),
+                  errstream);
   } else {
 
     // both the auth & errs containers are empty
-    errstream << m_scrubber.m_pg_id.pgid << " soid " << ho << " : empty auth list\n";
+    errstream << m_scrubber.m_pg_id.pgid << " soid " << ho
+              << " : empty auth list\n";
   }
 
   if (object_error.has_deep_errors()) {
@@ -825,7 +922,7 @@ std::optional<ScrubBackend::AuthAndObjErrors> ScrubBackend::for_empty_auth_list(
   if (auths.empty()) {
     if (obj_errors.empty()) {
       errstream << m_pg_id << " soid " << ho
-		<< " : failed to pick suitable auth object\n";
+                << " : failed to pick suitable auth object\n";
       return std::nullopt;
     }
     // Object errors exist and nothing in auth_list
@@ -841,28 +938,29 @@ std::optional<ScrubBackend::AuthAndObjErrors> ScrubBackend::for_empty_auth_list(
     obj_errors.erase(shard);
   }
 
-  return ScrubBackend::AuthAndObjErrors{std::move(auths), std::move(obj_errors)};
+  return ScrubBackend::AuthAndObjErrors{std::move(auths),
+                                        std::move(obj_errors)};
 }
 
 
-// todo replace the errstream with a member of this_chunk. Better be a fmt:: buffer.
-// Then - we can use it directly in should_fix_digest()
+// todo replace the errstream with a member of this_chunk. Better be a fmt::
+// buffer. Then - we can use it directly in should_fix_digest()
 void ScrubBackend::inconsistents(const hobject_t& ho,
-				 ScrubMap::object& auth_object,
-				 object_info_t& auth_oi,
-				 AuthAndObjErrors&& auth_n_errs,
-				 stringstream& errstream)
+                                 ScrubMap::object& auth_object,
+                                 object_info_t& auth_oi,
+                                 AuthAndObjErrors&& auth_n_errs,
+                                 stringstream& errstream)
 {
   auto& object_errors = std::get<1>(auth_n_errs);
   auto& auth_list = std::get<0>(auth_n_errs);
 
   this_chunk->cur_inconsistent.insert(object_errors.begin(),
-				      object_errors.end());  // merge?
+                                      object_errors.end());  // merge?
 
   dout(15) << __func__ << ": object errors #: " << object_errors.size()
-	   << "  auth list #: " << auth_list.size()
-	   << "  cur_missing #: " << this_chunk->cur_missing.size()
-	   << "  cur_incon #: " << this_chunk->cur_inconsistent.size() << dendl;
+           << "  auth list #: " << auth_list.size()
+           << "  cur_missing #: " << this_chunk->cur_missing.size()
+           << "  cur_incon #: " << this_chunk->cur_inconsistent.size() << dendl;
 
 
   if (!this_chunk->cur_missing.empty()) {
@@ -885,7 +983,8 @@ void ScrubBackend::inconsistents(const hobject_t& ho,
       make_pair(data_digest, omap_digest);  // RRR verify which missing_digest
   }
 
-  if (!this_chunk->cur_inconsistent.empty() || !this_chunk->cur_missing.empty()) {
+  if (!this_chunk->cur_inconsistent.empty() ||
+      !this_chunk->cur_missing.empty()) {
 
     this_chunk->authoritative[ho] = auth_list;
 
@@ -897,39 +996,41 @@ void ScrubBackend::inconsistents(const hobject_t& ho,
     switch (is_to_fix) {
 
       case digest_fixing_t::no:
-	break;
+        break;
 
       case digest_fixing_t::if_aged: {
-	utime_t age = this_chunk->started - auth_oi.local_mtime;
+        utime_t age = this_chunk->started - auth_oi.local_mtime;
 
-	// \todo find out 'age_limit' only once
-	const auto age_limit =
-	  m_scrubber.get_pg_cct()->_conf->osd_deep_scrub_update_digest_min_age;
+        // \todo find out 'age_limit' only once
+        const auto age_limit =
+          m_scrubber.get_pg_cct()->_conf->osd_deep_scrub_update_digest_min_age;
 
-	if (age <= age_limit) {
-	  dout(20) << __func__ << ": missing digest but age (" << age << ") < conf ("
-		   << age_limit << ") on " << ho << dendl;
-	  break;
-	}
+        if (age <= age_limit) {
+          dout(20) << __func__ << ": missing digest but age (" << age
+                   << ") < conf (" << age_limit << ") on " << ho << dendl;
+          break;
+        }
       }
 
-	[[fallthrough]];
+        [[fallthrough]];
 
       case digest_fixing_t::force:
 
-	std::optional<uint32_t> data_digest;
-	if (auth_object.digest_present) {
-	  data_digest = auth_object.digest;
-	  dout(20) << __func__ << ": will update data digest on " << ho << dendl;
-	}
+        std::optional<uint32_t> data_digest;
+        if (auth_object.digest_present) {
+          data_digest = auth_object.digest;
+          dout(20) << __func__ << ": will update data digest on " << ho
+                   << dendl;
+        }
 
-	std::optional<uint32_t> omap_digest;
-	if (auth_object.omap_digest_present) {
-	  omap_digest = auth_object.omap_digest;
-	  dout(20) << __func__ << ": will update omap digest on " << ho << dendl;
-	}
-	this_chunk->missing_digest[ho] = make_pair(data_digest, omap_digest);
-	break;
+        std::optional<uint32_t> omap_digest;
+        if (auth_object.omap_digest_present) {
+          omap_digest = auth_object.omap_digest;
+          dout(20) << __func__ << ": will update omap digest on " << ho
+                   << dendl;
+        }
+        this_chunk->missing_digest[ho] = make_pair(data_digest, omap_digest);
+        break;
     }
   }
 }
@@ -962,8 +1063,8 @@ ScrubBackend::digest_fixing_t ScrubBackend::should_fix_digest(
       auth_oi.data_digest != auth_object.digest) {
     // ceph_assert(shard_map[auth->first].has_data_digest_mismatch_info());
     errstream << m_pg_id << " recorded data digest 0x" << std::hex
-	      << auth_oi.data_digest << " != on disk 0x" << auth_object.digest
-	      << std::dec << " on " << auth_oi.soid << "\n";
+              << auth_oi.data_digest << " != on disk 0x" << auth_object.digest
+              << std::dec << " on " << auth_oi.soid << "\n";
     if (repair_flag)
       update = digest_fixing_t::force;
   }
@@ -972,8 +1073,9 @@ ScrubBackend::digest_fixing_t ScrubBackend::should_fix_digest(
       auth_oi.omap_digest != auth_object.omap_digest) {
     // ceph_assert(shard_map[auth->first].has_omap_digest_mismatch_info());
     errstream << m_pg_id << " recorded omap digest 0x" << std::hex
-	      << auth_oi.omap_digest << " != on disk 0x" << auth_object.omap_digest
-	      << std::dec << " on " << auth_oi.soid << "\n";
+              << auth_oi.omap_digest << " != on disk 0x"
+              << auth_object.omap_digest << std::dec << " on " << auth_oi.soid
+              << "\n";
     if (repair_flag)
       update = digest_fixing_t::force;
   }
@@ -1005,66 +1107,73 @@ ScrubBackend::AuthAndObjErrors ScrubBackend::match_in_shards(
       // Compare
       stringstream ss;
       auto& auth_object = auth_sel.auth->second->objects[ho];
-      const bool discrep_found = compare_obj_details(
-	auth_sel.auth_shard, auth_object, auth_sel.auth_oi, smap->objects[ho],
-	auth_sel.shard_map[srd], obj_result, ss, ho.has_snapset());
+      const bool discrep_found = compare_obj_details(auth_sel.auth_shard,
+                                                     auth_object,
+                                                     auth_sel.auth_oi,
+                                                     smap->objects[ho],
+                                                     auth_sel.shard_map[srd],
+                                                     obj_result,
+                                                     ss,
+                                                     ho.has_snapset());
 
       dout(20) << fmt::format(
-		    "{}: {} {} {} shards: {} {} {}", __func__,
-		    (m_repair ? " repair " : " "),
-		    (m_is_replicated ? "replicated " : ""),
-		    (srd == auth_sel.auth_shard ? "auth" : ""),
-		    auth_sel.shard_map.size(),
-		    (auth_sel.digest_match ? " digest_match " : " "),
-		    (auth_sel.shard_map[srd].only_data_digest_mismatch_info()
-		       ? "'info mismatch info'"
-		       : ""))
-	       << dendl;
+                    "{}: {} {} {} shards: {} {} {}",
+                    __func__,
+                    (m_repair ? " repair " : " "),
+                    (m_is_replicated ? "replicated " : ""),
+                    (srd == auth_sel.auth_shard ? "auth" : ""),
+                    auth_sel.shard_map.size(),
+                    (auth_sel.digest_match ? " digest_match " : " "),
+                    (auth_sel.shard_map[srd].only_data_digest_mismatch_info()
+                       ? "'info mismatch info'"
+                       : ""))
+               << dendl;
 
       // If all replicas match, but they don't match object_info we can
       // repair it by using missing_digest mechanism
       if (m_repair && m_is_replicated && (srd == auth_sel.auth_shard) &&
-	  auth_sel.shard_map.size() > 1 && auth_sel.digest_match &&
-	  auth_sel.shard_map[srd].only_data_digest_mismatch_info() &&
-	  auth_object.digest_present) {
-	// Set in missing_digests
-	this_chunk->fix_digest = true;
-	// Clear the error
-	auth_sel.shard_map[srd].clear_data_digest_mismatch_info();
-	errstream << m_pg_id << " soid " << ho
-		  << " : repairing object info data_digest"
-		  << "\n";
+          auth_sel.shard_map.size() > 1 && auth_sel.digest_match &&
+          auth_sel.shard_map[srd].only_data_digest_mismatch_info() &&
+          auth_object.digest_present) {
+        // Set in missing_digests
+        this_chunk->fix_digest = true;
+        // Clear the error
+        auth_sel.shard_map[srd].clear_data_digest_mismatch_info();
+        errstream << m_pg_id << " soid " << ho
+                  << " : repairing object info data_digest"
+                  << "\n";
       }
 
       // Some errors might have already been set in select_auth_object()
       if (auth_sel.shard_map[srd].errors != 0) {  // l.1143
 
-	this_chunk->cur_inconsistent.insert(srd);
-	if (auth_sel.shard_map[srd].has_deep_errors()) {
-	  ++m_scrubber.m_deep_errors;
-	} else {
-	  ++m_scrubber.m_shallow_errors;
-	}
+        this_chunk->cur_inconsistent.insert(srd);
+        if (auth_sel.shard_map[srd].has_deep_errors()) {
+          ++m_scrubber.m_deep_errors;
+        } else {
+          ++m_scrubber.m_shallow_errors;
+        }
 
-	if (discrep_found) {
-	  // Only true if compare_obj_details() found errors and put something in ss
-	  errstream << m_pg_id << " shard " << srd << " soid " << ho << " : "
-		    << ss.str() << "\n";
-	}
+        if (discrep_found) {
+          // Only true if compare_obj_details() found errors and put something
+          // in ss
+          errstream << m_pg_id << " shard " << srd << " soid " << ho << " : "
+                    << ss.str() << "\n";
+        }
 
       } else if (discrep_found) {
 
-	// Track possible shards to use as authoritative, if needed
+        // Track possible shards to use as authoritative, if needed
 
-	// There are errors, without identifying the shard
-	object_errors.insert(srd);
-	errstream << m_pg_id << " soid " << ho << " : " << ss.str() << "\n";
+        // There are errors, without identifying the shard
+        object_errors.insert(srd);
+        errstream << m_pg_id << " soid " << ho << " : " << ss.str() << "\n";
 
       } else {
 
-	// XXX: The auth shard might get here that we don't know
-	// that it has the "correct" data.
-	auth_list.push_back(srd);
+        // XXX: The auth shard might get here that we don't know
+        // that it has the "correct" data.
+        auth_list.push_back(srd);
       }
 
     } else {
@@ -1079,11 +1188,13 @@ ScrubBackend::AuthAndObjErrors ScrubBackend::match_in_shards(
     }
     obj_result.add_shard(srd, auth_sel.shard_map[srd]);
 
-    dout(20) << __func__ << ": RRR soid " << ho << " : " << errstream.str() << dendl;
+    dout(20) << __func__ << ": RRR soid " << ho << " : " << errstream.str()
+             << dendl;
   }
 
-  dout(15) << __func__ << ": auth_list: " << auth_list << " #: " << auth_list.size()
-	   << "; obj-errs#: " << object_errors.size() << dendl;
+  dout(15) << __func__ << ": auth_list: " << auth_list
+           << " #: " << auth_list.size()
+           << "; obj-errs#: " << object_errors.size() << dendl;
   // logger().debug("{}: auth_list:{} #:{}; obj-errs#:{}", __func__, auth_list,
   //	 auth_list.size(), object_errors.size());
   return {auth_list, object_errors};
@@ -1091,13 +1202,13 @@ ScrubBackend::AuthAndObjErrors ScrubBackend::match_in_shards(
 
 // == PGBackend::be_compare_scrub_objects()
 bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
-				       const ScrubMap::object& auth,
-				       const object_info_t& auth_oi,
-				       const ScrubMap::object& candidate,
-				       shard_info_wrapper& shard_result,
-				       inconsistent_obj_wrapper& obj_result,
-				       stringstream& errstream,
-				       bool has_snapset)
+                                       const ScrubMap::object& auth,
+                                       const object_info_t& auth_oi,
+                                       const ScrubMap::object& candidate,
+                                       shard_info_wrapper& shard_result,
+                                       inconsistent_obj_wrapper& obj_result,
+                                       stringstream& errstream,
+                                       bool has_snapset)
 {
   fmt::memory_buffer out;
   bool error{false};
@@ -1106,33 +1217,48 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
 
   if (auth.digest_present && candidate.digest_present &&
       auth.digest != candidate.digest) {
-    format_to(out, "data_digest {:#x} != data_digest {:#x} from shard {}",
-	      candidate.digest, auth.digest, auth_shard);
+    format_to(out,
+              "data_digest {:#x} != data_digest {:#x} from shard {}",
+              candidate.digest,
+              auth.digest,
+              auth_shard);
     error = true;
     obj_result.set_data_digest_mismatch();
   }
 
   if (auth.omap_digest_present && candidate.omap_digest_present &&
       auth.omap_digest != candidate.omap_digest) {
-    format_to(out, "{}omap_digest {:#x} != omap_digest {:#x} from shard {}",
-	      sep(error), candidate.omap_digest, auth.omap_digest, auth_shard);
+    format_to(out,
+              "{}omap_digest {:#x} != omap_digest {:#x} from shard {}",
+              sep(error),
+              candidate.omap_digest,
+              auth.omap_digest,
+              auth_shard);
     obj_result.set_omap_digest_mismatch();
   }
 
   // for replicated:
   if (m_is_replicated) {
     if (auth_oi.is_data_digest() && candidate.digest_present &&
-	auth_oi.data_digest != candidate.digest) {
-      format_to(out, "{}data_digest {:#x} != data_digest {:#x} from auth oi {}",
-		sep(error), candidate.digest, auth_oi.data_digest, auth_oi);
+        auth_oi.data_digest != candidate.digest) {
+      format_to(out,
+                "{}data_digest {:#x} != data_digest {:#x} from auth oi {}",
+                sep(error),
+                candidate.digest,
+                auth_oi.data_digest,
+                auth_oi);
       shard_result.set_data_digest_mismatch_info();
     }
 
     // for replicated:
     if (auth_oi.is_omap_digest() && candidate.omap_digest_present &&
-	auth_oi.omap_digest != candidate.omap_digest) {
-      format_to(out, "{}omap_digest {:#x} != omap_digest {:#x} from auth oi {}",
-		sep(error), candidate.omap_digest, auth_oi.omap_digest, auth_oi);
+        auth_oi.omap_digest != candidate.omap_digest) {
+      format_to(out,
+                "{}omap_digest {:#x} != omap_digest {:#x} from auth oi {}",
+                sep(error),
+                candidate.omap_digest,
+                auth_oi.omap_digest,
+                auth_oi);
       shard_result.set_omap_digest_mismatch_info();
     }
   }
@@ -1168,7 +1294,7 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
 
   if (has_snapset) {
     if (!shard_result.has_snapset_missing() &&
-	!shard_result.has_snapset_corrupted()) {
+        !shard_result.has_snapset_corrupted()) {
 
       auto can_attr = candidate.attrs.find(SS_ATTR);
       ceph_assert(can_attr != candidate.attrs.end());
@@ -1181,8 +1307,8 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
       auth_bl.push_back(auth_attr->second);
 
       if (!can_bl.contents_equal(auth_bl)) {
-	format_to(out, "{}snapset inconsistent ", sep(error));
-	obj_result.set_snapset_inconsistency();
+        format_to(out, "{}snapset inconsistent ", sep(error));
+        obj_result.set_snapset_inconsistency();
       }
     }
   }
@@ -1190,7 +1316,8 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
   // ------------------------------------------------------------------------
 
   if (!m_is_replicated) {
-    if (!shard_result.has_hinfo_missing() && !shard_result.has_hinfo_corrupted()) {
+    if (!shard_result.has_hinfo_missing() &&
+        !shard_result.has_hinfo_corrupted()) {
 
       auto can_hi = candidate.attrs.find(ECUtil::get_hinfo_key());
       ceph_assert(can_hi != candidate.attrs.end());
@@ -1203,8 +1330,8 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
       auth_bl.push_back(auth_hi->second);
 
       if (!can_bl.contents_equal(auth_bl)) {
-	format_to(out, "{}hinfo inconsistent ", sep(error));
-	obj_result.set_hinfo_inconsistency();
+        format_to(out, "{}hinfo inconsistent ", sep(error));
+        obj_result.set_hinfo_inconsistency();
       }
     }
   }
@@ -1215,14 +1342,22 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
 
   uint64_t oi_size = m_pgbe.be_get_ondisk_size(auth_oi.size);
   if (oi_size != candidate.size) {
-    format_to(out, "{}size {} != size {} from auth oi {}", sep(error),
-	      candidate.size, oi_size, auth_oi);
+    format_to(out,
+              "{}size {} != size {} from auth oi {}",
+              sep(error),
+              candidate.size,
+              oi_size,
+              auth_oi);
     shard_result.set_size_mismatch_info();
   }
 
   if (auth.size != candidate.size) {
-    format_to(out, "{}size {} != size {} from shard {}", sep(error), candidate.size,
-	      auth.size, auth_shard);
+    format_to(out,
+              "{}size {} != size {} from shard {}",
+              sep(error),
+              candidate.size,
+              auth.size,
+              auth_shard);
     obj_result.set_size_mismatch();
   }
 
@@ -1231,8 +1366,11 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
   if (candidate.size > m_conf->osd_max_object_size &&
       !obj_result.has_size_too_large()) {
 
-    format_to(out, "{}size {} > {} is too large", sep(error), candidate.size,
-	      m_conf->osd_max_object_size);
+    format_to(out,
+              "{}size {} > {} is too large",
+              sep(error),
+              candidate.size,
+              m_conf->osd_max_object_size);
     obj_result.set_size_too_large();
   }
 
@@ -1275,8 +1413,9 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
   return error;
 }
 
-static inline bool doing_clones(const std::optional<SnapSet>& snapset,
-				const vector<snapid_t>::reverse_iterator& curclone)
+static inline bool doing_clones(
+  const std::optional<SnapSet>& snapset,
+  const vector<snapid_t>::reverse_iterator& curclone)
 {
   return snapset && curclone != snapset->clones.rend();
 }
@@ -1315,8 +1454,8 @@ static inline bool doing_clones(const std::optional<SnapSet>& snapset,
 void ScrubBackend::scrub_snapshot_metadata(ScrubMap& map/*,
 					 const missing_map_t& missing_digest*/)
 {
-  dout(10) << __func__ << " num stat obj " << m_pg.info.stats.stats.sum.num_objects
-	   << dendl;
+  dout(10) << __func__ << " num stat obj "
+           << m_pg.info.stats.stats.sum.num_objects << dendl;
 
   auto& info = m_pg.info;
   const PGPool& pool = m_pg.pool;
@@ -1354,55 +1493,56 @@ void ScrubBackend::scrub_snapshot_metadata(ScrubMap& map/*,
     std::optional<object_info_t> oi;
     if (!p->second.attrs.count(OI_ATTR)) {
       oi = std::nullopt;
-      clog->error() << m_mode_desc << " " << info.pgid << " " << soid << " : no '"
-		    << OI_ATTR << "' attr";
+      clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                    << " : no '" << OI_ATTR << "' attr";
       ++m_scrubber.m_shallow_errors;
       soid_error.set_info_missing();
     } else {
       bufferlist bv;
       bv.push_back(p->second.attrs[OI_ATTR]);
       try {
-	oi = object_info_t(bv);
+        oi = object_info_t(bv);
       } catch (ceph::buffer::error& e) {
-	oi = std::nullopt;
-	clog->error() << m_mode_desc << " " << info.pgid << " " << soid
-		      << " : can't decode '" << OI_ATTR << "' attr " << e.what();
-	++m_scrubber.m_shallow_errors;
-	soid_error.set_info_corrupted();
-	soid_error.set_info_missing();	// Not available too
+        oi = std::nullopt;
+        clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                      << " : can't decode '" << OI_ATTR << "' attr "
+                      << e.what();
+        ++m_scrubber.m_shallow_errors;
+        soid_error.set_info_corrupted();
+        soid_error.set_info_missing();  // Not available too
       }
     }
 
     if (oi) {
       if (m_pgbe.be_get_ondisk_size(oi->size) != p->second.size) {
-	clog->error() << m_mode_desc << " " << info.pgid << " " << soid
-		      << " : on disk size (" << p->second.size
-		      << ") does not match object info size (" << oi->size
-		      << ") adjusted for ondisk to ("
-		      << m_pgbe.be_get_ondisk_size(oi->size) << ")";
-	soid_error.set_size_mismatch();
-	++m_scrubber.m_shallow_errors;
+        clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                      << " : on disk size (" << p->second.size
+                      << ") does not match object info size (" << oi->size
+                      << ") adjusted for ondisk to ("
+                      << m_pgbe.be_get_ondisk_size(oi->size) << ")";
+        soid_error.set_size_mismatch();
+        ++m_scrubber.m_shallow_errors;
       }
 
       dout(20) << m_mode_desc << "  " << soid << " " << *oi << dendl;
 
       // A clone num_bytes will be added later when we have snapset
       if (!soid.is_snap()) {
-	stat.num_bytes += oi->size;
+        stat.num_bytes += oi->size;
       }
       if (soid.nspace == m_conf->osd_hit_set_namespace)
-	stat.num_bytes_hit_set_archive += oi->size;
+        stat.num_bytes_hit_set_archive += oi->size;
 
       if (oi->is_dirty())
-	++stat.num_objects_dirty;
+        ++stat.num_objects_dirty;
       if (oi->is_whiteout())
-	++stat.num_whiteouts;
+        ++stat.num_whiteouts;
       if (oi->is_omap())
-	++stat.num_objects_omap;
+        ++stat.num_objects_omap;
       if (oi->is_cache_pinned())
-	++stat.num_objects_pinned;
+        ++stat.num_objects_pinned;
       if (oi->has_manifest())
-	++stat.num_objects_manifest;
+        ++stat.num_objects_manifest;
     }
 
     // Check for any problems while processing clones
@@ -1411,20 +1551,24 @@ void ScrubBackend::scrub_snapshot_metadata(ScrubMap& map/*,
       // Expecting an object with snap for current head
       if (soid.has_snapset() || soid.get_head() != head->get_head()) {
 
-	dout(10) << __func__ << " " << m_mode_desc << " " << info.pgid
-		 << " new object " << soid << " while processing " << *head << dendl;
+        dout(10) << __func__ << " " << m_mode_desc << " " << info.pgid
+                 << " new object " << soid << " while processing " << *head
+                 << dendl;
 
-	target = all_clones;
+        target = all_clones;
       } else {
-	ceph_assert(soid.is_snap());
-	target = soid.snap;
+        ceph_assert(soid.is_snap());
+        target = soid.snap;
       }
 
       // Log any clones we were expecting to be there up to target
       // This will set missing, but will be a no-op if snap.soid == *curclone.
-      missing +=
-	process_clones_to(head, snapset, /*clog, info.pgid, m_mode_desc,*/
-			  allow_incomplete_clones, target, &curclone, head_error);
+      missing += process_clones_to(head,
+                                   snapset, /*clog, info.pgid, m_mode_desc,*/
+                                   allow_incomplete_clones,
+                                   target,
+                                   &curclone,
+                                   head_error);
     }
 
     bool expected;
@@ -1443,18 +1587,19 @@ void ScrubBackend::scrub_snapshot_metadata(ScrubMap& map/*,
     if (!expected) {
       // If we couldn't read the head's snapset, just ignore clones
       if (head && !snapset) {
-	clog->error() << m_mode_desc << " " << info.pgid << " TTTTT:" << m_pg_id
-		      << " " << soid << " : clone ignored due to missing snapset";
+        clog->error() << m_mode_desc << " " << info.pgid << " TTTTT:" << m_pg_id
+                      << " " << soid
+                      << " : clone ignored due to missing snapset";
       } else {
-	clog->error() << m_mode_desc << " " << info.pgid << " " << soid
-		      << " : is an unexpected clone";
+        clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                      << " : is an unexpected clone";
       }
       ++m_scrubber.m_shallow_errors;
       soid_error.set_headless();
       m_scrubber.m_store->add_snap_error(pool.id, soid_error);
       ++soid_error_count;
       if (head && soid.get_head() == head->get_head())
-	head_error.set_clone(soid.snap);
+        head_error.set_clone(soid.snap);
       continue;
     }
 
@@ -1462,57 +1607,61 @@ void ScrubBackend::scrub_snapshot_metadata(ScrubMap& map/*,
     if (soid.has_snapset()) {
 
       if (missing) {
-	log_missing(missing, head, /*info.pgid,*/ __func__,
-		    pool.info.allow_incomplete_clones());
+        log_missing(missing,
+                    head,
+                    /*info.pgid,*/ __func__,
+                    pool.info.allow_incomplete_clones());
       }
 
       // Save previous head error information
       if (head && (head_error.errors || soid_error_count))
-	m_scrubber.m_store->add_snap_error(pool.id, head_error);
+        m_scrubber.m_store->add_snap_error(pool.id, head_error);
       // Set this as a new head object
       head = soid;
       missing = 0;
       head_error = soid_error;
       soid_error_count = 0;
 
-      dout(20) << __func__ << " " << m_mode_desc << " new head " << head << dendl;
+      dout(20) << __func__ << " " << m_mode_desc << " new head " << head
+               << dendl;
 
       if (p->second.attrs.count(SS_ATTR) == 0) {
-	clog->error() << m_mode_desc << " " << info.pgid << " " << soid << " : no '"
-		      << SS_ATTR << "' attr";
-	++m_scrubber.m_shallow_errors;
-	snapset = std::nullopt;
-	head_error.set_snapset_missing();
+        clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                      << " : no '" << SS_ATTR << "' attr";
+        ++m_scrubber.m_shallow_errors;
+        snapset = std::nullopt;
+        head_error.set_snapset_missing();
       } else {
-	bufferlist bl;
-	bl.push_back(p->second.attrs[SS_ATTR]);
-	auto blp = bl.cbegin();
-	try {
-	  snapset = SnapSet();	// Initialize optional<> before decoding into it
-	  decode(*snapset, blp);
-	  head_error.ss_bl.push_back(p->second.attrs[SS_ATTR]);
-	} catch (ceph::buffer::error& e) {
-	  snapset = std::nullopt;
-	  clog->error() << m_mode_desc << " " << info.pgid << " " << soid
-			<< " : can't decode '" << SS_ATTR << "' attr " << e.what();
-	  ++m_scrubber.m_shallow_errors;
-	  head_error.set_snapset_corrupted();
-	}
+        bufferlist bl;
+        bl.push_back(p->second.attrs[SS_ATTR]);
+        auto blp = bl.cbegin();
+        try {
+          snapset = SnapSet();  // Initialize optional<> before decoding into it
+          decode(*snapset, blp);
+          head_error.ss_bl.push_back(p->second.attrs[SS_ATTR]);
+        } catch (ceph::buffer::error& e) {
+          snapset = std::nullopt;
+          clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                        << " : can't decode '" << SS_ATTR << "' attr "
+                        << e.what();
+          ++m_scrubber.m_shallow_errors;
+          head_error.set_snapset_corrupted();
+        }
       }
 
       if (snapset) {
-	// what will be next?
-	curclone = snapset->clones.rbegin();
+        // what will be next?
+        curclone = snapset->clones.rbegin();
 
-	if (!snapset->clones.empty()) {
-	  dout(20) << "  snapset " << *snapset << dendl;
-	  if (snapset->seq == 0) {
-	    clog->error() << m_mode_desc << " " << info.pgid << " " << soid
-			  << " : snaps.seq not set";
-	    ++m_scrubber.m_shallow_errors;
-	    head_error.set_snapset_error();
-	  }
-	}
+        if (!snapset->clones.empty()) {
+          dout(20) << "  snapset " << *snapset << dendl;
+          if (snapset->seq == 0) {
+            clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                          << " : snaps.seq not set";
+            ++m_scrubber.m_shallow_errors;
+            head_error.set_snapset_error();
+          }
+        }
       }
     } else {
       ceph_assert(soid.is_snap());
@@ -1521,61 +1670,62 @@ void ScrubBackend::scrub_snapshot_metadata(ScrubMap& map/*,
       ceph_assert(soid.snap == *curclone);
 
       dout(20) << __func__ << " " << m_mode_desc << " matched clone " << soid
-	       << dendl;
+               << dendl;
 
       if (snapset->clone_size.count(soid.snap) == 0) {
-	clog->error() << m_mode_desc << " " << info.pgid << " " << soid
-		      << " : is missing in clone_size";
-	++m_scrubber.m_shallow_errors;
-	soid_error.set_size_mismatch();
+        clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                      << " : is missing in clone_size";
+        ++m_scrubber.m_shallow_errors;
+        soid_error.set_size_mismatch();
       } else {
-	if (oi && oi->size != snapset->clone_size[soid.snap]) {
-	  clog->error() << m_mode_desc << " " << info.pgid << " " << soid
-			<< " : size " << oi->size << " != clone_size "
-			<< snapset->clone_size[*curclone];
-	  ++m_scrubber.m_shallow_errors;
-	  soid_error.set_size_mismatch();
-	}
+        if (oi && oi->size != snapset->clone_size[soid.snap]) {
+          clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                        << " : size " << oi->size << " != clone_size "
+                        << snapset->clone_size[*curclone];
+          ++m_scrubber.m_shallow_errors;
+          soid_error.set_size_mismatch();
+        }
 
-	if (snapset->clone_overlap.count(soid.snap) == 0) {
-	  clog->error() << m_mode_desc << " " << info.pgid << " " << soid
-			<< " : is missing in clone_overlap";
-	  ++m_scrubber.m_shallow_errors;
-	  soid_error.set_size_mismatch();
-	} else {
-	  // This checking is based on get_clone_bytes().  The first 2 asserts
-	  // can't happen because we know we have a clone_size and
-	  // a clone_overlap.  Now we check that the interval_set won't
-	  // cause the last assert.
-	  uint64_t size = snapset->clone_size.find(soid.snap)->second;
-	  const interval_set<uint64_t>& overlap =
-	    snapset->clone_overlap.find(soid.snap)->second;
-	  bool bad_interval_set = false;
-	  for (interval_set<uint64_t>::const_iterator i = overlap.begin();
-	       i != overlap.end(); ++i) {
-	    if (size < i.get_len()) {
-	      bad_interval_set = true;
-	      break;
-	    }
-	    size -= i.get_len();
-	  }
+        if (snapset->clone_overlap.count(soid.snap) == 0) {
+          clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                        << " : is missing in clone_overlap";
+          ++m_scrubber.m_shallow_errors;
+          soid_error.set_size_mismatch();
+        } else {
+          // This checking is based on get_clone_bytes().  The first 2 asserts
+          // can't happen because we know we have a clone_size and
+          // a clone_overlap.  Now we check that the interval_set won't
+          // cause the last assert.
+          uint64_t size = snapset->clone_size.find(soid.snap)->second;
+          const interval_set<uint64_t>& overlap =
+            snapset->clone_overlap.find(soid.snap)->second;
+          bool bad_interval_set = false;
+          for (interval_set<uint64_t>::const_iterator i = overlap.begin();
+               i != overlap.end();
+               ++i) {
+            if (size < i.get_len()) {
+              bad_interval_set = true;
+              break;
+            }
+            size -= i.get_len();
+          }
 
-	  if (bad_interval_set) {
-	    clog->error() << m_mode_desc << " " << info.pgid << " " << soid
-			  << " : bad interval_set in clone_overlap";
-	    ++m_scrubber.m_shallow_errors;
-	    soid_error.set_size_mismatch();
-	  } else {
-	    stat.num_bytes += snapset->get_clone_bytes(soid.snap);
-	  }
-	}
+          if (bad_interval_set) {
+            clog->error() << m_mode_desc << " " << info.pgid << " " << soid
+                          << " : bad interval_set in clone_overlap";
+            ++m_scrubber.m_shallow_errors;
+            soid_error.set_size_mismatch();
+          } else {
+            stat.num_bytes += snapset->get_clone_bytes(soid.snap);
+          }
+        }
       }
 
       // what's next?
       ++curclone;
       if (soid_error.errors) {
-	m_scrubber.m_store->add_snap_error(pool.id, soid_error);
-	++soid_error_count;
+        m_scrubber.m_store->add_snap_error(pool.id, soid_error);
+        ++soid_error_count;
       }
     }
     m_scrubber.add_to_stats(stat);
@@ -1583,10 +1733,14 @@ void ScrubBackend::scrub_snapshot_metadata(ScrubMap& map/*,
 
   if (doing_clones(snapset, curclone)) {
     dout(10) << __func__ << " " << m_mode_desc << " " << info.pgid
-	     << " No more objects while processing " << *head << dendl;
+             << " No more objects while processing " << *head << dendl;
 
-    missing += process_clones_to(head, snapset, allow_incomplete_clones, all_clones,
-				 &curclone, head_error);
+    missing += process_clones_to(head,
+                                 snapset,
+                                 allow_incomplete_clones,
+                                 all_clones,
+                                 &curclone,
+                                 head_error);
   }
 
   // There could be missing found by the test above or even
@@ -1605,12 +1759,13 @@ void ScrubBackend::scrub_snapshot_metadata(ScrubMap& map/*,
   dout(10) << __func__ << " (" << m_mode_desc << ") finish" << dendl;
 }
 
-int ScrubBackend::process_clones_to(const std::optional<hobject_t>& head,
-				    const std::optional<SnapSet>& snapset,
-				    bool allow_incomplete_clones,
-				    std::optional<snapid_t> target,
-				    vector<snapid_t>::reverse_iterator* curclone,
-				    inconsistent_snapset_wrapper& e)
+int ScrubBackend::process_clones_to(
+  const std::optional<hobject_t>& head,
+  const std::optional<SnapSet>& snapset,
+  bool allow_incomplete_clones,
+  std::optional<snapid_t> target,
+  vector<snapid_t>::reverse_iterator* curclone,
+  inconsistent_snapset_wrapper& e)
 {
   ceph_assert(head);
   ceph_assert(snapset);
@@ -1618,7 +1773,8 @@ int ScrubBackend::process_clones_to(const std::optional<hobject_t>& head,
 
   // NOTE: clones are in descending order, thus **curclone > target test here
   hobject_t next_clone(*head);
-  while (doing_clones(snapset, *curclone) && (!target || **curclone > *target)) {
+  while (doing_clones(snapset, *curclone) &&
+         (!target || **curclone > *target)) {
 
     ++missing_count;
     // it is okay to be missing one or more clones in a cache tier.
@@ -1626,8 +1782,8 @@ int ScrubBackend::process_clones_to(const std::optional<hobject_t>& head,
     if (!allow_incomplete_clones) {
       next_clone.snap = **curclone;
       clog->error() << m_mode_desc << " " << m_pg_id << " " << *head
-		    << " : expected clone " << next_clone << " " << m_missing
-		    << " missing";
+                    << " : expected clone " << next_clone << " " << m_missing
+                    << " missing";
       ++m_scrubber.m_shallow_errors;
       e.set_clone_missing(next_clone.snap);
     }
@@ -1639,26 +1795,26 @@ int ScrubBackend::process_clones_to(const std::optional<hobject_t>& head,
 
 
 void ScrubBackend::log_missing(int missing,
-			       const std::optional<hobject_t>& head,
-			       const char* logged_func_name,
-			       bool allow_incomplete_clones)
+                               const std::optional<hobject_t>& head,
+                               const char* logged_func_name,
+                               bool allow_incomplete_clones)
 {
   ceph_assert(head);
   if (allow_incomplete_clones) {
     dout(20) << logged_func_name << " " << m_mode_desc << " " << m_pg_id << " "
-	     << *head << " skipped " << missing << " clone(s) in cache tier"
-	     << dendl;
+             << *head << " skipped " << missing << " clone(s) in cache tier"
+             << dendl;
   } else {
-    clog->info() << m_mode_desc << " " << m_pg_id << " " << *head << " : " << missing
-		 << " missing clone(s)";
+    clog->info() << m_mode_desc << " " << m_pg_id << " " << *head << " : "
+                 << missing << " missing clone(s)";
   }
 }
 
 
 // PrimaryLogScrub l 524
 void ScrubBackend::record_object_digests(const hobject_t& obj,
-					 std::optional<uint32_t> data_digest,
-					 std::optional<uint32_t> omap_digest)
+                                         std::optional<uint32_t> data_digest,
+                                         std::optional<uint32_t> omap_digest)
 {
   ceph_assert(!obj.is_snapdir());
   dout(10) << __func__ << " recording digests for " << obj << dendl;
@@ -1667,14 +1823,14 @@ void ScrubBackend::record_object_digests(const hobject_t& obj,
 
   if (!obc) {
     clog->error() << m_pg_id << " " << m_mode_desc
-		  << " cannot get object context for object " << obj;
+                  << " cannot get object context for object " << obj;
     return;
   }
 
   if (obc->obs.oi.soid != obj) {
     clog->error() << m_pg_id << " " << m_mode_desc << " " << obj
-		  << " : object has a valid oi attr with a mismatched name, "
-		  << " obc->obs.oi.soid: " << obc->obs.oi.soid;
+                  << " : object has a valid oi attr with a mismatched name, "
+                  << " obc->obs.oi.soid: " << obc->obs.oi.soid;
     return;
   }
 
@@ -1693,11 +1849,14 @@ void ScrubBackend::record_object_digests(const hobject_t& obj,
   m_scrubber.finish_ctx(ctx.get(), pg_log_entry_t::MODIFY);
 
   ++num_digest_updates_pending;
-  ctx->register_on_success([this]() { // RRR check for changes in new release
-    //dout(20) << "updating scrub digest " << num_digest_updates_pending << dendl;
-    if (num_digest_updates_pending >= 1 && (--num_digest_updates_pending <= 0)) {
-      m_scrubber.m_osds->queue_scrub_digest_update(&m_pg,
-						   m_pg.is_scrub_blocking_ops());
+  ctx->register_on_success([this]() {  // RRR check for changes in new release
+    // dout(20) << "updating scrub digest " << num_digest_updates_pending <<
+    // dendl;
+    if (num_digest_updates_pending >= 1 &&
+        (--num_digest_updates_pending <= 0)) {
+      m_scrubber.m_osds->queue_scrub_digest_update(
+        &m_pg,
+        m_pg.is_scrub_blocking_ops());
     }
   });
 
@@ -1731,27 +1890,27 @@ void ScrubBackend::scan_snaps(ScrubMap& smap)
       // parse the SnapSet
       bufferlist bl;
       if (o.attrs.find(SS_ATTR) == o.attrs.end()) {
-	continue;
+        continue;
       }
       bl.push_back(o.attrs[SS_ATTR]);
       auto p = bl.cbegin();
       try {
-	decode(snapset, p);
+        decode(snapset, p);
       } catch (...) {
-	continue;
+        continue;
       }
       head = hoid.get_head();
       continue;
     }
 
-    // RRR understand why guaranteed to have init head at this point
+    // RRR understand why guaranteed to have initialized 'head' at this point
 
     if (hoid.snap < CEPH_MAXSNAP) {
 
       if (hoid.get_head() != head) {
-	derr << __func__ << " no head for " << hoid << " (have " << head << ")"
-	     << dendl;
-	continue;
+        derr << __func__ << " no head for " << hoid << " (have " << head << ")"
+             << dendl;
+        continue;
       }
 
       scan_object_snaps(hoid, o, snapset);
@@ -1760,14 +1919,15 @@ void ScrubBackend::scan_snaps(ScrubMap& smap)
 }
 
 void ScrubBackend::scan_object_snaps(const hobject_t& hoid,
-				     ScrubMap::object& scrmap_obj,
-				     const SnapSet& snapset)
+                                     ScrubMap::object& scrmap_obj,
+                                     const SnapSet& snapset)
 {
   // check and if necessary fix snap_mapper
 
   auto p = snapset.clone_snaps.find(hoid.snap);
   if (p == snapset.clone_snaps.end()) {
-    derr << __func__ << " no clone_snaps for " << hoid << " in " << snapset << dendl;
+    derr << __func__ << " no clone_snaps for " << hoid << " in " << snapset
+         << dendl;
     return;
   }
   set<snapid_t> obj_snaps{p->second.begin(), p->second.end()};
@@ -1784,18 +1944,20 @@ void ScrubBackend::scan_object_snaps(const hobject_t& hoid,
     if (r == 0) {
       r = m_pg.snap_mapper.remove_oid(hoid, &_t);
       if (r != 0) {
-	derr << __func__ << ": remove_oid returned " << cpp_strerror(r) << dendl;
-	ceph_abort();
+        derr << __func__ << ": remove_oid returned " << cpp_strerror(r)
+             << dendl;
+        ceph_abort();
       }
-      clog->error() << "osd." << m_pg_whoami << " found snap mapper error on pg "
-		    << m_pg_id << " oid " << hoid
-		    << " snaps in mapper: " << cur_snaps << ", oi: " << obj_snaps
-		    << "...repaired";
+      clog->error() << "osd." << m_pg_whoami
+                    << " found snap mapper error on pg " << m_pg_id << " oid "
+                    << hoid << " snaps in mapper: " << cur_snaps
+                    << ", oi: " << obj_snaps << "...repaired";
     } else {
-      clog->error() << "osd." << m_pg_whoami << " found snap mapper error on pg "
-		    << m_pg_id << " oid " << hoid << " snaps missing in mapper"
-		    << ", should be: " << obj_snaps << " was " << cur_snaps << " r "
-		    << r << "...repaired";
+      clog->error() << "osd." << m_pg_whoami
+                    << " found snap mapper error on pg " << m_pg_id << " oid "
+                    << hoid << " snaps missing in mapper"
+                    << ", should be: " << obj_snaps << " was " << cur_snaps
+                    << " r " << r << "...repaired";
     }
     m_pg.snap_mapper.add_oid(hoid, obj_snaps, &_t);
 
@@ -1812,14 +1974,16 @@ void ScrubBackend::scan_object_snaps(const hobject_t& hoid,
 
       e = m_pg.osd->store->queue_transaction(m_pg.ch, std::move(t));
       if (e != 0) {
-	derr << __func__ << ": queue_transaction got " << cpp_strerror(e) << dendl;
+        derr << __func__ << ": queue_transaction got " << cpp_strerror(e)
+             << dendl;
       } else {
-	std::unique_lock l{my_lock};
-	my_cond.wait(l, [&done] { return done; });
+        std::unique_lock l{my_lock};
+        my_cond.wait(l, [&done] { return done; });
       }
     }
   }
 }
+
 
 /*
  * Process:
@@ -1844,11 +2008,11 @@ ScrubMap ScrubBackend::clean_meta_map(ScrubMap& cleaned, bool max_reached)
       ++iter;
     } else {
       while (iter != begin) {
-	auto next = iter--;
-	if (next->first.get_head() != iter->first.get_head()) {
-	  ++iter;
-	  break;
-	}
+        auto next = iter--;
+        if (next->first.get_head() != iter->first.get_head()) {
+          ++iter;
+          break;
+        }
       }
     }
     for_meta_scrub.objects.insert(begin, iter);
