@@ -21,11 +21,11 @@ void Background::run() {
   //lua_State* const L = luaL_newstate();
   lua_State* L;
   rgw::lua::lua_state_guard lguard(L);
-  open_standard_libs(L);
-  set_package_path(L, luarocks_path);
-  create_debug_action(L, cct->get());
-  create_background_metatable(L);
-  this->create_background_metatable(L);
+  //open_standard_libs(L);
+  //set_package_path(L, luarocks_path);
+  //create_debug_action(L, cct->get());
+  //create_background_metatable(L);
+  //this->create_background_metatable(L);
 
   while (!stopped) {
 
