@@ -38,7 +38,7 @@ class ScrubBackendIF {
 
   /**
    * decode the arriving MOSDRepScrubMap message, placing the replica's
-   * scrub-map into m_received_maps[from].
+   * scrub-map into received_maps[from].
    *
    * @param from replica
    * @param pool TBD
@@ -58,6 +58,8 @@ class ScrubBackendIF {
   virtual int scrub_process_inconsistent() = 0;
 
   virtual void scan_snaps(ScrubMap& smap) = 0;
+
+  virtual void replica_clean_meta(ScrubMap& smap, bool max_reached, const hobject_t& start) = 0;
 
   // tbd - stats handling
 
