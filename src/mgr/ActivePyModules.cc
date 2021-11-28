@@ -76,16 +76,13 @@ void ActivePyModules::dump_server(const std::string &hostname,
   std::string ceph_version;
 
   for (const auto &[key, state] : dmc) {
-    without_gil([&ceph_version, state=state] {
-      std::lock_guard l(state->lock);
-      // TODO: pick the highest version, and make sure that
-      // somewhere else (during health reporting?) we are
-      // indicating to the user if we see mixed versions
-      auto ver_iter = state->metadata.find("ceph_version");
-      if (ver_iter != state->metadata.end()) {
-        ceph_version = state->metadata.at("ceph_version");
-      }
-    });
+    // TODO: pick the highest version, and make sure that
+    // somewhere else (during health reporting?) we are
+    // indicating to the user if we see mixed versions
+    auto ver_iter = state->metadata.find("ceph_version");
+    if (ver_iter != state->metadata.end()) {
+      ceph_version = state->metadata.at("ceph_version");
+    }
     f->open_object_section("service");
     f->dump_string("type", key.type);
     f->dump_string("id", key.name);
@@ -98,13 +95,19 @@ void ActivePyModules::dump_server(const std::string &hostname,
 
 PyObject *ActivePyModules::get_server_python(const std::string &hostname)
 {
-  const auto dmc = without_gil([&]{
-    std::lock_guard l(lock);
-    dout(10) << " (" << hostname << ")" << dendl;
-    return daemon_state.get_by_server(hostname);
-  });
+  dout(10) << " (" << hostname << ")" << dendl;
+
+  without_gil_t no_gil;
+  std::shared_lock l(daemon_state.lock);
+  no_gil.acquire_gil();
+  
   PyFormatter f;
-  dump_server(hostname, dmc, &f);
+  auto p = daemon_state.by_server.find(hostname);
+  if (p != daemon_state.by_server.end()) {
+    dump_server(hostname, p->second, &f);
+  } else {
+    dump_server(hostname, {}, &f);
+  }
   return f.get();
 }
 
@@ -114,37 +117,36 @@ PyObject *ActivePyModules::list_servers_python()
   dout(10) << " >" << dendl;
 
   without_gil_t no_gil;
-  return daemon_state.with_daemons_by_server([this, &no_gil]
-      (const std::map<std::string, DaemonStateCollection> &all) {
-    with_gil_t with_gil{no_gil};
-    PyFormatter f(false, true);
-    for (const auto &[hostname, daemon_state] : all) {
-      f.open_object_section("server");
-      dump_server(hostname, daemon_state, &f);
-      f.close_section();
-    }
-    return f.get();
-  });
+  std::shared_lock l(daemon_state.lock);
+  no_gil.acquire_gil();
+
+  PyFormatter f(false, true);
+  for (const auto &[hostname, ds] : daemon_state.by_server) {
+    f.open_object_section("server");
+    dump_server(hostname, ds, &f);
+    f.close_section();
+  }
+  return f.get();
 }
 
 PyObject *ActivePyModules::get_metadata_python(
   const std::string &svc_type,
   const std::string &svc_id)
 {
-  auto metadata = daemon_state.get(DaemonKey{svc_type, svc_id});
+  without_gil_t no_gil;
+  std::shared_lock l(daemon_state.lock);
+  no_gil.acquire_gil();
+  
+  auto metadata = daemon_state._get(DaemonKey{svc_type, svc_id});
   if (metadata == nullptr) {
     derr << "Requested missing service " << svc_type << "." << svc_id << dendl;
     Py_RETURN_NONE;
   }
-  auto l = without_gil([&] {
-    return std::lock_guard(lock);
-  });
   PyFormatter f;
   f.dump_string("hostname", metadata->hostname);
   for (const auto &[key, val] : metadata->metadata) {
     f.dump_string(key, val);
   }
-
   return f.get();
 }
 
@@ -152,14 +154,15 @@ PyObject *ActivePyModules::get_daemon_status_python(
   const std::string &svc_type,
   const std::string &svc_id)
 {
-  auto metadata = daemon_state.get(DaemonKey{svc_type, svc_id});
+  without_gil_t no_gil;
+  std::shared_lock l(daemon_state.lock);
+  no_gil.acquire_gil();
+  
+  auto metadata = daemon_state._get(DaemonKey{svc_type, svc_id});
   if (metadata == nullptr) {
     derr << "Requested missing service " << svc_type << "." << svc_id << dendl;
     Py_RETURN_NONE;
   }
-  auto l = without_gil([&] {
-    return std::lock_guard(lock);
-  });
   PyFormatter f;
   for (const auto &[daemon, status] : metadata->service_status) {
     f.dump_string(daemon, status);
@@ -171,28 +174,26 @@ PyObject *ActivePyModules::get_python(const std::string &what)
 {
   PyFormatter f;
 
-  // Drop the GIL, as most of the following blocks will block on
-  // a mutex -- they are all responsible for re-taking the GIL before
-  // touching the PyFormatter instance or returning from the function.
-  without_gil_t no_gil;
-
   if (what == "fs_map") {
+    without_gil_t no_gil;
     return cluster_state.with_fsmap([&](const FSMap &fsmap) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       fsmap.dump(&f);
       return f.get();
     });
   } else if (what == "osdmap_crush_map_text") {
+    without_gil_t no_gil;
     bufferlist rdata;
     cluster_state.with_osdmap([&](const OSDMap &osd_map){
       osd_map.crush->encode(rdata, CEPH_FEATURES_SUPPORTED_DEFAULT);
     });
     std::string crush_text = rdata.to_str();
-    with_gil_t with_gil{no_gil};
+    no_gil.acquire_gil();
     return PyUnicode_FromString(crush_text.c_str());
   } else if (what.substr(0, 7) == "osd_map") {
+    without_gil_t no_gil;
     return cluster_state.with_osdmap([&](const OSDMap &osd_map){
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       if (what == "osd_map") {
         osd_map.dump(&f);
       } else if (what == "osd_map_tree") {
@@ -203,23 +204,18 @@ PyObject *ActivePyModules::get_python(const std::string &what)
       return f.get();
     });
   } else if (what == "modified_config_options") {
-    auto all_daemons = daemon_state.get_all();
-    set<string> names;
-    for (auto& [key, daemon] : all_daemons) {
-      std::lock_guard l(daemon->lock);
-      for (auto& [name, valmap] : daemon->config) {
-	names.insert(name);
-      }
-    }
-    with_gil_t with_gil{no_gil};
+    without_gil_t no_gil;
+    std::shared_lock l(daemon_state.lock);
+    no_gil.acquire_gil();
     f.open_array_section("options");
-    for (auto& name : names) {
-      f.dump_string("name", name);
+    for (auto& [key, daemon] : daemon_state.all) {
+      for (auto& [name, valmap] : daemon->config) {
+	f.dump_string("name", name);
+      }
     }
     f.close_section();
     return f.get();
   } else if (what.substr(0, 6) == "config") {
-    with_gil_t with_gil{no_gil};
     if (what == "config_options") {
       g_conf().config_options(&f);
     } else if (what == "config") {
@@ -227,46 +223,54 @@ PyObject *ActivePyModules::get_python(const std::string &what)
     }
     return f.get();
   } else if (what == "mon_map") {
+    without_gil_t no_gil;
     return cluster_state.with_monmap([&](const MonMap &monmap) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       monmap.dump(&f);
       return f.get();
     });
   } else if (what == "service_map") {
+    without_gil_t no_gil;
     return cluster_state.with_servicemap([&](const ServiceMap &service_map) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       service_map.dump(&f);
       return f.get();
     });
   } else if (what == "osd_metadata") {
-    auto dmc = daemon_state.get_by_service("osd");
-    for (const auto &[key, state] : dmc) {
-      std::lock_guard l(state->lock);
-      with_gil(no_gil, [&f, &name=key.name, state=state] {
-        f.open_object_section(name.c_str());
-        f.dump_string("hostname", state->hostname);
-        for (const auto &[name, val] : state->metadata) {
-          f.dump_string(name.c_str(), val);
-        }
-        f.close_section();
-      });
+    without_gil_t no_gil;
+    std::shared_lock l(daemon_state.lock);
+    no_gil.acquire_gil();
+    for (const auto &[key, state] : daemon_state.all) {
+      if (key.type != "osd") {
+	continue;
+      }
+      auto& name = key.name;
+      f.open_object_section(name.c_str());
+      f.dump_string("hostname", state->hostname);
+      for (const auto &[name, val] : state->metadata) {
+	f.dump_string(name.c_str(), val);
+      }
+      f.close_section();
     }
-    return with_gil(no_gil, [&] { return f.get(); });
+    return f.get();
   } else if (what == "mds_metadata") {
-    auto dmc = daemon_state.get_by_service("mds");
-    for (const auto &[key, state] : dmc) {
-      std::lock_guard l(state->lock);
-      with_gil(no_gil, [&f, &name=key.name, state=state] {
-        f.open_object_section(name.c_str());
-        f.dump_string("hostname", state->hostname);
-        for (const auto &[name, val] : state->metadata) {
-          f.dump_string(name.c_str(), val);
-        }
-        f.close_section();
-      });
+    without_gil_t no_gil;
+    std::shared_lock l(daemon_state.lock);
+    no_gil.acquire_gil();
+    for (const auto &[key, state] : daemon_state.all) {
+      if (key.type != "mds")
+	continue;
+      auto& name = key.name;
+      f.open_object_section(name.c_str());
+      f.dump_string("hostname", state->hostname);
+      for (const auto &[name, val] : state->metadata) {
+	f.dump_string(name.c_str(), val);
+      }
+      f.close_section();
     }
-    return with_gil(no_gil, [&] { return f.get(); });
+    return f.get();
   } else if (what == "pg_summary") {
+    without_gil_t no_gil;
     return cluster_state.with_pgmap(
         [&f, &no_gil](const PGMap &pg_map) {
           std::map<std::string, std::map<std::string, uint32_t> > osds;
@@ -282,7 +286,7 @@ PyObject *ActivePyModules::get_python(const std::string &what)
             }
             all[state]++;
           }
-          with_gil_t with_gil{no_gil};
+          no_gil.acquire_gil();
           f.open_object_section("by_osd");
           for (const auto &i : osds) {
             f.open_object_section(i.first.c_str());
@@ -313,95 +317,101 @@ PyObject *ActivePyModules::get_python(const std::string &what)
         }
     );
   } else if (what == "pg_status") {
+    without_gil_t no_gil;
     return cluster_state.with_pgmap(
         [&](const PGMap &pg_map) {
-	  with_gil_t with_gil{no_gil};
+	  no_gil.acquire_gil();
 	  pg_map.print_summary(&f, nullptr);
           return f.get();
         }
     );
   } else if (what == "pg_dump") {
+    without_gil_t no_gil;
     return cluster_state.with_pgmap(
       [&](const PGMap &pg_map) {
-	with_gil_t with_gil{no_gil};
+	no_gil.acquire_gil();
 	pg_map.dump(&f, false);
 	return f.get();
       }
     );
   } else if (what == "devices") {
-    daemon_state.with_devices2(
-      [&] {
-        with_gil(no_gil, [&] { f.open_array_section("devices"); });
-      },
-      [&](const DeviceState &dev) {
-        with_gil(no_gil, [&] { f.dump_object("device", dev); });
-      });
-    return with_gil(no_gil, [&] {
-      f.close_section();
-      return f.get();
-    });
+    without_gil_t no_gil;
+    std::shared_lock l(daemon_state.lock);
+    no_gil.acquire_gil();
+    f.open_array_section("devices");
+    for (auto& [devid, dev] : daemon_state.devices) {
+      f.dump_object("device", *dev);
+    }
+    f.close_section();
+    return f.get();
   } else if (what.size() > 7 &&
 	     what.substr(0, 7) == "device ") {
+    without_gil_t no_gil;
+    std::shared_lock l(daemon_state.lock);
+    no_gil.acquire_gil();
     string devid = what.substr(7);
-    if (!daemon_state.with_device(devid,
-      [&] (const DeviceState& dev) {
-        with_gil_t with_gil{no_gil};
-        f.dump_object("device", dev);
-      })) {
-      // device not found
+    auto p = daemon_state.devices.find(devid);
+    if (p != daemon_state.devices.end()) {
+      f.dump_object("device", *p->second);
     }
-    return with_gil(no_gil, [&] { return f.get(); });
+    return f.get();
   } else if (what == "io_rate") {
+    without_gil_t no_gil;
     return cluster_state.with_pgmap(
       [&](const PGMap &pg_map) {
-        with_gil_t with_gil{no_gil};
+        no_gil.acquire_gil();
         pg_map.dump_delta(&f);
 	return f.get();
       }
     );
   } else if (what == "df") {
+    without_gil_t no_gil;
     return cluster_state.with_osdmap_and_pgmap(
       [&](
 	const OSDMap& osd_map,
 	const PGMap &pg_map) {
-        with_gil_t with_gil{no_gil};
+        no_gil.acquire_gil();
         pg_map.dump_cluster_stats(nullptr, &f, true);
         pg_map.dump_pool_stats_full(osd_map, nullptr, &f, true);
 	return f.get();
       });
   } else if (what == "pg_stats") {
+    without_gil_t no_gil;
     return cluster_state.with_pgmap([&](const PGMap &pg_map) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       pg_map.dump_pg_stats(&f, false);
       return f.get();
     });
   } else if (what == "pool_stats") {
+    without_gil_t no_gil;
     return cluster_state.with_pgmap([&](const PGMap &pg_map) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       pg_map.dump_pool_stats(&f);
       return f.get();
     });
   } else if (what == "pg_ready") {
-    with_gil_t with_gil{no_gil};
     server.dump_pg_ready(&f);
     return f.get();
   } else if (what == "osd_stats") {
+    without_gil_t no_gil;
     return cluster_state.with_pgmap([&](const PGMap &pg_map) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       pg_map.dump_osd_stats(&f, false);
       return f.get();
     });
   } else if (what == "osd_ping_times") {
+    without_gil_t no_gil;
     return cluster_state.with_pgmap([&](const PGMap &pg_map) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       pg_map.dump_osd_ping_times(&f);
       return f.get();
     });
   } else if (what == "osd_pool_stats") {
+    without_gil_t no_gil;
     int64_t poolid = -ENOENT;
     return cluster_state.with_osdmap_and_pgmap([&](const OSDMap& osdmap,
 					    const PGMap& pg_map) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       f.open_array_section("pool_stats");
       for (auto &p : osdmap.get_pools()) {
         poolid = p.first;
@@ -411,27 +421,29 @@ PyObject *ActivePyModules::get_python(const std::string &what)
       return f.get();
     });
   } else if (what == "health") {
+    without_gil_t no_gil;
     return cluster_state.with_health([&](const ceph::bufferlist &health_json) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       f.dump_string("json", health_json.to_str());
       return f.get();
     });
   } else if (what == "mon_status") {
+    without_gil_t no_gil;
     return cluster_state.with_mon_status(
         [&](const ceph::bufferlist &mon_status_json) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       f.dump_string("json", mon_status_json.to_str());
       return f.get();
     });
   } else if (what == "mgr_map") {
+    without_gil_t no_gil;
     return cluster_state.with_mgrmap([&](const MgrMap &mgr_map) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       mgr_map.dump(&f);
       return f.get();
     });
   } else if (what == "mgr_ips") {
     entity_addrvec_t myaddrs = server.get_myaddrs();
-    with_gil_t with_gil{no_gil};
     f.open_array_section("ips");
     std::set<std::string> did;
     for (auto& i : myaddrs.v) {
@@ -443,13 +455,13 @@ PyObject *ActivePyModules::get_python(const std::string &what)
     f.close_section();
     return f.get();
   } else if (what == "have_local_config_map") {
-    with_gil_t with_gil{no_gil};
     f.dump_bool("have_local_config_map", have_local_config_map);
     return f.get();
   } else if (what == "active_clean_pgs"){
+    without_gil_t no_gil;
     cluster_state.with_pgmap(
         [&](const PGMap &pg_map) {
-      with_gil_t with_gil{no_gil};
+      no_gil.acquire_gil();
       f.open_array_section("pg_stats");
       for (auto &i : pg_map.pg_stat) {
         const auto state = i.second.state;
@@ -471,7 +483,6 @@ PyObject *ActivePyModules::get_python(const std::string &what)
     return f.get();
   } else {
     derr << "Python module requested unknown data '" << what << "'" << dendl;
-    with_gil_t with_gil{no_gil};
     Py_RETURN_NONE;
   }
 }
@@ -640,7 +651,7 @@ PyObject *ActivePyModules::get_typed_config(
   }
   if (found) {
     PyModuleRef module = py_module_registry.get_module(module_name);
-    with_gil_t with_gil{no_gil};
+    no_gil.acquire_gil();
     if (!module) {
         derr << "Module '" << module_name << "' is not available" << dendl;
         Py_RETURN_NONE;
@@ -657,7 +668,6 @@ PyObject *ActivePyModules::get_typed_config(
   } else {
     dout(10) << " " << key << " not found " << dendl;
   }
-  with_gil_t with_gil{no_gil};
   Py_RETURN_NONE;
 }
 
@@ -667,20 +677,19 @@ PyObject *ActivePyModules::get_store_prefix(const std::string &module_name,
   without_gil_t no_gil;
   std::lock_guard l(lock);
   std::lock_guard lock(module_config.lock);
+  no_gil.acquire_gil();
 
   const std::string base_prefix = PyModule::mgr_store_prefix
                                     + module_name + "/";
   const std::string global_prefix = base_prefix + prefix;
   dout(4) << __func__ << " prefix: " << global_prefix << dendl;
 
-  return with_gil(no_gil, [&] {
-    PyFormatter f;
-    for (auto p = store_cache.lower_bound(global_prefix);
-         p != store_cache.end() && p->first.find(global_prefix) == 0; ++p) {
-      f.dump_string(p->first.c_str() + base_prefix.size(), p->second);
-    }
-    return f.get();
-  });
+  PyFormatter f;
+  for (auto p = store_cache.lower_bound(global_prefix);
+       p != store_cache.end() && p->first.find(global_prefix) == 0; ++p) {
+    f.dump_string(p->first.c_str() + base_prefix.size(), p->second);
+  }
+  return f.get();
 }
 
 void ActivePyModules::set_store(const std::string &module_name,
@@ -846,32 +855,30 @@ PyObject* ActivePyModules::with_perf_counters(
     const std::string &svc_id,
     const std::string &path) const
 {
+  without_gil_t no_gil;
+  std::shared_lock l(daemon_state.lock);
+  no_gil.acquire_gil();
+
   PyFormatter f;
   f.open_array_section(path);
-  {
-    without_gil_t no_gil;
-    std::lock_guard l(lock);
-    auto metadata = daemon_state.get(DaemonKey{svc_name, svc_id});
-    if (metadata) {
-      std::lock_guard l2(metadata->lock);
-      if (metadata->perf_counters.instances.count(path)) {
-        auto counter_instance = metadata->perf_counters.instances.at(path);
-        auto counter_type = metadata->perf_counters.types.at(path);
-        with_gil(no_gil, [&] {
-          fct(counter_instance, counter_type, f);
-        });
-      } else {
-        dout(4) << "Missing counter: '" << path << "' ("
-		<< svc_name << "." << svc_id << ")" << dendl;
-        dout(20) << "Paths are:" << dendl;
-        for (const auto &i : metadata->perf_counters.instances) {
-          dout(20) << i.first << dendl;
-        }
-      }
+
+  auto metadata = daemon_state._get(DaemonKey{svc_name, svc_id});
+  if (metadata) {
+    if (metadata->perf_counters.instances.count(path)) {
+      auto counter_instance = metadata->perf_counters.instances.at(path);
+      auto counter_type = metadata->perf_counters.types.at(path);
+      fct(counter_instance, counter_type, f);
     } else {
-      dout(4) << "No daemon state for " << svc_name << "." << svc_id << ")"
-              << dendl;
+      dout(4) << "Missing counter: '" << path << "' ("
+	      << svc_name << "." << svc_id << ")" << dendl;
+      dout(20) << "Paths are:" << dendl;
+      for (const auto &i : metadata->perf_counters.instances) {
+	dout(20) << i.first << dendl;
+      }
     }
+  } else {
+    dout(4) << "No daemon state for " << svc_name << "." << svc_id << ")"
+	    << dendl;
   }
   f.close_section();
   return f.get();
@@ -938,46 +945,47 @@ PyObject* ActivePyModules::get_perf_schema_python(
     const std::string &svc_id)
 {
   without_gil_t no_gil;
-  std::lock_guard l(lock);
+  std::shared_lock l(daemon_state.lock);
+  no_gil.acquire_gil();
 
   DaemonStateCollection daemons;
 
   if (svc_type == "") {
-    daemons = daemon_state.get_all();
+    daemons = daemon_state.all;
   } else if (svc_id.empty()) {
-    daemons = daemon_state.get_by_service(svc_type);
+    for (auto& [key, state] : daemon_state.all) {
+      if (key.type == svc_type) {
+	daemons[key] = state;
+      }
+    }
   } else {
     auto key = DaemonKey{svc_type, svc_id};
     // so that the below can be a loop in all cases
-    auto got = daemon_state.get(key);
+    auto got = daemon_state._get(key);
     if (got != nullptr) {
       daemons[key] = got;
     }
   }
 
-  auto f = with_gil(no_gil, [&] {
-    return PyFormatter();
-  });
+  PyFormatter f;
   if (!daemons.empty()) {
-    for (auto& [key, state] : daemons) {
-      std::lock_guard l(state->lock);
-      with_gil(no_gil, [&, key=ceph::to_string(key), state=state] {
-        f.open_object_section(key.c_str());
-        for (auto ctr_inst_iter : state->perf_counters.instances) {
-          const auto &counter_name = ctr_inst_iter.first;
-          f.open_object_section(counter_name.c_str());
-          auto type = state->perf_counters.types[counter_name];
-          f.dump_string("description", type.description);
-          if (!type.nick.empty()) {
-            f.dump_string("nick", type.nick);
-          }
-          f.dump_unsigned("type", type.type);
-          f.dump_unsigned("priority", type.priority);
-          f.dump_unsigned("units", type.unit);
-          f.close_section();
-        }
-        f.close_section();
-      });
+    for (auto& [rkey, state] : daemons) {
+      auto key = ceph::to_string(rkey);
+      f.open_object_section(key.c_str());
+      for (auto ctr_inst_iter : state->perf_counters.instances) {
+	const auto &counter_name = ctr_inst_iter.first;
+	f.open_object_section(counter_name.c_str());
+	auto type = state->perf_counters.types[counter_name];
+	f.dump_string("description", type.description);
+	if (!type.nick.empty()) {
+	  f.dump_string("nick", type.nick);
+	}
+	f.dump_unsigned("type", type.type);
+	f.dump_unsigned("priority", type.priority);
+	f.dump_unsigned("units", type.unit);
+	f.close_section();
+      }
+      f.close_section();
     }
   } else {
     dout(4) << __func__ << ": No daemon state found for "
@@ -1090,7 +1098,7 @@ PyObject *ActivePyModules::get_foreign_config(
     cmd.wait();
     dout(10) << "ceph_foreign_option_get (mon command) " << who << " " << name << " = "
 	     << cmd.outbl.to_str() << dendl;
-    with_gil_t gil(no_gil);
+    no_gil.acquire_gil();
     return get_python_typed_option_value(opt->type, cmd.outbl.to_str());
   }
 
@@ -1150,7 +1158,7 @@ PyObject *ActivePyModules::get_foreign_config(
   dout(10) << "ceph_foreign_option_get (configmap) " << who << " " << name << " = "
 	   << value << dendl;
   lock.unlock();
-  with_gil_t with_gil(no_gil);
+  no_gil.acquire_gil();
   return get_python_typed_option_value(opt->type, value);
 }
 
