@@ -446,8 +446,8 @@ void WriteLog<I>::append_scheduled_ops(void) {
   GenericLogOperations ops;
   ldout(m_image_ctx.cct, 20) << dendl;
 
-  bool ops_remain = false; //no-op variable for SSD
-  bool appending = false; //no-op variable for SSD
+  bool ops_remain = false;  // unused, no-op variable for SSD
+  bool appending = false;   // unused, no-op variable for SSD
   this->append_scheduled(ops, ops_remain, appending);
 
   if (ops.size()) {
@@ -1021,7 +1021,7 @@ void WriteLog<I>::update_root_scheduled_ops() {
   });
   Context *append_ctx = new LambdaContext([this, ctx](int r) {
     ldout(m_image_ctx.cct, 15) << "Finish the update of pool root." << dendl;
-    bool need_finisher = false;;
+    bool need_finisher = false;
     assert(r == 0);
     {
       std::lock_guard locker(m_lock);
