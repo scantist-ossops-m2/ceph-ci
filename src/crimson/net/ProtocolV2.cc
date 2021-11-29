@@ -210,6 +210,7 @@ void ProtocolV2::enable_recording()
 
 seastar::future<Socket::tmp_buf> ProtocolV2::read_exactly(size_t bytes)
 {
+  inject_failure();
   if (unlikely(record_io)) {
     return socket->read_exactly(bytes)
     .then([this] (auto bl) {
@@ -223,6 +224,7 @@ seastar::future<Socket::tmp_buf> ProtocolV2::read_exactly(size_t bytes)
 
 seastar::future<bufferlist> ProtocolV2::read(size_t bytes)
 {
+  inject_failure();
   if (unlikely(record_io)) {
     return socket->read(bytes)
     .then([this] (auto buf) {
@@ -236,10 +238,27 @@ seastar::future<bufferlist> ProtocolV2::read(size_t bytes)
 
 seastar::future<> ProtocolV2::write(bufferlist&& buf)
 {
+  inject_failure();
   if (unlikely(record_io)) {
     txbuf.append(buf);
   }
-  return socket->write(std::move(buf));
+  return inject_delay().then([this, buf = std::move(buf)] () mutable {
+    return socket->write(std::move(buf));
+  });
+}
+
+void ProtocolV2::inject_failure()
+{
+  if (local_conf()->ms_inject_socket_failures && socket) {
+    uint64_t rand =
+      ceph::util::generate_random_number<uint64_t>(1, RAND_MAX);
+      if (rand % local_conf()->ms_inject_socket_failures == 0) {
+      if (true) {
+        logger().warn("{} injecting socket failure", __func__);
+        socket->shutdown();
+      }
+    }
+  }
 }
 
 seastar::future<> ProtocolV2::write_flush(bufferlist&& buf)
@@ -247,9 +266,23 @@ seastar::future<> ProtocolV2::write_flush(bufferlist&& buf)
   if (unlikely(record_io)) {
     txbuf.append(buf);
   }
-  return socket->write_flush(std::move(buf));
+  return inject_delay().then([this, buf = std::move(buf)] () mutable {
+    return socket->write_flush(std::move(buf));
+  });
 }
 
+seastar::future<> ProtocolV2::inject_delay () {
+  float delay_period = local_conf()->ms_inject_internal_delays;
+  if (delay_period) {
+    logger().warn("{}: {} sleep for {}",
+	          __func__,
+		  conn,
+		  delay_period);
+    return seastar::sleep(
+      std::chrono::milliseconds((int)(delay_period * 1000.0)));
+  }
+  return seastar::now();
+}
 size_t ProtocolV2::get_current_msg_size() const
 {
   ceph_assert(rx_frame_asm.get_num_segments() > 0);
@@ -659,10 +692,14 @@ ProtocolV2::client_connect()
                         " (client does not support all server features)",
                         conn, ident_missing.features());
           abort_in_fault();
-          return next_step_t::none;
+          return inject_delay().then([] {
+            return next_step_t::none;
+	  });
         });
       case Tag::WAIT:
-        return process_wait();
+        return inject_delay().then([this] {
+          return process_wait();
+	});
       case Tag::SERVER_IDENT:
         return read_frame_payload().then([this] {
           // handle_server_ident() logic
@@ -722,11 +759,15 @@ ProtocolV2::client_connect()
             server_cookie = 0;
           }
 
-          return seastar::make_ready_future<next_step_t>(next_step_t::ready);
+          return inject_delay().then([] {
+            return seastar::make_ready_future<next_step_t>(next_step_t::ready);
+          });
         });
       default: {
         unexpected_tag(tag, conn, "post_client_connect");
-        return seastar::make_ready_future<next_step_t>(next_step_t::none);
+        return inject_delay().then([] {
+          return seastar::make_ready_future<next_step_t>(next_step_t::none);
+	});
       }
     }
   });
@@ -1082,7 +1123,9 @@ ProtocolV2::reuse_connection(
   // to the exisiting connection, and jump to error handling code to abort the
   // current state.
   abort_in_close(*this, false);
-  return seastar::make_ready_future<next_step_t>(next_step_t::none);
+  return inject_delay().then([] {
+    return seastar::make_ready_future<next_step_t>(next_step_t::none);
+  });
 }
 
 seastar::future<ProtocolV2::next_step_t>
@@ -1928,6 +1971,23 @@ seastar::future<> ProtocolV2::read_message(utime_t throttle_stamp)
 
     // TODO: change MessageRef with seastar::shared_ptr
     auto msg_ref = MessageRef{message, false};
+    uint64_t rand =
+      ceph::util::generate_random_number<uint64_t>(1, RAND_MAX);
+    if (rand % 10000 <
+        local_conf()->ms_inject_delay_probability * 10000.0) {
+      uint64_t delay_period =
+	local_conf()->ms_inject_delay_max * (double)(rand % 10000) / 10000.0;
+      if(delay_period) {
+        logger().warn("{} <== #{} ms_dispatch will delay after {}s",
+                      conn,
+                      message->get_seq(),
+                      delay_period);
+        return seastar::sleep(
+          std::chrono::seconds(delay_period)).then([=] {
+            return dispatchers.ms_dispatch(conn_ref, std::move(msg_ref));
+        });
+      }
+    }
     // throttle the reading process by the returned future
     return dispatchers.ms_dispatch(conn_ref, std::move(msg_ref));
   });

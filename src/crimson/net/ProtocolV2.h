@@ -121,6 +121,8 @@ class ProtocolV2 final : public Protocol {
   seastar::future<bufferlist> read(size_t bytes);
   seastar::future<> write(bufferlist&& buf);
   seastar::future<> write_flush(bufferlist&& buf);
+  seastar::future<> inject_delay();
+  void inject_failure();
 
   ceph::crypto::onwire::rxtx_t session_stream_handlers;
   ceph::compression::onwire::rxtx_t session_comp_handlers;

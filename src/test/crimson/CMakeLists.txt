@@ -83,6 +83,11 @@ target_link_libraries(
   unittest-interruptible-future
   crimson-common)
 
+add_executable(unittest-seastar-messenger-recovery test_messenger_recovery.cc)
+add_ceph_unittest(unittest-seastar-messenger-recovery
+  --memory 256M --smp 1)
+target_link_libraries(unittest-seastar-messenger-recovery crimson)
+
 add_subdirectory(seastore)
 
 add_library(crimson-gtest STATIC
