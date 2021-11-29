@@ -182,7 +182,7 @@ def test_migrate_nfs_initial(cephadm_module: CephadmOrchestrator):
         assert cephadm_module.migration_current == 2
 
         cephadm_module.migration.migrate()
-        assert cephadm_module.migration_current == 3
+        assert cephadm_module.migration_current == 4
 
 
 @mock.patch("cephadm.serve.CephadmServe._run_cephadm", _run_cephadm('[]'))
@@ -215,4 +215,4 @@ def test_migrate_nfs_initial_octopus(cephadm_module: CephadmOrchestrator):
         assert cephadm_module.migration_current == 2
 
         cephadm_module.migration.migrate()
-        assert cephadm_module.migration_current == 3
+        assert cephadm_module.migration_current == 4
