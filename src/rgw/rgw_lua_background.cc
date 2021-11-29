@@ -24,7 +24,6 @@ void Background::run() {
   set_package_path(L, luarocks_path);
   create_debug_action(L, cct->get());
   create_background_metatable(L);
-  this->create_background_metatable(L);
 
   while (!stopped) {
 
@@ -47,6 +46,7 @@ void Background::run() {
     }
     std::this_thread::sleep_for(std::chrono::seconds(execute_interval));
   }
+  lua_settop(L,0);
 }
 
 void Background::create_background_metatable(lua_State* L) {
