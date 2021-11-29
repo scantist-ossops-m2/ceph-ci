@@ -989,11 +989,11 @@ PyObject* ActivePyModules::get_perf_schema_python(
 
 PyObject* ActivePyModules::get_rocksdb_version()
 {
-  unsigned long version = 0;
-  version |= (ROCKSDB_MAJOR & 0xff) << 16;
-  version |= (ROCKSDB_MINOR & 0xff) << 8;
-  version |= (ROCKSDB_PATCH & 0xff);
-  return PyLong_FromUnsignedLong(version);
+  std::string version = std::to_string(ROCKSDB_MAJOR) + "." +
+                        std::to_string(ROCKSDB_MINOR) + "." +
+                        std::to_string(ROCKSDB_PATCH);
+
+  return PyUnicode_FromString(version.c_str());
 }
 
 PyObject *ActivePyModules::get_context()
