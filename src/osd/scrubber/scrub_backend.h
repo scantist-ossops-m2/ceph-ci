@@ -274,7 +274,7 @@ class ScrubBackend : public ScrubBackendIF {
    */
   void merge_to_master_set();
 
-  std::stringstream compare_smaps();
+  std::optional<std::string> compare_smaps();
 
   void compare_obj_in_maps(const hobject_t& ho, std::stringstream& errstream);
 
