@@ -337,6 +337,7 @@ int radosgw_Main(int argc, const char **argv)
     lsubdout(cct, rgw, 1) << "rgw_d3n: rgw_d3n_l1_evict_cache_on_start=" << cct->_conf->rgw_d3n_l1_evict_cache_on_start << dendl;
     lsubdout(cct, rgw, 1) << "rgw_d3n: rgw_d3n_l1_fadvise=" << cct->_conf->rgw_d3n_l1_fadvise << dendl;
     lsubdout(cct, rgw, 1) << "rgw_d3n: rgw_d3n_l1_eviction_policy=" << cct->_conf->rgw_d3n_l1_eviction_policy << dendl;
+    lsubdout(cct, rgw, 1) << "rgw_d3n: rgw_d3n_l1_local_datacache_backend=" << cct->_conf->rgw_d3n_l1_local_datacache_backend << dendl;
   }
   bool rgw_d3n_datacache_enabled = cct->_conf->rgw_d3n_l1_local_datacache_enabled;
   if (rgw_d3n_datacache_enabled && (cct->_conf->rgw_max_chunk_size != cct->_conf->rgw_obj_stripe_size)) {
