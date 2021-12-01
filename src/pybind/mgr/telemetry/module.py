@@ -914,6 +914,8 @@ class Module(MgrModule):
             report['mempool_aggregated'] = self.get_mempool('aggregated')
             report['mempool_separated'] = self.get_mempool('separated')
 
+            report['rocksdb_version'] = self.get_rocksdb_version()
+
         # NOTE: We do not include the 'device' channel in this report; it is
         # sent to a different endpoint.
 
