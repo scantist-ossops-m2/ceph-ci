@@ -1307,13 +1307,6 @@ bool OSDService::prepare_to_stop()
   if (osdmap && osdmap->is_up(whoami)) {
     dout(0) << __func__ << " telling mon we are shutting down" << dendl;
     set_state(PREPARING_TO_STOP);
-#if 0
-    monc->send_mon_message(
-      new MOSDMarkMeDead(
-	monc->get_fsid(),
-	whoami,
-	osdmap->get_epoch()));
-#else
     monc->send_mon_message(
       new MOSDMarkMeDown(
 	monc->get_fsid(),
@@ -1322,7 +1315,6 @@ bool OSDService::prepare_to_stop()
 	osdmap->get_epoch(),
 	true  // request ack
 	));
-#endif
     const auto timeout = ceph::make_timespan(cct->_conf->osd_mon_shutdown_timeout);
     is_stopping_cond.wait_for(l, timeout,
       [this] { return get_state() == STOPPING; });
@@ -4259,8 +4251,10 @@ int OSD::shutdown()
   dout(0) << "shutdown test - cct->_conf->bluestore_avl_alloc_bf_free_pct = " << cct->_conf.get_val<uint64_t>("bluestore_avl_alloc_bf_free_pct") << dendl;
   utime_t  start_time_func = ceph_clock_now();
 
-  if (!cct->_conf->osd_fast_shutdown) {
-    dout(0) << "shutdown service.prepare_to_stop()"  << dendl;
+  if (cct->_conf->osd_fast_shutdown) {
+    derr << "*** Immediate shutdown (osd_fast_shutdown=true) ***" << dendl;
+  } else {
+    dout(0) << "shutdown" << dendl;
     if (!service.prepare_to_stop())
       return 0; // already shutting down
   }
@@ -4269,7 +4263,7 @@ int OSD::shutdown()
   if (is_stopping()) {
     osd_lock.unlock();
     return 0;
-  }  
+  }
 
   utime_t  start_time_state = ceph_clock_now();
   // don't accept new task for this OSD
@@ -4277,7 +4271,7 @@ int OSD::shutdown()
 
   utime_t  start_time_debug = ceph_clock_now();
   // Debugging
-  if (cct->_conf.get_val<bool>("osd_debug_shutdown")) {
+  if (!cct->_conf->osd_fast_shutdown && cct->_conf.get_val<bool>("osd_debug_shutdown")) {
     cct->_conf.set_val("debug_osd", "100");
     cct->_conf.set_val("debug_journal", "100");
     cct->_conf.set_val("debug_filestore", "100");
@@ -4285,11 +4279,9 @@ int OSD::shutdown()
     cct->_conf.set_val("debug_ms", "100");
     cct->_conf.apply_changes(nullptr);
   }
-  //dout(0) << "shutdown 2 : cct->_conf->osd_fast_shutdown = " << cct->_conf->osd_fast_shutdown << dendl;
+
   utime_t  start_time_fast = ceph_clock_now();
   if (cct->_conf->osd_fast_shutdown) {
-    //dout(0) << "shutdown osd_fast_shutdown !!!" << dendl;
-    //derr << "*** Immediate shutdown (osd_fast_shutdown=true) ***" << dendl;
     if (cct->_conf->osd_fast_shutdown_notify_mon) {
       dout(0) << "shutdown2-> service.prepare_to_stop()"  << dendl;
       service.prepare_to_stop();
@@ -10776,18 +10768,15 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
       if (sdata->scheduler->empty() &&
          !(is_smallest_thread_index && !sdata->context_queue.empty())) {
 	sdata->shard_lock.unlock();
-	//dout(0) << __func__ << " empty q, return" << dendl;
 	return;
       }
       // found a work item; reapply default wq timeouts
       osd->cct->get_heartbeat_map()->reset_timeout(hb,
         timeout_interval, suicide_interval);
-      //dout(0) << __func__ << " new work_item, process" << dendl;
     } else {
       dout(20) << __func__ << " need return immediately" << dendl;
       wait_lock.unlock();
       sdata->shard_lock.unlock();
-      //dout(0) << __func__ << " stop waiting!!, return immediately!!!" << dendl;
       return;
     }
   }
@@ -10795,9 +10784,8 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
   list<Context *> oncommits;
   if (is_smallest_thread_index) {
     sdata->context_queue.move_to(oncommits);
-    //dout(0) << __func__ << " is_smallest_thread_index, process oncommits" << dendl;
   }
-    
+
   WorkItem work_item;
   while (!std::get_if<OpSchedulerItem>(&work_item)) {
     if (sdata->scheduler->empty()) {
@@ -10815,7 +10803,6 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
     }
 
     work_item = sdata->scheduler->dequeue();
-    //dout(0) << __func__ << " got work_item from queue" << dendl;
     if (osd->is_stopping()) {
       sdata->shard_lock.unlock();
       for (auto c : oncommits) {
@@ -11089,7 +11076,7 @@ void OSD::ShardedOpWQ::_enqueue(OpSchedulerItem&& item) {
     item.get_ordering_token().hash_to_shard(osd->shards.size());
 
   if (!m_fast_shutdown) {
-    //dout(0) << __func__ << " (enqueue)" << item << dendl;
+    dout(20) << __func__ << " (enqueue)" << item << dendl;
     
     OSDShard* sdata = osd->shards[shard_index];
     assert (NULL != sdata);
@@ -11151,12 +11138,10 @@ void OSD::ShardedOpWQ::stop_for_fast_shutdown()
 {
   uint32_t shard_index = 0;
   m_fast_shutdown = true;
-  //dout(0) << __func__ << "::fast_shutdown flag was set!" << dendl;
 
   for (; shard_index < osd->num_shards; shard_index++) {
     auto& sdata = osd->shards[shard_index];
     ceph_assert(sdata);
-    //dout(0) << __func__ << "::fast_shutdown check shard_index " << shard_index << dendl;
     sdata->shard_lock.lock();
     int work_count = 0;
     while(! sdata->scheduler->empty() ) {
@@ -11164,23 +11149,8 @@ void OSD::ShardedOpWQ::stop_for_fast_shutdown()
       work_count++;
       // TBD - do we need to delete the work_item ???
     }
-
-    if (!sdata->context_queue.empty()) {
-      //dout(0) << __func__ << "\n::fast_shutdown <<!sdata->context_queue.empty()>>\n" << dendl;
-    }
-    
     sdata->shard_lock.unlock();
-    if (work_count ) {
-      //dout(0) << __func__ << "::fast_shutdown removed " << work_count << " work items from scheduler queue" << dendl;
-    }
-
-    //bool is_smallest_thread_index = thread_index < osd->num_shards;
   }
-#if 0
-  dout(0) << __func__ << "::fast_shutdown calling return_waiting_threads()" << dendl;
-  return_waiting_threads();
-  dout(0) << __func__ << "::fast_shutdown after   return_waiting_threads()" << dendl;
-#endif
 }
 
 namespace ceph::osd_cmds {

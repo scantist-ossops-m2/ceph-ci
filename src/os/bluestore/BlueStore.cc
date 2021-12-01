@@ -7556,12 +7556,12 @@ int BlueStore::umount()
   dout(5) << __func__ << "::NCB::entered" << dendl;
   ceph_assert(_kv_only || mounted);
   bool was_mounted = mounted;
-
   _osr_drain_all();
 
   mounted = false;
 
   ceph_assert(alloc);
+
   utime_t  start_time_kv        = ceph_clock_now();
   utime_t  start_shutdown_cache = start_time_kv;
   if (!_kv_only) {
@@ -7575,7 +7575,9 @@ int BlueStore::umount()
     dout(20) << __func__ << " stopping kv thread" << dendl;
     _kv_stop();
     start_shutdown_cache = ceph_clock_now();
-    //_shutdown_cache();
+    if (!cct->_conf->osd_fast_shutdown) {
+      _shutdown_cache();
+    }
     dout(20) << __func__ << " closing" << dendl;
   }
   utime_t  start_time_store = ceph_clock_now();
