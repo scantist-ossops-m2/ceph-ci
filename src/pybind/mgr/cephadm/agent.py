@@ -144,17 +144,21 @@ class HostData:
         self.mgr = mgr
 
     @cherrypy.tools.json_in()
-    def POST(self) -> None:
+    @cherrypy.tools.json_out()
+    def POST(self) -> Dict[str, Any]:
         data: Dict[str, Any] = cherrypy.request.json
+        results: Dict[str, Any] = {}
         try:
             self.check_request_fields(data)
         except Exception as e:
+            results['result'] = f'Bad metadata: {e}'
             self.mgr.log.warning(f'Received bad metadata from an agent: {e}')
         else:
             # if we got here, we've already verified the keyring of the agent. If
             # host agent is reporting on is marked offline, it shouldn't be any more
             self.mgr.offline_hosts_remove(data['host'])
-            self.handle_metadata(data)
+            results['result'] = self.handle_metadata(data)
+        return results
 
     def check_request_fields(self, data: Dict[str, Any]) -> None:
         fields = '{' + ', '.join([key for key in data.keys()]) + '}'
@@ -188,7 +192,7 @@ class HostData:
             self.mgr.log.warning(
                 f'Agent on host {host} reported incomplete metadata. Not all of {metadata_types_str} were present. Received fields {fields}')
 
-    def handle_metadata(self, data: Dict[str, Any]) -> None:
+    def handle_metadata(self, data: Dict[str, Any]) -> str:
         try:
             host = data['host']
             self.mgr.cache.agent_ports[host] = int(data['port'])
@@ -197,7 +201,7 @@ class HostData:
                     f'Got metadata from agent on host {host} with no known counter entry. Starting counter at 1 and requesting new metadata')
                 self.mgr.cache.agent_counter[host] = 1
                 self.mgr.agent_helpers._request_agent_acks({host})
-                return
+                return 'No known counter value. Counter started at 1, new metadata requested'
 
             # update timestamp of most recent agent update
             self.mgr.cache.agent_timestamp[host] = datetime_now()
@@ -252,9 +256,12 @@ class HostData:
                 self.mgr.log.debug(
                     f'Received up-to-date metadata from agent on host {host}.')
 
+            return 'Successfully processed metadata'
+
         except Exception as e:
-            self.mgr.log.warning(
-                f'Failed to update metadata with metadata from agent on host {host}: {e}')
+            err_str = f'Failed to update metadata with metadata from agent on host {host}: {e}'
+            self.mgr.log.warning(err_str)
+            return err_str
 
 
 class AgentMessageThread(threading.Thread):
