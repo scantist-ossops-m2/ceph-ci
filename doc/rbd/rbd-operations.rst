@@ -10,7 +10,7 @@
    Mirroring <rbd-mirroring>
    Live-Migration <rbd-live-migration>
    Persistent Read-only Cache <rbd-persistent-read-only-cache>
-   Persistent Write-back Cache <rbd-persistent-write-back-cache>
+   Persistent Write Log <rbd-persistent-write-log>
    Encryption <rbd-encryption>
    Config Settings (librbd) <rbd-config-ref/>
    RBD Replay <rbd-replay>
