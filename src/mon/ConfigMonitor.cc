@@ -57,6 +57,7 @@ static ostream& _prefix(std::ostream *_dout, const Monitor &mon,
 
 const string KEY_PREFIX("config/");
 const string HISTORY_PREFIX("config-history/");
+const string PROFILE_PREFIX("config-profile/");
 
 ConfigMonitor::ConfigMonitor(Monitor &m, Paxos &p, const string& service_name)
   : PaxosService(m, p, service_name) {
@@ -71,7 +72,7 @@ void ConfigMonitor::create_initial()
 {
   dout(10) << __func__ << dendl;
   version = 0;
-  pending.clear();
+  create_pending();
 }
 
 void ConfigMonitor::update_from_paxos(bool *need_bootstrap)
@@ -89,6 +90,8 @@ void ConfigMonitor::create_pending()
 {
   dout(10) << " " << version << dendl;
   pending.clear();
+  pending_cleanup.clear();
+  pending_profiles.clear();
   pending_description.clear();
 }
 
@@ -137,8 +140,20 @@ void ConfigMonitor::encode_pending_to_kvmon()
       dout(20) << __func__ << " set " << key << dendl;
       mon.kvmon()->enqueue_set(key, *p.second);
       mon.kvmon()->enqueue_set(history + "+" + p.first, *p.second);
-   } else {
+    } else {
       dout(20) << __func__ << " rm " << key << dendl;
+      mon.kvmon()->enqueue_rm(key);
+    }
+  }
+
+  // profile
+  for (auto& p : pending_profiles) {
+    string key = PROFILE_PREFIX + p.first;
+    if (p.second) {
+      dout(20) << __func__ << " profile set " << key << dendl;
+      mon.kvmon()->enqueue_set(key, *p.second);
+    } else {
+      dout(20) << __func__ << " profile rm " << key << dendl;
       mon.kvmon()->enqueue_rm(key);
     }
   }
@@ -195,6 +210,9 @@ bool ConfigMonitor::preprocess_command(MonOpRequestRef op)
     if (!opt) {
       opt = mon.mgrmon()->find_module_option(name);
     }
+    if (!opt) {
+      opt = config_map.get_profile_option(name);
+    }
     if (opt) {
       if (f) {
 	f->dump_object("option", *opt);
@@ -215,6 +233,13 @@ bool ConfigMonitor::preprocess_command(MonOpRequestRef op)
     ostringstream ss;
     if (f) {
       f->open_array_section("options");
+    }
+    for (auto& i : config_map.profiles) {
+      if (f) {
+	f->dump_string("option", i.first);
+      } else {
+	ss << i.first << "\n";
+      }
     }
     for (auto& i : ceph_options) {
       if (f) {
@@ -260,6 +285,7 @@ bool ConfigMonitor::preprocess_command(MonOpRequestRef op)
       tbl.define_column("OPTION", TextTable::LEFT, TextTable::LEFT);
       tbl.define_column("VALUE", TextTable::LEFT, TextTable::LEFT);
       tbl.define_column("RO", TextTable::LEFT, TextTable::LEFT);
+      tbl.define_column("PROFILE", TextTable::LEFT, TextTable::LEFT);
     } else {
       f->open_array_section("config");
     }
@@ -278,6 +304,34 @@ bool ConfigMonitor::preprocess_command(MonOpRequestRef op)
 	  f->dump_string("section", s.first);
 	  i.second.dump(f.get());
 	  f->close_section();
+	}
+	auto p = config_map.profiles.find(i.first);
+	if (p != config_map.profiles.end()) {
+	  auto q = p->second.profile.find(i.second.raw_value);
+	  if (q != p->second.profile.end()) {
+	    // dump profile contents
+	    for (auto& k : q->second.options) {
+	      if (!f) {
+		tbl << s.first;
+		tbl << k.second.mask.to_str();
+		tbl << Option::level_to_str(k.second.opt->level);
+		tbl << k.first;
+		tbl << k.second.raw_value;
+		tbl << (k.second.opt->can_update_at_runtime() ? "" : "*");
+		ostringstream ss;
+		ss << i.first << "=" << i.second.raw_value;
+		tbl << ss.str();
+		tbl << TextTable::endrow;
+	      } else {
+		f->open_object_section("option");
+		f->dump_string("section", k.first);
+		k.second.dump(f.get());
+		f->dump_string("profile_name", i.first);
+		f->dump_string("profile_value", i.second.raw_value);
+		f->close_section();
+	      }
+	    }
+	  }
 	}
       }
     }
@@ -312,7 +366,7 @@ bool ConfigMonitor::preprocess_command(MonOpRequestRef op)
 	       << " class " << device_class << dendl;
     }
 
-    std::map<std::string,pair<std::string,const MaskedOption*>> src;
+    std::map<std::string,ConfigMap::ValueSource> src;
     auto config = config_map.generate_entity_map(
       entity,
       crush_location,
@@ -364,6 +418,7 @@ bool ConfigMonitor::preprocess_command(MonOpRequestRef op)
 	tbl.define_column("OPTION", TextTable::LEFT, TextTable::LEFT);
 	tbl.define_column("VALUE", TextTable::LEFT, TextTable::LEFT);
 	tbl.define_column("RO", TextTable::LEFT, TextTable::LEFT);
+	tbl.define_column("PROFILE", TextTable::LEFT, TextTable::LEFT);
       } else {
 	f->open_object_section("config");
       }
@@ -374,20 +429,29 @@ bool ConfigMonitor::preprocess_command(MonOpRequestRef op)
 	  continue;
 	}
 	if (!f) {
-	  tbl << q->second.first;
-	  tbl << q->second.second->mask.to_str();
-	  tbl << Option::level_to_str(q->second.second->opt->level);
+	  tbl << q->second.section;
+	  tbl << q->second.option->mask.to_str();
+	  tbl << Option::level_to_str(q->second.option->opt->level);
 	  tbl << p->first;
 	  tbl << p->second;
-	  tbl << (q->second.second->opt->can_update_at_runtime() ? "" : "*");
+	  tbl << (q->second.option->opt->can_update_at_runtime() ? "" : "*");
+	  if (q->second.profile_name.size()) {
+	    ostringstream ss;
+	    ss << q->second.profile_name << "=" << q->second.profile_value;
+	    tbl << ss.str();
+	  } else {
+	    tbl << "";
+	  }
 	  tbl << TextTable::endrow;
 	} else {
 	  f->open_object_section(p->first.c_str());
 	  f->dump_string("value", p->second);
-	  f->dump_string("section", q->second.first);
-	  f->dump_object("mask", q->second.second->mask);
+	  f->dump_string("section", q->second.section);
+	  f->dump_object("mask", q->second.option->mask);
 	  f->dump_bool("can_update_at_runtime",
-		       q->second.second->opt->can_update_at_runtime());
+		       q->second.option->opt->can_update_at_runtime());
+	  f->dump_string("profile_name", q->second.profile_name);
+	  f->dump_string("profile_value", q->second.profile_value);
 	  f->close_section();
 	}
       }
@@ -540,6 +604,9 @@ bool ConfigMonitor::prepare_command(MonOpRequestRef op)
       const Option *opt = g_conf().find_option(name);
       if (!opt) {
 	opt = mon.mgrmon()->find_module_option(name);
+      }
+      if (!opt) {
+	opt = config_map.get_profile_option(name);
       }
       if (!opt) {
 	ss << "unrecognized config option '" << name << "'";
@@ -775,14 +842,42 @@ void ConfigMonitor::load_config()
     { "mds_session_blacklist_on_evict", "mds_session_blocklist_on_evict" },
   };
 
-  unsigned num = 0;
-  KeyValueDB::Iterator it = mon.store->get_iterator(KV_PREFIX);
-  it->lower_bound(KEY_PREFIX);
   config_map.clear();
   current.clear();
-  pending_cleanup.clear();
-  while (it->valid() &&
-	 it->key().compare(0, KEY_PREFIX.size(), KEY_PREFIX) == 0) {
+
+  KeyValueDB::Iterator it = mon.store->get_iterator(KV_PREFIX);
+
+  // load profiles
+  for (it->lower_bound(PROFILE_PREFIX);
+       it->valid() &&
+	 it->key().compare(0, PROFILE_PREFIX.size(), PROFILE_PREFIX) == 0;
+       it->next()) {
+    string name = it->key().substr(PROFILE_PREFIX.size());
+    string def = it->value().to_str();
+    int r = config_map.add_profile(
+      g_ceph_context,
+      name,
+      def,
+      [&](const std::string& name) {
+	const Option *opt = g_conf().find_option(name);
+	if (!opt) {
+	  opt = mon.mgrmon()->find_module_option(name);
+	}
+	return opt;
+      });
+    if (r == -EINVAL) {
+      dout(10) << __func__ << " failed to load profile " << name << ": " << def
+	       << dendl;
+    } else {
+      dout(10) << __func__ << " loaded profile " << name << ": " << def << dendl;
+    }
+  }
+
+  unsigned num = 0;
+  for (it->lower_bound(KEY_PREFIX);
+       it->valid() &&
+	 it->key().compare(0, KEY_PREFIX.size(), KEY_PREFIX) == 0;
+       it->next(), ++num) {
     string key = it->key().substr(KEY_PREFIX.size());
     string value = it->value().to_str();
 
@@ -806,57 +901,19 @@ void ConfigMonitor::load_config()
       }
     }
 
-    const Option *opt = g_conf().find_option(name);
-    if (!opt) {
-      opt = mon.mgrmon()->find_module_option(name);
-    }
-    if (!opt) {
-      dout(10) << __func__ << " unrecognized option '" << name << "'" << dendl;
-      config_map.stray_options.push_back(
-	std::unique_ptr<Option>(
-	  new Option(name, Option::TYPE_STR, Option::LEVEL_UNKNOWN)));
-      opt = config_map.stray_options.back().get();
-    }
-
-    string err;
-    int r = opt->pre_validate(&value, &err);
-    if (r < 0) {
-      dout(10) << __func__ << " pre-validate failed on '" << name << "' = '"
-	       << value << "' for " << name << dendl;
-    }
-    
-    MaskedOption mopt(opt);
-    mopt.raw_value = value;
-    string section_name;
-    if (who.size() &&
-	!ConfigMap::parse_mask(who, &section_name, &mopt.mask)) {
-      derr << __func__ << " invalid mask for key " << key << dendl;
-      pending_cleanup[key].reset();
-    } else if (opt->has_flag(Option::FLAG_NO_MON_UPDATE)) {
-      dout(10) << __func__ << " NO_MON_UPDATE option '"
-	       << name << "' = '" << value << "' for " << name
-	       << dendl;
-      pending_cleanup[key].reset();
-    } else {
-      if (section_name.empty()) {
-	// we prefer global/$option instead of just $option
-	derr << __func__ << " adding global/ prefix to key '" << key << "'"
-	     << dendl;
-	pending_cleanup[key].reset();
-	pending_cleanup["global/"s + key] = it->value();
-      }
-      Section *section = &config_map.global;;
-      if (section_name.size() && section_name != "global") {
-	if (section_name.find('.') != std::string::npos) {
-	  section = &config_map.by_id[section_name];
-	} else {
-	  section = &config_map.by_type[section_name];
+    int r = config_map.add_option(
+      g_ceph_context, name, who, value,
+      [&](const std::string& name) {
+	const Option *opt = g_conf().find_option(name);
+	if (!opt) {
+	  opt = mon.mgrmon()->find_module_option(name);
 	}
-      }
-      section->options.insert(make_pair(name, std::move(mopt)));
-      ++num;
+	return opt;
+      });
+    if (r == -EINVAL) {
+      dout(10) << __func__ << " will clean up key " << key << dendl;
+      pending_cleanup[key].reset();
     }
-    it->next();
   }
   dout(10) << __func__ << " got " << num << " keys" << dendl;
 
