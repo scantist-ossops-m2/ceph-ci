@@ -7000,10 +7000,16 @@ int BlueStore::mkfs()
     }
     {
       bufferlist bl;
-      if (cct->_conf.get_val<bool>("bluestore_debug_legacy_omap")) {
+      std::string omap_naming = cct->_conf.get_val<std::string>("bluestore_omap_naming");
+      if (omap_naming == "bulk") {
 	bl.append(stringify(OMAP_BULK));
-      } else {
+      } else if (omap_naming == "per-pool") {
+	bl.append(stringify(OMAP_PER_POOL));
+      } else if (omap_naming == "per-pg") {
 	bl.append(stringify(OMAP_PER_PG));
+      } else {
+	derr << __func__ << " invalid omap naming scheme:" << omap_naming << dendl;
+	ceph_assert(false);
       }
       t->set(PREFIX_SUPER, "per_pool_omap", bl);
     }
@@ -16044,7 +16050,7 @@ int BlueStore::_omap_setkeys(TransContext *txc,
     if (o->oid.is_pgmeta()) {
       o->onode.set_omap_flags_pgmeta();
     } else {
-      o->onode.set_omap_flags(per_pool_omap == OMAP_BULK);
+      o->onode.set_omap_flags(get_current_omap_flags());
     }
     txc->write_onode(o);
 
@@ -16089,7 +16095,7 @@ int BlueStore::_omap_setheader(TransContext *txc,
     if (o->oid.is_pgmeta()) {
       o->onode.set_omap_flags_pgmeta();
     } else {
-      o->onode.set_omap_flags(per_pool_omap == OMAP_BULK);
+      o->onode.set_omap_flags(get_current_omap_flags());
     }
     txc->write_onode(o);
 
@@ -16245,7 +16251,7 @@ int BlueStore::_clone(TransContext *txc,
     if (newo->oid.is_pgmeta()) {
       newo->onode.set_omap_flags_pgmeta();
     } else {
-      newo->onode.set_omap_flags(per_pool_omap == OMAP_BULK);
+      newo->onode.set_omap_flags(get_current_omap_flags());
     }
     const string& prefix = newo->get_omap_prefix();
     KeyValueDB::Iterator it = db->get_iterator(prefix);
