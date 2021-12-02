@@ -7484,10 +7484,27 @@ void BlueStore::set_cache_shards(unsigned num)
                                  logger);
   }
 }
-
+// GBH: REMOVE-ME
+#define NCB_SAFE_FAST_SHUTDOWN_DEBUG
 int BlueStore::_mount()
 {
   dout(5) << __func__ << "NCB:: path " << path << dendl;
+
+  // GBH: REMOVE-ME
+  // Verify that allocation-file content matches RocksDB state
+  // Temporary solution to debug the safe-fast-shutdown
+  // TBD - use a config-file option instead
+#ifdef NCB_SAFE_FAST_SHUTDOWN_DEBUG
+  static bool perform_bluestore_qfsck = true;
+  dout(0) << __func__ << "NCB::bluestore_qfsck_on_mount = " << cct->_conf->bluestore_qfsck_on_mount << dendl;
+  if (perform_bluestore_qfsck && cct->_conf->bluestore_qfsck_on_mount) {
+    perform_bluestore_qfsck = false;
+    //cct->_conf->bluestore_qfsck_on_mount = false;
+    dout(0) << __func__ << "NCB::bluestore_qfsck_on_mount was initiated ... " << dendl;
+    int ret = read_allocation_from_drive_for_fsck();
+    ceph_assert(ret == 0);
+  }
+#endif
   _kv_only = false;
   if (cct->_conf->bluestore_fsck_on_mount) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
@@ -10040,15 +10057,6 @@ void BlueStore::prepare_for_fast_shutdown()
   // TBD:  disable deferred_try_submit()
   // TBD2: maybe disable _deferred_submit_unlock()
   // TBD3: disable queue_transactions()
-#if 0
-  _osr_drain_all();
-  ceph_assert(db);
-  delete db;
-  db = nullptr;
-  store_allocator(shared_alloc.a);
-#else
-  umount();
-#endif
 }
 
 int BlueStore::get_devices(set<string> *ls)
@@ -13466,6 +13474,12 @@ void BlueStore::deferred_try_submit()
 {
   dout(20) << __func__ << " " << deferred_queue.size() << " osrs, "
 	   << deferred_queue_size << " txcs" << dendl;
+
+  if (m_fast_shutdown) {
+    dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
+    return;
+  }
+
   vector<OpSequencerRef> osrs;
 
   {
@@ -13505,6 +13519,11 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
 	   << dendl;
   ceph_assert(osr->deferred_pending);
   ceph_assert(!osr->deferred_running);
+
+  if (m_fast_shutdown) {
+    dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
+    return;
+  }
 
   auto b = osr->deferred_pending;
   deferred_queue_size -= b->seq_bytes.size();
@@ -13675,7 +13694,8 @@ int BlueStore::queue_transactions(
   ThreadPool::TPHandle *handle)
 {
   if (m_fast_shutdown) {
-    //dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
+    dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
+    return 0;
   }
 
   
@@ -18746,10 +18766,10 @@ int BlueStore::add_existing_bluefs_allocation(Allocator* allocator, read_alloc_s
 //---------------------------------------------------------
 int BlueStore::read_allocation_from_drive_for_bluestore_tool(bool test_store_and_restore)
 {
-  dout(5) << "test_store_and_restore=" << test_store_and_restore << dendl;
+  dout(10) << "test_store_and_restore=" << test_store_and_restore << dendl;
   int ret = 0;
   uint64_t memory_target = cct->_conf.get_val<Option::size_t>("osd_memory_target");
-  dout(5) << "calling open_db_and_around()" << dendl;
+  dout(10) << "calling open_db_and_around()" << dendl;
   ret = _open_db_and_around(true, false);
   if (ret < 0) {
     return ret;
