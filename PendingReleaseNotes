@@ -32,6 +32,12 @@
   in certain recovery scenarios, e.g., monitor database lost and rebuilt, and
   the restored file system is expected to have the same ID as before.
 
+>=16.2.8
+--------
+
+* A health warning will now be reported if the ``require-osd-release`` flag is not
+  set to the appropriate release after a cluster upgrade.
+
 >=16.2.7
 --------
 
