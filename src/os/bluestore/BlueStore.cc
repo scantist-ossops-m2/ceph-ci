@@ -7835,6 +7835,11 @@ BlueStore::OnodeRef BlueStore::fsck_check_objects_shallow(
   dout(10) << __func__ << "  " << oid << dendl;
   OnodeRef o;
   o.reset(Onode::decode(c, oid, key, value));
+  for (auto kk : o->onode.attrs) {
+    dout(0) << __func__ << " "
+            << kk << dendl;
+  }
+
   ++num_objects;
 
   num_spanning_blobs += o->extent_map.spanning_blob_map.size();
@@ -15927,6 +15932,13 @@ int BlueStore::_setattr(TransContext *txc,
     b.reassign_to_mempool(mempool::mempool_bluestore_cache_meta);
   }
   txc->write_onode(o);
+
+  dout(0) << __func__ << " size " << o->onode.attrs.size() << dendl;
+  for (auto kk : o->onode.attrs) {
+    dout(0) << __func__ << " "
+            << kk << dendl;
+  }
+
   dout(10) << __func__ << " " << c->cid << " " << o->oid
 	   << " " << name << " (" << val.length() << " bytes)"
 	   << " = " << r << dendl;
