@@ -1,4 +1,5 @@
 # Ceph - a scalable distributed storage system
+shaman trigger
 
 Please see http://ceph.com/ for current info.
 
