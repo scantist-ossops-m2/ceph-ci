@@ -18702,6 +18702,7 @@ int BlueStore::compare_allocators(Allocator* alloc1, Allocator* alloc2, uint64_t
     return 0;
   } else {
     derr << "mismatch:: idx1=" << idx1 << " idx2=" << idx2 << dendl;
+#if 0
     std::cout << "==================================================================="  << std::endl;
     for (uint64_t i = 0; i < idx1; i++) {
       std::cout << "arr1[" << i << "]<" << arr1[i].offset << "," << arr1[i].length << "> " << std::endl;
@@ -18711,6 +18712,7 @@ int BlueStore::compare_allocators(Allocator* alloc1, Allocator* alloc2, uint64_t
     for (uint64_t i = 0; i < idx2; i++) {
       std::cout << "arr2[" << i << "]<" << arr2[i].offset << "," << arr2[i].length << "> " << std::endl;
     }
+#endif
     return -1;
   }
 }
@@ -18826,9 +18828,10 @@ int BlueStore::read_allocation_from_drive_for_bluestore_tool(bool test_store_and
     }
   }
 
+#if 0
   std::cout << "<<<FINISH>>> in " << duration << " seconds; insert_count=" << stats.insert_count << "\n\n" << std::endl;
   std::cout << stats << std::endl;
-
+#endif
   //out_db:
   delete allocator;
   _shutdown_cache();
