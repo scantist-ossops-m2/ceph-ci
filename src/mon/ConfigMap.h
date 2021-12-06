@@ -13,6 +13,7 @@
 #include "common/entity_name.h"
 
 class CrushWrapper;
+class CephContext;
 
 // the precedence is thus:
 //
@@ -96,11 +97,54 @@ struct Section {
   std::string get_minimal_conf() const;
 };
 
+struct Profile {
+  Option *opt;
+  std::map<std::string, Section> profile;
+
+  Profile(Option *o);
+
+  int parse(
+    CephContext *cct,
+    const std::string& input,
+    std::function<const Option *(const std::string&)> get_opt);
+  void clear() {
+    profile.clear();
+  }
+  void dump(ceph::Formatter *f) const;
+};
+
 struct ConfigMap {
+  struct ValueSource {
+    std::string section;
+    const MaskedOption *option = 0;
+    std::string profile_name;
+    std::string profile_value;
+    ValueSource() {}
+    ValueSource(const std::string& s, const MaskedOption *o)
+      : section(s), option(o) {}
+    ValueSource(const std::string& s, const MaskedOption *o,
+		const std::string& pn, const std::string& pv)
+      : section(s), option(o), profile_name(pn), profile_value(pv) {}
+  };
+
   Section global;
   std::map<std::string,Section, std::less<>> by_type;
   std::map<std::string,Section, std::less<>> by_id;
+  std::map<std::string,Profile,std::less<>> profiles;
   std::list<std::unique_ptr<Option>> stray_options;
+
+  const Option *get_profile_option(const std::string& name) {
+    auto p = profiles.find(name);
+    if (p == profiles.end()) {
+      return nullptr;
+    }
+    return p->second.opt;
+  }
+
+  const Option *get_option(
+    CephContext *cct,
+    const std::string& name,
+    std::function<const Option *(const std::string&)> get_opt);
 
   Section *find_section(const std::string& name) {
     if (name == "global") {
@@ -120,15 +164,17 @@ struct ConfigMap {
     global.clear();
     by_type.clear();
     by_id.clear();
+    profiles.clear();
     stray_options.clear();
   }
   void dump(ceph::Formatter *f) const;
+
   std::map<std::string,std::string,std::less<>> generate_entity_map(
     const EntityName& name,
     const std::map<std::string,std::string>& crush_location,
     const CrushWrapper *crush,
     const std::string& device_class,
-    std::map<std::string,std::pair<std::string,const MaskedOption*>> *src=0);
+    std::map<std::string,ValueSource> *src=0);
 
   void parse_key(
     const std::string& key,
@@ -138,6 +184,19 @@ struct ConfigMap {
     const std::string& in,
     std::string *section,
     OptionMask *mask);
+
+  int add_option(
+    CephContext *cct,
+    const std::string& name,
+    const std::string& who,
+    const std::string& value,
+    std::function<const Option *(const std::string&)> get_opt);
+
+  int add_profile(
+    CephContext *cct,
+    const std::string& name,
+    const std::string& def,
+    std::function<const Option *(const std::string&)> get_opt);
 };
 
 
