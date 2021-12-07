@@ -1144,7 +1144,7 @@ class Module(MgrModule):
         mon_min = mon_map.get("min_mon_release", 0)
 
         if mon_min - self.last_opted_in_ceph_version > 0:
-            self.log.debug(f"major upgrade: mon_min is is: {mon_min} and user last opted-in in {self.last_opted_in_ceph_version}")
+            self.log.debug(f"major upgrade: mon_min is: {mon_min} and user last opted-in in {self.last_opted_in_ceph_version}")
             return True
 
         return False
