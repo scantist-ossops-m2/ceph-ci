@@ -64,37 +64,38 @@ the way Ceph is used.
 
 Data is sent secured to *https://telemetry.ceph.com*.
 
-Sample report
--------------
-
-You can look at what data is reported at any time with the command::
-
-  ceph telemetry show
-
-To protect your privacy, device reports are generated separately, and data such
-as hostname and device serial number is anonymized. The device telemetry is
-sent to a different endpoint and does not associate the device data with a
-particular cluster. To see a preview of the device report use the command::
-
-  ceph telemetry show-device
-
-Please note: In order to generate the device report we use Smartmontools
-version 7.0 and up, which supports JSON output. 
-If you have any concerns about privacy with regard to the information included in
-this report, please contact the Ceph developers.
-
-Channels
---------
-
 Individual channels can be enabled or disabled with::
 
-  ceph config set mgr mgr/telemetry/channel_ident false
-  ceph config set mgr mgr/telemetry/channel_basic false
-  ceph config set mgr mgr/telemetry/channel_crash false
-  ceph config set mgr mgr/telemetry/channel_device false
-  ceph config set mgr mgr/telemetry/channel_perf false
-  ceph telemetry show
-  ceph telemetry show-device
+  ceph telemetry enable channel basic
+  ceph telemetry enable channel crash
+  ceph telemetry enable channel device
+  ceph telemetry enable channel ident
+  ceph telemetry enable channel perf
+
+  ceph telemetry disable channel basic
+  ceph telemetry disable channel crash
+  ceph telemetry disable channel device
+  ceph telemetry disable channel ident
+  ceph telemetry disable channel perf
+
+Multiple channels can be enabled or disabled with::
+
+  ceph telemetry enable channel basic crash device ident perf
+  ceph telemetry disable channel basic crash device ident perf
+
+Please note that telemetry should be on for these commands to take effect.
+
+List all channels with::
+
+  ceph telemetry channel ls
+
+  NAME      ENABLED    DEFAULT    DESC
+  basic     ON         ON         Share basic cluster information (size, version)
+  crash     ON         ON         Share metadata about Ceph daemon crashes (version, stack straces, etc)
+  device    ON         ON         Share device health metrics (e.g., SMART data, minus potentially identifying info like serial numbers)
+  ident     OFF        OFF        Share a user-provided description and/or contact email for the cluster
+  perf      ON         OFF        Share perf counter metrics summed across the whole cluster
+
 
 Enabling Telemetry
 ------------------
@@ -111,6 +112,103 @@ the 'ceph telemetry on' command.
 Telemetry can be disabled at any time with::
 
   ceph telemetry off
+
+Sample report
+-------------
+
+You can look at what data is reported at any time with the command::
+
+  ceph telemetry show
+
+If telemetry is off, you can preview a sample report with::
+
+  ceph telemetry preview
+
+To protect your privacy, device reports are generated separately, and data such
+as hostname and device serial number is anonymized. The device telemetry is
+sent to a different endpoint and does not associate the device data with a
+particular cluster. To see a preview of the device report use the command::
+
+  ceph telemetry show-device
+
+If telemetry is off you can preview a sample device report with::
+
+  ceph telemetry preview-device
+
+Please note: In order to generate the device report we use Smartmontools
+version 7.0 and up, which supports JSON output. 
+If you have any concerns about privacy with regard to the information included in
+this report, please contact the Ceph developers.
+
+In case you prefer to have a single output of both reports, and telemetry is on, use::
+
+  ceph telemetry show-all
+
+Otherwise use::
+
+  ceph telemetry preview-all
+
+**Sample report by channel**
+
+When telemetry is on you can see what data is reported by channel with::
+
+  ceph telemetry show <channel_name>
+
+Please note: If telemetry is on, and <channel_name> is disabled, the command
+above will output a sample report by that channel, according to the collections
+the user is enrolled to. However this data is not reported, since the channel
+is disabled.
+
+If telemetry is off you can preview a sample report by channel with::
+
+  ceph telemetry preview <channel_name>
+
+Collections
+-----------
+
+Collections represent what we collect by channel.
+
+List all collections with::
+
+  ceph telemetry collection ls
+
+  NAME                  ENROLLED    STATUS    DEFAULT    DESC
+  basic_base            FALSE       OFF       ON         Basic information about the cluster (capacity, number and type of daemons, version, etc.)
+  basic_mds_metadata    FALSE       OFF       ON         MDS metadata
+  crash_base            FALSE       OFF       ON         Information about daemon crashes (daemon type and version, backtrace, etc.)
+  device_base           FALSE       OFF       ON         Information about device health metrics
+  ident_base            FALSE       OFF       OFF        User-provided identifying information about the cluster
+  perf_perf             FALSE       OFF       OFF        Information about performance counters of the cluster
+
+Where:
+
+**NAME**: Collection name; prefix indicates the channel the collection belongs to.
+
+**ENROLLED**: Signifies the collections that were available in the module when
+the user last opted-in to telemetry. Please note: Even if a collection is
+'enrolled', its metrics will be reported only if its channel is enabled.
+
+**STATUS**: Indicates whether the collection metrics are reported; this is
+determined by the status (enabled / disabled) of the channel the collection
+belongs to, along with the enrollment status of the collection.
+
+**DEFAULT**: The default status (enabled / disabled) of the channel the
+collection belongs to.
+
+**DESC**: General description of the collection.
+
+See the diff between the collections you are enrolled to, and the new,
+available collections with::
+
+  ceph telemetry diff
+
+Enroll to the most recent collections with::
+
+  ceph telemetry on
+
+Then enable new channels that are off with::
+
+  ceph telemetry enable channel <channel_name>
 
 Interval
 --------
