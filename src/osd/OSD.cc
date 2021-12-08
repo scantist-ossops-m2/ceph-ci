@@ -4246,7 +4246,7 @@ PerfCounters* OSD::create_recoverystate_perf()
 
 int OSD::shutdown()
 {
-  cct->_conf->osd_fast_shutdown = true;
+  //cct->_conf->osd_fast_shutdown = true;
   dout(0) << "shutdown test - cct->_conf->osd_fast_shutdown               = " << cct->_conf->osd_fast_shutdown << dendl;
   dout(0) << "shutdown test - cct->_conf->bluestore_avl_alloc_bf_free_pct = " << cct->_conf.get_val<uint64_t>("bluestore_avl_alloc_bf_free_pct") << dendl;
   utime_t  start_time_func = ceph_clock_now();

@@ -7624,7 +7624,7 @@ int BlueStore::umount()
     dout(20) << __func__ << " stopping kv thread" << dendl;
     _kv_stop();
     start_shutdown_cache = ceph_clock_now();
-    if (!cct->_conf->osd_fast_shutdown) {
+    if (!m_fast_shutdown) {
       _shutdown_cache();
     }
     dout(20) << __func__ << " closing" << dendl;
