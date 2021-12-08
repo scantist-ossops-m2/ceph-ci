@@ -1,0 +1,4 @@
+tasks:
+  - ceph-fuse:
+      client.0:
+        cephfs_name: bar
