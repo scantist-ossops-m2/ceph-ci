@@ -7612,7 +7612,6 @@ int BlueStore::umount()
   ceph_assert(alloc);
 
   utime_t  start_time_kv        = ceph_clock_now();
-  utime_t  start_shutdown_cache = start_time_kv;
   if (!_kv_only) {
     mempool_thread.shutdown();
 #ifdef HAVE_LIBZBD
@@ -7623,16 +7622,15 @@ int BlueStore::umount()
 #endif
     dout(20) << __func__ << " stopping kv thread" << dendl;
     _kv_stop();
-    start_shutdown_cache = ceph_clock_now();
-    if (!cct->_conf->osd_fast_shutdown) {
+    if (!m_fast_shutdown || 1) {
       _shutdown_cache();
     }
     dout(20) << __func__ << " closing" << dendl;
   }
   utime_t  start_time_close = ceph_clock_now();
-  _close_db_and_around(false);
-  dout(0) <<"umount time: close=" << ceph_clock_now()-start_time_close << " umount time: kvmem=" <<
-    start_time_store - start_time_kv  << " drain=" << start_time_kv-start_time_func << dendl;
+  _close_db_and_around();
+  dout(0) <<"umount time: close=" << ceph_clock_now() - start_time_close << " kvmem=" << start_time_close - start_time_kv  <<
+    " drain=" << start_time_kv - start_time_func << dendl;
 
   if (cct->_conf->bluestore_fsck_on_umount) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
@@ -18728,14 +18726,14 @@ int BlueStore::compare_allocators(Allocator* alloc1, Allocator* alloc2, uint64_t
     return 0;
   } else {
     derr << "mismatch:: idx1=" << idx1 << " idx2=" << idx2 << dendl;
-    std::cout << "==================================================================="  << std::endl;
+    //std::cout << "==================================================================="  << std::endl;
     for (uint64_t i = 0; i < idx1; i++) {
-      std::cout << "arr1[" << i << "]<" << arr1[i].offset << "," << arr1[i].length << "> " << std::endl;
+      //std::cout << "arr1[" << i << "]<" << arr1[i].offset << "," << arr1[i].length << "> " << std::endl;
     }
 
-    std::cout << "==================================================================="  << std::endl;
+    //std::cout << "==================================================================="  << std::endl;
     for (uint64_t i = 0; i < idx2; i++) {
-      std::cout << "arr2[" << i << "]<" << arr2[i].offset << "," << arr2[i].length << "> " << std::endl;
+      //std::cout << "arr2[" << i << "]<" << arr2[i].offset << "," << arr2[i].length << "> " << std::endl;
     }
     return -1;
   }
@@ -18856,8 +18854,11 @@ int BlueStore::read_allocation_from_drive_for_bluestore_tool(bool test_store_and
     }
   }
 
-  std::cout << "<<<FINISH>>> in " << duration << " seconds; insert_count=" << stats.insert_count << "\n\n" << std::endl;
-  std::cout << stats << std::endl;
+  //std::cout << "<<<FINISH>>> in " << duration << " seconds; insert_count=" << stats.insert_count << "\n\n" << std::endl;
+  //std::cout << stats << std::endl;
+
+  dout(5) << "<<<FINISH>>> in " << duration << " seconds; insert_count=" << stats.insert_count << dendl;
+  dout(5) << stats << dendl;
 
   //out_db:
   delete allocator;
