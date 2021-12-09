@@ -40,4 +40,6 @@ overrides:
         osd failsafe full ratio: .95
         bdev enable discard: true
         bdev async discard: true
+        osd delete sleep ssd: 0
+        osd delete sleep hdd: 0
 
