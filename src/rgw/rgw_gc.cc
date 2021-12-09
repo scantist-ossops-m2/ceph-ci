@@ -494,6 +494,7 @@ public:
   }
 }; // class RGWGCIOManger
 
+// Adding dummy comments
 int RGWGC::process(int index, int max_secs, bool expired_only,
                    RGWGCIOManager& io_manager)
 {
