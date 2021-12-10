@@ -191,7 +191,9 @@ public:
   virtual void set_snap_read(snap_t seq);
   virtual int sparse_read(LRemTransactionStateRef& trans, uint64_t off, uint64_t len,
                           std::map<uint64_t,uint64_t> *m,
-                          bufferlist *data_bl, uint64_t snap_id) = 0;
+                          bufferlist *data_bl, uint64_t snap_id,
+                          uint64_t truncate_size = 0,
+                          uint32_t truncate_seq = 0) = 0;
   virtual int stat(LRemTransactionStateRef& trans, uint64_t *psize, time_t *pmtime);
   virtual int stat2(LRemTransactionStateRef& trans, uint64_t *psize, struct timespec *pts) = 0;
   virtual int mtime2(LRemTransactionStateRef& trans, const struct timespec& ts,

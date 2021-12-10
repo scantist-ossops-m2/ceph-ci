@@ -74,7 +74,9 @@ public:
                      const SnapContext &snapc) override;
   int sparse_read(LRemTransactionStateRef& trans, uint64_t off, uint64_t len,
                   std::map<uint64_t,uint64_t> *m, bufferlist *data_bl,
-                  uint64_t snap_id) override;
+                  uint64_t snap_id,
+                  uint64_t truncate_size,
+                  uint32_t truncate_seq) override;
   int stat2(LRemTransactionStateRef& trans, uint64_t *psize, struct timespec *pts) override;
   int mtime2(LRemTransactionStateRef& trans, const struct timespec& ts,
              const SnapContext &snapc) override;

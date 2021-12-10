@@ -24,6 +24,7 @@
 
 namespace bs = boost::system;
 using namespace std::placeholders;
+using namespace std::chrono_literals;
 
 namespace neorados {
 namespace detail {

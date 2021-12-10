@@ -1112,7 +1112,7 @@ int IoCtx::sparse_read(const std::string& oid, std::map<uint64_t,uint64_t>& m,
   dout(20) << "IoCtx::sparse_read() ctx=" << ctx << " oid=" << oid << " len=" << len << " off=" << off << dendl;
   return ctx->execute_operation(
     oid, std::bind(&LRemIoCtxImpl::sparse_read, _1, _2, off, len, &m, &bl,
-                     ctx->get_snap_read()));
+                     ctx->get_snap_read(), 0, 0));
 }
 
 int IoCtx::getxattr(const std::string& oid, const char *name, bufferlist& bl) {
@@ -1570,14 +1570,16 @@ void ObjectReadOperation::read(size_t off, uint64_t len, bufferlist *pbl,
 
 void ObjectReadOperation::sparse_read(uint64_t off, uint64_t len,
                                       std::map<uint64_t,uint64_t> *m,
-                                      bufferlist *pbl, int *prval) {
+                                      bufferlist *pbl, int *prval,
+                                      uint64_t truncate_size,
+                                      uint32_t truncate_seq) {
   LRemObjectOperationImpl *o = reinterpret_cast<LRemObjectOperationImpl*>(impl);
 
   ObjectOperationLRemImpl op;
   if (pbl != NULL) {
-    op = std::bind(&LRemIoCtxImpl::sparse_read, _1, _7, off, len, m, pbl, _4);
+    op = std::bind(&LRemIoCtxImpl::sparse_read, _1, _7, off, len, m, pbl, _4, truncate_size, truncate_seq);
   } else {
-    op = std::bind(&LRemIoCtxImpl::sparse_read, _1, _7, off, len, m, _3, _4);
+    op = std::bind(&LRemIoCtxImpl::sparse_read, _1, _7, off, len, m, _3, _4, truncate_size, truncate_seq);
   }
 
   if (prval != NULL) {
