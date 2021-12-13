@@ -7622,7 +7622,7 @@ int BlueStore::umount()
 #endif
     dout(20) << __func__ << " stopping kv thread" << dendl;
     _kv_stop();
-    if (!m_fast_shutdown || 1) {
+    if (!m_fast_shutdown) {
       _shutdown_cache();
     }
     dout(20) << __func__ << " closing" << dendl;
