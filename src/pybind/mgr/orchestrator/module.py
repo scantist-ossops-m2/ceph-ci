@@ -67,6 +67,7 @@ class ServiceAction(enum.Enum):
     restart = 'restart'
     redeploy = 'redeploy'
     reconfig = 'reconfig'
+    rotate_key = 'rotate-key'
 
 
 class DaemonAction(enum.Enum):
@@ -74,6 +75,7 @@ class DaemonAction(enum.Enum):
     stop = 'stop'
     restart = 'restart'
     reconfig = 'reconfig'
+    rotate_key = 'rotate-key'
 
 
 def to_format(what: Any, format: Format, many: bool, cls: Any) -> Any:
@@ -935,7 +937,7 @@ Usage:
 
     @_cli_write_command('orch daemon')
     def _daemon_action(self, action: DaemonAction, name: str) -> HandleCommandResult:
-        """Start, stop, restart, (redeploy,) or reconfig a specific daemon"""
+        """Start, stop, restart, redeploy, reconfig, or rotate-key for a specific daemon"""
         if '.' not in name:
             raise OrchestratorError('%s is not a valid daemon name' % name)
         completion = self.daemon_action(action.value, name)
@@ -946,7 +948,7 @@ Usage:
     def _daemon_action_redeploy(self,
                                 name: str,
                                 image: Optional[str] = None) -> HandleCommandResult:
-        """Redeploy a daemon (with a specifc image)"""
+        """Redeploy a daemon (with a specific image)"""
         if '.' not in name:
             raise OrchestratorError('%s is not a valid daemon name' % name)
         completion = self.daemon_action("redeploy", name, image=image)

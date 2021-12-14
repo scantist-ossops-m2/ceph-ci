@@ -2423,6 +2423,7 @@ class OSDSocketHook : public AdminSocketHook {
 public:
   explicit OSDSocketHook(OSD *o) : osd(o) {}
   int call(std::string_view prefix, const cmdmap_t& cmdmap,
+	   const bufferlist& inbl,
 	   Formatter *f,
 	   std::ostream& ss,
 	   bufferlist& out) override {
@@ -2775,6 +2776,8 @@ will start to track new ops received afterwards.";
     store->generate_db_histogram(f);
   } else if (prefix == "flush_store_cache") {
     store->flush_cache(&ss);
+  } else if (prefix == "rotate-stored-key") {
+    store->write_meta("osd_key", inbl.to_str());
   } else if (prefix == "dump_pgstate_history") {
     f->open_object_section("pgstate_history");
     f->open_array_section("pgs");
@@ -3299,6 +3302,7 @@ class TestOpsSocketHook : public AdminSocketHook {
 public:
   TestOpsSocketHook(OSDService *s, ObjectStore *st) : service(s), store(st) {}
   int call(std::string_view command, const cmdmap_t& cmdmap,
+	   const bufferlist& inbl,
 	   Formatter *f,
 	   std::ostream& errss,
 	   bufferlist& out) override {
@@ -3959,6 +3963,10 @@ void OSD::final_init()
   r = admin_socket->register_command("flush_store_cache",
                                      asok_hook,
                                      "Flush bluestore internal cache");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command("rotate-stored-key",
+                                     asok_hook,
+                                     "Update the stored osd_key");
   ceph_assert(r == 0);
   r = admin_socket->register_command("dump_pgstate_history",
 				     asok_hook,
