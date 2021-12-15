@@ -9,6 +9,7 @@
 #include "librbd/Utils.h"
 #include "librbd/crypto/CryptoImageDispatch.h"
 #include "librbd/crypto/CryptoObjectDispatch.h"
+#include "librbd/crypto/EncryptionFormat.h"
 #include "librbd/io/ImageDispatcherInterface.h"
 #include "librbd/io/ObjectDispatcherInterface.h"
 
@@ -89,6 +90,9 @@ template <typename I>
 void ShutDownCryptoRequest<I>::finish(int r) {
   if (r == 0) {
     m_image_ctx->set_crypto(nullptr);
+
+    std::unique_lock image_locker{m_image_ctx->image_lock};
+    m_image_ctx->encryption_format.reset(nullptr);
   }
 
   m_on_finish->complete(r);

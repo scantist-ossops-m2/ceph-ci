@@ -4,11 +4,14 @@
 #ifndef CEPH_TEST_LIBRBD_MOCK_CRYPTO_MOCK_ENCRYPTION_FORMAT_H
 #define CEPH_TEST_LIBRBD_MOCK_CRYPTO_MOCK_ENCRYPTION_FORMAT_H
 
+#include "include/rbd/librbd.hpp"
 #include "gmock/gmock.h"
 #include "librbd/crypto/EncryptionFormat.h"
-#include "test/librbd/mock/MockImageCtx.h"
 
 namespace librbd {
+
+struct MockImageCtx;
+
 namespace crypto {
 
 struct MockEncryptionFormat : EncryptionFormat<MockImageCtx> {
