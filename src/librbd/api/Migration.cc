@@ -1564,7 +1564,7 @@ int Migration<I>::create_dst_image(I** image_ctx) {
   if (!m_src_image_ctx->header_oid.empty()) {
     C_SaferCond on_metadata_copy;
     auto metadata_copy_req = librbd::deep_copy::MetadataCopyRequest<I>::create(
-        m_src_image_ctx, dst_image_ctx, &on_metadata_copy);
+        m_src_image_ctx, dst_image_ctx, !m_flatten, &on_metadata_copy);
     metadata_copy_req->send();
     r = on_metadata_copy.wait();
     if (r < 0) {
