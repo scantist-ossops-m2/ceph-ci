@@ -53,6 +53,7 @@ void LoadRequest<I>::send() {
 
 template <typename I>
 void LoadRequest<I>::finish(int r) {
+  ldout(m_image_ctx->cct, 20) << "r=" << r << dendl;
 
   if (r == 0) {
     // load crypto layers to image and its ancestors
