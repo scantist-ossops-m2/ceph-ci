@@ -494,6 +494,12 @@ int Migration<I>::prepare(librados::IoCtx& io_ctx,
 
   ldout(cct, 20) << "updated opts=" << opts << dendl;
 
+  if (flatten > 0 && src_image_ctx->has_formatted_clone_ancestor()) {
+    lderr(cct) << "cannot use flatten option on this image (due to crypto)"
+               << dendl;
+    return -EINVAL;
+  }
+
   auto dst_image_ctx = I::create(
     dest_image_name, util::generate_image_id(dest_io_ctx), nullptr,
     dest_io_ctx, false);

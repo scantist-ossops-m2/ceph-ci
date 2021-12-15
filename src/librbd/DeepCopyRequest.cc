@@ -65,6 +65,13 @@ void DeepCopyRequest<I>::send() {
     return;
   }
 
+  if (m_flatten && m_src_image_ctx->has_formatted_clone_ancestor()) {
+    lderr(m_cct) << "cannot use flatten option on this image (due to crypto)"
+                 << dendl;
+    finish(-EINVAL);
+    return;
+  }
+
   int r = validate_copy_points();
   if (r < 0) {
     finish(r);
