@@ -149,6 +149,7 @@ struct TestMockCryptoCryptoObjectDispatch : public TestMockFixture {
 
     delete mock_crypto_object_dispatch;
     delete mock_image_ctx;
+    crypto->put();
 
     TestMockFixture::TearDown();
   }

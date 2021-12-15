@@ -64,9 +64,7 @@ struct TestMockCryptoLoadRequest : public TestMockFixture {
   }
 
   void TearDown() override {
-    if (mock_image_ctx->crypto != crypto) {
-      crypto->put();
-    }
+    crypto->put();
     delete mock_image_ctx;
     TestMockFixture::TearDown();
   }
@@ -91,7 +89,7 @@ struct TestMockCryptoLoadRequest : public TestMockFixture {
 };
 
 TEST_F(TestMockCryptoLoadRequest, CryptoAlreadyLoaded) {
-  mock_image_ctx->crypto = crypto;
+  mock_image_ctx->set_crypto(crypto);
   mock_load_request->send();
   ASSERT_EQ(-EEXIST, finished_cond.wait());
 }

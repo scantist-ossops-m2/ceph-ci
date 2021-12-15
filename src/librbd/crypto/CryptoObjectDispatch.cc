@@ -434,10 +434,6 @@ CryptoObjectDispatch<I>::CryptoObjectDispatch(
 
 template <typename I>
 void CryptoObjectDispatch<I>::shut_down(Context* on_finish) {
-  if (m_crypto != nullptr) {
-    m_crypto->put();
-    m_crypto = nullptr;
-  }
   on_finish->complete(0);
 }
 

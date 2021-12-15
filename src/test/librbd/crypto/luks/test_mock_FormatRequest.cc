@@ -50,10 +50,6 @@ struct TestMockCryptoLuksFormatRequest : public TestMockFixture {
   }
 
   void TearDown() override {
-    if (crypto != nullptr && mock_image_ctx->crypto != crypto) {
-      crypto->put();
-      crypto = nullptr;
-    }
     delete mock_image_ctx;
     TestMockFixture::TearDown();
   }
