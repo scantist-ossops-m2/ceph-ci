@@ -178,6 +178,10 @@ void FormatRequest<I>::finish(int r) {
 
   if (r == 0) {
     util::set_crypto(m_image_ctx, m_format->get_crypto());
+    std::unique_lock image_locker{m_image_ctx->image_lock};
+    if (m_image_ctx->parent != nullptr) {
+      m_image_ctx->is_formatted_clone = true;
+    }
   }
   m_on_finish->complete(r);
   delete this;

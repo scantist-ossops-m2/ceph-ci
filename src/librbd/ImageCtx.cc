@@ -752,6 +752,10 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
 
     // extract config overrides
     for (auto meta_pair : meta) {
+      if (meta_pair.first ==
+          crypto::EncryptionFormat<ImageCtx>::PARENT_CRYPTOR_METADATA_KEY) {
+        is_formatted_clone = true;
+      }
       if (!boost::starts_with(meta_pair.first, METADATA_CONF_PREFIX)) {
         continue;
       }
@@ -906,6 +910,17 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
     if (old_crypto != nullptr) {
       old_crypto->put();
     }
+  }
+
+  bool ImageCtx::has_formatted_clone_ancestor() {
+    auto ictx = this;
+    while (ictx != nullptr) {
+      if (ictx->is_formatted_clone) {
+        return true;
+      }
+      ictx = ictx->parent;
+    }
+    return false;
   }
 
   void ImageCtx::set_image_name(const std::string &image_name) {

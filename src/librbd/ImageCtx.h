@@ -55,7 +55,10 @@ namespace librbd {
   template <typename> class PluginRegistry;
 
   namespace asio { struct ContextWQ; }
-  namespace crypto { class CryptoInterface; }
+  namespace crypto {
+      class CryptoInterface;
+      template <typename> class EncryptionFormat;
+  }
   namespace exclusive_lock { struct Policy; }
   namespace io {
   class AioCompletion;
@@ -231,6 +234,7 @@ namespace librbd {
     ZTracer::Endpoint trace_endpoint;
 
     crypto::CryptoInterface* crypto = nullptr;
+    bool is_formatted_clone = false;
 
     // unit test mock helpers
     static ImageCtx* create(const std::string &image_name,
@@ -293,6 +297,7 @@ namespace librbd {
 
     crypto::CryptoInterface* get_crypto() const;
     void set_crypto(crypto::CryptoInterface* new_crypto);
+    bool has_formatted_clone_ancestor();
 
     void add_snap(cls::rbd::SnapshotNamespace in_snap_namespace,
 		  std::string in_snap_name,
