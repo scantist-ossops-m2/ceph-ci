@@ -42,6 +42,12 @@ void FormatRequest<I>::send() {
     return;
   }
 
+  if (m_image_ctx->is_formatted_clone) {
+    lderr(m_image_ctx->cct) << "cloned image already formatted" << dendl;
+    finish(-EINVAL);
+    return;
+  }
+
   if (m_image_ctx->crypto == nullptr) {
     format();
     return;

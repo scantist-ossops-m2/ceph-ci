@@ -172,6 +172,14 @@ TEST_F(TestMockCryptoFormatRequest, JournalEnabled) {
   ASSERT_EQ(old_crypto, mock_image_ctx->crypto);
 }
 
+TEST_F(TestMockCryptoFormatRequest, ClonedAlreadyFormatted) {
+  mock_image_ctx->is_formatted_clone = true;
+  expect_test_journal_feature(false);
+  mock_format_request->send();
+  ASSERT_EQ(-EINVAL, finished_cond.wait());
+  ASSERT_EQ(old_crypto, mock_image_ctx->crypto);
+}
+
 TEST_F(TestMockCryptoFormatRequest, FailShutDownCrypto) {
   expect_test_journal_feature(false);
   MockShutDownCryptoRequest mock_shutdown_crypto_request;
