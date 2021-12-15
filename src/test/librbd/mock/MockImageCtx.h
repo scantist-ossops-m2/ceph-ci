@@ -339,6 +339,17 @@ struct MockImageCtx {
       old_crypto->put();
     }
   }
+  bool is_formatted_clone = false;
+  bool has_formatted_clone_ancestor() {
+    auto ictx = this;
+    while (ictx != nullptr) {
+      if (ictx->is_formatted_clone) {
+        return true;
+      }
+      ictx = ictx->parent;
+    }
+    return false;
+  }
 
   uint64_t sparse_read_threshold_bytes;
   uint32_t discard_granularity_bytes;
