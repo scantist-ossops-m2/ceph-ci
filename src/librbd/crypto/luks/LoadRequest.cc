@@ -70,6 +70,8 @@ void LoadRequest<I>::read(uint64_t end_offset, Context* on_finish) {
 
 template <typename I>
 bool LoadRequest<I>::handle_read(int r) {
+  ldout(m_image_ctx->cct, 20) << "r=" << r << dendl;
+
   if (r < 0) {
     lderr(m_image_ctx->cct) << "error reading from image: " << cpp_strerror(r)
                             << dendl;
@@ -91,6 +93,8 @@ bool LoadRequest<I>::handle_read(int r) {
 
 template <typename I>
 void LoadRequest<I>::handle_read_header(int r) {
+  ldout(m_image_ctx->cct, 20) << "r=" << r << dendl;
+
   if (!handle_read(r)) {
     return;
   }
@@ -146,6 +150,8 @@ void LoadRequest<I>::handle_read_header(int r) {
 
 template <typename I>
 void LoadRequest<I>::handle_read_keyslots(int r) {
+  ldout(m_image_ctx->cct, 20) << "r=" << r << dendl;
+
   if (!handle_read(r)) {
     return;
   }
@@ -184,6 +190,8 @@ void LoadRequest<I>::read_volume_key() {
 
 template <typename I>
 void LoadRequest<I>::finish(int r) {
+  ldout(m_image_ctx->cct, 20) << "r=" << r << dendl;
+
   ceph_memzero_s(&m_passphrase[0], m_passphrase.size(), m_passphrase.size());
   m_on_finish->complete(r);
   delete this;
