@@ -15,6 +15,7 @@ struct MockEncryptionFormat : EncryptionFormat<MockImageCtx> {
 
   MOCK_METHOD2(format, void(MockImageCtx* ictx, Context* on_finish));
   MOCK_METHOD2(load, void(MockImageCtx* ictx, Context* on_finish));
+  MOCK_METHOD2(flatten, void(MockImageCtx* ictx, Context* on_finish));
   MOCK_METHOD0(get_crypto, ceph::ref_t<CryptoInterface>());
 };
 
