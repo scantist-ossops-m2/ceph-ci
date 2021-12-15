@@ -7597,8 +7597,11 @@ int BlueStore::umount()
   dout(5) << __func__ << "::NCB::entered" << dendl;
   ceph_assert(_kv_only || mounted);
   utime_t  start_time_func = ceph_clock_now();
-  dout(0) << __func__ << "::Fast Shutdown: calling _osr_drain_all" << dendl;
-  _osr_drain_all();
+
+  if (!m_fast_shutdown ) {
+    //dout(20) << __func__ << "::Fast Shutdown: calling _osr_drain_all" << dendl;
+    _osr_drain_all();
+  }
 
   mounted = false;
 
