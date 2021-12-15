@@ -4316,7 +4316,7 @@ int OSD::shutdown()
     dout(0) << "Fast Shutdown: start_time_umount" << dendl;
     utime_t  start_time_umount = ceph_clock_now();
     // write allocation map (or maybe do a full umount ???)
-    //store->prepare_for_fast_shutdown();
+    store->prepare_for_fast_shutdown();
     store->umount();
 
     utime_t end_time = ceph_clock_now();
