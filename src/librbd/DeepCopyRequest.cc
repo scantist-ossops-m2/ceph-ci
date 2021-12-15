@@ -310,7 +310,8 @@ void DeepCopyRequest<I>::send_copy_metadata() {
   Context *ctx = create_context_callback<
     DeepCopyRequest<I>, &DeepCopyRequest<I>::handle_copy_metadata>(this);
   auto request = MetadataCopyRequest<I>::create(m_src_image_ctx,
-                                                m_dst_image_ctx, ctx);
+                                                m_dst_image_ctx, !m_flatten,
+                                                ctx);
   request->send();
 }
 
