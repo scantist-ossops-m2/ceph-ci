@@ -96,7 +96,7 @@ void FormatRequest<I>::send() {
   // format (create LUKS header)
   r = m_header.format(type, cipher, reinterpret_cast<char*>(key), key_size,
                       "xts-plain64", sector_size,
-                      m_image_ctx->get_object_size(), m_insecure_fast_mode);
+                      m_image_ctx->get_stripe_period(), m_insecure_fast_mode);
   if (r != 0) {
     finish(r);
     return;
