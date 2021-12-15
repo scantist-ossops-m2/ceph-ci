@@ -177,6 +177,9 @@ void LoadRequest<I>::finish(int r) {
       crypto->put();
       ictx = ictx->parent;
     }
+
+    std::unique_lock image_locker{m_image_ctx->image_lock};
+    m_image_ctx->encryption_format = std::move(m_format);
   } else {
     // clean up builded cryptors
     while (ictx != nullptr && ictx->crypto != nullptr) {

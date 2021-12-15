@@ -28,6 +28,7 @@
 #include "librbd/Utils.h"
 #include "librbd/asio/ContextWQ.h"
 #include "librbd/crypto/CryptoInterface.h"
+#include "librbd/crypto/EncryptionFormat.h"
 #include "librbd/exclusive_lock/AutomaticPolicy.h"
 #include "librbd/exclusive_lock/StandardPolicy.h"
 #include "librbd/io/AioCompletion.h"
@@ -910,6 +911,11 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
     if (old_crypto != nullptr) {
       old_crypto->put();
     }
+  }
+
+  crypto::EncryptionFormat<ImageCtx>* ImageCtx::get_encryption_format() {
+    std::shared_lock image_locker{image_lock};
+    return encryption_format.get();
   }
 
   bool ImageCtx::has_formatted_clone_ancestor() {

@@ -6,6 +6,7 @@
 
 #include "include/rados/librados.hpp"
 #include "test/librbd/mock/MockContextWQ.h"
+#include "test/librbd/mock/crypto/MockEncryptionFormat.h"
 #include "test/librbd/mock/MockExclusiveLock.h"
 #include "test/librbd/mock/MockImageState.h"
 #include "test/librbd/mock/MockImageWatcher.h"
@@ -339,7 +340,11 @@ struct MockImageCtx {
       old_crypto->put();
     }
   }
+  std::unique_ptr<crypto::EncryptionFormat<MockImageCtx>> encryption_format;
   bool is_formatted_clone = false;
+  crypto::EncryptionFormat<MockImageCtx>* get_encryption_format() {
+    return encryption_format.get();
+  }
   bool has_formatted_clone_ancestor() {
     auto ictx = this;
     while (ictx != nullptr) {

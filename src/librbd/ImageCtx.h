@@ -234,6 +234,7 @@ namespace librbd {
     ZTracer::Endpoint trace_endpoint;
 
     crypto::CryptoInterface* crypto = nullptr;
+    std::unique_ptr<crypto::EncryptionFormat<ImageCtx>> encryption_format;
     bool is_formatted_clone = false;
 
     // unit test mock helpers
@@ -297,6 +298,7 @@ namespace librbd {
 
     crypto::CryptoInterface* get_crypto() const;
     void set_crypto(crypto::CryptoInterface* new_crypto);
+    crypto::EncryptionFormat<ImageCtx>* get_encryption_format();
     bool has_formatted_clone_ancestor();
 
     void add_snap(cls::rbd::SnapshotNamespace in_snap_namespace,
