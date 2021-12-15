@@ -1,4 +1,5 @@
 set(librbd_types_srcs
+  crypto/Types.cc
   journal/Types.cc
   mirroring_watcher/Types.cc
   trash_watcher/Types.cc
