@@ -8,11 +8,13 @@
 #include "librbd/ImageCtx.h"
 #include "librbd/Utils.h"
 #include "librbd/crypto/ShutDownCryptoRequest.h"
+#include "librbd/crypto/Types.h"
 #include "librbd/crypto/Utils.h"
 #include "librbd/io/AioCompletion.h"
 #include "librbd/io/ImageDispatchSpec.h"
 #include "librbd/io/ObjectDispatcherInterface.h"
 #include "librbd/io/Types.h"
+#include "librbd/operation/MetadataSetRequest.h"
 
 #define dout_subsys ceph_subsys_rbd
 #undef dout_prefix
@@ -105,6 +107,66 @@ void FormatRequest<I>::handle_flush(int r) {
   if (r != 0) {
     lderr(m_image_ctx->cct) << "unable to flush image: " << cpp_strerror(r)
                             << dendl;
+    finish(r);
+    return;
+  }
+
+  if (m_image_ctx->parent != nullptr) {
+    metadata_set();
+  } else {
+    finish(0);
+  }
+}
+
+template <typename I>
+void FormatRequest<I>::metadata_set() {
+  std::string wrapped_key;
+  uint64_t block_size = 0;
+  uint64_t data_offset = 0;
+
+  auto parent_crypto = m_image_ctx->parent->get_crypto();
+  if (parent_crypto != nullptr) {
+    auto crypto = m_format->get_crypto();
+    block_size = parent_crypto->get_block_size();
+    data_offset = parent_crypto->get_data_offset();
+
+    // wrap key
+    int r = util::key_wrap(
+            m_image_ctx->cct, CipherMode::CIPHER_MODE_ENC,
+            crypto->get_key(), crypto->get_key_length(),
+            parent_crypto->get_key(), parent_crypto->get_key_length(),
+            &wrapped_key);
+    parent_crypto->put();
+    if (r != 0) {
+      lderr(m_image_ctx->cct) << "error wrapping parent key: "
+                              << cpp_strerror(r) << dendl;
+      finish(r);
+      return;
+    }
+  }
+
+  // serialize
+  ParentCryptoParams parent_cryptor(wrapped_key, block_size, data_offset);
+  bufferlist parent_cryptor_bl;
+  parent_cryptor.encode(parent_cryptor_bl);
+  m_serialized_parent_cryptor = parent_cryptor_bl.to_str();
+
+  // store parent cryptor to image meta
+  auto ctx = create_context_callback<
+          FormatRequest<I>, &FormatRequest<I>::handle_metadata_set>(this);
+  auto *request = operation::MetadataSetRequest<I>::create(
+          *m_image_ctx, ctx, EncryptionFormat<I>::PARENT_CRYPTOR_METADATA_KEY,
+          m_serialized_parent_cryptor);
+  request->send();
+}
+
+template <typename I>
+void FormatRequest<I>::handle_metadata_set(int r) {
+  ldout(m_image_ctx->cct, 20) << "r=" << r << dendl;
+
+  if (r != 0) {
+    lderr(m_image_ctx->cct) << "unable to persist parent cryptor: "
+                            << cpp_strerror(r) << dendl;
   }
 
   finish(r);
