@@ -129,9 +129,21 @@ void FormatRequest<I>::send() {
     return;
   }
 
+  if (m_image_ctx->parent != nullptr) {
+    // parent is not encrypted with same key
+    // change LUKS magic to prevent decryption by other LUKS implementations
+    r = m_header.replace_magic(Header::LUKS_MAGIC, Header::RBD_CLONE_MAGIC);
+    if (r < 0) {
+      lderr(m_image_ctx->cct) << "error replacing LUKS magic: "
+                              << cpp_strerror(r) << dendl;
+      finish(r);
+      return;
+    }
+  }
+
   // read header from libcryptsetup interface
   ceph::bufferlist bl;
-  r = m_header.read(&bl);
+  r = m_header.read(&bl, 0);
   if (r < 0) {
     finish(r);
     return;

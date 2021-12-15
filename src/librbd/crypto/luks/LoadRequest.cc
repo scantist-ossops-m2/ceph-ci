@@ -114,6 +114,11 @@ void LoadRequest<I>::handle_read_header(int r) {
       return;
   }
 
+  if (m_image_ctx->parent != nullptr) {
+    // try to switch magic that was replaced due to clone formatting
+    m_header.replace_magic(Header::RBD_CLONE_MAGIC, Header::LUKS_MAGIC, true);
+  }
+
   // parse header via libcryptsetup
   r = m_header.load(type);
   if (r != 0) {
