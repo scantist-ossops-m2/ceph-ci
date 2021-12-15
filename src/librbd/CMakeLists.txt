@@ -61,6 +61,7 @@ set(librbd_internal_srcs
   crypto/CryptoContextPool.cc
   crypto/CryptoImageDispatch.cc
   crypto/CryptoObjectDispatch.cc
+  crypto/FlattenRequest.cc
   crypto/FormatRequest.cc
   crypto/LoadRequest.cc
   crypto/ShutDownCryptoRequest.cc
