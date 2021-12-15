@@ -12794,13 +12794,13 @@ void BlueStore::_osr_drain_all()
     }
   }
   dout(20) << __func__ << " osr_set " << s << dendl;
-  dout(0) << __func__ << "::Fast Shutdown: calling deferred_try_submit" << dendl;
+  //dout(0) << __func__ << "::Fast Shutdown: calling deferred_try_submit" << dendl;
   ++deferred_aggressive;
   {
     // submit anything pending
     deferred_try_submit();
   }
-  dout(0) << __func__ << "::Fast Shutdown: calling kv_cond.notify_one" << dendl;
+  //dout(0) << __func__ << "::Fast Shutdown: calling kv_cond.notify_one" << dendl;
   {
     // wake up any previously finished deferred events
     std::lock_guard l(kv_lock);
@@ -12810,15 +12810,15 @@ void BlueStore::_osr_drain_all()
     std::lock_guard l(kv_finalize_lock);
     kv_finalize_cond.notify_one();
   }
-  dout(0) << __func__ << "::Fast Shutdown: calling osr->drain" << dendl;
+  //dout(0) << __func__ << "::Fast Shutdown: calling osr->drain" << dendl;
   for (auto osr : s) {
-    dout(0) << __func__ << "::Fast Shutdown: drain " << osr << dendl;
+    //dout(0) << __func__ << "::Fast Shutdown: drain " << osr << dendl;
     dout(20) << __func__ << " drain " << osr << dendl;
     osr->drain();
   }
   --deferred_aggressive;
 
-  dout(0) << __func__ << "::Fast Shutdown: zombies loop" << dendl;
+  //dout(0) << __func__ << "::Fast Shutdown: zombies loop" << dendl;
   {
     std::lock_guard l(zombie_osr_lock);
     for (auto& osr : zombies) {
