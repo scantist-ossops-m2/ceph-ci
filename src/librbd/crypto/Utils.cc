@@ -58,6 +58,7 @@ int build_crypto(
 
   *result_crypto = BlockCrypto<EVP_CIPHER_CTX>::create(
           cct, data_cryptor, block_size, data_offset);
+  result_crypto->get()->put();
   return 0;
 }
 
