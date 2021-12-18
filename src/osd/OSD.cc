@@ -4296,6 +4296,13 @@ int OSD::shutdown()
 
     // first, stop new task from being taken from op_shardedwq
     op_shardedwq.stop_for_fast_shutdown();
+
+    tick_timer.shutdown();
+    {
+      std::lock_guard l(tick_timer_lock);
+      tick_timer_without_osd_lock.shutdown();
+    }
+
     osd_lock.unlock();
     dout(0) << "Fast Shutdown: start_time_drain" << dendl;
     utime_t  start_time_osd_drain = ceph_clock_now();
@@ -4307,13 +4314,18 @@ int OSD::shutdown()
     dout(0) << "Fast Shutdown: start_time_timer" << dendl;
     utime_t  start_time_timer = ceph_clock_now();
 #if 1
-    osd_lock.lock();
-    tick_timer.shutdown();
     {
-      std::lock_guard l(tick_timer_lock);
-      tick_timer_without_osd_lock.shutdown();
+      std::lock_guard l{heartbeat_lock};
+      heartbeat_stop = true;
+      heartbeat_cond.notify_all();
+      heartbeat_peers.clear();
     }
-    osd_lock.unlock();
+    
+    hb_back_server_messenger->mark_down_all();
+    hb_front_server_messenger->mark_down_all();
+    hb_front_client_messenger->mark_down_all();
+    hb_back_client_messenger->mark_down_all();
+
 #endif
     dout(0) << "Fast Shutdown: start_time_flush" << dendl;
     utime_t  start_time_flush = ceph_clock_now();
@@ -4323,6 +4335,19 @@ int OSD::shutdown()
     utime_t  start_time_umount = ceph_clock_now();
     // write allocation map (or maybe do a full umount ???)
     store->prepare_for_fast_shutdown();
+
+    // raise debug level
+    // g_conf()->set_val("debug_bluestore", "20");
+    cct->_conf.set_val("debug_osd", "20");
+    cct->_conf.set_val("debug_bluestore", "20");
+    cct->_conf.set_val("debug_bluefs", "20");
+    cct->_conf.set_val("debug_rocksdb", "20");
+
+    //
+    // assert in allocator that nothing is being add
+    //
+
+    
     store->umount();
 
     utime_t end_time = ceph_clock_now();
