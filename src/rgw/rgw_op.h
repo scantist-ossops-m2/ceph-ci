@@ -1262,6 +1262,10 @@ public:
   void pre_exec() override;
   void execute(optional_yield y) override;
 
+  virtual int get_encryption_defaults() {
+    return 0;
+  }
+
   /* this is for cases when copying data from other object */
   virtual int get_decrypt_filter(std::unique_ptr<RGWGetObj_Filter>* filter,
                                  RGWGetObj_Filter* cb,
