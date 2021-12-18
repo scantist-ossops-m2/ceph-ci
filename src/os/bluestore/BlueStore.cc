@@ -7450,6 +7450,14 @@ int BlueStore::expand_devices(ostream& out)
           << std::endl;
       }
     }
+
+#if 1
+    // TBD - are we allowed to write to BlueFS?
+    // Did we affect allocation for RcoksDB?
+    // Could the allocation file be affcetd by the expand in any way ???   
+    db_was_opened_read_only = false;
+    need_to_destage_allocation_file = true;
+#endif
     _close_db_and_around();
 
     // mount in read/write to sync expansion changes
@@ -7641,6 +7649,14 @@ int BlueStore::umount()
   }
   utime_t  start_time_close = ceph_clock_now();
   dout(0) << __func__ << "::Fast Shutdown: close_db_and_around" << dendl;
+
+  // raise debug level
+  // g_conf()->set_val("debug_bluestore", "20");
+  cct->_conf.set_val("debug_osd", "20");
+  cct->_conf.set_val("debug_bluestore", "20");
+  cct->_conf.set_val("debug_bluefs", "20");
+  cct->_conf.set_val("debug_rocksdb", "20");
+
   _close_db_and_around();
   dout(0) <<"umount time: close=" << ceph_clock_now() - start_time_close << " kvmem=" << start_time_close - start_time_kv  <<
     " drain=" << start_time_kv - start_time_func << dendl;
