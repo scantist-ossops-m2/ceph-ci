@@ -6346,6 +6346,7 @@ void BlueStore::_close_db_and_around()
   if (bluefs) {
     _close_bluefs();
   }
+
   utime_t  start_time_fm = ceph_clock_now();
   _close_fm();
   _close_alloc();
@@ -6354,6 +6355,7 @@ void BlueStore::_close_db_and_around()
   utime_t  start_time_fsid = ceph_clock_now();
   _close_fsid();
   _close_path();
+  
   dout(0) <<"close_db_and_around time: bluefs=" << start_time_fm   -start_time_bluefs << " bdev  =" << start_time_fsid -start_time_bdev << dendl;
 }
 
@@ -7611,11 +7613,9 @@ int BlueStore::umount()
   ceph_assert(_kv_only || mounted);
   utime_t  start_time_func = ceph_clock_now();
 
-  if (!m_fast_shutdown ) {
-    //dout(20) << __func__ << "::Fast Shutdown: calling _osr_drain_all" << dendl;
-    _osr_drain_all();
-  }
-
+  dout(0) << __func__ << "::Fast Shutdown: calling _osr_drain_all" << dendl;
+  _osr_drain_all();
+  
   mounted = false;
 
   ceph_assert(alloc);
@@ -7633,7 +7633,7 @@ int BlueStore::umount()
     dout(20) << __func__ << " stopping kv thread" << dendl;
     dout(0) << __func__ << "::Fast Shutdown: _kv_stop" << dendl;
     _kv_stop();
-    if (!m_fast_shutdown || 1) {
+    if (!m_fast_shutdown) {
       dout(0) << __func__ << "::Fast Shutdown: shutdown_cache" << dendl;
       _shutdown_cache();
     }
@@ -7645,7 +7645,7 @@ int BlueStore::umount()
   dout(0) <<"umount time: close=" << ceph_clock_now() - start_time_close << " kvmem=" << start_time_close - start_time_kv  <<
     " drain=" << start_time_kv - start_time_func << dendl;
 
-  if (cct->_conf->bluestore_fsck_on_umount) {
+  if (cct->_conf->bluestore_fsck_on_umount && !m_fast_shutdown) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
     int rc = fsck(cct->_conf->bluestore_fsck_on_umount_deep);
     if (rc < 0)
@@ -13490,12 +13490,12 @@ void BlueStore::deferred_try_submit()
 {
   dout(20) << __func__ << " " << deferred_queue.size() << " osrs, "
 	   << deferred_queue_size << " txcs" << dendl;
-
+#if 0
   if (m_fast_shutdown) {
     dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
     return;
   }
-
+#endif
   vector<OpSequencerRef> osrs;
 
   {
@@ -13535,12 +13535,12 @@ void BlueStore::_deferred_submit_unlock(OpSequencer *osr)
 	   << dendl;
   ceph_assert(osr->deferred_pending);
   ceph_assert(!osr->deferred_running);
-
+#if 0
   if (m_fast_shutdown) {
     dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
     return;
   }
-
+#endif
   auto b = osr->deferred_pending;
   deferred_queue_size -= b->seq_bytes.size();
   ceph_assert(deferred_queue_size >= 0);
@@ -13709,11 +13709,12 @@ int BlueStore::queue_transactions(
   TrackedOpRef op,
   ThreadPool::TPHandle *handle)
 {
+#if 0
   if (m_fast_shutdown) {
     dout(0) << __func__ << "::fast_shutdown (skip _enqueue) " << dendl;
     return 0;
   }
-
+#endif
   
   FUNCTRACE(cct);
   list<Context *> on_applied, on_commit, on_applied_sync;
