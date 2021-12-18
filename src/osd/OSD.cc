@@ -4334,14 +4334,8 @@ int OSD::shutdown()
     dout(0) << "Fast Shutdown: start_time_umount" << dendl;
     utime_t  start_time_umount = ceph_clock_now();
     // write allocation map (or maybe do a full umount ???)
-    store->prepare_for_fast_shutdown();
+    // store->prepare_for_fast_shutdown();
 
-    // raise debug level
-    // g_conf()->set_val("debug_bluestore", "20");
-    cct->_conf.set_val("debug_osd", "20");
-    cct->_conf.set_val("debug_bluestore", "20");
-    cct->_conf.set_val("debug_bluefs", "20");
-    cct->_conf.set_val("debug_rocksdb", "20");
 
     //
     // assert in allocator that nothing is being add
