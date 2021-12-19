@@ -907,6 +907,92 @@ struct CryptAttributes {
   }
 };
 
+std::string fetch_bucket_key_id(struct req_state *s)
+{
+  auto kek_iter = s->bucket_attrs.find(RGW_ATTR_BUCKET_ENCRYPTION_KEY_ID);
+  if (kek_iter == s->bucket_attrs.end())
+    return std::string();
+  std::string a_key { kek_iter->second.to_str() };
+  // early code appends a nul; pretend that didn't happen
+  auto l { a_key.length() };
+  if (l > 0 && a_key[l-1] == '\0') {
+    a_key.resize(--l);
+  }
+  return a_key;
+}
+
+std::string expand_key_name(struct req_state *s, const std::string_view&t)
+{
+  std::string r;
+  size_t i, j;
+  for (i = 0;;) {
+    i = t.find('%', (j = i));
+    if (i != j) {
+      if (i == std::string_view::npos)
+        r.append( t.substr(j) );
+      else
+        r.append( t.substr(j, i-j) );
+    }
+    if (i == std::string_view::npos) {
+      break;
+    }
+    if (t.compare(i+1, 9, "bucket_id") == 0) {
+      r.append(s->bucket->get_bucket_id());
+      i += 10;
+      continue;
+    }
+    if (t.compare(i+1, 8, "owner_id") == 0) {
+      r.append(s->bucket->get_info().owner.id);
+      i += 8;
+      continue;
+    }
+    r.append(" ??? ");
+    ++i;
+  }
+  return r;
+}
+
+static int get_sse_s3_bucket_key(req_state *s,
+			  std::string &key_id)
+{
+  int res;
+  std::string saved_key;
+
+  key_id = expand_key_name(s, s->cct->_conf->rgw_crypt_sse_s3_key_template);
+
+  saved_key = fetch_bucket_key_id(s);
+  if (saved_key != "") {
+    ldpp_dout(s, 5) << "Found KEK ID: " << key_id << dendl;
+  }
+  if (saved_key != key_id) {
+    map<string, bufferlist> dummy_attrs;	// XXX fixme
+    res = create_ss3_s3_bucket_key(s, s->cct, dummy_attrs, key_id);
+    if (res != 0) {
+      return res;
+    }
+    bufferlist key_id_bl;
+    key_id_bl.append(key_id.c_str(), key_id.length());
+    for (int count = 0; count < 15; ++count) {
+      rgw::sal::Attrs attrs = s->bucket->get_attrs();
+      attrs[RGW_ATTR_BUCKET_ENCRYPTION_KEY_ID] = key_id_bl;
+      res = s->bucket->merge_and_store_attrs(s, attrs, s->yield);
+      if (res != ECANCELED) {
+	break;
+      }
+      res = s->bucket->try_refresh_info(s, nullptr);
+      if (res != 0) {
+	break;
+      }
+    }
+    if (res != 0) {
+      ldpp_dout(s, 5) << "ERROR: unable to save new key_id on bucket" << dendl;
+      s->err.message = "Server side error - unable to save key_id";
+      return res;
+    }
+  }
+  return 0;
+}
+
 int rgw_s3_prepare_encrypt(struct req_state* s,
                            std::map<std::string, ceph::bufferlist>& attrs,
                            std::map<std::string,
@@ -1116,17 +1202,11 @@ int rgw_s3_prepare_encrypt(struct req_state* s,
       if ((res = make_canonical_context(s, context, cooked_context)))
 	return res;
 
-      /* Find the KEK ID */
-      auto kek_iter = s->bucket_attrs.find(RGW_ATTR_BUCKET_ENCRYPTION_KEY_ID);
-      if (kek_iter == s->bucket_attrs.end()) {
-	ldpp_dout(s, 5) << "ERROR: KEK ID absent for bucket having "
-		"encryption enabled" << dendl;
-	s->err.message = "Server side error - SSE-S3 key absent";
-	return -EINVAL;
+      std::string key_id;
+      res = get_sse_s3_bucket_key(s, key_id);
+      if (res != 0) {
+	return res;
       }
-
-      std::string_view key_id = kek_iter->second.to_str();
-      ldpp_dout(s, 5) << "Found KEK ID: " << key_id << dendl;
       std::string key_selector = create_random_key_selector(s->cct);
 
       set_attr(attrs, RGW_ATTR_CRYPT_KEYSEL, key_selector);
