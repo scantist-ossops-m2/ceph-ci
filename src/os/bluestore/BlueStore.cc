@@ -5653,7 +5653,6 @@ int BlueStore::_create_alloc()
   uint64_t alloc_size = min_alloc_size;
 
   std::string allocator_type = cct->_conf->bluestore_allocator;
-
 #ifdef HAVE_LIBZBD
   if (freelist_type == "zoned") {
     allocator_type = "zoned";
@@ -6598,10 +6597,10 @@ void BlueStore::_close_db_leave_bluefs()
 
 void BlueStore::_close_db()
 {
-  dout(10) << __func__ << ":read_only=" << db_was_opened_read_only << " fm=" << fm << " destage_alloc_file=" << need_to_destage_allocation_file << dendl;
+  dout(5) << __func__ << "::Fast Shutdown::read_only=" << db_was_opened_read_only << " fm=" << fm << " destage_alloc_file=" << need_to_destage_allocation_file << dendl;
   _close_db_leave_bluefs();
 
-  if (fm && fm->is_null_manager() && !db_was_opened_read_only && need_to_destage_allocation_file) {
+  if (fm && fm->is_null_manager() && need_to_destage_allocation_file) {
     int ret = store_allocator(alloc);
     if (ret != 0) {
       derr << __func__ << "::NCB::store_allocator() failed (continue with bitmapFreelistManager)" << dendl;
@@ -7451,13 +7450,10 @@ int BlueStore::expand_devices(ostream& out)
       }
     }
 
-#if 1
-    // TBD - are we allowed to write to BlueFS?
-    // Did we affect allocation for RcoksDB?
-    // Could the allocation file be affcetd by the expand in any way ???   
-    db_was_opened_read_only = false;
+    // we grow the allocation range, must reflect it in the allocation file
+    dout(0) << __func__ << "::Fast Shutdown: old-size=" << size0 << ", new-size=" << size << dendl;
+    alloc->init_add_free(size0, size-size0);
     need_to_destage_allocation_file = true;
-#endif
     _close_db_and_around();
 
     // mount in read/write to sync expansion changes
@@ -7511,11 +7507,9 @@ int BlueStore::_mount()
   // TBD - use a config-file option instead
 #ifdef NCB_SAFE_FAST_SHUTDOWN_DEBUG
   static bool perform_bluestore_qfsck = true;
-  dout(0) << __func__ << "NCB::bluestore_qfsck_on_mount = " << cct->_conf->bluestore_qfsck_on_mount << dendl;
   if (perform_bluestore_qfsck && cct->_conf->bluestore_qfsck_on_mount) {
     perform_bluestore_qfsck = false;
-    //cct->_conf->bluestore_qfsck_on_mount = false;
-    dout(0) << __func__ << "NCB::bluestore_qfsck_on_mount was initiated ... " << dendl;
+    dout(0) << __func__ << "::NCB::bluestore_qfsck_on_mount was initiated ... " << dendl;
     int ret = read_allocation_from_drive_for_fsck();
     ceph_assert(ret == 0);
   }
@@ -10213,7 +10207,7 @@ int BlueStore::pool_statfs(uint64_t pool_id, struct store_statfs_t *buf,
   string key_prefix;
   _key_encode_u64(pool_id, &key_prefix);
   *out_per_pool_omap = per_pool_omap != OMAP_BULK;
-  if (*out_per_pool_omap) {
+  if (*out_per_pool_omap && db) {
     auto prefix = per_pool_omap == OMAP_PER_POOL ?
       PREFIX_PERPOOL_OMAP :
       PREFIX_PERPG_OMAP;
@@ -18211,12 +18205,11 @@ int BlueStore::store_allocator(Allocator* src_allocator)
   bluefs->fsync(p_handle);
 
   utime_t duration = ceph_clock_now() - start_time;
-  dout(10) <<"WRITE-extent_count=" << extent_count << ", file_size=" << p_handle->file->fnode.size << dendl;
-  dout(10) <<"p_handle->pos=" << p_handle->pos << " WRITE-duration=" << duration << " seconds" << dendl;
+  dout(1) <<"WRITE-extent_count=" << extent_count << ", file_size=" << p_handle->file->fnode.size << dendl;
+  dout(1) <<"p_handle->pos=" << p_handle->pos << " WRITE-duration=" << duration << " seconds" << dendl;
 
   bluefs->close_writer(p_handle);
   need_to_destage_allocation_file = false;
-  dout(10) << "need_to_destage_allocation_file was clear" << dendl;
   return 0;
 }
 
@@ -18979,7 +18972,7 @@ Allocator* BlueStore::clone_allocator_without_bluefs(Allocator *src_allocator)
   }
 
   uint64_t num_entries = 0;
-  dout(5) << "calling copy_allocator(alloc -> bitmap_allocator)" << dendl;  
+  dout(5) << "calling copy_allocator(alloc -> bitmap_allocator)" << dendl;
   copy_allocator(src_allocator, allocator, &num_entries);
 
   // BlueFS stores its internal allocation outside RocksDB (FM) so we should not destage them to the allcoator-file

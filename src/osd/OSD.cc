@@ -4250,6 +4250,13 @@ int OSD::shutdown()
   dout(0) << "Fast Shutdown: - cct->_conf->osd_fast_shutdown               = " << cct->_conf->osd_fast_shutdown << dendl;
   utime_t  start_time_func = ceph_clock_now();
 
+#if 0
+  // code should be disabled when not operating in NULL-FM moode!!
+  if (fm && fm->is_null_manager()) {
+    dout(0) << "shutdown" << dendl;
+  }
+#endif
+
   if (cct->_conf->osd_fast_shutdown) {
     derr << "*** Immediate shutdown (osd_fast_shutdown=true) ***" << dendl;
   } else {
@@ -4328,8 +4335,7 @@ int OSD::shutdown()
     dout(0) << "Fast Shutdown: start_time_umount" << dendl;
     utime_t  start_time_umount = ceph_clock_now();
     // write allocation map (or maybe do a full umount ???)
-    // store->prepare_for_fast_shutdown();
-
+    store->prepare_for_fast_shutdown();
 
     //
     // assert in allocator that nothing is being add
