@@ -11645,7 +11645,7 @@ int BlueStore::_collection_list(
 
 int BlueStore::collection_bulk_remove_lock(CollectionHandle& c_)
 {
-  if (!db->is_async_remove_supported()) {
+/*  if (!db->is_async_remove_supported()) {
     dout(10) << __func__
              << " bulk removal not supported in KV"
              << dendl;
@@ -11663,7 +11663,7 @@ int BlueStore::collection_bulk_remove_lock(CollectionHandle& c_)
 
   dout(10) << __func__ << " " << c->cid
     << " locked for removal"
-    << dendl;
+    << dendl;*/
   return 0;
 }
 
@@ -13965,7 +13965,7 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
       txc->osd_pool_id = pgid.pool();
     }
 
-    if (!!c && c->bulk_rm_locked &&
+/*    if (!!c && c->bulk_rm_locked &&
         op->op != Transaction::OP_RMCOLL &&
         op->op != Transaction::OP_ZERO &&
         op->op != Transaction::OP_TRUNCATE &&
@@ -13980,7 +13980,7 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
                        << dendl;
       r = -EPERM;
       goto endop;
-    }
+    }*/
 
     switch (op->op) {
     case Transaction::OP_RMCOLL:

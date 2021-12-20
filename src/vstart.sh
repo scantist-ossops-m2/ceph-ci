@@ -1292,7 +1292,8 @@ EOF
 if [ "$debug" -eq 0 ]; then
     CMONDEBUG='
         debug mon = 10
-        debug ms = 1'
+        debug ms = 1
+        debug osd = 5'
 else
     debug echo "** going verbose **"
     CMONDEBUG='

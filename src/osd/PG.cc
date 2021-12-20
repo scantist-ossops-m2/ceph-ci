@@ -2690,11 +2690,17 @@ std::pair<ghobject_t, bool> PG::do_reclaim_work(
 {
   dout(10) << __func__ << dendl;
 
+  epoch_t e = get_osdmap()->get_epoch();
+  if (pg_has_reset_since(e)) {
+    dout(0) << " RESET REMOVAL" << dendl;
+    return {_next, false};
+  }
+
   auto start0 = mono_clock::now();
   {
     float osd_delete_sleep = osd->osd->get_osd_reclaim_sleep();
     if (osd_delete_sleep > 0 && delete_needs_sleep) {
-      epoch_t e = get_osdmap()->get_epoch();
+      //epoch_t e = get_osdmap()->get_epoch();
       PGRef pgref(this);
       auto delete_requeue_callback = new LambdaContext([this, pgref, e](int r) {
         dout(20) << __func__ << " wake up at "
