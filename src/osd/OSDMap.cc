@@ -5006,8 +5006,8 @@ float OSDMap::calc_deviations (
   //        long as it is monotonic with stddev (and it is), it is sufficient for
   //        the balancer code.
   //
-  float cur_max_deviation = 0.;
-  stddev = 0.;	
+  float cur_max_deviation = 0.0;
+  stddev = 0.0;
   for (auto& [oid, opgs] : pgs_by_osd) {
     // make sure osd is still there (belongs to this crush-tree)
     ceph_assert(osd_weight.count(oid));
