@@ -4301,6 +4301,11 @@ int OSD::shutdown()
       service.prepare_to_stop();
     }
 
+    // stop MgrClient earlier as it's more like an internal consumer of OSD
+    mgrc.shutdown();
+
+    service.start_shutdown();
+
     // first, stop new task from being taken from op_shardedwq
     op_shardedwq.stop_for_fast_shutdown();
 
@@ -4316,6 +4321,9 @@ int OSD::shutdown()
     // then, wait on osd_op_tp to drain with a timeout
     osd_op_tp.drain();//timeout);
     osd_op_tp.stop();//timeout-passed);
+
+    //dout(10) << "stopping agent" << dendl;
+    service.agent_stop();
 
     //dout(0) << "op sharded tp stopped" << dendl;
     dout(0) << "Fast Shutdown: start_time_timer" << dendl;
