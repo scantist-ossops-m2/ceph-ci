@@ -13,11 +13,13 @@
 #include "common/RefCountedObj.h"
 
 #include <atomic>
+#include <memory>
 #include <optional>
 #include <type_traits>
 #include <utility>
 #include <vector>
 #include <stdio.h>
+#include <string>
 
 namespace librbd {
 
@@ -279,6 +281,16 @@ uint64_t reserve_async_request_id();
 bool is_config_key_uri(const std::string& uri);
 int get_config_key(librados::Rados& rados, const std::string& uri,
                    std::string* value);
+
+int init_rados(CephContext *cct,
+               const std::string &cluster_name,
+			         const std::string &client_name,
+               const std::string &mon_host,
+               const std::string &key,
+               const std::string &description,
+               std::vector<const char*>& args,
+               std::shared_ptr<librados::Rados> *rados_ref,
+               bool strip_cluster_overrides);
 
 } // namespace util
 } // namespace librbd

@@ -6,7 +6,6 @@
 
 #include "common/Cond.h"
 #include "common/ceph_mutex.h"
-#include "include/rados/librados.hpp"
 #include "librbd/Utils.h"
 #include "librbd/asio/ContextWQ.h"
 
@@ -98,13 +97,6 @@ private:
    */
 
   struct RemotePoolPollerListener;
-
-  int init_rados(const std::string &cluster_name,
-                 const std::string &client_name,
-                 const std::string &mon_host,
-                 const std::string &key,
-                 const std::string &description, RadosRef *rados_ref,
-                 bool strip_cluster_overrides);
 
   void update_namespace_replayers();
   int list_mirroring_namespaces(std::set<std::string> *namespaces);
