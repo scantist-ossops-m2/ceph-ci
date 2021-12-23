@@ -1255,7 +1255,7 @@ protected:
   // pg on-disk state
   void do_pending_flush();
 
-  bool do_remove_collection(ObjectStore::Transaction& t);
+  bool do_remove_collection(ObjectStore::Transaction& t, bool bulk);
 
 public:
   void prepare_write(

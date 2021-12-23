@@ -10137,9 +10137,6 @@ TEST_P(StoreTestSpecificAUSize, BlueStoreRemoveViaReclaimTest) {
     sleep(g_conf().get_val<double>("bluestore_max_defer_interval") + 1);
   }
   {
-    auto r = store->collection_bulk_remove_lock(ch);
-    ASSERT_EQ(r, 0);
-
     cerr << "Reclaiming..." << std::endl;
     ObjectStore::Transaction t;
     t.reclaim(cid, hoid2);
@@ -10156,8 +10153,8 @@ TEST_P(StoreTestSpecificAUSize, BlueStoreRemoveViaReclaimTest) {
   }
   {
     ObjectStore::Transaction t;
-    t.remove_collection(cid);
-    cerr << "Cleaning..." << std::endl;
+    t.remove_collection_bulk(cid);
+    cerr << "Cleaning...." << std::endl;
     r = queue_transaction(store, ch, std::move(t));
     ASSERT_EQ(r, 0);
   }

@@ -2673,15 +2673,14 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     get_perf_logger().tinc(l_osd_deleting_submit_lat, mono_clock::now() - start0);
 
   } else {
-    running = do_remove_collection(t);
+    running = do_remove_collection(t, false);
   }
   return {next, running};
 }
 
 bool PG::can_do_reclaim()
 {
-  return cct->_conf.get_val<bool>("osd_delete_via_reclaim") &&
-      osd->store->collection_bulk_remove_lock(ch) == 0;
+  return cct->_conf.get_val<bool>("osd_delete_via_reclaim");
 }
 
 std::pair<ghobject_t, bool> PG::do_reclaim_work(
@@ -2765,12 +2764,12 @@ std::pair<ghobject_t, bool> PG::do_reclaim_work(
     t.register_on_commit(fin);
     get_perf_logger().tinc(l_osd_reclaiming_submit_lat, mono_clock::now() - start0);
   } else {
-    running = do_remove_collection(t);
+    running = do_remove_collection(t, true);
   }
   return {next, running};
 }
 
-bool PG::do_remove_collection(ObjectStore::Transaction& t)
+bool PG::do_remove_collection(ObjectStore::Transaction& t, bool bulk_removal)
 {
   if (cct->_conf->osd_inject_failure_on_pg_removal) {
     _exit(1);
@@ -2781,7 +2780,12 @@ bool PG::do_remove_collection(ObjectStore::Transaction& t)
   {
     PGRef pgref(this);
     PGLog::clear_info_log(info.pgid, &t);
-    t.remove_collection(coll);
+    if (!bulk_removal) {
+      t.remove_collection(coll);
+    } else {
+      t.remove_collection_bulk(coll);
+    }
+
     t.register_on_commit(new ContainerContext<PGRef>(pgref));
     t.register_on_applied(new ContainerContext<PGRef>(pgref));
     osd->store->queue_transaction(ch, std::move(t));
