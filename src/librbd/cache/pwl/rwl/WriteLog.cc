@@ -160,9 +160,6 @@ int WriteLog<I>::append_op_log_entries(GenericLogOperations &ops)
                                << "from " << &operation->get_log_entry()->ram_entry << " "
                                << "to " << operation->get_log_entry()->cache_entry << " "
                                << "operation=[" << *operation << "]" << dendl;
-    ldout(m_image_ctx.cct, 05) << "APPENDING: index="
-                               << operation->get_log_entry()->log_entry_index << " "
-                               << "operation=[" << *operation << "]" << dendl;
     operation->log_append_start_time = now;
     *operation->get_log_entry()->cache_entry = operation->get_log_entry()->ram_entry;
     ldout(m_image_ctx.cct, 20) << "APPENDING: index="
@@ -261,6 +258,7 @@ void WriteLog<I>::remove_pool_file() {
 template <typename I>
 bool WriteLog<I>::initialize_pool(Context *on_finish, pwl::DeferredContexts &later) {
   CephContext *cct = m_image_ctx.cct;
+  int r = -EINVAL;
   TOID(struct WriteLogPoolRoot) pool_root;
   ceph_assert(ceph_mutex_is_locked_by_me(m_lock));
   if (access(this->m_log_pool_name.c_str(), F_OK) != 0) {
@@ -269,8 +267,8 @@ bool WriteLog<I>::initialize_pool(Context *on_finish, pwl::DeferredContexts &lat
                         this->m_pwl_pool_layout_name,
                         this->m_log_pool_size,
                         (S_IWUSR | S_IRUSR))) == NULL) {
-      lderr(cct) << "failed to create pool (" << this->m_log_pool_name << ")"
-                 << pmemobj_errormsg() << dendl;
+      lderr(cct) << "failed to create pool: " << this->m_log_pool_name
+                 << ". error:" << pmemobj_errormsg() << dendl;
       m_cache_state->present = false;
       m_cache_state->clean = true;
       m_cache_state->empty = true;
@@ -292,8 +290,7 @@ bool WriteLog<I>::initialize_pool(Context *on_finish, pwl::DeferredContexts &lat
     }
     if (num_small_writes <= 2) {
       lderr(cct) << "num_small_writes needs to > 2" << dendl;
-      on_finish->complete(-EINVAL);
-      return false;
+      goto error_handle;
     }
     this->m_bytes_allocated_cap = effective_pool_size;
     /* Log ring empty */
@@ -317,9 +314,10 @@ bool WriteLog<I>::initialize_pool(Context *on_finish, pwl::DeferredContexts &lat
     } TX_ONABORT {
       this->m_total_log_entries = 0;
       this->m_free_log_entries = 0;
-      lderr(cct) << "failed to initialize pool (" << this->m_log_pool_name << ")" << dendl;
-      on_finish->complete(-pmemobj_tx_errno());
-      return false;
+      lderr(cct) << "failed to initialize pool: " << this->m_log_pool_name
+                 << ". pmemobj TX errno: " << pmemobj_tx_errno() << dendl;
+      r = -pmemobj_tx_errno();
+      goto error_handle;
     } TX_FINALLY {
     } TX_END;
   } else {
@@ -336,17 +334,15 @@ bool WriteLog<I>::initialize_pool(Context *on_finish, pwl::DeferredContexts &lat
     pool_root = POBJ_ROOT(m_log_pool, struct WriteLogPoolRoot);
     if (D_RO(pool_root)->header.layout_version != RWL_LAYOUT_VERSION) {
       // TODO: will handle upgrading version in the future
-      lderr(cct) << "Pool layout version is "
+      lderr(cct) << "pool layout version is "
                  << D_RO(pool_root)->header.layout_version
                  << " expected " << RWL_LAYOUT_VERSION << dendl;
-      on_finish->complete(-EINVAL);
-      return false;
+      goto error_handle;
     }
     if (D_RO(pool_root)->block_size != MIN_WRITE_ALLOC_SIZE) {
-      lderr(cct) << "Pool block size is " << D_RO(pool_root)->block_size
+      lderr(cct) << "pool block size is " << D_RO(pool_root)->block_size
                  << " expected " << MIN_WRITE_ALLOC_SIZE << dendl;
-      on_finish->complete(-EINVAL);
-      return false;
+      goto error_handle;
     }
     this->m_log_pool_size = D_RO(pool_root)->pool_size;
     this->m_flushed_sync_gen = D_RO(pool_root)->flushed_sync_gen;
@@ -371,6 +367,11 @@ bool WriteLog<I>::initialize_pool(Context *on_finish, pwl::DeferredContexts &lat
     m_cache_state->empty = m_log_entries.empty();
   }
   return true;
+
+error_handle:
+  pmemobj_close(m_log_pool);
+  on_finish->complete(r);
+  return false;
 }
 
 /*
@@ -475,10 +476,9 @@ bool WriteLog<I>::retire_entries(const unsigned long int frees_per_tx) {
     std::lock_guard locker(m_lock);
     initial_first_valid_entry = this->m_first_valid_entry;
     first_valid_entry = this->m_first_valid_entry;
-    auto entry = m_log_entries.front();
-    while (!m_log_entries.empty() &&
-           retiring_entries.size() < frees_per_tx &&
-           this->can_retire_entry(entry)) {
+    while (!m_log_entries.empty() && retiring_entries.size() < frees_per_tx &&
+           this->can_retire_entry(m_log_entries.front())) {
+      auto entry = m_log_entries.front();
       if (entry->log_entry_index != first_valid_entry) {
         lderr(cct) << "Retiring entry index (" << entry->log_entry_index
                    << ") and first valid log entry index (" << first_valid_entry
@@ -495,7 +495,6 @@ bool WriteLog<I>::retire_entries(const unsigned long int frees_per_tx) {
           this->m_blocks_to_log_entries.remove_log_entry(gen_write_entry);
         }
       }
-      entry = m_log_entries.front();
     }
   }
 
@@ -920,9 +919,6 @@ void WriteLog<I>::reserve_cache(C_BlockIORequestT *req,
                                         0 /* Object type */);
     buffer.allocation_lat = ceph_clock_now() - before_reserve;
     if (TOID_IS_NULL(buffer.buffer_oid)) {
-      if (!req->has_io_waited_for_buffers()) {
-        req->set_io_waited_for_buffers(true);
-      }
       ldout(m_image_ctx.cct, 5) << "can't allocate all data buffers: "
                                 << pmemobj_errormsg() << ". "
                                 << *req << dendl;
