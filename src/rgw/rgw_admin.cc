@@ -238,13 +238,12 @@ void usage()
   cout << "  metadata rm                remove metadata info\n";
   cout << "  metadata list              list metadata info\n";
   cout << "  mdlog list                 list metadata log\n";
-  cout << "  mdlog autotrim             auto trim metadata log\n";
   cout << "  mdlog trim                 trim metadata log (use marker)\n";
   cout << "  mdlog status               read metadata log status\n";
   cout << "  bilog list                 list bucket index log\n";
   cout << "  bilog trim                 trim bucket index log (use start-marker, end-marker)\n";
+  cout << "  mdlog autotrim             auto trim metadata log\n";
   cout << "  bilog status               read bucket index log status\n";
-  cout << "  bilog autotrim             auto trim bucket index log\n";
   cout << "  datalog list               list data log\n";
   cout << "  datalog trim               trim data log\n";
   cout << "  datalog status             read data log status\n";
@@ -4399,7 +4398,7 @@ int main(int argc, const char **argv)
 	  cout << "No default realm is set" << std::endl;
 	  return -ret;
 	} else if (ret < 0) {
-	  cerr << "Error reading default realm: " << cpp_strerror(-ret) << std::endl;
+	  cerr << "Error reading default realm:" << cpp_strerror(-ret) << std::endl;
 	  return -ret;
 	}
 	cout << "default realm: " << default_id << std::endl;
@@ -4624,7 +4623,7 @@ int main(int argc, const char **argv)
 	RGWZoneGroup zonegroup(zonegroup_id,zonegroup_name);
 	int ret = zonegroup.init(dpp(), g_ceph_context, static_cast<rgw::sal::RadosStore*>(store)->svc()->sysobj, null_yield);
 	if (ret < 0) {
-	  cerr << "failed to initialize zonegroup " << zonegroup_name << " id " << zonegroup_id << ": "
+	  cerr << "failed to initialize zonegroup " << zonegroup_name << " id " << zonegroup_id << " :"
 	       << cpp_strerror(-ret) << std::endl;
 	  return -ret;
 	}
@@ -5324,7 +5323,7 @@ int main(int argc, const char **argv)
 	}
 
 	if( !zone_name.empty() && !zone.get_name().empty() && zone.get_name() != zone_name) {
-	  cerr << "Error: zone name " << zone_name << " is different than the zone name " << zone.get_name() << " in the provided json " << std::endl;
+	  cerr << "Error: zone name" << zone_name << " is different than the zone name " << zone.get_name() << " in the provided json " << std::endl;
 	  return EINVAL;
 	}
 
@@ -7550,28 +7549,18 @@ next:
   }
 
   if (opt_cmd == OPT::LC_PROCESS) {
-    if ((! bucket_name.empty()) ||
-	(! bucket_id.empty())) {
-        int ret = init_bucket(nullptr, tenant, bucket_name, bucket_id, &bucket);
-	if (ret < 0) {
-	  cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret)
-	       << std::endl;
-	  return ret;
-	}
-    }
-
-    int ret =
-      static_cast<rgw::sal::RadosStore*>(store)->getRados()->process_lc(bucket);
+    int ret = static_cast<rgw::sal::RadosStore*>(store)->getRados()->process_lc();
     if (ret < 0) {
       cerr << "ERROR: lc processing returned error: " << cpp_strerror(-ret) << std::endl;
       return 1;
     }
   }
 
+
   if (opt_cmd == OPT::LC_RESHARD_FIX) {
     ret = RGWBucketAdminOp::fix_lc_shards(store, bucket_op, stream_flusher, dpp());
     if (ret < 0) {
-      cerr << "ERROR: fixing lc shards: " << cpp_strerror(-ret) << std::endl;
+      cerr << "ERROR: listing stale instances" << cpp_strerror(-ret) << std::endl;
     }
 
   }
@@ -7882,26 +7871,22 @@ next:
 
     formatter->open_array_section("entries");
     for (; i < g_ceph_context->_conf->rgw_md_log_max_shards; i++) {
-      void *handle;
-      list<cls_log_entry> entries;
+      std::vector<cls_log_entry> entries;
 
-      meta_log->init_list_entries(i, {}, {}, marker, &handle);
       bool truncated;
       do {
-	  int ret = meta_log->list_entries(dpp(), handle, 1000, entries, NULL, &truncated);
+	  int ret = meta_log->list_entries(dpp(), i, 1000, marker, entries, &marker,
+			  		   &truncated);
         if (ret < 0) {
           cerr << "ERROR: meta_log->list_entries(): " << cpp_strerror(-ret) << std::endl;
           return -ret;
         }
 
-        for (list<cls_log_entry>::iterator iter = entries.begin(); iter != entries.end(); ++iter) {
-          cls_log_entry& entry = *iter;
-          static_cast<rgw::sal::RadosStore*>(store)->ctl()->meta.mgr->dump_log_entry(entry, formatter.get());
+        for (const auto& entry : entries) {
+          store->ctl()->meta.mgr->dump_log_entry(entry, formatter.get());
         }
         formatter->flush(cout);
       } while (truncated);
-
-      meta_log->complete_list_entries(handle);
 
       if (specified_shard_id)
         break;
@@ -8002,7 +7987,7 @@ next:
 
     // trim until -ENODATA
     do {
-      ret = meta_log->trim(dpp(), shard_id, {}, {}, {}, marker);
+      ret = meta_log->trim(dpp(), shard_id, marker, true);
     } while (ret == 0);
     if (ret < 0 && ret != -ENODATA) {
       cerr << "ERROR: meta_log->trim(): " << cpp_strerror(-ret) << std::endl;
