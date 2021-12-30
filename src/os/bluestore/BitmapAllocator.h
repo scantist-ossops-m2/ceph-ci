@@ -48,9 +48,22 @@ public:
   }
 
   void init_add_free(uint64_t offset, uint64_t length) override;
-  void init_rm_free(uint64_t offset, uint64_t length) override;
+  void init_rm_free(uint64_t offset, uint64_t length) override
+  {
+    _init_rm_free(offset, length);
+  }
+
+  // This API is identical to the init_rm_free() above with one difference -
+  // it allows marking the same space as allocated multiple times and won't assert
+  // It is used only by the recovery code when building the allocation map.
+  void init_rm_free_allow_duplication(uint64_t offset, uint64_t length) {
+    uint64_t allocated = _init_rm_free(offset, length);
+    available += allocated;
+  }
 
   void shutdown() override;
+private:
+  uint64_t _init_rm_free(uint64_t offset, uint64_t length);
 };
 
 #endif

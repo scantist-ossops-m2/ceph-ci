@@ -57,6 +57,7 @@
 #endif
 
 class Allocator;
+class BitmapAllocator;
 class FreelistManager;
 class BlueStoreRepairer;
 //#define DEBUG_CACHE
@@ -3591,7 +3592,7 @@ private:
   }
 
   int  compare_allocators(Allocator* alloc1, Allocator* alloc2, uint64_t req_extent_count, uint64_t memory_target);
-  Allocator* create_bitmap_allocator(uint64_t bdev_size);
+  class BitmapAllocator* create_bitmap_allocator(uint64_t bdev_size);
   int  add_existing_bluefs_allocation(Allocator* allocator, read_alloc_stats_t& stats);
   int  allocator_add_restored_entries(Allocator *allocator, const void *buff, unsigned extent_count, uint64_t *p_read_alloc_size,
 				      uint64_t  *p_extent_count, const void *v_header, BlueFS::FileReader *p_handle, uint64_t offset);
@@ -3602,8 +3603,9 @@ private:
   int  __restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
   int  restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
   int  read_allocation_from_drive_on_startup();
-  int  reconstruct_allocations(Allocator* allocator, read_alloc_stats_t &stats);
-  int  read_allocation_from_onodes(Allocator* allocator, read_alloc_stats_t& stats);
+  int  reconstruct_allocations(class BitmapAllocator* allocator, read_alloc_stats_t &stats);
+  int  read_allocation_from_onodes(class BitmapAllocator* allocator, read_alloc_stats_t& stats);
+  void read_allocation_from_single_onode(class BitmapAllocator* allocator, BlueStore::OnodeRef& onode_ref, read_alloc_stats_t&  stats);
   int  commit_to_null_manager();
   int  commit_to_real_manager();
   int  db_cleanup(int ret);
@@ -3612,7 +3614,6 @@ private:
   Allocator* clone_allocator_without_bluefs(Allocator *src_allocator);
   Allocator* initialize_allocator_from_freelist(FreelistManager *real_fm);
   void copy_allocator_content_to_fm(Allocator *allocator, FreelistManager *real_fm);
-  void read_allocation_from_single_onode(Allocator* allocator, BlueStore::OnodeRef& onode_ref, read_alloc_stats_t&  stats);
 
   void _fsck_check_object_omap(FSCKDepth depth,
     OnodeRef& o,

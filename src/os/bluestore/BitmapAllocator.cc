@@ -76,7 +76,7 @@ void BitmapAllocator::init_add_free(uint64_t offset, uint64_t length)
   _mark_free(offs, l);
   ldout(cct, 10) << __func__ << " done" << dendl;
 }
-void BitmapAllocator::init_rm_free(uint64_t offset, uint64_t length)
+uint64_t BitmapAllocator::_init_rm_free(uint64_t offset, uint64_t length)
 {
   ldout(cct, 10) << __func__ << " 0x" << std::hex << offset << "~" << length
 		 << std::dec << dendl;
@@ -86,6 +86,8 @@ void BitmapAllocator::init_rm_free(uint64_t offset, uint64_t length)
   ceph_assert(offs + l <= (uint64_t)device_size);
   _mark_allocated(offs, l);
   ldout(cct, 10) << __func__ << " done" << dendl;
+
+  return l;
 }
 
 void BitmapAllocator::shutdown()
