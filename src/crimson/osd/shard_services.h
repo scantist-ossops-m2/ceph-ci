@@ -36,8 +36,8 @@ namespace crimson::os {
 }
 
 class OSDMap;
-class PeeringCtx;
-class BufferedRecoveryMessages;
+struct PeeringCtx;
+struct BufferedRecoveryMessages;
 
 namespace crimson::osd {
 
