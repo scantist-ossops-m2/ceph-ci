@@ -6355,7 +6355,7 @@ void BlueStore::_close_db_and_around()
   _close_fsid();
   _close_path();
   
-  dout(0) <<"close_db_and_around time: bluefs=" << start_time_fm   -start_time_bluefs << " bdev  =" << start_time_fsid -start_time_bdev << dendl;
+  dout(0) <<"Fast Shutdown: bluefs=" << start_time_fm   -start_time_bluefs << " bdev  =" << start_time_fsid -start_time_bdev << dendl;
 }
 
 int BlueStore::open_db_environment(KeyValueDB **pdb, bool to_repair)
@@ -6597,7 +6597,6 @@ void BlueStore::_close_db_leave_bluefs()
 
 void BlueStore::_close_db()
 {
-  dout(5) << __func__ << "::Fast Shutdown::read_only=" << db_was_opened_read_only << " fm=" << fm << " destage_alloc_file=" << need_to_destage_allocation_file << dendl;
   _close_db_leave_bluefs();
 
   if (fm && fm->is_null_manager() && need_to_destage_allocation_file) {
@@ -7614,8 +7613,6 @@ int BlueStore::umount()
   dout(5) << __func__ << "::NCB::entered" << dendl;
   ceph_assert(_kv_only || mounted);
   utime_t  start_time_func = ceph_clock_now();
-
-  dout(0) << __func__ << "::Fast Shutdown: calling _osr_drain_all" << dendl;
   _osr_drain_all();
   
   mounted = false;
@@ -7624,7 +7621,6 @@ int BlueStore::umount()
 
   utime_t  start_time_kv        = ceph_clock_now();
   if (!_kv_only) {
-    dout(0) << __func__ << "::Fast Shutdown: mempool_thread.shutdown" << dendl;
     mempool_thread.shutdown();
 #ifdef HAVE_LIBZBD
     if (bdev->is_smr()) {
@@ -7633,16 +7629,13 @@ int BlueStore::umount()
     }
 #endif
     dout(20) << __func__ << " stopping kv thread" << dendl;
-    dout(0) << __func__ << "::Fast Shutdown: _kv_stop" << dendl;
     _kv_stop();
     if (!m_fast_shutdown) {
-      dout(0) << __func__ << "::Fast Shutdown: shutdown_cache" << dendl;
       _shutdown_cache();
     }
     dout(20) << __func__ << " closing" << dendl;
   }
   utime_t  start_time_close = ceph_clock_now();
-  dout(0) << __func__ << "::Fast Shutdown: close_db_and_around" << dendl;
 
   // raise debug level
   // g_conf()->set_val("debug_bluestore", "20");
@@ -7652,7 +7645,7 @@ int BlueStore::umount()
   cct->_conf.set_val("debug_rocksdb", "20");
 
   _close_db_and_around();
-  dout(0) <<"umount time: close=" << ceph_clock_now() - start_time_close << " kvmem=" << start_time_close - start_time_kv  <<
+  dout(0) <<"Fast Shutdown: umount time: close=" << ceph_clock_now() - start_time_close << " kvmem=" << start_time_close - start_time_kv  <<
     " drain=" << start_time_kv - start_time_func << dendl;
 
   if (cct->_conf->bluestore_fsck_on_umount && !m_fast_shutdown) {
