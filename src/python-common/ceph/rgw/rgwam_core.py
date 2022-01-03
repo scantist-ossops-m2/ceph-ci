@@ -165,7 +165,7 @@ class RGWCmdBase:
                       (returncode, cmd_str, stdout, stderr))
             raise RGWAMCmdRunException(cmd_str, -returncode, stdout, stderr)
 
-        return (stdout, stderr)
+        return (returncode, stdout, stderr)
 
 
 class RGWAdminCmd(RGWCmdBase):
@@ -842,6 +842,6 @@ class RGWAM:
         if debug_rgw:
             params += ['--debug-rgw', debug_rgw]
 
-        (retcode, stdout, stderr) = RGWCmd(self.env).run(params)
+        (returncode, stdout, stderr) = RGWCmd(self.env).run(params)
 
-        return (retcode, stdout, stderr)
+        return (returncode, stdout, stderr)
