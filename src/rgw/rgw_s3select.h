@@ -81,9 +81,25 @@ private:
   int create_message(u_int32_t header_len);
 
 public:
-  //12 positions for header-crc
   aws_response_handler(struct req_state* ps, RGWOp* rgwop) : s(ps), m_rgwop(rgwop), total_bytes_returned{0}, processed_size{0}
   {}
+
+  aws_response_handler() : s(nullptr), m_rgwop(nullptr), total_bytes_returned{0}, processed_size{0}
+  {}
+
+  bool is_set()
+  {
+    if(s==nullptr || m_rgwop == nullptr){
+      return false;
+    } 
+    return true;
+  }
+
+  void set(struct req_state* ps, RGWOp* rgwop)
+  {
+    s = ps;
+    m_rgwop = rgwop;
+  }
 
   std::string& get_sql_result();
 
@@ -157,12 +173,12 @@ private:
   std::string output_escape_char;
   std::string output_quote_fields;
   std::string output_row_delimiter;
-  std::unique_ptr<aws_response_handler> m_aws_response_handler;
+  aws_response_handler m_aws_response_handler;
   bool enable_progress;
 
   //parquet request
   bool m_parquet_type;
-  std::unique_ptr<s3selectEngine::rgw_s3select_api> m_rgw_api;
+  s3selectEngine::rgw_s3select_api m_rgw_api;
   //a request for range may statisfy by several calls to send_response_date;
   size_t m_request_range;
   std::string requested_buffer;
@@ -186,6 +202,10 @@ public:
   RGWOp* create_s3select_op();
 
 private:
+
+  int csv_processing(bufferlist& bl, off_t ofs, off_t len);
+
+  int parquet_processing(bufferlist& bl, off_t ofs, off_t len);
 
   int run_s3select(const char* query, const char* input, size_t input_length);
 

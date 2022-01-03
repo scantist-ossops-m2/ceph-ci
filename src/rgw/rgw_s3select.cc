@@ -256,9 +256,7 @@ void aws_response_handler::send_stats_response()
 
 RGWSelectObj_ObjStore_S3::RGWSelectObj_ObjStore_S3():
   m_buff_header(std::make_unique<char[]>(1000)),
-  m_aws_response_handler(nullptr),
   m_parquet_type(false),
-  m_rgw_api(std::make_unique<s3selectEngine::rgw_s3select_api>()),
   chunk_number(0)
 {
   set_get_data(true);
@@ -270,15 +268,15 @@ RGWSelectObj_ObjStore_S3::RGWSelectObj_ObjStore_S3():
     auto status = range_request(start, len, buff, *y);
     return status;
   };
-  m_rgw_api->set_get_size_api(fp_get_obj_size);
-  m_rgw_api->set_range_req_api(fp_range_req);
+  m_rgw_api.set_get_size_api(fp_get_obj_size);
+  m_rgw_api.set_range_req_api(fp_range_req);
   fp_result_header_format = [this](std::string& result) {
-    m_aws_response_handler->init_response();
-    m_aws_response_handler->init_success_response();
+    m_aws_response_handler.init_response();
+    m_aws_response_handler.init_success_response();
     return 0;
   };
   fp_s3select_result_format = [this](std::string& result) {
-    m_aws_response_handler->send_success_response();
+    m_aws_response_handler.send_success_response();
     return 0;
   };
 }
@@ -367,10 +365,10 @@ int RGWSelectObj_ObjStore_S3::run_s3select(const char* query, const char* input,
     csv.use_header_info=true;
   }
   m_s3_csv_object.set_csv_query(&s3select_syntax, csv);
-  m_aws_response_handler->init_response();
+  m_aws_response_handler.init_response();
   if (s3select_syntax.get_error_description().empty() == false) {
     //error-flow (syntax-error)
-    m_aws_response_handler->send_error_response(s3select_syntax_error,
+    m_aws_response_handler.send_error_response(s3select_syntax_error,
         s3select_syntax.get_error_description().c_str(),
         s3select_resource_id);
     ldpp_dout(this, 10) << "s3-select query: failed to prase query; {" << s3select_syntax.get_error_description() << "}" << dendl;
@@ -379,15 +377,15 @@ int RGWSelectObj_ObjStore_S3::run_s3select(const char* query, const char* input,
     if (input == nullptr) {
       input = "";
     }
-    m_aws_response_handler->init_success_response();
-    length_before_processing = (m_aws_response_handler->get_sql_result()).size();
+    m_aws_response_handler.init_success_response();
+    length_before_processing = (m_aws_response_handler.get_sql_result()).size();
     //query is correct(syntax), processing is starting.
-    status = m_s3_csv_object.run_s3select_on_stream(m_aws_response_handler->get_sql_result(), input, input_length, s->obj_size);
-    length_post_processing = (m_aws_response_handler->get_sql_result()).size();
-    m_aws_response_handler->update_total_bytes_returned(length_post_processing-length_before_processing);
+    status = m_s3_csv_object.run_s3select_on_stream(m_aws_response_handler.get_sql_result(), input, input_length, s->obj_size);
+    length_post_processing = (m_aws_response_handler.get_sql_result()).size();
+    m_aws_response_handler.update_total_bytes_returned(length_post_processing-length_before_processing);
     if (status < 0) {
       //error flow(processing-time)
-      m_aws_response_handler->send_error_response(s3select_processTime_error,
+      m_aws_response_handler.send_error_response(s3select_processTime_error,
           m_s3_csv_object.get_error_description().c_str(),
           s3select_resource_id);
       ldpp_dout(this, 10) << "s3-select query: failed to process query; {" << m_s3_csv_object.get_error_description() << "}" << dendl;
@@ -406,13 +404,13 @@ int RGWSelectObj_ObjStore_S3::run_s3select(const char* query, const char* input,
     chunk_number++;
   }
   if (length_post_processing-length_before_processing != 0) {
-    m_aws_response_handler->send_success_response();
+    m_aws_response_handler.send_success_response();
   } else {
-    m_aws_response_handler->send_continuation_response();
+    m_aws_response_handler.send_continuation_response();
   }
   if (enable_progress == true) {
-    m_aws_response_handler->init_progress_response();
-    m_aws_response_handler->send_progress_response();
+    m_aws_response_handler.init_progress_response();
+    m_aws_response_handler.send_progress_response();
   }
   return status;
 }
@@ -423,28 +421,27 @@ int RGWSelectObj_ObjStore_S3::run_s3select_on_parquet(const char* query)
   if (!m_s3_parquet_object.is_set()) {
     s3select_syntax.parse_query(m_sql_query.c_str());
     try {
-      //m_s3_parquet_object = std::unique_ptr<s3selectEngine::parquet_object>(new s3selectEngine::parquet_object(std::string("s3object"), &s3select_syntax, m_rgw_api.get()));
-      m_s3_parquet_object.set_parquet_object(std::string("s3object"), &s3select_syntax, m_rgw_api.get());
+      m_s3_parquet_object.set_parquet_object(std::string("s3object"), &s3select_syntax, &m_rgw_api);
     } catch(base_s3select_exception& e) {
       ldpp_dout(this, 10) << "S3select: failed upon parquet-reader construction: " << e.what() << dendl;
-      fp_result_header_format(m_aws_response_handler->get_sql_result());
-      m_aws_response_handler->get_sql_result().append(e.what());
-      fp_s3select_result_format(m_aws_response_handler->get_sql_result());
+      fp_result_header_format(m_aws_response_handler.get_sql_result());
+      m_aws_response_handler.get_sql_result().append(e.what());
+      fp_s3select_result_format(m_aws_response_handler.get_sql_result());
       return -1;
     }
   }
   if (s3select_syntax.get_error_description().empty() == false) {
-    fp_result_header_format(m_aws_response_handler->get_sql_result());
-    m_aws_response_handler->get_sql_result().append(s3select_syntax.get_error_description().data());
-    fp_s3select_result_format(m_aws_response_handler->get_sql_result());
+    fp_result_header_format(m_aws_response_handler.get_sql_result());
+    m_aws_response_handler.get_sql_result().append(s3select_syntax.get_error_description().data());
+    fp_s3select_result_format(m_aws_response_handler.get_sql_result());
     ldpp_dout(this, 10) << "s3-select query: failed to prase query; {" << s3select_syntax.get_error_description() << "}" << dendl;
     status = -1;
   } else {
-    fp_result_header_format(m_aws_response_handler->get_sql_result());
-    status = m_s3_parquet_object.run_s3select_on_object(m_aws_response_handler->get_sql_result(), fp_s3select_result_format, fp_result_header_format);
+    fp_result_header_format(m_aws_response_handler.get_sql_result());
+    status = m_s3_parquet_object.run_s3select_on_object(m_aws_response_handler.get_sql_result(), fp_s3select_result_format, fp_result_header_format);
     if (status < 0) {
-      m_aws_response_handler->get_sql_result().append(m_s3_parquet_object.get_error_description());
-      fp_s3select_result_format(m_aws_response_handler->get_sql_result());
+      m_aws_response_handler.get_sql_result().append(m_s3_parquet_object.get_error_description());
+      fp_s3select_result_format(m_aws_response_handler.get_sql_result());
       ldout(s->cct, 10) << "S3select: failure while execution" << m_s3_parquet_object.get_error_description() << dendl;
     }
   }
@@ -550,7 +547,7 @@ void RGWSelectObj_ObjStore_S3::execute(optional_yield y)
   static constexpr uint8_t parquet_magic1[4] = {'P', 'A', 'R', '1'};
   static constexpr uint8_t parquet_magicE[4] = {'P', 'A', 'R', 'E'};
   get_params(y);
-  m_rgw_api->m_y = &y;
+  m_rgw_api.m_y = &y;
   if (m_parquet_type) {
     //parquet processing
     range_request(0, 4, parquet_magic, y);
@@ -573,17 +570,8 @@ void RGWSelectObj_ObjStore_S3::execute(optional_yield y)
   }
 }
 
-int RGWSelectObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t ofs, off_t len)
+int RGWSelectObj_ObjStore_S3::parquet_processing(bufferlist& bl, off_t ofs, off_t len)
 {
-  int status=0;
-  if (m_aws_response_handler == nullptr) {
-    m_aws_response_handler = std::make_unique<aws_response_handler>(s, this);
-  }
-  if(len == 0 && s->obj_size != 0) {
-    return 0;
-  }
-  if (m_parquet_type) {
-    //parquet processing
     if (chunk_number == 0) {
       if (op_ret < 0) {
         set_req_state_err(s, op_ret);
@@ -621,8 +609,12 @@ int RGWSelectObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t ofs, off_
       }
     }
     return 0;
-  }
-  //CSV processing
+}
+
+int RGWSelectObj_ObjStore_S3::csv_processing(bufferlist& bl, off_t ofs, off_t len)
+{
+  int status = 0;
+  
   if (s->obj_size == 0) {
     status = run_s3select(m_sql_query.c_str(), nullptr, 0);
   } else {
@@ -636,7 +628,7 @@ int RGWSelectObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t ofs, off_
                             <<  " obj-size " << s->obj_size << dendl;
         continue;
       }
-      m_aws_response_handler->update_processed_size(it.length());
+      m_aws_response_handler.update_processed_size(it.length());
       status = run_s3select(m_sql_query.c_str(), &(it)[0], it.length());
       if(status<0) {
         break;
@@ -644,13 +636,27 @@ int RGWSelectObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t ofs, off_
       i++;
     }
   }
-  if (m_aws_response_handler->get_processed_size() == s->obj_size) {
+  if (m_aws_response_handler.get_processed_size() == s->obj_size) {
     if (status >=0) {
-      m_aws_response_handler->init_stats_response();
-      m_aws_response_handler->send_stats_response();
-      m_aws_response_handler->init_end_response();
+      m_aws_response_handler.init_stats_response();
+      m_aws_response_handler.send_stats_response();
+      m_aws_response_handler.init_end_response();
     }
   }
   return status;
+}
+
+int RGWSelectObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t ofs, off_t len)
+{
+  if (!m_aws_response_handler.is_set()) {
+    m_aws_response_handler.set(s, this);
+  }
+  if(len == 0 && s->obj_size != 0) {
+    return 0;
+  }
+  if (m_parquet_type) {
+    return parquet_processing(bl,ofs,len);
+  }
+  return csv_processing(bl,ofs,len);
 }
 
