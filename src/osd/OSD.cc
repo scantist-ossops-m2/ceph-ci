@@ -4259,24 +4259,27 @@ int OSD::shutdown()
 
   if (cct->_conf->osd_fast_shutdown) {
     derr << "*** Immediate shutdown (osd_fast_shutdown=true) ***" << dendl;
+    if (cct->_conf->osd_fast_shutdown_notify_mon)
+      service.prepare_to_stop();
   } else {
-    dout(0) << "shutdown" << dendl;
     if (!service.prepare_to_stop())
       return 0; // already shutting down
   }
-  dout(0) << "Fast Shutdown: start_time_osd_lock" << dendl;
+
   utime_t  start_time_osd_lock = ceph_clock_now();
   osd_lock.lock();
   if (is_stopping()) {
     osd_lock.unlock();
     return 0;
   }
+  if (!cct->_conf->osd_fast_shutdown) {
+    dout(0) << "shutdown" << dendl;
+  }
 
   utime_t  start_time_state = ceph_clock_now();
   // don't accept new task for this OSD
   set_state(STATE_STOPPING);
-  dout(0) << "Fast Shutdown: start_time_debug" << dendl;
-  utime_t  start_time_debug = ceph_clock_now();
+
   // Debugging
   if (!cct->_conf->osd_fast_shutdown && cct->_conf.get_val<bool>("osd_debug_shutdown")) {
     cct->_conf.set_val("debug_osd", "100");
@@ -4287,41 +4290,31 @@ int OSD::shutdown()
     cct->_conf.apply_changes(nullptr);
   }
 
-  dout(0) << "Fast Shutdown: start_time_fast" << dendl;
+  // stop MgrClient earlier as it's more like an internal consumer of OSD
+  mgrc.shutdown();
+
+  service.start_shutdown();
+
   utime_t  start_time_fast = ceph_clock_now();
   if (cct->_conf->osd_fast_shutdown) {
-    if (cct->_conf->osd_fast_shutdown_notify_mon) {
-      dout(0) << "shutdown2-> service.prepare_to_stop()"  << dendl;
-      service.prepare_to_stop();
-    }
-
-    // stop MgrClient earlier as it's more like an internal consumer of OSD
-    mgrc.shutdown();
-
-    service.start_shutdown();
-
     // first, stop new task from being taken from op_shardedwq
     op_shardedwq.stop_for_fast_shutdown();
 
+    utime_t  start_time_timer = ceph_clock_now();
+    // TBD: Is this too early???
     tick_timer.shutdown();
     {
       std::lock_guard l(tick_timer_lock);
       tick_timer_without_osd_lock.shutdown();
     }
 
+    // do we still need to drain ???
+    //op_shardedwq.drain();
+
+    //service.shutdown_reserver();
+    //monc->shutdown();
     osd_lock.unlock();
-    dout(0) << "Fast Shutdown: start_time_drain" << dendl;
-    utime_t  start_time_osd_drain = ceph_clock_now();
-    // then, wait on osd_op_tp to drain with a timeout
-    osd_op_tp.drain();//timeout);
-    osd_op_tp.stop();//timeout-passed);
 
-    //dout(10) << "stopping agent" << dendl;
-    service.agent_stop();
-
-    //dout(0) << "op sharded tp stopped" << dendl;
-    dout(0) << "Fast Shutdown: start_time_timer" << dendl;
-    utime_t  start_time_timer = ceph_clock_now();
 #if 1
     {
       std::lock_guard l{heartbeat_lock};
@@ -4329,27 +4322,37 @@ int OSD::shutdown()
       heartbeat_cond.notify_all();
       heartbeat_peers.clear();
     }
-    
+    heartbeat_thread.join();
+#endif
+
     hb_back_server_messenger->mark_down_all();
     hb_front_server_messenger->mark_down_all();
     hb_front_client_messenger->mark_down_all();
     hb_back_client_messenger->mark_down_all();
 
-#endif
-    dout(0) << "Fast Shutdown: start_time_flush" << dendl;
+    utime_t  start_time_osd_drain = ceph_clock_now();
+    // then, wait on osd_op_tp to drain with a timeout
+    osd_op_tp.drain();//timeout);
+    osd_op_tp.stop();//timeout-passed);
+    //dout(10) << "op sharded tp stopped" << dendl;
+
+    //dout(10) << "stopping agent" << dendl;
+    service.agent_stop();
+
     utime_t  start_time_flush = ceph_clock_now();
     cct->_log->flush();
 
-    dout(0) << "Fast Shutdown: start_time_umount" << dendl;
     utime_t  start_time_umount = ceph_clock_now();
     // write allocation map (or maybe do a full umount ???)
     store->prepare_for_fast_shutdown();
 
+    service.shutdown();
+
+    std::lock_guard lock(osd_lock);
+
     //
     // assert in allocator that nothing is being add
     //
-
-    
     store->umount();
 
     utime_t end_time = ceph_clock_now();
@@ -4357,24 +4360,17 @@ int OSD::shutdown()
     dout(0) <<"Fast Shutdown duration base      :" << start_time_fast       - start_time_func       << " seconds" << dendl;
     dout(0) <<"Fast Shutdown duration umount    :" << end_time              - start_time_umount     << " seconds" << dendl;
     dout(0) <<"Fast Shutdown duration flush     :" << start_time_umount     - start_time_flush      << " seconds" << dendl;
-    dout(0) <<"Fast Shutdown duration timer     :" << start_time_flush      - start_time_timer      << " seconds" << dendl;
-    dout(0) <<"Fast Shutdown duration osd_drain :" << start_time_timer      - start_time_osd_drain   << " seconds" << dendl;
-    dout(0) <<"Fast Shutdown duration fast_base :" << start_time_osd_drain  - start_time_fast        << " seconds" << dendl;
-    dout(0) <<"Fast Shutdown duration debug     :" << start_time_fast       - start_time_debug       << " seconds" << dendl;
-    dout(0) <<"Fast Shutdown duration state     :" << start_time_debug      - start_time_state       << " seconds" << dendl;
-    dout(0) <<"Fast Shutdown duration lock      :" << start_time_state      - start_time_osd_lock    << " seconds" << dendl;
-    dout(0) <<"Fast Shutdown duration prepare   :" << start_time_osd_lock   - start_time_func        << " seconds" << dendl;
+    dout(0) <<"Fast Shutdown duration timer     :" << start_time_osd_drain  - start_time_timer      << " seconds" << dendl;
+    dout(0) <<"Fast Shutdown duration osd_drain :" << start_time_timer      - start_time_flush      << " seconds" << dendl;
+    dout(0) <<"Fast Shutdown duration fast_base :" << start_time_osd_drain  - start_time_fast       << " seconds" << dendl;
+    dout(0) <<"Fast Shutdown duration state     :" << start_time_fast       - start_time_state      << " seconds" << dendl;
+    dout(0) <<"Fast Shutdown duration lock      :" << start_time_state      - start_time_osd_lock   << " seconds" << dendl;
+    dout(0) <<"Fast Shutdown duration prepare   :" << start_time_osd_lock   - start_time_func       << " seconds" << dendl;
     cct->_log->flush();
     
     // now it is safe to exit
     _exit(0);
   }
-
-  //dout(0) << "shutdown 3" << dendl;
-  // stop MgrClient earlier as it's more like an internal consumer of OSD
-  mgrc.shutdown();
-
-  service.start_shutdown();
 
   // stop sending work to pgs.  this just prevents any new work in _process
   // from racing with on_shutdown and potentially entering the pg after.
@@ -4422,9 +4418,9 @@ int OSD::shutdown()
 
   osd_op_tp.drain();
   osd_op_tp.stop();
-  //dout(10) << "op sharded tp stopped" << dendl;
+  dout(10) << "op sharded tp stopped" << dendl;
 
-  //dout(10) << "stopping agent" << dendl;
+  dout(10) << "stopping agent" << dendl;
   service.agent_stop();
 
   boot_finisher.wait_for_empty();
