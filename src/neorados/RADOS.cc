@@ -789,6 +789,10 @@ RADOS& RADOS::operator =(RADOS&&) = default;
 
 RADOS::~RADOS() = default;
 
+void RADOS::dup_from_librados(librados::Rados& rados) {
+  impl.reset(new detail::RadosClient(rados.client));
+}
+
 RADOS::executor_type RADOS::get_executor() const {
   return impl->ioctx.get_executor();
 }

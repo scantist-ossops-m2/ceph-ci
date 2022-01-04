@@ -494,6 +494,12 @@ RADOS RADOS::make_with_librados(librados::Rados& rados) {
   return RADOS{std::make_unique<detail::Client>(test_rados_client)};
 }
 
+void RADOS::dup_from_librados(librados::Rados& rados) {
+  auto test_rados_client = reinterpret_cast<librados::TestRadosClient*>(
+    rados.client);
+  impl.reset(new detail::Client(test_rados_client));
+}
+
 CephContext* neorados::RADOS::cct() {
   return impl->test_rados_client->cct();
 }
