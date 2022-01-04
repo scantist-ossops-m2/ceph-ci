@@ -4311,11 +4311,11 @@ int OSD::shutdown()
     // do we still need to drain ???
     //op_shardedwq.drain();
 
-    //service.shutdown_reserver();
-    //monc->shutdown();
+    service.shutdown_reserver();
+    monc->shutdown();
     osd_lock.unlock();
 
-#if 1
+#if 0
     {
       std::lock_guard l{heartbeat_lock};
       heartbeat_stop = true;
