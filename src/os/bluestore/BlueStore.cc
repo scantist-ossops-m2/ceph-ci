@@ -6338,6 +6338,7 @@ out_fm:
 
 void BlueStore::_close_db_and_around()
 {
+  utime_t  start_time_close_db = ceph_clock_now();
   if (db) {
     _close_db();
   }
@@ -6354,8 +6355,10 @@ void BlueStore::_close_db_and_around()
   utime_t  start_time_fsid = ceph_clock_now();
   _close_fsid();
   _close_path();
-  
-  dout(0) <<"Fast Shutdown: bluefs=" << start_time_fm   -start_time_bluefs << " bdev  =" << start_time_fsid -start_time_bdev << dendl;
+  utime_t  end_time = ceph_clock_now();
+  dout(0) <<"Fast Shutdown(close_db): total =" << end_time        -start_time_close_db << " close_db =" << start_time_bluefs -start_time_close_db << dendl;
+  dout(0) <<"Fast Shutdown(close_db): bluefs=" << start_time_fm   -start_time_bluefs   << " fm/alloc =" << start_time_bdev   -start_time_fm       << dendl;
+  dout(0) <<"Fast Shutdown(close_db): bdev  =" << start_time_fsid -start_time_bdev     << " fsid     =" << end_time          -start_time_fsid     << dendl;
 }
 
 int BlueStore::open_db_environment(KeyValueDB **pdb, bool to_repair)

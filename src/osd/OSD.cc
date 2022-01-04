@@ -4246,7 +4246,7 @@ PerfCounters* OSD::create_recoverystate_perf()
 int OSD::shutdown()
 {
   // vstart overwrites osd_fast_shutdown value in the conf file -> force the value here!
-  cct->_conf->osd_fast_shutdown = true;
+  //cct->_conf->osd_fast_shutdown = true;
   dout(0) << "Fast Shutdown: - cct->_conf->osd_fast_shutdown               = " << cct->_conf->osd_fast_shutdown << dendl;
   utime_t  start_time_func = ceph_clock_now();
 
