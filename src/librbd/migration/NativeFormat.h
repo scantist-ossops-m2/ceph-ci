@@ -59,9 +59,11 @@ public:
 
 private:
   ImageCtxT* m_image_ctx;
+  CephContext* m_cct;
   json_spirit::mObject m_json_object;
   bool m_import_only;
 
+  std::shared_ptr<librados::Rados> m_remote_rados;
   int64_t m_pool_id = -1;
   std::string m_pool_namespace;
   std::string m_image_name;
