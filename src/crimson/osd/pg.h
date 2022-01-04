@@ -66,6 +66,7 @@ namespace crimson::os {
 
 namespace crimson::osd {
   class ScrubEvent;
+  class RemoteScrubEvent;
 };
 
 namespace Scrub {
@@ -74,6 +75,7 @@ class ScrubberPasskey {
   friend class Scrub::ReplicaReservations;
   friend class ::PgScrubber;
   friend class ::crimson::osd::ScrubEvent;
+  friend class ::crimson::osd::RemoteScrubEvent;
   ScrubberPasskey() {}
   ScrubberPasskey(const ScrubberPasskey&) = default;
   ScrubberPasskey& operator=(const ScrubberPasskey&) = delete;
@@ -820,6 +822,7 @@ private:
   friend class ScrubInternalOp;
   friend PgScrubber;
   friend class ::crimson::osd::ScrubEvent;
+  friend class ::crimson::osd::RemoteScrubEvent;
 
 private:
   seastar::future<bool> find_unfound() {

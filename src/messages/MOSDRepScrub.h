@@ -19,7 +19,7 @@
 #include "MOSDFastDispatchOp.h"
 
 /*
- * instruct an OSD initiate a replica scrub on a specific PG
+ * instruct an OSD to initiate a replica scrub on a specific PG
  */
 
 class MOSDRepScrub final : public MOSDFastDispatchOp {
