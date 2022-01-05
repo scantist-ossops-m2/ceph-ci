@@ -613,12 +613,7 @@ int RGWSelectObj_ObjStore_S3::parquet_processing(bufferlist& bl, off_t ofs, off_
       return 0;
     } else {//buffer is complete
       ldout(s->cct, 10) << "S3select: buffer is complete " << requested_buffer.size() << " request range length:" << m_request_range << dendl;
-      try {
-        m_request_range = 0;
-      } catch(...) {
-        ldout(s->cct, 10) << "S3select: failed to set value requested_buffer.size=" << requested_buffer.size() <<  " m_request_range=" << m_request_range << dendl;
-        return -1;
-      }
+      m_request_range = 0;
     }
     return 0;
 }
