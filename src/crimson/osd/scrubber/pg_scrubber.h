@@ -19,6 +19,7 @@
 #ifdef WITH_SEASTAR
 
 
+#include "crimson/common/gated.h"
 #include "crimson/os/futurized_collection.h"
 #include "crimson/os/futurized_store.h"
 #include "crimson/osd/osd_operations/scrub_event.h"
@@ -43,7 +44,7 @@ class ScrubMachine;
 class ScrubBackend;
 struct BuildMap;
 
-#ifdef NOT_YET
+//#ifdef NOT_YET
 
 /**
  * Reserving/freeing scrub resources at the replicas.
@@ -61,6 +62,7 @@ struct BuildMap;
  */
 class ReplicaReservations {
   // using OrigSet = decltype(std::declval<PG>().get_actingset());
+  using ScrubEvent = ::crimson::osd::ScrubEvent;
 
   PG* m_pg;
   std::vector<pg_shard_t> m_acting_set;
@@ -79,6 +81,12 @@ class ReplicaReservations {
   /// notify the scrubber that we have failed to reserve replicas' resources
   void send_reject();
 
+  /// aux performing the actual 'queuing' of internal scrubber events
+  void send_internal_event(ScrubEvent::ScrubEventFwdImm evt);
+
+  // guaranteeing all 'send' requests are complete
+  crimson::common::Gated gate;
+
  public:
    std::string m_log_msg_prefix;
 
@@ -96,18 +104,19 @@ class ReplicaReservations {
                       ScrubQueue::ScrubJobRef scrubjob);
 
   ~ReplicaReservations();
+  seastar::future<> stop();
 
 
   // replace the PeeringEvent with a remote version of the ScrubEvent
-  void handle_reserve_grant(crimson::osd::RemotePeeringEvent op,
+  void handle_reserve_grant(Ref<crimson::osd::RemoteScrubEvent> op,
                             pg_shard_t from);
 
-  void handle_reserve_reject(crimson::osd::RemotePeeringEvent op,
+  void handle_reserve_reject(Ref<crimson::osd::RemoteScrubEvent> op,
                              pg_shard_t from);
 
   std::ostream& gen_prefix(std::ostream& out) const;
 };
-#endif
+//#endif
 
 /**
  *  wraps the local OSD scrub resource reservation in an RAII wrapper
@@ -123,7 +132,6 @@ class LocalReservation {
 };
 
 
-#ifdef NOT_YET
 /**
  *  wraps the OSD resource we are using when reserved as a replica by a
  * scrubbing master.
@@ -151,8 +159,6 @@ class ReservedByRemotePrimary {
 
   std::ostream& gen_prefix(std::ostream& out) const;
 };
-
-#endif
 
 
 /**
@@ -323,18 +329,21 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
   bool range_intersects_scrub(const hobject_t& start,
                               const hobject_t& end) final;
 
+  void dispatch_reserve_message(Ref<crimson::osd::RemoteScrubEvent> op) final;
+
+private:
   /**
    *  we are a replica being asked by the Primary to reserve OSD resources for
    *  scrubbing
    */
-  //   void handle_scrub_reserve_request(OpRequestRef op) final;
-  //
-  //   void handle_scrub_reserve_grant(OpRequestRef op, pg_shard_t from) final;
-  //   void handle_scrub_reserve_reject(OpRequestRef op, pg_shard_t from) final;
-  ////void handle_scrub_reserve_request(const MOSDScrubReserve& req,
-	////				    pg_shard_t from) final;
+  void handle_scrub_reserve_request(Ref<crimson::osd::RemoteScrubEvent> op, MOSDScrubReserve* m);
+  void handle_scrub_reserve_grant(Ref<crimson::osd::RemoteScrubEvent> op, pg_shard_t from);
+  void handle_scrub_reserve_reject(Ref<crimson::osd::RemoteScrubEvent> op, pg_shard_t from);
+  void handle_scrub_reserve_release(Ref<crimson::osd::RemoteScrubEvent> op, MOSDScrubReserve* m);
 
-  //   void handle_scrub_reserve_release(OpRequestRef op) final;
+
+public:
+
   void discard_replica_reservations() final;
   void clear_scrub_reservations() final;  // PG::clear... fwds to here
   void unreserve_replicas() final;
@@ -646,14 +655,12 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
 
   // 'optional', as 'ReplicaReservations' & 'LocalReservation' are
   // 'RAII-designed' to guarantee un-reserving when deleted.
-  // RRR std::optional<Scrub::ReplicaReservations> m_reservations;
+  std::optional<Scrub::ReplicaReservations> m_reservations;
   std::optional<Scrub::LocalReservation> m_local_osd_resource;
 
-#ifdef NOT_YET
   /// the 'remote' resource we, as a replica, grant our Primary when it is
   /// scrubbing
   std::optional<Scrub::ReservedByRemotePrimary> m_remote_osd_resource;
-#endif
 
   void cleanup_on_finish();  // scrub_clear_state() as called for a Primary when
                              // Active->NotActive
@@ -761,6 +768,9 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
 
   /// Maps from objects with errors to missing peers
   HobjToShardSetMapping m_missing;
+
+  // guaranteeing all internally-sent lambdas are executed and can be disposed off
+  crimson::common::Gated gate;
 
  protected:
   /**

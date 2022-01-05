@@ -51,11 +51,11 @@ public:
       pgid(pgid), map_epoch(map_epoch),
       type(type), from(from) {}
 
-  std::string_view get_type_name() const {
+  std::string_view get_type_name() const override {
     return "MOSDScrubReserve";
   }
 
-  void print(std::ostream& out) const {
+  void print(std::ostream& out) const override {
     out << "MOSDScrubReserve(" << pgid << " ";
     switch (type) {
     case REQUEST:
@@ -75,7 +75,7 @@ public:
     return;
   }
 
-  void decode_payload() {
+  void decode_payload() override {
     using ceph::decode;
     auto p = payload.cbegin();
     decode(pgid, p);
@@ -84,7 +84,7 @@ public:
     decode(from, p);
   }
 
-  void encode_payload(uint64_t features) {
+  void encode_payload(uint64_t features) override {
     using ceph::encode;
     encode(pgid, payload);
     encode(map_epoch, payload);

@@ -4,7 +4,7 @@
 #include <seastar/core/future.hh>
 
 #include <boost/smart_ptr/local_shared_ptr.hpp>
-
+#include "crimson/osd/scrubber_common_cr.h"
 #include "common/Formatter.h"
 #include "crimson/osd/osd.h"
 #include "crimson/osd/osd_operations/scrub_event.h"
@@ -245,6 +245,7 @@ void ScrubEvent::unlock()
 RemoteScrubEvent::RemoteScrubEvent(
              reserve_req_tag_t, // tag
              OSD& osd,
+             crimson::net::ConnectionRef conn, 
              ShardServices& shard_services,
              const spg_t& pgid,
              int req_type, // MOSDScrubReserve::type
@@ -258,6 +259,7 @@ RemoteScrubEvent::RemoteScrubEvent(
     , act_token{tkn}
     , */
         osd{osd}
+        , conn{conn}
     , shard_services{shard_services}
     , pgid{pgid}
     , map_epoch{map_epoch}
@@ -265,14 +267,34 @@ RemoteScrubEvent::RemoteScrubEvent(
     , dbg_desc{"<RemoteScrubEvent>"}
 {
   // locate the PG first?
-  payload_msg = std::make_unique<MOSDScrubReserve>(
+  payload_msg = crimson::make_message<MOSDScrubReserve>(
     pgid,
     map_epoch,
     req_type,
     from);
-
-
 }
+
+// ask Amnon how to get this right
+RemoteScrubEvent::RemoteScrubEvent(OSD& osd,
+                 crimson::net::ConnectionRef conn,
+                 ShardServices& shard_services,
+                 ceph::ref_t<MOSDScrubReserve> m)
+    : osd{osd}
+    , conn{conn}
+    , shard_services{shard_services}
+    , pgid{m->pgid}
+    , map_epoch{m->map_epoch}
+    , delay{0ms}
+    //, payload_msg{m.ref().release()}
+    , dbg_desc{"<RemoteScrubEvent-m>"}
+{
+    payload_msg = crimson::make_message<MOSDScrubReserve>(
+    m->pgid,
+    m->map_epoch,
+    m->type,
+    m->from);
+}
+
 
 // RemoteScrubEvent::RemoteScrubEvent(Ref<PG> pg,
 //                        ShardServices& shard_services,
@@ -340,11 +362,12 @@ RemoteScrubEvent::PGPipeline& RemoteScrubEvent::pp(PG& pg)
 
 RemoteScrubEvent::~RemoteScrubEvent() = default;
 
-seastar::future<> RemoteScrubEvent::do_op(int msg_type)
+seastar::future<> RemoteScrubEvent::do_op(int msg_type, Ref<PG> pg, crimson::net::ConnectionRef conn, Ref<RemoteScrubEvent> op)
 {
   switch (msg_type) {
     case MSG_OSD_SCRUB_RESERVE:
-      logger().error("{}: MSG_OSD_SCRUB_RESERVE", *this);
+      logger().info("{}: MSG_OSD_SCRUB_RESERVE", *this);
+      pg->m_scrubber->dispatch_reserve_message(op);
       return seastar::make_ready_future<>();
 
     default:
@@ -376,7 +399,7 @@ seastar::future<> RemoteScrubEvent::start()
     return interruptor::with_interruption([this, opref, pgref] {
       return seastar::do_with(std::move(pgref), std::move(opref),
 	[this](auto& pgref, auto& opref) mutable -> ScrubEvent::interruptible_future<>{
-          return do_op(payload_msg->get_type());
+          return do_op(payload_msg->get_type(), pgref, conn, opref);
 	//return pgref->get_recovery_backend()->handle_recovery_op(m);
       });
     }, [](std::exception_ptr) { return seastar::now(); }, pgref);
@@ -463,4 +486,63 @@ seastar::future<> RecoverySubRequest::start() {
     }, [](std::exception_ptr) { return seastar::now(); }, pgref);
   });
 }
+
+
+RecoveryBackend::interruptible_future<>
+RecoveryBackend::handle_recovery_op(
+  Ref<MOSDFastDispatchOp> m)
+{
+  switch (m->get_header().type) {
+  case MSG_OSD_PG_BACKFILL:
+    return handle_backfill(*boost::static_pointer_cast<MOSDPGBackfill>(m));
+  case MSG_OSD_PG_BACKFILL_REMOVE:
+    return handle_backfill_remove(*boost::static_pointer_cast<MOSDPGBackfillRemove>(m));
+  case MSG_OSD_PG_SCAN:
+    return handle_scan(*boost::static_pointer_cast<MOSDPGScan>(m));
+  default:
+    return seastar::make_exception_future<>(
+	std::invalid_argument(fmt::format("invalid request type: {}",
+					  m->get_header().type)));
+  }
+}
+
+
+
+RecoveryBackend::interruptible_future<>
+RecoveryBackend::handle_scan_get_digest(
+  MOSDPGScan& m)
+{
+  logger().debug("{}", __func__);
+  if (false / * FIXME: check for backfill too full * /) {
+    std::ignore = shard_services.start_operation<crimson::osd::LocalPeeringEvent>(
+      // TODO: abstract start_background_recovery
+      static_cast<crimson::osd::PG*>(&pg),
+      shard_services,
+      pg.get_pg_whoami(),
+      pg.get_pgid(),
+      pg.get_osdmap_epoch(),
+      pg.get_osdmap_epoch(),
+      PeeringState::BackfillTooFull());
+    return seastar::now();
+  }
+  return scan_for_backfill(
+    std::move(m.begin),
+    crimson::common::local_conf().get_val<std::int64_t>("osd_backfill_scan_min"),
+    crimson::common::local_conf().get_val<std::int64_t>("osd_backfill_scan_max")
+  ).then_interruptible([this,
+          query_epoch=m.query_epoch,
+          conn=m.get_connection()] (auto backfill_interval) {
+    auto reply = crimson::make_message<MOSDPGScan>(
+      MOSDPGScan::OP_SCAN_DIGEST,
+      pg.get_pg_whoami(),
+      pg.get_osdmap_epoch(),
+      query_epoch,
+      spg_t(pg.get_info().pgid.pgid, pg.get_primary().shard),
+      backfill_interval.begin,
+      backfill_interval.end);
+    encode(backfill_interval.objects, reply->get_data());
+    return conn->send(std::move(reply));
+  });
+}
+
 */

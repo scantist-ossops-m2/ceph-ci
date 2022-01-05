@@ -168,7 +168,6 @@ class RemoteScrubEvent : public OperationT<RemoteScrubEvent> {
 
  private:
 
-  std::unique_ptr<MOSDFastDispatchOp> payload_msg;
 
 //   Ref<PG> pg;
 //   ScrubEventFwd event_fwd_func;
@@ -177,8 +176,9 @@ class RemoteScrubEvent : public OperationT<RemoteScrubEvent> {
   PipelineHandle handle;
   static PGPipeline& pp(PG& pg);
 
- private:
   OSD& osd;
+  crimson::net::ConnectionRef conn;
+
   ShardServices& shard_services;
   spg_t pgid;
   epoch_t map_epoch;
@@ -189,11 +189,16 @@ class RemoteScrubEvent : public OperationT<RemoteScrubEvent> {
   virtual void on_pg_absent();
   virtual ScrubEvent::interruptible_future<> complete_rctx(Ref<PG>);
   //seastar::future<Ref<PG>> get_pg() /*override*/;
-  seastar::future<> do_op(int msg_type);
+  seastar::future<> do_op(int msg_type, Ref<PG> pg, crimson::net::ConnectionRef conn, Ref<RemoteScrubEvent> msg);
+
+  //std::unique_ptr<MOSDFastDispatchOp> payload_msg;
+  MURef<MOSDScrubReserve> payload_msg;
 
  public:
   std::string dbg_desc;
   ~RemoteScrubEvent() override;
+
+  MOSDFastDispatchOp* get_payload_msg() { return payload_msg.get(); }
 
  public:
 
@@ -202,10 +207,13 @@ class RemoteScrubEvent : public OperationT<RemoteScrubEvent> {
 
   struct reserve_req_tag_t { };
 
+  /// \todo - make this a template for args...
+
   // create a MOSDScrubReserve-carrying message (MSG_OSD_SCRUB_RESERVE)
   RemoteScrubEvent(
              reserve_req_tag_t, // tag
              OSD& osd,
+             crimson::net::ConnectionRef conn,
              ShardServices& shard_services,
              const spg_t& pgid,
              int req_type, // MOSDScrubReserve::type
@@ -215,19 +223,24 @@ class RemoteScrubEvent : public OperationT<RemoteScrubEvent> {
              //Scrub::act_token_t tkn,
              std::chrono::milliseconds delay);
 
-//   ScrubEvent(Ref<PG> pg,
-//              ShardServices& shard_services,
-//              const spg_t& pgid,
-//              ScrubEventFwd func,
-//              epoch_t epoch_queued,
-//              Scrub::act_token_t tkn);
-// 
-//   // until I learn how to enter the pipeline w/o creating a new event
-//   ScrubEvent(nullevent_tag_t,
-//              Ref<PG> pg,
-//              ShardServices& shard_services,
-//              const spg_t& pgid,
-//              ScrubEventFwd func);
+  RemoteScrubEvent(OSD& osd,
+                   crimson::net::ConnectionRef conn,
+                   ShardServices& shard_services,
+                   ceph::ref_t<MOSDScrubReserve> m);
+
+  //   ScrubEvent(Ref<PG> pg,
+  //              ShardServices& shard_services,
+  //              const spg_t& pgid,
+  //              ScrubEventFwd func,
+  //              epoch_t epoch_queued,
+  //              Scrub::act_token_t tkn);
+  //
+  //   // until I learn how to enter the pipeline w/o creating a new event
+  //   ScrubEvent(nullevent_tag_t,
+  //              Ref<PG> pg,
+  //              ShardServices& shard_services,
+  //              const spg_t& pgid,
+  //              ScrubEventFwd func);
 
   void print(std::ostream&) const final;
   void dump_detail(ceph::Formatter* f) const final;

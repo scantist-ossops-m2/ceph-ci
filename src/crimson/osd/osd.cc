@@ -49,6 +49,7 @@
 #include "crimson/osd/osd_operations/client_request.h"
 #include "crimson/osd/osd_operations/compound_peering_request.h"
 #include "crimson/osd/osd_operations/peering_event.h"
+#include "crimson/osd/osd_operations/scrub_event.h"
 #include "crimson/osd/osd_operations/pg_advance_map.h"
 #include "crimson/osd/osd_operations/recovery_subrequest.h"
 #include "crimson/osd/osd_operations/replicated_request.h"
@@ -776,6 +777,13 @@ OSD::ms_dispatch(crimson::net::ConnectionRef conn, MessageRef m)
       return handle_rep_op_reply(conn, boost::static_pointer_cast<MOSDRepOpReply>(m));
     case MSG_OSD_SCRUB2:
       return handle_scrub(conn, boost::static_pointer_cast<MOSDScrub2>(m));
+    case MSG_OSD_SCRUB_RESERVE:
+      shard_services.start_operation<RemoteScrubEvent>(
+	*this,
+	conn,
+        shard_services,
+	boost::static_pointer_cast<MOSDScrubReserve>(m));
+      return seastar::now();
     default:
       dispatched = false;
       return seastar::now();

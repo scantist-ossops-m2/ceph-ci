@@ -6,7 +6,7 @@
 #ifdef WITH_SEASTAR
 #include "crimson/osd/osd_operations/osdop_params.h"
 #include "crimson/osd/osd_operations/peering_event.h"
-//#include "crimson/osd/osd_operations/scrub_event.h"
+//#include "crimson/osd/osd_operations/scrub_event.h" loop!
 #include <fmt/format.h>
 #include "include/types.h"
 #include "os/ObjectStore.h"
@@ -20,6 +20,10 @@
 
 namespace ceph {
 class Formatter;
+}
+
+namespace crimson::osd {
+class RemoteScrubEvent;
 }
 
 namespace Scrub {
@@ -362,6 +366,8 @@ struct ScrubPgIF {
 
   virtual void on_maybe_registration_change(const requested_scrub_t& request_flags) = 0;
 
+  virtual void dispatch_reserve_message(Ref<crimson::osd::RemoteScrubEvent> op) = 0;
+
 
   // virtual void handle_scrub_reserve_op(Ref<MOSDScrubReserve> req, pg_shard_t from) = 0;
   //virtual void handle_scrub_reserve_op(const MOSDScrubReserve& req, pg_shard_t from) = 0;
@@ -371,11 +377,10 @@ struct ScrubPgIF {
   //virtual void map_from_replica(const MOSDRepScrubMap& msg, pg_shard_t from) = 0;
 
   // on the replica:
-  // virtual void handle_scrub_reserve_request(crimson::osd::RemoteScrubEvent op) = 0;
+  //virtual void handle_scrub_reserve_request(Ref<crimson::osd::RemoteScrubEvent> op) = 0;
   ////virtual void handle_scrub_reserve_request(const MOSDScrubReserve& req,
   ////					    pg_shard_t from) = 0;
-  // virtual void handle_scrub_reserve_request(Ref<MOSDScrubReserve> req, pg_shard_t from)
-  // = 0;
+  //virtual void handle_scrub_reserve_request(Ref<MOSDScrubReserve> req, pg_shard_t from) {};
 
   // and on the primary:
   //virtual void handle_scrub_reserve_grant(const MOSDScrubReserve& req,
