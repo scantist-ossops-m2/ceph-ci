@@ -1,12 +1,14 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
 // vim: ts=8 sw=2 smarttab ft=cpp
 
-#include "rgw_s3select.h"
+#include "rgw_s3select_private.h"
 
+namespace rgw::s3select {
 RGWOp* create_s3select_op()
 {
   return new RGWSelectObj_ObjStore_S3();
 }
+};
 
 using namespace s3selectEngine;
 
@@ -268,8 +270,10 @@ RGWSelectObj_ObjStore_S3::RGWSelectObj_ObjStore_S3():
     auto status = range_request(start, len, buff, *y);
     return status;
   };
+#ifdef _ARROW_EXIST
   m_rgw_api.set_get_size_api(fp_get_obj_size);
   m_rgw_api.set_range_req_api(fp_range_req);
+#endif
   fp_result_header_format = [this](std::string& result) {
     m_aws_response_handler.init_response();
     m_aws_response_handler.init_success_response();
@@ -290,7 +294,11 @@ int RGWSelectObj_ObjStore_S3::get_params(optional_yield y)
     return 0;
   }
   if(s->object->get_name().find(".parquet") != std::string::npos) { //aws cli is missing the parquet
+#ifdef _ARROW_EXIST
     m_parquet_type = true;
+#else
+    ldpp_dout(this, 10) << "arrow library is not installed" << dendl;
+#endif
   }
   //retrieve s3-select query from payload
   bufferlist data;
@@ -418,6 +426,7 @@ int RGWSelectObj_ObjStore_S3::run_s3select(const char* query, const char* input,
 int RGWSelectObj_ObjStore_S3::run_s3select_on_parquet(const char* query)
 {
   int status = 0;
+#ifdef _ARROW_EXIST
   if (!m_s3_parquet_object.is_set()) {
     s3select_syntax.parse_query(m_sql_query.c_str());
     try {
@@ -445,6 +454,7 @@ int RGWSelectObj_ObjStore_S3::run_s3select_on_parquet(const char* query)
       ldout(s->cct, 10) << "S3select: failure while execution" << m_s3_parquet_object.get_error_description() << dendl;
     }
   }
+#endif
   return status;
 }
 
@@ -547,7 +557,9 @@ void RGWSelectObj_ObjStore_S3::execute(optional_yield y)
   static constexpr uint8_t parquet_magic1[4] = {'P', 'A', 'R', '1'};
   static constexpr uint8_t parquet_magicE[4] = {'P', 'A', 'R', 'E'};
   get_params(y);
+#ifdef _ARROW_EXIST
   m_rgw_api.m_y = &y;
+#endif
   if (m_parquet_type) {
     //parquet processing
     range_request(0, 4, parquet_magic, y);

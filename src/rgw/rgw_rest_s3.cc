@@ -70,6 +70,8 @@
 #include "rgw_sts.h"
 #include "rgw_sal_rados.h"
 
+#include "rgw_s3select.h"
+
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_rgw
 
@@ -4575,7 +4577,6 @@ RGWOp *RGWHandler_REST_Obj_S3::op_delete()
     return new RGWAbortMultipart_ObjStore_S3;
 }
 
-RGWOp* create_s3select_op();
 RGWOp *RGWHandler_REST_Obj_S3::op_post()
 {
   if (s->info.args.exists("uploadId"))
@@ -4585,7 +4586,7 @@ RGWOp *RGWHandler_REST_Obj_S3::op_post()
     return new RGWInitMultipart_ObjStore_S3;
   
   if (is_select_op())
-    return create_s3select_op();
+    return rgw::s3select::create_s3select_op();
 
   return new RGWPostObj_ObjStore_S3;
 }
