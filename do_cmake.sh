@@ -52,7 +52,7 @@ else
   exit 1
 fi
 
-ARGS+=" -DWITH_PYTHON3=${PYBUILD}"
+ARGS+=" -DWITH_PYTHON3=${PYBUILD} -DWITH_CEPH_DEBUG_MUTEX=1"
 
 if type ccache > /dev/null 2>&1 ; then
     echo "enabling ccache"
