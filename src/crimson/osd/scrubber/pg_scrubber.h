@@ -690,7 +690,7 @@ public:
                             hobject_t end,
                             bool deep);
 
-  // RRR not yet std::unique_ptr<Scrub::ScrubMachine> m_fsm;
+  std::unique_ptr<Scrub::ScrubMachine> m_fsm;
   const spg_t m_pg_id;  ///< a local copy of m_pg->pg_id
   //OSDService* const m_osds;
   crimson::osd::ShardServices& m_osds;

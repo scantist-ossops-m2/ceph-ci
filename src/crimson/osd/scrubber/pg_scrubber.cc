@@ -26,7 +26,7 @@
 
 
 #include "crimson/osd/osd_operations/scrub_event.h"
-//#include "crimson/osd/scrubber/scrub_machine_cr.h"
+#include "crimson/osd/scrubber/scrub_machine_cr.h"
 
 
 // using std::list;
@@ -111,10 +111,14 @@ PgScrubber::PgScrubber(PG* pg)
 
   logger().debug("{}: creating PgScrubber for {} / {}", __func__, pg->get_pgid(),
 		 m_pg_whoami);
-  // RRR not yet m_fsm = std::make_unique<Scrub::ScrubMachine>(m_pg, this);
-  // RRR not yet m_fsm->initiate();
+  m_fsm = std::make_unique<Scrub::ScrubMachine>(m_pg, this);
+  m_fsm->initiate();
   m_scrub_job = ceph::make_ref<ScrubQueue::ScrubJob>(m_pg->get_cct(), m_pg_id, m_pg_whoami.shard);
 }
+
+// src/crimson/osd/CMakeFiles/crimson-osd.dir/scrubber/pg_scrubber.cc.o: In function `PgScrubber::PgScrubber(crimson::osd::PG*)':
+// /opt/rh/gcc-toolset-9/root/usr/include/c++/9/bits/unique_ptr.h:849: undefined reference to `Scrub::ScrubMachine::ScrubMachine(crimson::osd::PG*, ScrubMachineListener*)'
+
 
 ostream& PgScrubber::show(ostream& out) const
 {
