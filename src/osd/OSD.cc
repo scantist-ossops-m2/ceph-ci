@@ -4291,9 +4291,9 @@ int OSD::shutdown()
   }
 
   // stop MgrClient earlier as it's more like an internal consumer of OSD
-  mgrc.shutdown();
+  //mgrc.shutdown();
 
-  service.start_shutdown();
+  //service.start_shutdown();
 
   utime_t  start_time_fast = ceph_clock_now();
   if (cct->_conf->osd_fast_shutdown) {
@@ -4311,8 +4311,8 @@ int OSD::shutdown()
     // do we still need to drain ???
     //op_shardedwq.drain();
 
-    service.shutdown_reserver();
-    monc->shutdown();
+    //service.shutdown_reserver();
+    //monc->shutdown();
     osd_lock.unlock();
 
 #if 0
@@ -4323,13 +4323,13 @@ int OSD::shutdown()
       heartbeat_peers.clear();
     }
     heartbeat_thread.join();
-#endif
 
     hb_back_server_messenger->mark_down_all();
     hb_front_server_messenger->mark_down_all();
     hb_front_client_messenger->mark_down_all();
     hb_back_client_messenger->mark_down_all();
-
+#endif
+    
     utime_t  start_time_osd_drain = ceph_clock_now();
     // then, wait on osd_op_tp to drain with a timeout
     osd_op_tp.drain();//timeout);
@@ -4340,13 +4340,13 @@ int OSD::shutdown()
     service.agent_stop();
 
     utime_t  start_time_flush = ceph_clock_now();
-    cct->_log->flush();
+    //cct->_log->flush();
 
     utime_t  start_time_umount = ceph_clock_now();
     // write allocation map (or maybe do a full umount ???)
     store->prepare_for_fast_shutdown();
 
-    service.shutdown();
+    //service.shutdown();
 
     std::lock_guard lock(osd_lock);
 
@@ -4371,6 +4371,11 @@ int OSD::shutdown()
     // now it is safe to exit
     _exit(0);
   }
+
+  // stop MgrClient earlier as it's more like an internal consumer of OSD
+  mgrc.shutdown();
+
+  service.start_shutdown();
 
   // stop sending work to pgs.  this just prevents any new work in _process
   // from racing with on_shutdown and potentially entering the pg after.
@@ -4528,11 +4533,12 @@ int OSD::shutdown()
   hb_front_server_messenger->shutdown();
   hb_back_server_messenger->shutdown();
 
-  tracing::osd::tracer.shutdown();
-
   utime_t duration = ceph_clock_now() - start_time_func;
   dout(0) <<"Slow Shutdown duration:" << duration << " seconds" << dendl;
   cct->_log->flush();
+
+  tracing::osd::tracer.shutdown();
+
   return r;
 }
 
