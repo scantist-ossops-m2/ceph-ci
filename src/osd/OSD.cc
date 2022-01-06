@@ -4291,7 +4291,7 @@ int OSD::shutdown()
   }
 
   // stop MgrClient earlier as it's more like an internal consumer of OSD
-  //mgrc.shutdown();
+  // mgrc.shutdown();
 
   //service.start_shutdown();
 
