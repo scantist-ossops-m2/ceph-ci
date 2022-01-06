@@ -13,5 +13,4 @@ roles:
   - cluster2.osd.0
   - cluster2.osd.1
   - cluster2.osd.2
-  - cluster2.client.migrator
 

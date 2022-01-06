@@ -2,5 +2,8 @@ tasks:
   - exec:
       cluster2.client.0:
         - rbd --cluster cluster2 snap remove client.0.0@snap || true
+  - exec:
+      cluster1.client.0:
+        - rm -rf /etc/ceph/ceph.conf /etc/ceph/ceph.keyring
         - rbd --cluster cluster2 migration abort client.0.0 || true
         - rbd --cluster cluster2 rm client.0.0 || true

@@ -1,7 +1,9 @@
 io_workload:
   sequential:
-    - ceph:
-        cluster: cluster1
+    - exec:
+        cluster1.client.0:
+          - cp /etc/ceph/cluster1.conf /etc/ceph/ceph.conf
+          - cp /etc/ceph/cluster1.keyring /etc/ceph/ceph.keyring
     - qemu:
         cluster1.client.0:
           clone: true
