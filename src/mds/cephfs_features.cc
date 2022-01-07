@@ -23,6 +23,7 @@ static const std::array feature_names
   "deleg_ino",
   "metric_collect",
   "alternate_name",
+  "getvxattr",
 };
 static_assert(feature_names.size() == CEPHFS_FEATURE_MAX + 1);
 
