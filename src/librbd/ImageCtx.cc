@@ -81,6 +81,9 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
 
 } // anonymous namespace
 
+#include <stdio.h>
+#include <execinfo.h>
+
   const string ImageCtx::METADATA_CONF_PREFIX = "conf_";
 
   ImageCtx::ImageCtx(const string &image_name, const string &image_id,
@@ -125,6 +128,20 @@ librados::IoCtx duplicate_io_ctx(librados::IoCtx& io_ctx) {
     ldout(cct, 10) << this << " " << __func__ << ": "
                    << "image_name=" << image_name << ", "
                    << "image_id=" << image_id << dendl;
+
+  {
+      char **strings;
+      size_t i, size;
+      enum Constexpr { MAX_SIZE = 1024 };
+      void *array[MAX_SIZE];
+      size = backtrace(array, MAX_SIZE);
+      strings = backtrace_symbols(array, size);
+      for (i = 0; i < size; i++) {
+        ldout(cct, 20) << strings[i] << dendl;
+      }
+      free(strings);
+  }
+
 
     if (snap)
       snap_name = snap;

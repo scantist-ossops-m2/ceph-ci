@@ -1,11 +1,12 @@
 io_workload:
   sequential:
     - exec:
-        cluster1.client.0:
-          - cp /etc/ceph/cluster1.conf /etc/ceph/ceph.conf
-          - cp /etc/ceph/cluster1.keyring /etc/ceph/ceph.keyring
+        client.0:
+          - readelf -Ws /usr/lib/librbd.so.1.17.0
+          - sed -i 's/rgw cache enabled = true/debug rbd = 20\nlog to stderr = true/g' /etc/ceph/ceph.conf
+          - sed -i 's/rgw cache enabled = true/debug rbd = 20\nlog to stderr = true/g' /etc/ceph/cluster2.conf
     - qemu:
-        cluster1.client.0:
+        client.0:
           clone: true
           type: block
           disks:

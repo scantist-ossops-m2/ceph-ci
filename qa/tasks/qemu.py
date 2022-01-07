@@ -472,7 +472,7 @@ def run_qemu(ctx, config):
             'ceph-coverage',
             '{tdir}/archive/coverage'.format(tdir=testdir),
             'daemon-helper',
-            'term',
+            'term', 'valgrind',
             qemu_cmd, '-enable-kvm', '-nographic', '-cpu', 'host',
             '-smp', str(client_config.get('cpus', DEFAULT_CPUS)),
             '-m', str(client_config.get('memory', DEFAULT_MEM)),
