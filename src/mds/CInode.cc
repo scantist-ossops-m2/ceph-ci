@@ -4590,6 +4590,7 @@ void CInode::validate_disk_state(CInode::validated_data *results,
     CInode::validated_data *results;
     bufferlist bl;
     CInode *shadow_in;
+    int backtrace_fetch_count = 0; // we fetch at most twice
 
     enum {
       START = 0,
@@ -4632,15 +4633,17 @@ void CInode::validate_disk_state(CInode::validated_data *results,
 
       ObjectOperation fetch;
       fetch.getxattr("parent", bt, bt_r);
+      int last_backtrace_fetch_count = backtrace_fetch_count;
+      backtrace_fetch_count++;
       in->mdcache->mds->objecter->read(oid, object_locator_t(pool), fetch, CEPH_NOSNAP,
 				       NULL, 0, fin);
-      if (in->mdcache->mds->logger) {
+      if (in->mdcache->mds->logger && last_backtrace_fetch_count < 1) {
         in->mdcache->mds->logger->inc(l_mds_openino_backtrace_fetch);
         in->mdcache->mds->logger->inc(l_mds_scrub_backtrace_fetch);
       }
 
       using ceph::encode;
-      if (!is_internal) {
+      if (!is_internal && last_backtrace_fetch_count < 1) {
         ObjectOperation scrub_tag;
         bufferlist tag_bl;
         encode(tag, tag_bl);
@@ -4654,6 +4657,20 @@ void CInode::validate_disk_state(CInode::validated_data *results,
       }
     }
 
+    void dispatch_fetch_backtrace()
+    {
+      C_OnFinisher *conf = new C_OnFinisher(get_io_callback(BACKTRACE),
+					    in->mdcache->mds->finisher);
+
+      std::string_view tag = in->scrub_infop->header->get_tag();
+      bool is_internal = in->scrub_infop->header->is_internal_tag();
+      bl.clear();
+      // Rather than using the usual CInode::fetch_backtrace,
+      // use a special variant that optionally writes a tag in the same
+      // operation.
+      fetch_backtrace_and_tag(in, tag, is_internal, conf, &results->backtrace.ondisk_read_retval, &bl);
+    }
+
     bool _start(int rval) {
       ceph_assert(in->can_auth_pin());
       in->auth_pin(this);
@@ -4664,7 +4681,8 @@ void CInode::validate_disk_state(CInode::validated_data *results,
 	dout(20) << "validating a dirty CInode; results will be inconclusive"
 	  << dendl;
       }
-
+      dispatch_fetch_backtrace();
+#if 0
       C_OnFinisher *conf = new C_OnFinisher(get_io_callback(BACKTRACE),
 					    in->mdcache->mds->finisher);
 
@@ -4674,6 +4692,7 @@ void CInode::validate_disk_state(CInode::validated_data *results,
       // use a special variant that optionally writes a tag in the same
       // operation.
       fetch_backtrace_and_tag(in, tag, is_internal, conf, &results->backtrace.ondisk_read_retval, &bl);
+#endif
       return false;
     }
 
@@ -4747,7 +4766,26 @@ void CInode::validate_disk_state(CInode::validated_data *results,
           dout(20) << "divergent backtraces are acceptable when dn "
                       "is being purged or has been renamed or moved to a "
                       "different directory " << *in << dendl;
-        }
+	} else {
+	  /* We land here if:
+	   * 1. we read empty backtrace from disk and read in-memory backtrace
+	   *    after it's been written to disk, resulting to dirtyparent == 0
+	   * 2. we read old backtrace from disk when file has been moved and
+	   *    read the in-memory backtrace after its been written to disk,
+	   *    resulting in dirtyparent == 0
+	   * So we take a second chance and just re-read the on-disk backtrace
+	   * for comparison to confirm our hypotheses as mentioned above.
+	   * However, a workload which just moves files or dirs all over the
+	   * place may still fail to pass this second attempt :-/
+	   */
+	  if (backtrace_fetch_count < 2) {
+	    dout(20) << "fetching backtrace again "
+		     << "(count:" << backtrace_fetch_count << ")"
+		     << dendl;
+	    dispatch_fetch_backtrace();
+	    return false;
+	  }
+	}
       } else {
         results->backtrace.passed = true;
       }

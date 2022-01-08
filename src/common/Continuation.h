@@ -123,7 +123,7 @@ private:
 
   bool _continue_function(int r, int n) {
     std::set<int>::iterator in_flight_iter = stages_in_flight.find(n);
-    ceph_assert(in_flight_iter != stages_in_flight.end());
+    // ceph_assert(in_flight_iter != stages_in_flight.end());
     ceph_assert(callbacks.count(n));
     stagePtr p = callbacks[n];
 
