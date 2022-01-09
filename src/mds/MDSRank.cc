@@ -2238,6 +2238,8 @@ void MDSRankDispatcher::handle_mds_map(
 
   MDSMap::DaemonState oldstate = state;
   mds_gid_t mds_gid = mds_gid_t(monc->get_global_id());
+  // I should not miss map update
+  ceph_assert(state == oldmap.get_state_gid(mds_gid));
   state = mdsmap->get_state_gid(mds_gid);
   if (state != oldstate) {
     last_state = oldstate;
