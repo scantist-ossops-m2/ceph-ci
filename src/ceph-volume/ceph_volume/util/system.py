@@ -5,6 +5,7 @@ import pwd
 import platform
 import tempfile
 import uuid
+import subprocess
 from ceph_volume import process, terminal
 from . import as_string
 
@@ -32,12 +33,20 @@ else:
     BLOCKDIR = '/sys/block'
     ROOTGROUP = 'root'
 
+host_rootfs = '/rootfs'
+run_host_cmd = [
+        'nsenter',
+        '--mount={}/proc/1/ns/mnt'.format(host_rootfs),
+        '--ipc={}/proc/1/ns/ipc'.format(host_rootfs),
+        '--net={}/proc/1/ns/net'.format(host_rootfs),
+        '--uts={}/proc/1/ns/uts'.format(host_rootfs)
+]
 
 def generate_uuid():
     return str(uuid.uuid4())
 
 
-def which(executable):
+def which(executable, run_on_host=False):
     """find the location of an executable"""
     def _get_path(executable, locations):
         for location in locations:
@@ -45,13 +54,6 @@ def which(executable):
             if os.path.exists(executable_path) and os.path.isfile(executable_path):
                 return executable_path
         return None
-
-    path = os.getenv('PATH', '')
-    path_locations = path.split(':')
-    exec_in_path = _get_path(executable, path_locations)
-    if exec_in_path:
-        return exec_in_path
-    mlogger.warning('Executable {} not in PATH: {}'.format(executable, path))
 
     static_locations = (
         '/usr/local/bin',
@@ -61,10 +63,35 @@ def which(executable):
         '/usr/sbin',
         '/sbin',
     )
-    exec_in_static_locations = _get_path(executable, static_locations)
-    if exec_in_static_locations:
-        mlogger.warning('Found executable under {}, please ensure $PATH is set correctly!'.format(exec_in_static_locations))
-        return exec_in_static_locations
+
+    if not run_on_host:
+        path = os.getenv('PATH', '')
+        path_locations = path.split(':')
+        exec_in_path = _get_path(executable, path_locations)
+        if exec_in_path:
+            return exec_in_path
+        mlogger.warning('Executable {} not in PATH: {}'.format(executable, path))
+
+        exec_in_static_locations = _get_path(executable, static_locations)
+        if exec_in_static_locations:
+            mlogger.warning('Found executable under {}, please ensure $PATH is set correctly!'.format(exec_in_static_locations))
+            return exec_in_static_locations
+    else:
+        for location in static_locations:
+            path = '{}/{}'.format(location, executable)
+            command = []
+            command.extend(run_host_cmd + ['/usr/bin/stat', path])
+
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                close_fds=True
+            )
+            returncode = process.wait()
+            if returncode == 0:
+                return path
     # fallback to just returning the argument as-is, to prevent a hard fail,
     # and hoping that the system might have the executable somewhere custom
     return executable
