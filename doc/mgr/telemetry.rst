@@ -94,7 +94,7 @@ List all channels with::
   crash     ON         ON         Share metadata about Ceph daemon crashes (version, stack straces, etc)
   device    ON         ON         Share device health metrics (e.g., SMART data, minus potentially identifying info like serial numbers)
   ident     OFF        OFF        Share a user-provided description and/or contact email for the cluster
-  perf      ON         OFF        Share perf counter metrics summed across the whole cluster
+  perf      ON         OFF        Share various performance metrics of a cluster
 
 
 Enabling Telemetry
@@ -108,6 +108,9 @@ Please note: Telemetry data is licensed under the Community Data License
 Agreement - Sharing - Version 1.0 (https://cdla.io/sharing-1-0/). Hence,
 telemetry module can be enabled only after you add '--license sharing-1-0' to
 the 'ceph telemetry on' command.
+Once telemetry is on, please consider enabling channels which are off by
+default, such as the 'perf' channel. 'ceph telemetry on' output will list the
+exact command to enable these channels.
 
 Telemetry can be disabled at any time with::
 
@@ -124,6 +127,9 @@ If telemetry is off, you can preview a sample report with::
 
   ceph telemetry preview
 
+Generating a sample report might take a few moments in big clusters (clusters
+with hundreds of OSDs or more).
+
 To protect your privacy, device reports are generated separately, and data such
 as hostname and device serial number is anonymized. The device telemetry is
 sent to a different endpoint and does not associate the device data with a
@@ -131,7 +137,7 @@ particular cluster. To see a preview of the device report use the command::
 
   ceph telemetry show-device
 
-If telemetry is off you can preview a sample device report with::
+If telemetry is off, you can preview a sample device report with::
 
   ceph telemetry preview-device
 
@@ -144,7 +150,7 @@ In case you prefer to have a single output of both reports, and telemetry is on,
 
   ceph telemetry show-all
 
-Otherwise use::
+If you would like to view a single output of both reports, and telemetry is off, use::
 
   ceph telemetry preview-all
 
@@ -166,7 +172,7 @@ If telemetry is off you can preview a sample report by channel with::
 Collections
 -----------
 
-Collections represent what we collect by channel.
+Collections represent different aspects of data that we collect within a channel.
 
 List all collections with::
 
@@ -178,7 +184,7 @@ List all collections with::
   crash_base            FALSE       OFF       ON         Information about daemon crashes (daemon type and version, backtrace, etc.)
   device_base           FALSE       OFF       ON         Information about device health metrics
   ident_base            FALSE       OFF       OFF        User-provided identifying information about the cluster
-  perf_perf             FALSE       OFF       OFF        Information about performance counters of the cluster
+  perf_perf             FALSE       OFF       OFF        Information about performance of the cluster
 
 Where:
 
@@ -187,6 +193,7 @@ Where:
 **ENROLLED**: Signifies the collections that were available in the module when
 the user last opted-in to telemetry. Please note: Even if a collection is
 'enrolled', its metrics will be reported only if its channel is enabled.
+The STATUS column indicates whether the collection is being reported.
 
 **STATUS**: Indicates whether the collection metrics are reported; this is
 determined by the status (enabled / disabled) of the channel the collection
