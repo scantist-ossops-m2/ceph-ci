@@ -1275,7 +1275,7 @@ options:
   desc: Time in seconds to sleep before next reclaiming
   fmt_desc: Time in seconds to sleep before the next reclaiming transaction. This
     throttles the PG deletion process.
-  default: 0
+  default: 0.1
   flags:
   - runtime
 - name: osd_delete_via_reclaim
