@@ -55,7 +55,7 @@
         osd debug op order = true
         osd debug verify stray on activate = true
 
-        bluestore_qfsck_on_mount = true ,,,<<<<<
+        #bluestore_qfsck_on_mount = true 
 	
 	osd open classes on start = true
         osd debug pg log writeout = true
