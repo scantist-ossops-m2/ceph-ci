@@ -121,6 +121,9 @@ namespace librbd {
     librados::IoCtx data_ctx;
     librados::IoCtx md_ctx;
 
+    // optional rados cluster owned by this image
+    std::unique_ptr<librados::Rados> rados;
+
     ConfigWatcher<ImageCtx> *config_watcher = nullptr;
     ImageWatcher<ImageCtx> *image_watcher;
     Journal<ImageCtx> *journal;
