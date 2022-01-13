@@ -12,6 +12,7 @@
 #include "librbd/io/ImageDispatchSpec.h"
 #include "json_spirit/json_spirit.h"
 #include "boost/lexical_cast.hpp"
+#include <optional>
 #include <sstream>
 
 #define dout_subsys ceph_subsys_rbd
@@ -25,6 +26,8 @@ namespace migration {
 namespace {
 
 const std::string TYPE_KEY{"type"};
+const std::string CLUSTER_NAME_KEY{"cluster_name"};
+const std::string CLIENT_NAME_KEY{"client_name"};
 const std::string POOL_ID_KEY{"pool_id"};
 const std::string POOL_NAME_KEY{"pool_name"};
 const std::string POOL_NAMESPACE_KEY{"pool_namespace"};
@@ -61,11 +64,60 @@ template <typename I>
 void NativeFormat<I>::open(Context* on_finish) {
   ldout(m_cct, 10) << dendl;
 
+  std::optional<std::string> cluster_name;
+  auto& cluster_name_val = m_json_object[CLUSTER_NAME_KEY];
+  if (cluster_name_val.type() == json_spirit::str_type) {
+    cluster_name = cluster_name_val.get_str();
+  } else if (cluster_name_val.type() != json_spirit::null_type) {
+    lderr(m_cct) << "invalid cluster name" << dendl;
+    on_finish->complete(-EINVAL);
+    return;
+  }
+
+  std::optional<std::string> client_name;
+  auto& client_name_val = m_json_object[CLIENT_NAME_KEY];
+  if (client_name_val.type() == json_spirit::str_type) {
+    if (!cluster_name.has_value()) {
+      lderr(m_cct) << "client_name cannot be used without cluster_name"
+                   << dendl;
+      on_finish->complete(-EINVAL);
+      return;
+    }
+    client_name = client_name_val.get_str();
+  } else if (client_name_val.type() != json_spirit::null_type) {
+    lderr(m_cct) << "invalid client name" << dendl;
+    on_finish->complete(-EINVAL);
+    return;
+  } else {
+    if (cluster_name.has_value()) {
+      lderr(m_cct) << "client_name must be specified alongside cluster_name"
+                   << dendl;
+      on_finish->complete(-EINVAL);
+      return;
+    }
+  }
+
+  librados::Rados rados(m_image_ctx->md_ctx);
+  librados::Rados* rados_ptr = &rados;
+  if (cluster_name.has_value()) {
+    std::vector<const char*> args;
+    int r = util::init_rados(m_cct, cluster_name.value(), client_name.value(),
+                             "", "", "external cluster", args,
+                             &rados_ptr, true, "");
+    if (r < 0) {
+      lderr(m_cct) << "cannot initialize external cluster client:"
+                   << cpp_strerror(r) << dendl;
+      on_finish->complete(r);
+      return;
+    }
+
+    m_image_ctx->rados.reset(rados_ptr);
+  }
+
   auto& pool_name_val = m_json_object[POOL_NAME_KEY];
   if (pool_name_val.type() == json_spirit::str_type) {
-    librados::Rados rados(m_image_ctx->md_ctx);
     librados::IoCtx io_ctx;
-    int r = rados.ioctx_create(pool_name_val.get_str().c_str(), io_ctx);
+    int r = rados_ptr->ioctx_create(pool_name_val.get_str().c_str(), io_ctx);
     if (r < 0 ) {
       lderr(m_cct) << "invalid pool name" << dendl;
       on_finish->complete(r);
@@ -106,6 +158,8 @@ void NativeFormat<I>::open(Context* on_finish) {
     lderr(m_cct) << "invalid pool namespace" << dendl;
     on_finish->complete(-EINVAL);
     return;
+  } else {
+    m_pool_namespace = m_image_ctx->md_ctx.get_namespace();
   }
 
   auto& image_name_val = m_json_object[IMAGE_NAME_KEY];
@@ -162,10 +216,10 @@ void NativeFormat<I>::open(Context* on_finish) {
     return;
   }
 
-  // TODO add support for external clusters
   librados::IoCtx io_ctx;
-  int r = util::create_ioctx(m_image_ctx->md_ctx, "source image",
-                             m_pool_id, m_pool_namespace, &io_ctx);
+  int r = util::create_ioctx(*rados_ptr, m_cct, "source image",
+                             m_pool_id, m_pool_namespace,
+                             m_image_ctx->md_ctx.get_pool_full_try(), &io_ctx);
   if (r < 0) {
     on_finish->complete(r);
     return;
@@ -174,6 +228,8 @@ void NativeFormat<I>::open(Context* on_finish) {
   m_image_ctx->md_ctx.dup(io_ctx);
   m_image_ctx->data_ctx.dup(io_ctx);
   m_image_ctx->name = m_image_name;
+  m_image_ctx->rados_api.dup_from_librados(*rados_ptr);
+  m_image_ctx->rebuild_data_io_context();
 
   uint64_t flags = 0;
   if (m_image_id.empty() && !m_import_only) {
