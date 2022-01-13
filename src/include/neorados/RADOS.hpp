@@ -545,6 +545,8 @@ public:
 
   ~RADOS();
 
+  void dup_from_librados(librados::Rados& rados);
+
   CephContext* cct();
 
   using executor_type = boost::asio::io_context::executor_type;
