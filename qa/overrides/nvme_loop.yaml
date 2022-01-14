@@ -4,7 +4,7 @@
 # (at least, that is the symptom: nvme nvme1: Connect command failed, error wo/DNR bit: 880)
 overrides:
   kernel:
-    hwe: true
+    hwe: false
 
 tasks:
 - nvme_loop:
