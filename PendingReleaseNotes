@@ -105,6 +105,13 @@
 
   https://docs.ceph.com/en/latest/rados/operations/placement-groups/
 
+* MGR: The progress module disabled the pg recovery event by default
+  since the event is expensive and has interrupted other service when
+  there is OSDs being marked in/out from the the cluster. However,
+  the user still gets to enable this event anytime. For more details, see:
+
+  https://docs.ceph.com/en/latest/mgr/progress/
+
 >=16.0.0
 --------
 * mgr/nfs: ``nfs`` module is moved out of volumes plugin. Prior using the

@@ -45,3 +45,12 @@ Clear all ongoing and completed events:
 .. prompt:: bash #
 
   ceph progress clear
+
+PG Recovery Event
+-----------------
+
+A PG recovery event can be shown in `ceph progress` This is completely optional, and disabled by default:
+
+.. prompt:: bash #
+
+  ceph config set mgr mgr/progress/allow_pg_recovery_event true
