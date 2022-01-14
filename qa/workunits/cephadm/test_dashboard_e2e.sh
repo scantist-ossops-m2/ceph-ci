@@ -8,8 +8,14 @@ DASHBOARD_FRONTEND_DIR=${SCRIPT_DIR}/../../../src/pybind/mgr/dashboard/frontend
 install_common () {
     if grep -q  debian /etc/*-release; then
         $SUDO apt-get update
-        $SUDO apt-get install -y jq npm
+        $SUDO apt-get install curl
+        # Valid for Ubuntu 16.04 to the latest (21.10)
+        # Downloaded from https://deb.nodesource.com/setup_12.x
+        $SUDO -E bash $SCRIPT_DIR/setup_12.x.sh
+        # nodejs will automatically install npm
+        $SUDO apt-get install -y jq nodejs
     elif grep -q rhel /etc/*-release; then
+        $SUDO yum module -y enable nodejs:12
         $SUDO yum install -y jq npm
     else
         echo "Unsupported distribution."
