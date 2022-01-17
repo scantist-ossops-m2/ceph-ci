@@ -41,6 +41,7 @@ struct MockTestEncryptionFormat : EncryptionFormat<MockTestImageCtx> {
                      std::unique_ptr<EncryptionFormat<MockTestImageCtx>>());
   MOCK_METHOD2(format, void(MockTestImageCtx*, Context*));
   MOCK_METHOD2(load, void(MockTestImageCtx*, Context*));
+  MOCK_METHOD2(flatten, void(MockTestImageCtx*, Context*));
   MOCK_METHOD0(get_crypto, MockCryptoInterface*());
 
   std::string id;
@@ -69,7 +70,9 @@ struct ShutDownCryptoRequest<MockTestImageCtx> {
   Context *on_finish = nullptr;
   static ShutDownCryptoRequest *s_instance;
   static ShutDownCryptoRequest *create(
-          MockTestImageCtx* image_ctx, Context *on_finish) {
+          MockTestImageCtx *image_ctx,
+          std::unique_ptr<EncryptionFormat<MockTestImageCtx>>* format,
+          Context *on_finish) {
     ceph_assert(s_instance != nullptr);
     s_instance->on_finish = on_finish;
     return s_instance;

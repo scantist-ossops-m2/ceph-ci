@@ -47,6 +47,7 @@ struct MockTestEncryptionFormat : EncryptionFormat<MockTestImageCtx> {
 
   MOCK_METHOD2(format, void(MockTestImageCtx*, Context*));
   MOCK_METHOD2(load, void(MockTestImageCtx*, Context*));
+  MOCK_METHOD2(flatten, void(MockTestImageCtx*, Context*));
   MOCK_METHOD0(get_crypto, MockCryptoInterface*());
 
   std::string id;

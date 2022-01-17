@@ -25,6 +25,13 @@ struct MockTestImageCtx : public MockImageCtx {
 
 namespace crypto {
 
+template<>
+EncryptionFormat<MockTestImageCtx>* release_encryption_format(
+        MockTestImageCtx* image_ctx) {
+  image_ctx->encryption_format.release();
+  return nullptr;
+}
+
 using ::testing::_;
 using ::testing::Invoke;
 using ::testing::Return;
@@ -48,7 +55,7 @@ struct TestMockShutDownCryptoRequest : public TestMockFixture {
     mock_image_ctx = new MockTestImageCtx(*ictx);
     mock_image_ctx->encryption_format.reset(new MockEncryptionFormat());
     mock_shutdown_crypto_request = MockShutDownCryptoRequest::create(
-          mock_image_ctx, on_finish);
+          mock_image_ctx, nullptr, on_finish);
   }
 
   void TearDown() override {
