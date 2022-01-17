@@ -2805,7 +2805,7 @@ int RGWHandler_REST_SWIFT::postauth_init(optional_yield y)
   struct req_init_state* t = &s->init_state;
 
   /* XXX Stub this until Swift Auth sets account into URL. */
-  if(g_conf()->rgw_swift_account_in_url)
+  if(g_conf()->rgw_swift_account_in_url && !s->account_name.empty())
     s->bucket_tenant = s->account_name;
   else
     s->bucket_tenant = s->user->get_tenant();
