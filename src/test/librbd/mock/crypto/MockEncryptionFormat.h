@@ -23,6 +23,7 @@ struct MockEncryptionFormat {
                      std::unique_ptr<EncryptionFormat<MockImageCtx>>());
   MOCK_METHOD2(format, void(MockImageCtx*, Context*));
   MOCK_METHOD2(load, void(MockImageCtx*, Context*));
+  MOCK_METHOD2(flatten, void(MockImageCtx*, Context*));
   MOCK_METHOD0(get_crypto, MockCryptoInterface*());
 
   std::string id;
