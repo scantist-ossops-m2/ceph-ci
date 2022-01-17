@@ -158,7 +158,7 @@ class IscsiService(CephService):
 
         if 'dashboard' in self.mgr.get('mgr_map')['modules']:
             # remove config for dashboard iscsi gateways
-            ret, out, err = self.mgr.check_mon_command({
+            ret, out, err = self.mgr.mon_command({
                 'prefix': 'dashboard iscsi-gateway-rm',
                 'name': daemon.hostname,
             })
@@ -166,7 +166,7 @@ class IscsiService(CephService):
 
         # needed to know if we have ssl stuff for iscsi in ceph config
         iscsi_config_dict = {}
-        ret, iscsi_config, err = self.mgr.check_mon_command({
+        ret, iscsi_config, err = self.mgr.mon_command({
             'prefix': 'config-key dump',
             'key': 'iscsi',
         })
@@ -176,7 +176,7 @@ class IscsiService(CephService):
         # remove iscsi cert and key from ceph config
         for iscsi_key, value in iscsi_config_dict.items():
             if f'iscsi/client.{daemon.name()}/' in iscsi_key:
-                ret, out, err = self.mgr.check_mon_command({
+                ret, out, err = self.mgr.mon_command({
                     'prefix': 'config-key rm',
                     'key': iscsi_key,
                 })
