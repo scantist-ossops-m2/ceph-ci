@@ -46,6 +46,11 @@ void FormatRequest<I>::send() {
   if (!is_encryption_loaded) {
     format();
     return;
+  } else if (m_image_ctx->parent != nullptr) {
+    lderr(m_image_ctx->cct) << "cannot thin format while encryption is loaded"
+                            << dendl;
+    finish(-EINVAL);
+    return;
   }
 
   auto ctx = create_context_callback<
@@ -117,7 +122,7 @@ template <typename I>
 void FormatRequest<I>::finish(int r) {
   ldout(m_image_ctx->cct, 20) << "r=" << r << dendl;
 
-  if (r == 0) {
+  if (r == 0 && m_image_ctx->parent == nullptr) {
     util::set_crypto(m_image_ctx, std::move(m_format));
   }
   m_on_finish->complete(r);

@@ -27,11 +27,15 @@ namespace {
 struct MockTestImageCtx : public MockImageCtx {
   MockTestImageCtx(ImageCtx &image_ctx) : MockImageCtx(image_ctx) {
   }
+
+  MockTestImageCtx *parent = nullptr;
 };
 
 } // anonymous namespace
 
 namespace crypto {
+
+namespace {
 
 struct MockTestEncryptionFormat : EncryptionFormat<MockTestImageCtx> {
   MockTestEncryptionFormat(std::string id) : id(id) {
@@ -46,6 +50,8 @@ struct MockTestEncryptionFormat : EncryptionFormat<MockTestImageCtx> {
 
   std::string id;
 };
+
+} // anonymous namespace
 
 namespace util {
 
@@ -93,6 +99,7 @@ struct TestMockCryptoFormatRequest : public TestMockFixture {
   typedef ShutDownCryptoRequest<MockTestImageCtx> MockShutDownCryptoRequest;
 
   MockTestImageCtx* mock_image_ctx;
+  MockTestImageCtx* mock_parent_image_ctx;
   C_SaferCond finished_cond;
   Context *on_finish = &finished_cond;
   MockShutDownCryptoRequest mock_shutdown_crypto_request;
@@ -108,6 +115,7 @@ struct TestMockCryptoFormatRequest : public TestMockFixture {
     librbd::ImageCtx *ictx;
     ASSERT_EQ(0, open_image(m_image_name, &ictx));
     mock_image_ctx = new MockTestImageCtx(*ictx);
+    mock_parent_image_ctx = new MockTestImageCtx(*ictx);
     old_encryption_format = new MockEncryptionFormat("old");
     new_encryption_format = new MockTestEncryptionFormat("new");
     mock_image_ctx->encryption_format.reset(old_encryption_format);
@@ -118,6 +126,7 @@ struct TestMockCryptoFormatRequest : public TestMockFixture {
   }
 
   void TearDown() override {
+    delete mock_parent_image_ctx;
     delete mock_image_ctx;
     TestMockFixture::TearDown();
   }
@@ -218,6 +227,26 @@ TEST_F(TestMockCryptoFormatRequest, CryptoAlreadyLoaded) {
   format_context->complete(0);
   ASSERT_EQ(0, finished_cond.wait());
   ASSERT_EQ("new", mock_image_ctx->encryption_format.get()->id);
+}
+
+TEST_F(TestMockCryptoFormatRequest, ThinFormat) {
+  mock_image_ctx->encryption_format = nullptr;
+  mock_image_ctx->parent = mock_parent_image_ctx;
+  expect_test_journal_feature(false);
+  expect_encryption_format();
+  mock_format_request->send();
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  expect_image_flush(0);
+  format_context->complete(0);
+  ASSERT_EQ(0, finished_cond.wait());
+  ASSERT_EQ(nullptr, mock_image_ctx->encryption_format.get());
+}
+
+TEST_F(TestMockCryptoFormatRequest, ThinFormatEncryptionLoaded) {
+  mock_image_ctx->parent = mock_parent_image_ctx;
+  expect_test_journal_feature(false);
+  mock_format_request->send();
+  ASSERT_EQ(-EINVAL, finished_cond.wait());
 }
 
 } // namespace crypto

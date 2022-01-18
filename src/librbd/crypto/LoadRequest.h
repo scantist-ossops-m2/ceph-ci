@@ -24,8 +24,17 @@ public:
             Context* on_finish) {
       return new LoadRequest(image_ctx, std::move(format), on_finish);
     }
+    static LoadRequest* create(
+            I* image_ctx,
+            std::vector<std::unique_ptr<EncryptionFormat<I>>>&& formats,
+            Context* on_finish) {
+      return new LoadRequest(image_ctx, std::move(formats), on_finish);
+    }
 
     LoadRequest(I* image_ctx, std::unique_ptr<EncryptionFormat<I>> format,
+                Context* on_finish);
+    LoadRequest(I* image_ctx,
+                std::vector<std::unique_ptr<EncryptionFormat<I>>>&& formats,
                 Context* on_finish);
     void send();
     void load();
@@ -37,6 +46,7 @@ private:
     Context* m_on_finish;
 
     size_t m_format_idx;
+    bool m_is_current_format_cloned;
     std::vector<std::unique_ptr<EncryptionFormat<I>>> m_formats;
     I* m_current_image_ctx;
 };
