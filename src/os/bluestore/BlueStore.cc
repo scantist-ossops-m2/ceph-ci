@@ -18430,7 +18430,6 @@ Allocator* BlueStore::create_bitmap_allocator(uint64_t bdev_size) {
     derr << "Failed Allocator Creation" << dendl;
     return nullptr;
   }
-
 }
 
 //-----------------------------------------------------------------------------------
@@ -18616,22 +18615,15 @@ int BlueStore::__restore_allocator(Allocator* allocator, uint64_t *num, uint64_t
 int BlueStore::restore_allocator(Allocator* dest_allocator, uint64_t *num, uint64_t *bytes)
 {
   utime_t    start = ceph_clock_now();
-  Allocator *temp_allocator = create_bitmap_allocator(bdev->get_size());
-  if (temp_allocator == nullptr) {
-    derr << "Failed create_bitmap_allocator()" << dendl;
-    return -1;
-  }
-
-  int ret = __restore_allocator(temp_allocator, num, bytes);
+  auto temp_allocator = unique_ptr<Allocator>(create_bitmap_allocator(bdev->get_size()));
+  int ret = __restore_allocator(temp_allocator.get(), num, bytes);
   if (ret != 0) {
-    delete temp_allocator;
     return ret;
   }
 
   uint64_t num_entries = 0;
   dout(5) << " calling copy_allocator(bitmap_allocator -> shared_alloc.a)" << dendl;  
-  copy_allocator(temp_allocator, dest_allocator, &num_entries);
-  delete temp_allocator;
+  copy_allocator(temp_allocator.get(), dest_allocator, &num_entries);
   utime_t duration = ceph_clock_now() - start;
   dout(5) << "restored in " << duration << " seconds, num_entries=" << num_entries << dendl;
   return ret;
@@ -18919,10 +18911,9 @@ int BlueStore::read_allocation_from_drive_on_startup()
     _shutdown_cache();
   });
 
+  utime_t            start = ceph_clock_now();
   read_alloc_stats_t stats = {};
   SimpleBitmap       sbmap(cct, path, div_round_up(bdev->get_size(), min_alloc_size));
-  utime_t            start = ceph_clock_now();
-
   ret = reconstruct_allocations(&sbmap, stats);
   if (ret != 0) {
     return ret;
@@ -19081,68 +19072,70 @@ int BlueStore::read_allocation_from_drive_for_bluestore_tool(bool test_store_and
     return ret;
   }
 
-  utime_t            start = ceph_clock_now();
-  SimpleBitmap       sbmap(cct, path, div_round_up(bdev->get_size(), min_alloc_size));
+  utime_t            duration;
   read_alloc_stats_t stats = {};
-  ret = reconstruct_allocations(&sbmap, stats);
-  if (ret != 0) {
+  utime_t            start = ceph_clock_now();
+
+  auto shutdown_cache = make_scope_guard([&] {
+    std::cout << "FINISH in " << duration << " seconds; insert_count=" << stats.insert_count << std::endl;
+    _shutdown_cache();
     _close_db_and_around();
-    return ret;
-  }
+  });
 
-  Allocator *allocator = create_bitmap_allocator(bdev->get_size());
-  if (allocator) {
-    copy_simple_bitmap_to_allocator(cct, path, &sbmap, allocator, min_alloc_size);
-  } else {
-    derr << "****failed create_bitmap_allocator()" << dendl;
-    return -1;
-  }
+  {
+    auto allocator = unique_ptr<Allocator>(create_bitmap_allocator(bdev->get_size()));
+    //reconstruct allocations into a temp simple-bitmap and copy into allocator
+    {
+      SimpleBitmap sbmap(cct, path, div_round_up(bdev->get_size(), min_alloc_size));
+      ret = reconstruct_allocations(&sbmap, stats);
+      if (ret != 0) {
+	return ret;
+      }
+      copy_simple_bitmap_to_allocator(cct, path, &sbmap, allocator.get(), min_alloc_size);
+    }
 
-  // add allocation space used by the bluefs itself
-  ret = add_existing_bluefs_allocation(allocator, stats);
-  if (ret < 0) {
-    _close_db_and_around();
-    return ret;
-  }
+    // add allocation space used by the bluefs itself
+    ret = add_existing_bluefs_allocation(allocator.get(), stats);
+    if (ret < 0) {
+      return ret;
+    }
 
-  utime_t duration = ceph_clock_now() - start;
-  stats.insert_count = 0;
-  auto count_entries = [&](uint64_t extent_offset, uint64_t extent_length) {
-    stats.insert_count++;
-  };
-  allocator->dump(count_entries);
+    duration = ceph_clock_now() - start;
+    stats.insert_count = 0;
+    auto count_entries = [&](uint64_t extent_offset, uint64_t extent_length) {
+      stats.insert_count++;
+    };
+    allocator->dump(count_entries);
+    dout(1) << "\n" << " <<<FINISH>>> in " << duration << " seconds; insert_count=" << stats.insert_count << dendl;
+    dout(1) << "\n" << " <<<FINISH>>> in " << duration << " seconds; extent_count=" << stats.extent_count << dendl;
 
-  dout(1) << "\n" << " <<<FINISH>>> in " << duration << " seconds; insert_count=" << stats.insert_count << dendl;
-  dout(1) << "\n" << " <<<FINISH>>> in " << duration << " seconds; extent_count=" << stats.extent_count << dendl;
-
-
-  dout(5) << "calling compare_allocator(alloc) insert_count=" << stats.insert_count << dendl;
-  ret = compare_allocators(allocator, alloc, stats.insert_count, memory_target);
-  if (ret == 0) {
-    dout(5) << "SUCCESS!!! compare(allocator, alloc)" << dendl;
-  } else {
-    derr << "**** FAILURE compare(allocator, alloc)::ret=" << ret << dendl;
+    ret = compare_allocators(allocator.get(), alloc, stats.insert_count, memory_target);
+    if (ret == 0) {
+      dout(5) << "SUCCESS!!! compare(allocator, alloc)" << dendl;
+    } else {
+      derr << "**** FAILURE compare(allocator, alloc)::ret=" << ret << dendl;
+    }
   }
 
   if (test_store_and_restore) {
     _close_db_leave_bluefs();
     dout(5) << "calling store_allocator(alloc)" << dendl;
     store_allocator(alloc);
-    Allocator* alloc2 = create_bitmap_allocator(bdev->get_size());
+    auto alloc2 = unique_ptr<Allocator>(create_bitmap_allocator(bdev->get_size()));
     if (alloc2) {
-      dout(5) << "bitmap-allocator=" << alloc2 << dendl;
+      dout(5) << "bitmap-allocator=" << alloc2.get() << dendl;
       dout(5) << "calling restore_allocator()" << dendl;
       uint64_t num, bytes;
-      int ret = restore_allocator(alloc2, &num, &bytes);
+      int ret = restore_allocator(alloc2.get(), &num, &bytes);
       if (ret == 0) {
 	// add allocation space used by the bluefs itself
-	ret = add_existing_bluefs_allocation(alloc2, stats);
+	ret = add_existing_bluefs_allocation(alloc2.get(), stats);
 	if (ret < 0) {
-	  _close_db_and_around();
+	  //_close_db_and_around();
 	  return ret;
 	}
 	// verify that we can store and restore allocator to/from drive
-	ret = compare_allocators(alloc2, alloc, stats.insert_count, memory_target);
+	ret = compare_allocators(alloc2.get(), alloc, stats.insert_count, memory_target);
 	if (ret == 0) {
 	  dout(5) << "SUCCESS!!! compare(alloc2, alloc)" << dendl;
 	} else {
@@ -19151,19 +19144,12 @@ int BlueStore::read_allocation_from_drive_for_bluestore_tool(bool test_store_and
       } else {
 	derr << "******Failed restore_allocator******\n" << dendl;
       }
-      delete alloc2;
     } else {
       derr << "Failed allcoator2 create" << dendl;
     }
   }
 
-  std::cout << "<<<FINISH>>> in " << duration << " seconds; insert_count=" << stats.insert_count << "\n\n" << std::endl;
   std::cout << stats << std::endl;
-
-  //out_db:
-  delete allocator;
-  _shutdown_cache();
-  _close_db_and_around();
   return ret;
 }
 
