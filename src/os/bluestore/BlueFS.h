@@ -83,6 +83,10 @@ public:
   virtual uint8_t select_prefer_bdev(void* hint) = 0;
   virtual void get_paths(const std::string& base, paths& res) const = 0;
   virtual void dump(std::ostream& sout) = 0;
+
+  /* used for sanity checking of vselector */
+  virtual BlueFSVolumeSelector* clone() const { return nullptr; }
+  virtual bool compare(BlueFSVolumeSelector* other) { return true; };
 };
 
 struct bluefs_shared_alloc_context_t {
@@ -381,6 +385,7 @@ private:
   BlockDevice::aio_callback_t discard_cb[3]; //discard callbacks for each dev
 
   std::unique_ptr<BlueFSVolumeSelector> vselector;
+  bool check_vselector = false;
 
   bluefs_shared_alloc_context_t* shared_alloc = nullptr;
   unsigned shared_alloc_id = unsigned(-1);
@@ -511,7 +516,11 @@ private:
   unsigned get_super_length() {
     return 4096;
   }
-
+  void _maybe_check_vselector_LNF() {
+    if (check_vselector) {
+      _check_vselector_LNF();
+    }
+  }
 public:
   BlueFS(CephContext* cct);
   ~BlueFS();
@@ -661,6 +670,7 @@ private:
 			       size_t read_offset,
 			       size_t read_len,
 			       bufferlist* bl);
+  void _check_vselector_LNF();
 };
 
 class OriginalVolumeSelector : public BlueFSVolumeSelector {
