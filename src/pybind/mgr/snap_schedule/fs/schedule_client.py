@@ -5,8 +5,9 @@ LGPL2.1.  See file COPYING.
 """
 import cephfs
 import rados
+import errno
 from contextlib import contextmanager
-from mgr_util import CephfsClient, open_filesystem
+from mgr_util import CephfsClient, CephfsConnectionException, open_filesystem
 from collections import OrderedDict
 from datetime import datetime, timezone
 import logging
@@ -15,7 +16,7 @@ from typing import cast, Any, Callable, Dict, Iterator, List, Set, Optional, \
     Tuple, TypeVar, Union, Type
 from types import TracebackType
 import sqlite3
-from .schedule import Schedule
+from .schedule import Schedule, parse_retention
 import traceback
 
 
@@ -31,12 +32,8 @@ SNAPSHOT_PREFIX = 'scheduled'
 log = logging.getLogger(__name__)
 
 
-CephfsClientT = TypeVar('CephfsClientT', bound=CephfsClient)
-
-
 @contextmanager
-def open_ioctx(self: CephfsClientT,
-               pool: Union[int, str]) -> Iterator[rados.Ioctx]:
+def open_ioctx(self, pool):
     try:
         if type(pool) is int:
             with self.mgr.rados.open_ioctx2(pool) as ioctx:
@@ -51,22 +48,18 @@ def open_ioctx(self: CephfsClientT,
         raise
 
 
-FuncT = TypeVar('FuncT', bound=Callable[..., None])
-
-
-def updates_schedule_db(func: FuncT) -> FuncT:
-    def f(self: 'SnapSchedClient', fs: str, schedule_or_path: str, *args: Any) -> None:
+def updates_schedule_db(func):
+    def f(self, fs, schedule_or_path, *args):
         ret = func(self, fs, schedule_or_path, *args)
         path = schedule_or_path
         if isinstance(schedule_or_path, Schedule):
             path = schedule_or_path.path
         self.refresh_snap_timers(fs, path)
         return ret
-    return cast(FuncT, f)
+    return f
 
 
-def get_prune_set(candidates: Set[Tuple[cephfs.DirEntry, datetime]],
-                  retention: Dict[str, int]) -> Set:
+def get_prune_set(candidates, retention):
     PRUNING_PATTERNS = OrderedDict([
         # n is for keep last n snapshots, uses the snapshot name timestamp
         # format for lowest granularity
@@ -96,8 +89,7 @@ def get_prune_set(candidates: Set[Tuple[cephfs.DirEntry, datetime]],
             if snap_ts != last:
                 last = snap_ts
                 if snap not in keep:
-                    log.debug((f'keeping {snap[0].d_name} due to '
-                               f'{period_count}{period}'))
+                    log.debug(f'keeping {snap[0].d_name} due to {period_count}{period}')
                     keep.append(snap)
                     kept_for_this_period += 1
                     if kept_for_this_period == period_count:
@@ -105,17 +97,16 @@ def get_prune_set(candidates: Set[Tuple[cephfs.DirEntry, datetime]],
                                    f'{period_count}{period}'))
                         break
     if len(keep) > MAX_SNAPS_PER_PATH:
-        log.info((f'Would keep more then {MAX_SNAPS_PER_PATH}, '
-                  'pruning keep set'))
+        log.info(f'Would keep more then {MAX_SNAPS_PER_PATH}, pruning keep set')
         keep = keep[:MAX_SNAPS_PER_PATH]
     return candidates - set(keep)
 
 
 class DBInfo():
-    def __init__(self, fs: str, db: sqlite3.Connection):
-        self.fs: str = fs
-        self.lock: Lock = Lock()
-        self.db: sqlite3.Connection = db
+    def __init__(self, fs, db):
+        self.fs = fs
+        self.lock = Lock()
+        self.db = db
 
 
 # context manager for serializing db connection usage
@@ -142,7 +133,7 @@ class DBConnectionManager():
 
 class SnapSchedClient(CephfsClient):
 
-    def __init__(self, mgr: Any) -> None:
+    def __init__(self, mgr):
         super(SnapSchedClient, self).__init__(mgr)
         # TODO maybe iterate over all fs instance in fsmap and load snap dbs?
         #
@@ -156,7 +147,7 @@ class SnapSchedClient(CephfsClient):
         self.conn_lock: Lock = Lock()  # lock to protect add/lookup db connections
 
     @property
-    def allow_minute_snaps(self) -> None:
+    def allow_minute_snaps(self):
         return self.mgr.get_module_option('allow_m_granularity')
 
     @property
@@ -193,15 +184,29 @@ class SnapSchedClient(CephfsClient):
         self.conn_lock.release()
         return DBConnectionManager(dbinfo)
 
-    def _is_allowed_repeat(self, exec_row: Dict[str, str], path: str) -> bool:
+    def store_schedule_db(self, fs):
+        # only store db is it exists, otherwise nothing to do
+        metadata_pool = self.get_metadata_pool(fs)
+        if not metadata_pool:
+            raise CephfsConnectionException(
+                -errno.ENOENT, "Filesystem {} does not exist".format(fs))
+        if fs in self.sqlite_connections:
+            db_content = []
+            db = self.sqlite_connections[fs]
+            with db:
+                for row in db.iterdump():
+                    db_content.append(row)
+        with open_ioctx(self, metadata_pool) as ioctx:
+            ioctx.write_full(SNAP_DB_OBJECT_NAME,
+                             '\n'.join(db_content).encode('utf-8'))
+
+    def _is_allowed_repeat(self, exec_row, path):
         if Schedule.parse_schedule(exec_row['schedule'])[1] == 'M':
             if self.allow_minute_snaps:
-                log.debug(('Minute repeats allowed, '
-                           f'scheduling snapshot on path {path}'))
+                log.debug(f'Minute repeats allowed, scheduling snapshot on path {path}')
                 return True
             else:
-                log.info(('Minute repeats disabled, '
-                          f'skipping snapshot on path {path}'))
+                log.info(f'Minute repeats disabled, skipping snapshot on path {path}')
                 return False
         else:
             return True
@@ -247,16 +252,11 @@ class SnapSchedClient(CephfsClient):
         except Exception:
             self._log_exception('refresh_snap_timers')
 
-    def _log_exception(self, fct: str) -> None:
+    def _log_exception(self, fct):
         log.error(f'{fct} raised an exception:')
         log.error(traceback.format_exc())
 
-    def create_scheduled_snapshot(self,
-                                  fs_name: str,
-                                  path: str,
-                                  retention: str,
-                                  start: str,
-                                  repeat: str) -> None:
+    def create_scheduled_snapshot(self, fs_name, path, retention, start, repeat):
         log.debug(f'Scheduled snapshot of {path} triggered')
         try:
             with self.get_schedule_db(fs_name) as conn_mgr:
@@ -288,7 +288,7 @@ class SnapSchedClient(CephfsClient):
                 self.refresh_snap_timers(fs_name, path, db)
             self.prune_snapshots(sched)
 
-    def prune_snapshots(self, sched: Schedule) -> None:
+    def prune_snapshots(self, sched):
         try:
             log.debug('Pruning snapshots')
             ret = sched.retention
@@ -335,10 +335,7 @@ class SnapSchedClient(CephfsClient):
 
     @updates_schedule_db
     # TODO improve interface
-    def store_snap_schedule(self,
-                            fs: str, path_: str,
-                            args: Tuple[str, str, str, str,
-                                        Optional[str], Optional[str]]) -> None:
+    def store_snap_schedule(self, fs, path_, args):
         sched = Schedule(*args)
         log.debug(f'repeat is {sched.repeat}')
         if sched.parse_schedule(sched.schedule)[1] == 'M' and not self.allow_minute_snaps:
@@ -360,10 +357,10 @@ class SnapSchedClient(CephfsClient):
 
     @updates_schedule_db
     def add_retention_spec(self,
-                           fs: str,
-                           path: str,
-                           retention_spec_or_period: str,
-                           retention_count: Optional[str]) -> None:
+                           fs,
+                           path,
+                           retention_spec_or_period,
+                           retention_count):
         retention_spec = retention_spec_or_period
         if retention_count:
             retention_spec = retention_count + retention_spec
@@ -373,10 +370,10 @@ class SnapSchedClient(CephfsClient):
 
     @updates_schedule_db
     def rm_retention_spec(self,
-                          fs: str,
-                          path: str,
-                          retention_spec_or_period: str,
-                          retention_count: Optional[str]) -> None:
+                          fs,
+                          path,
+                          retention_spec_or_period,
+                          retention_count):
         retention_spec = retention_spec_or_period
         if retention_count:
             retention_spec = retention_count + retention_spec
