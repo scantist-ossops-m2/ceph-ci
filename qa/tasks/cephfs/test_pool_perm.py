@@ -17,6 +17,9 @@ class TestPoolPerm(CephFSTestCase):
             fd = os.open("{path}", os.O_RDWR)
             try:
                 if {check_read}:
+                    os.write(fd, b'content')
+                    os.close(fd)
+                    fd = os.open("{path}", os.O_RDWR)
                     ret = os.read(fd, 1024)
                 else:
                     os.write(fd, b'content')
@@ -25,6 +28,8 @@ class TestPoolPerm(CephFSTestCase):
                     raise
             else:
                 raise RuntimeError("client does not check permission of data pool")
+            fininaly:
+                os.close(fd)
             """)
 
         client_name = "client.{0}".format(self.mount_a.client_id)
