@@ -225,7 +225,6 @@ extent_t SimpleBitmap::get_next_set_extent(uint64_t offset)
     } else {
       // bitmap is set from ext.offset until the last bit
       ext.length = (m_num_bits - ext.offset);
-      ceph_assert((m_num_bits & BITS_IN_WORD_MASK) == 0);
       return ext;
     }
   }
@@ -297,7 +296,6 @@ extent_t SimpleBitmap::get_next_clr_extent(uint64_t offset)
       dout(10) << "bitmap is free from ext.offset until the last bit" << dendl;
       dout(10) << "m_num_bits=" << m_num_bits << " ext.offset=" << ext.offset << dendl;
       ext.length = (m_num_bits - ext.offset);
-      ceph_assert((m_num_bits & BITS_IN_WORD_MASK) == 0);
       return ext;
     }
   }
