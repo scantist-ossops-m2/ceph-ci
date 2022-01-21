@@ -365,7 +365,7 @@ public:
     virtual void clear_want_pg_temp() = 0;
 
     /// Arrange for stats to be shipped to mon to be updated for this pg
-    virtual void publish_stats_to_osd() = 0;
+    virtual void publish_stats_to_osd(bool force_update=false) = 0;
     /// Clear stats to be shipped to mon for this pg
     virtual void clear_publish_stats() = 0;
 
@@ -1845,12 +1845,17 @@ public:
    * @param pg_stats_publish the latest pg_stat possessed by caller
    * @param unstable_stats additional stats which should be included in the
    *        returned stats
+   * @param force_update if true, force the stats to be updated. Used to
+   *        send out an updated scrubbing schedule/status, as that detail is
+   *        not included in the pg_stat_t, and thus not enough to trigger an
+   *        update.
    * @return the up to date stats if it is different from the specfied
    *         @c pg_stats_publish
    */
   std::optional<pg_stat_t> prepare_stats_for_publish(
     const std::optional<pg_stat_t> &pg_stats_publish,
-    const object_stat_collection_t &unstable_stats);
+    const object_stat_collection_t &unstable_stats,
+    bool force_update);
 
   /**
    * Merge entries updating missing as necessary on all

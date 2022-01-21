@@ -302,8 +302,8 @@ public:
   void reset_objects_scrubbed() {
     recovery_state.update_stats(
       [=](auto &history, auto &stats) {
-  reset_objects_scrubbed(stats);
-  return true;
+        reset_objects_scrubbed(stats);
+        return true;
       });
   }
 
@@ -1078,7 +1078,7 @@ protected:
   std::optional<pg_stat_t> pg_stats_publish;
 
   friend class TestOpsSocketHook;
-  void publish_stats_to_osd() override;
+  void publish_stats_to_osd(bool force_update=false) final;
 
   bool needs_recovery() const {
     return recovery_state.needs_recovery();

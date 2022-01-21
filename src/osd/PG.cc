@@ -809,7 +809,7 @@ bool PG::check_in_progress_op(
       r, version, user_version, return_code, op_returns));
 }
 
-void PG::publish_stats_to_osd()
+void PG::publish_stats_to_osd(bool force_update)
 {
   if (!is_primary())
     return;
@@ -822,8 +822,9 @@ void PG::publish_stats_to_osd()
     });
 
   std::lock_guard l{pg_stats_publish_lock};
-  auto stats =
-    recovery_state.prepare_stats_for_publish(pg_stats_publish, unstable_stats);
+  auto stats = recovery_state.prepare_stats_for_publish(pg_stats_publish,
+                                                        unstable_stats,
+                                                        force_update);
   if (stats) {
     pg_stats_publish = std::move(stats);
   }

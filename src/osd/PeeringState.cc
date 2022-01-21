@@ -3800,7 +3800,8 @@ out:
 
 std::optional<pg_stat_t> PeeringState::prepare_stats_for_publish(
   const std::optional<pg_stat_t> &pg_stats_publish,
-  const object_stat_collection_t &unstable_stats)
+  const object_stat_collection_t &unstable_stats,
+  bool force_update)
 {
   if (info.stats.stats.sum.num_scrub_errors) {
     psdout(10) << __func__ << " inconsistent due to " <<
@@ -3855,7 +3856,7 @@ std::optional<pg_stat_t> PeeringState::prepare_stats_for_publish(
   psdout(20) << __func__ << " reporting purged_snaps "
 	     << pre_publish.purged_snaps << dendl;
 
-  if (pg_stats_publish && pre_publish == *pg_stats_publish &&
+  if (!force_update && pg_stats_publish && pre_publish == *pg_stats_publish &&
       info.stats.last_fresh > cutoff) {
     psdout(15) << "publish_stats_to_osd " << pg_stats_publish->reported_epoch
 	       << ": no change since " << info.stats.last_fresh << dendl;

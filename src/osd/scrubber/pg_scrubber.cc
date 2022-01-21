@@ -565,7 +565,7 @@ void PgScrubber::scrub_requested(scrub_level_t scrub_level,
   dout(20) << __func__ << " pg(" << m_pg_id << ") planned:" << req_flags << dendl;
 
   update_scrub_job(req_flags);
-  m_pg->publish_stats_to_osd();
+  m_pg->publish_stats_to_osd(true);
 }
 
 
@@ -1362,7 +1362,7 @@ void PgScrubber::set_op_parameters(requested_scrub_t& request)
   }
 
   // the publishing here is required for tests synchronization
-  m_pg->publish_stats_to_osd();
+  m_pg->publish_stats_to_osd(true);
   m_flags.deep_scrub_on_error = request.deep_scrub_on_error;
 }
 
@@ -2162,6 +2162,7 @@ void PgScrubber::cleanup_on_finish()
   requeue_waiting();
 
   reset_internal_state();
+  m_pg->publish_stats_to_osd(true);
   m_flags = scrub_flags_t{};
 
   // type-specific state clear
@@ -2200,6 +2201,7 @@ void PgScrubber::clear_pgscrub_state()
 
   // type-specific state clear
   _scrub_clear_state();
+  m_pg->publish_stats_to_osd();
 }
 
 void PgScrubber::replica_handling_done()

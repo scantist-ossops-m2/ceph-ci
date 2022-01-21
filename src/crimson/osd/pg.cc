@@ -153,7 +153,8 @@ void PG::publish_stats_to_osd()
     return;
   if (auto new_pg_stats = peering_state.prepare_stats_for_publish(
         pg_stats,
-        object_stat_collection_t());
+        object_stat_collection_t(),
+        false);
       new_pg_stats.has_value()) {
     pg_stats = std::move(new_pg_stats);
   }
