@@ -47,6 +47,32 @@ set(librgw_common_srcs
   services/svc_user_rados.cc
   services/svc_zone.cc
   services/svc_zone_utils.cc
+  tacopie/error.cpp
+  tacopie/io_service.cpp
+  tacopie/logger.cpp
+  tacopie/tcp_client.cpp
+  tacopie/tcp_server.cpp
+  tacopie/tcp_socket.cpp
+  tacopie/thread_pool.cpp
+  tacopie/unix_self_pipe.cpp
+  tacopie/unix_tcp_socket.cpp
+  cpp_redis/array_builder.cpp
+  cpp_redis/builders_factory.cpp
+  cpp_redis/bulk_string_builder.cpp
+  cpp_redis/client.cpp
+  cpp_redis/consumer.cpp
+  cpp_redis/dispatch_queue.cpp
+  cpp_redis/error_builder.cpp
+  cpp_redis/integer_builder.cpp
+  cpp_redis/logger.cpp
+  cpp_redis/redis_connection.cpp
+  cpp_redis/reply.cpp
+  cpp_redis/reply_builder.cpp
+  cpp_redis/sentinel.cpp
+  cpp_redis/simple_string_builder.cpp
+  cpp_redis/subscriber.cpp
+  cpp_redis/tcp_client.cpp
+  cpp_redis/types.cpp
   rgw_service.cc
   rgw_acl.cc
   rgw_acl_s3.cc
@@ -162,9 +188,11 @@ if(WITH_RADOSGW_KAFKA_ENDPOINT)
 endif()
 
 add_library(rgw_common OBJECT ${librgw_common_srcs})
-add_library(cpp_redis OBJECT ${CPP_REDIS_LIBRARIES})
+#add_library(cpp_redis OBJECT ${CPP_REDIS_LIBRARIES})
 
 target_include_directories(rgw_common SYSTEM PUBLIC "services")
+target_include_directories(rgw_common SYSTEM PUBLIC "cpp_redis")
+target_include_directories(rgw_common SYSTEM PUBLIC "tacopie")
 target_include_directories(rgw_common PUBLIC "${CMAKE_SOURCE_DIR}/src/dmclock/support/src")
 target_include_directories(rgw_common PUBLIC "${CMAKE_SOURCE_DIR}/src/fmt/include")
 
@@ -331,7 +359,7 @@ target_link_libraries(radosgw-admin ${rgw_libs} librados
   cls_log_client cls_timeindex_client
   cls_version_client cls_user_client
   global ${FCGI_LIBRARY} ${LIB_RESOLV}
-  ${CURL_LIBRARIES} ${EXPAT_LIBRARIES} ${BLKID_LIBRARIES} ${CPP_REDIS_LIBRARIES})
+  ${CURL_LIBRARIES} ${EXPAT_LIBRARIES} ${BLKID_LIBRARIES}) #${CPP_REDIS_LIBRARIES})
 install(TARGETS radosgw-admin DESTINATION bin)
 
 set(radosgw_es_srcs
