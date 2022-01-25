@@ -74,7 +74,7 @@ class TestDmcryptKey(object):
         [global]
         fsid=asdf
         [osd]
-        osd_dmcrypt_size=8
+        osd_dmcrypt_key_size=8
         ''')
         result = encryption.create_dmcrypt_key()
-        assert len(result) == 172
+        assert len(result) == 4
