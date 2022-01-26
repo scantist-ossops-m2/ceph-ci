@@ -19,6 +19,7 @@ from teuthology.orchestra import run
 from teuthology.orchestra.daemon import DaemonGroup
 from teuthology.config import config as teuth_config
 from textwrap import dedent
+from tasks.util import chacra
 
 # these items we use from ceph.py should probably eventually move elsewhere
 from tasks.ceph import get_mons, healthy
@@ -115,20 +116,29 @@ def normalize_hostnames(ctx):
 
 
 @contextlib.contextmanager
-def download_cephadm(ctx, config, ref):
+def download_cephadm(ctx, config):
     cluster_name = config['cluster']
+    bootstrap_remote = ctx.ceph[cluster_name].bootstrap_remote
+
+    os_type = teuthology.get_distro(ctx)
+    os_version = teuthology.get_distro_version(ctx)
+    arch = bootstrap_remote.arch
+    flavor = config.get('flavor', 'default')
+
+    sha1 = config.get('sha1')
+    branch = config.get('branch')
 
     if config.get('cephadm_mode') != 'cephadm-package':
-        # cephadm already installed from install task
-        ctx.cluster.run(
-            args=[
-                'cp',
-                run.Raw('$(which cephadm)'),
-                ctx.cephadm,
-                run.Raw('&&'),
-                'ls', '-l',
-                ctx.cephadm,
-            ]
+        chacra.pull(
+            src='cephadm',
+            dest=ctx.cephadm,
+            project='ceph',
+            distro=os_type,
+            release=os_version,
+            arch=arch,
+            flavor=flavor,
+            sha1=sha1,
+            branch=branch,
         )
 
         # sanity-check the resulting file and set executable bit
@@ -1447,7 +1457,6 @@ def task(ctx, config):
 
     if not hasattr(ctx.ceph[cluster_name], 'image'):
         ctx.ceph[cluster_name].image = config.get('image')
-    ref = None
     if not ctx.ceph[cluster_name].image:
         if not container_image_name:
             raise Exception("Configuration error occurred. "
@@ -1463,11 +1472,9 @@ def task(ctx, config):
                 ctx.ceph[cluster_name].image = container_image_name + ':' + sha1 + '-' + flavor
             else:
                 ctx.ceph[cluster_name].image = container_image_name + ':' + sha1
-            ref = sha1
         else:
             # hmm, fall back to branch?
             branch = config.get('branch', 'master')
-            ref = branch
             ctx.ceph[cluster_name].image = container_image_name + ':' + branch
     log.info('Cluster image is %s' % ctx.ceph[cluster_name].image)
 
@@ -1479,7 +1486,7 @@ def task(ctx, config):
             lambda: ceph_initial(),
             lambda: normalize_hostnames(ctx=ctx),
             lambda: _bypass() if (ctx.ceph[cluster_name].bootstrapped)\
-                              else download_cephadm(ctx=ctx, config=config, ref=ref),
+                              else download_cephadm(ctx=ctx, config=config),
             lambda: ceph_log(ctx=ctx, config=config),
             lambda: ceph_crash(ctx=ctx, config=config),
             lambda: pull_image(ctx=ctx, config=config),
