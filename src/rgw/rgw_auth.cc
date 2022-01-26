@@ -899,22 +899,31 @@ void rgw::auth::RoleApplier::modify_request_state(const DoutPrefixProvider *dpp,
   }
 }
 
+struct AnonymousEngineFixit : public rgw::auth::Completer {
+//  AnonymousEngineFixit() { }
+  bool complete() override { return false; }
+  void modify_request_state(const DoutPrefixProvider* dpp, req_state* s_rw) override {
+    if (! s_rw->account_name.empty()) {
+      s_rw->bucket_tenant = s_rw->account_name;
+    }
+  }
+};
+
 rgw::auth::Engine::result_t
 rgw::auth::AnonymousEngine::authenticate(const DoutPrefixProvider* dpp, const req_state* const s, optional_yield y) const
 {
+  typedef std::shared_ptr<Completer> cmplptr_t;
   if (! is_applicable(s)) {
     return result_t::deny(-EPERM);
   } else {
     RGWUserInfo user_info;
     rgw_get_anon_user(user_info);
-    if (! s->account_name.empty()) {
-      s->bucket_tenant = s->account_name;
-    }
 
     auto apl = \
       apl_factory->create_apl_local(cct, s, user_info,
                                     rgw::auth::LocalApplier::NO_SUBUSER,
                                     std::nullopt);
-    return result_t::grant(std::move(apl));
+    auto cpl = AnonymousEngineFixit();
+    return result_t::grant(std::move(apl), cmplptr_t(new decltype(cpl)(std::move(cpl))));
   }
 }
