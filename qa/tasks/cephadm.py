@@ -16,11 +16,13 @@ from tarfile import ReadError
 from tasks.ceph_manager import CephManager
 from teuthology import misc as teuthology
 from teuthology import contextutil
+from teuthology import packaging
 from teuthology.orchestra import run
 from teuthology.orchestra.daemon import DaemonGroup
 from teuthology.config import config as teuth_config
 from textwrap import dedent
 from tasks.cephfs.filesystem import MDSCluster, Filesystem
+from tasks.util import chacra
 
 # these items we use from ceph.py should probably eventually move elsewhere
 from tasks.ceph import get_mons, healthy
@@ -117,20 +119,36 @@ def normalize_hostnames(ctx):
 
 
 @contextlib.contextmanager
-def download_cephadm(ctx, config, ref):
+def download_cephadm(ctx, config):
     cluster_name = config['cluster']
 
+    bp = packaging.get_builder_project()(
+        config.get('project', 'ceph'),
+        config,
+        ctx=ctx,
+    )
+
     if config.get('cephadm_mode') != 'cephadm-package':
-        # cephadm already installed from install task
+        # pull the cephadm binary from chacra
+        url = chacra.get_binary_url(
+                'cephadm',
+                project=bp.project,
+                distro=bp.distro.split('/')[0],
+                release=bp.distro.split('/')[1],
+                arch=bp.arch,
+                flavor=bp.flavor,
+                branch=bp.branch,
+                sha1=bp.sha1,
+        )
         ctx.cluster.run(
             args=[
-                'cp',
-                run.Raw('$(which cephadm)'),
+                'curl', '--silent', '-L', url,
+                run.Raw('>'),
                 ctx.cephadm,
                 run.Raw('&&'),
                 'ls', '-l',
                 ctx.cephadm,
-            ]
+            ],
         )
 
         # sanity-check the resulting file and set executable bit
@@ -1496,7 +1514,6 @@ def task(ctx, config):
 
     if not hasattr(ctx.ceph[cluster_name], 'image'):
         ctx.ceph[cluster_name].image = config.get('image')
-    ref = None
     if not ctx.ceph[cluster_name].image:
         if not container_image_name:
             raise Exception("Configuration error occurred. "
@@ -1512,11 +1529,9 @@ def task(ctx, config):
                 ctx.ceph[cluster_name].image = container_image_name + ':' + sha1 + '-' + flavor
             else:
                 ctx.ceph[cluster_name].image = container_image_name + ':' + sha1
-            ref = sha1
         else:
             # hmm, fall back to branch?
             branch = config.get('branch', 'master')
-            ref = branch
             ctx.ceph[cluster_name].image = container_image_name + ':' + branch
     log.info('Cluster image is %s' % ctx.ceph[cluster_name].image)
 
@@ -1528,7 +1543,7 @@ def task(ctx, config):
             lambda: ceph_initial(),
             lambda: normalize_hostnames(ctx=ctx),
             lambda: _bypass() if (ctx.ceph[cluster_name].bootstrapped)\
-                              else download_cephadm(ctx=ctx, config=config, ref=ref),
+                              else download_cephadm(ctx=ctx, config=config),
             lambda: ceph_log(ctx=ctx, config=config),
             lambda: ceph_crash(ctx=ctx, config=config),
             lambda: pull_image(ctx=ctx, config=config),
