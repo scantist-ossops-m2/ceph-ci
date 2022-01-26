@@ -1,4 +1,32 @@
+import os
+import base64
+from mock.mock import patch
 from ceph_volume.util import encryption
+
+
+class TestGetKeySize(object):
+    def test_get_size_from_b64key_less_than_512bits(self):
+        assert encryption.get_key_size_from_b64_key(base64.b64encode(os.urandom(int(128 / 8)))) == 128
+
+    def test_get_size_from_b64key_greater_than_512bits(self):
+        assert encryption.get_key_size_from_b64_key(base64.b64encode(os.urandom(int(1024 / 8)))) == 512
+
+    def test_get_size_from_conf_default(self, conf_ceph_stub):
+        conf_ceph_stub('''
+        [global]
+        fsid=asdf
+        ''')
+        assert encryption.get_key_size_from_conf() == '512'
+
+    def test_get_size_from_conf_custom(self, conf_ceph_stub):
+        conf_ceph_stub('''
+        [global]
+        fsid=asdf
+        [osd]
+        osd_dmcrypt_key_size=256
+        ''')
+        assert encryption.get_key_size_from_conf() == '256'
+
 
 
 class TestStatus(object):
@@ -40,14 +68,83 @@ class TestDmcryptKey(object):
     def test_dmcrypt_with_default_size(self, conf_ceph_stub):
         conf_ceph_stub('[global]\nfsid=asdf-lkjh')
         result = encryption.create_dmcrypt_key()
-        assert len(result) == 172
+        assert len(result) == 88
 
     def test_dmcrypt_with_custom_size(self, conf_ceph_stub):
         conf_ceph_stub('''
         [global]
         fsid=asdf
         [osd]
-        osd_dmcrypt_size=8
+        osd_dmcrypt_key_size=8
         ''')
         result = encryption.create_dmcrypt_key()
-        assert len(result) == 172
+        assert len(result) == 4
+
+class TestLuksFormat(object):
+    @patch('ceph_volume.util.encryption.process.call')
+    def test_luks_format_command_with_default_size(self, m_call, conf_ceph_stub):
+        conf_ceph_stub('[global]\nfsid=abcd')
+        expected = [
+            'cryptsetup',
+            '--batch-mode',
+            '--key-size',
+            '512',
+            '--key-file',
+            '-',
+            'luksFormat',
+            '/dev/foo'
+        ]
+        encryption.luks_format('4YJycMQmkaXi+nRN07HsTrk8LR7kzKDXe745t7atdAuoJ2OiwuZ06aD+7Z8MifKGoBulTNlu9GsYER0dFJWCSw==', '/dev/foo')
+        assert m_call.call_args[0][0] == expected
+
+    @patch('ceph_volume.util.encryption.process.call')
+    def test_luks_format_command_with_custom_size(self, m_call, conf_ceph_stub):
+        conf_ceph_stub('[global]\nfsid=abcd\n[osd]\nosd_dmcrypt_key_size=256')
+        expected = [
+            'cryptsetup',
+            '--batch-mode',
+            '--key-size',
+            '256',
+            '--key-file',
+            '-',
+            'luksFormat',
+            '/dev/foo'
+        ]
+        encryption.luks_format('F2bk3pbcTX0zzuEdwIMW9lNwcRFg0L48G2JM81yICUI=', '/dev/foo')
+        assert m_call.call_args[0][0] == expected
+
+
+class TestLuksOpen(object):
+    @patch('ceph_volume.util.encryption.process.call')
+    def test_luks_open_command_with_default_size(self, m_call, conf_ceph_stub):
+        conf_ceph_stub('[global]\nfsid=abcd')
+        expected = [
+            'cryptsetup',
+            '--key-size',
+            '256',
+            '--key-file',
+            '-',
+            '--allow-discards',
+            'luksOpen',
+            '/dev/foo',
+            '/dev/bar'
+        ]
+        encryption.luks_open('F2bk3pbcTX0zzuEdwIMW9lNwcRFg0L48G2JM81yICUI=', '/dev/foo', '/dev/bar')
+        assert m_call.call_args[0][0] == expected
+
+    @patch('ceph_volume.util.encryption.process.call')
+    def test_luks_open_command_with_custom_size(self, m_call, conf_ceph_stub):
+        conf_ceph_stub('[global]\nfsid=abcd\n[osd]\nosd_dmcrypt_key_size=128')
+        expected = [
+            'cryptsetup',
+            '--key-size',
+            '256',
+            '--key-file',
+            '-',
+            '--allow-discards',
+            'luksOpen',
+            '/dev/foo',
+            '/dev/bar'
+        ]
+        encryption.luks_open('F2bk3pbcTX0zzuEdwIMW9lNwcRFg0L48G2JM81yICUI=', '/dev/foo', '/dev/bar')
+        assert m_call.call_args[0][0] == expected
