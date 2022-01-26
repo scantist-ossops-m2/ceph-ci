@@ -1812,7 +1812,7 @@ TEST(bluestore_blob_t, wrong_map_bl_in_51682)
 }
 
 //---------------------------------------------------------------------------------
-int verify_extent(const extent_t & ext, const extent_t *ext_arr, uint64_t ext_arr_size, uint64_t idx)
+static int verify_extent(const extent_t & ext, const extent_t *ext_arr, uint64_t ext_arr_size, uint64_t idx)
 {
   const extent_t & ext_ref = ext_arr[idx];
   if (ext.offset == ext_ref.offset && ext.length == ext_ref.length) {
@@ -1834,7 +1834,7 @@ int verify_extent(const extent_t & ext, const extent_t *ext_arr, uint64_t ext_ar
 }
 
 //---------------------------------------------------------------------------------
-int test_extents(uint64_t index, extent_t *ext_arr, uint64_t ext_arr_size, SimpleBitmap& sbmap, bool set)
+static int test_extents(uint64_t index, extent_t *ext_arr, uint64_t ext_arr_size, SimpleBitmap& sbmap, bool set)
 {
   const uint64_t  MAX_JUMP_BIG   = 1523;
   const uint64_t  MAX_JUMP_SMALL =   19;
@@ -1939,7 +1939,7 @@ TEST(SimpleBitmap, basic)
 }
 
 //---------------------------------------------------------------------------------
-int test_intersections(unsigned test_idx, SimpleBitmap &sbmap, uint8_t map[], uint64_t map_size)
+static int test_intersections(unsigned test_idx, SimpleBitmap &sbmap, uint8_t map[], uint64_t map_size)
 {
   const uint64_t  MAX_LEN_BIG    =  523;
   const uint64_t  MAX_LEN_SMALL  =   23;
@@ -2051,7 +2051,7 @@ TEST(SimpleBitmap, intersection)
 
 
 //---------------------------------------------------------------------------------
-int test_extents_bounderies(uint64_t index, extent_t *ext_arr, uint64_t ext_arr_size, SimpleBitmap& sbmap, bool set)
+static int test_extents_bounderies(uint64_t index, extent_t *ext_arr, uint64_t ext_arr_size, SimpleBitmap& sbmap, bool set)
 {
   uint64_t n      = sbmap.get_size();
   uint64_t offset = 0, k = 0;
