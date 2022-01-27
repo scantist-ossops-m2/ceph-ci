@@ -150,10 +150,6 @@ class SnapSchedClient(CephfsClient):
     def allow_minute_snaps(self):
         return self.mgr.get_module_option('allow_m_granularity')
 
-    @property
-    def dump_on_update(self) -> None:
-        return self.mgr.get_module_option('dump_on_update')
-
     def get_schedule_db(self, fs: str) -> DBConnectionManager:
         dbinfo = None
         self.conn_lock.acquire()
@@ -213,10 +209,6 @@ class SnapSchedClient(CephfsClient):
 
     def fetch_schedules(self, db: sqlite3.Connection, path: str) -> List[sqlite3.Row]:
         with db:
-            if self.dump_on_update:
-                dump = [line for line in db.iterdump()]
-                dump = "\n".join(dump)
-                log.debug(f"db dump:\n{dump}")
             cur = db.execute(Schedule.EXEC_QUERY, (path,))
             all_rows = cur.fetchall()
             rows = [r for r in all_rows

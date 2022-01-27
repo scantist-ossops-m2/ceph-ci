@@ -68,9 +68,6 @@ class TestSnapSchedules(CephFSTestCase):
     def _allow_minute_granularity_snapshots(self):
         self.config_set('mgr', 'mgr/snap_schedule/allow_m_granularity', True)
 
-    def _dump_on_update(self):
-        self.config_set('mgr', 'mgr/snap_schedule/dump_on_update', True)
-
     def setUp(self):
         super(TestSnapSchedules, self).setUp()
         self.volname = None
@@ -82,7 +79,6 @@ class TestSnapSchedules(CephFSTestCase):
         self.snapshots = set()
         self._enable_snap_schedule()
         self._allow_minute_granularity_snapshots()
-        self._dump_on_update()
 
     def tearDown(self):
         if self.vol_created:
