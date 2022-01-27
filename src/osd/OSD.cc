@@ -1311,10 +1311,20 @@ bool OSDService::prepare_to_stop()
 	));
     const auto timeout = ceph::make_timespan(cct->_conf->osd_mon_shutdown_timeout);
     is_stopping_cond.wait_for(l, timeout,
-      [this] { return get_state() == STOPPING; });
+      [this] { return get_state() == STOPPING; });   
   }
+
   dout(0) << __func__ << " starting shutdown" << dendl;
   set_state(STOPPING);
+  if (cct->_conf->osd_fast_shutdown && 
+      cct->_conf->osd_fast_shutdown_notify_mon) {
+      dout(0) << __func__ << " starting MarkMeDead shutdown notify mon" << dendl;
+      monc->send_mon_message(
+          new MOSDMarkMeDead(
+            monc->get_fsid(),
+            whoami,
+            osdmap->get_epoch()));
+  }
   return true;
 }
 
