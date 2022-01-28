@@ -2619,7 +2619,8 @@ int RGWPutObj_ObjStore_S3::get_encryption_defaults()
       return -EINVAL;
     }
   }
-  if (meta_sse_group & SSE_C_GROUP) {
+if (meta_sse_group & SSE_C_GROUP) {
+ldpp_dout(s, 20) << "get_encryption_defaults: no defaults cause sse-c forced" << dendl;
     return 0;			// sse-c: no defaults here
   }
   std::string sse_algorithm { bucket_encryption_conf.sse_algorithm() };
@@ -2633,37 +2634,48 @@ int RGWPutObj_ObjStore_S3::get_encryption_defaults()
 
   auto iter = s->info.crypt_attribute_map.find(kms_attr);
   if (iter != s->info.crypt_attribute_map.end()) {
+ldpp_dout(s, 20) << "get_encryption_defaults: found kms_attr " << kms_attr << " = " << iter->second << ", setting kms_attr_seen" << dendl;
     kms_attr_seen = true;
   } else if (kms_master_key_id != "") {
+ldpp_dout(s, 20) << "get_encryption_defaults: no kms_attr, but kms_master_key_id = " << kms_master_key_id << ", settig kms_attr_seen" << dendl;
     kms_attr_seen = true;
     rgw_set_amz_meta_header(s->info.crypt_attribute_map, kms_attr, kms_master_key_id, OVERWRITE);
   }
 
   iter = s->info.crypt_attribute_map.find(bucket_key_attr);
   if (iter != s->info.crypt_attribute_map.end()) {
+ldpp_dout(s, 20) << "get_encryption_defaults: found bucket_key_attr " << bucket_key_attr << " = " << iter->second << ", setting kms_attr_seen" << dendl;
     kms_attr_seen = true;
   } else if (bucket_key_enabled) {
+ldpp_dout(s, 20) << "get_encryption_defaults: no bucket_key_attr, but bucket_key_enabled,  setting kms_attr_seen" << dendl;
     kms_attr_seen = true;
     rgw_set_amz_meta_header(s->info.crypt_attribute_map, bucket_key_attr, "true", OVERWRITE);
   }
 
   iter = s->info.crypt_attribute_map.find(context_attr);
   if (iter != s->info.crypt_attribute_map.end()) {
+ldpp_dout(s, 20) << "get_encryption_defaults: found context_attr " << context_attr << " = " << iter->second << ", setting kms_attr_seen" << dendl;
     kms_attr_seen = true;
   }
 
   if (kms_attr_seen && sse_algorithm == "") {
+ldpp_dout(s, 20) << "get_encryption_defaults: kms_attr but no algorithm, defaulting to aws_kms" << dendl;
     sse_algorithm = "aws:kms";
   }
 
   iter = s->info.crypt_attribute_map.find(encrypt_attr);
   if (iter != s->info.crypt_attribute_map.end()) {
+ldpp_dout(s, 20) << "get_encryption_defaults: found encrypt_attr " << encrypt_attr << " = " << iter->second << ", setting sse_algorithm to that" << dendl;
     sse_algorithm = iter->second;
   } else if (sse_algorithm != "") {
     rgw_set_amz_meta_header(s->info.crypt_attribute_map, encrypt_attr, sse_algorithm, OVERWRITE);
   }
+for (const auto& kv: s->info.crypt_attribute_map) {
+ldpp_dout(s, 20) << "get_encryption_defaults:  final map: " << kv.first << " = " << kv.second << dendl;
+}
+ldpp_dout(s, 20) << "get_encryption_defaults:  kms_attr_seen is " << kms_attr_seen << " and sse_algorithm is " << sse_algorithm << dendl;
   if (kms_attr_seen && sse_algorithm != "aws:kms") {
-    s->err.message = "sse-s3 but got sse-kms attributes";
+    s->err.message = "algorithm <" + sse_algorithm + "> but got sse-kms attributes";
     return -EINVAL;
   }
 
