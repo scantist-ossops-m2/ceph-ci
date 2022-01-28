@@ -200,8 +200,6 @@ PyObject *ActivePyModules::get_python(const std::string &what)
   PyJSONFormatter jf;
   // Use PyJSONFormatter if TTL cache is enabled.
   Formatter &f = ttl_seconds ? (Formatter&)jf : (Formatter&)pf;
-  int a = 2;
-  a += 1;
 
   if (what == "fs_map") {
     without_gil_t no_gil;
