@@ -303,7 +303,8 @@ class ScrubBackend {
 
   std::optional<std::string> compare_smaps();
 
-  void compare_obj_in_maps(const hobject_t& ho, std::stringstream& errstream);
+  std::optional<std::string> compare_obj_in_maps(const hobject_t& ho);
+  //void compare_obj_in_maps(const hobject_t& ho, std::stringstream& errstream);
 
   void omap_checks();
 

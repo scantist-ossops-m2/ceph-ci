@@ -395,7 +395,7 @@ int ScrubBackend::scrub_process_inconsistent()
                              m_inconsistent.size());
 
   dout(2) << err_msg << dendl;
-  clog->error() << fmt::to_string(err_msg);
+  clog->error() << fmt::to_string(err_msg); // RRR verify
 
   int fixed_cnt{0};
   if (m_repair) {
@@ -794,7 +794,8 @@ shard_as_auth_t ScrubBackend::possible_auth_shard(const hobject_t& obj,
   }
 
   ceph_assert(!err);
-  return shard_as_auth_t{oi, j, errstream.str(), digest};
+  //return shard_as_auth_t{oi, j, errstream.str(), digest};
+  return shard_as_auth_t{oi, j, "", digest};
 }
 
 // re-implementation of PGBackend::be_compare_scrubmaps()
@@ -808,7 +809,15 @@ std::optional<std::string> ScrubBackend::compare_smaps()
   std::for_each(
     this_chunk->authoritative_set.begin(),
     this_chunk->authoritative_set.end(),
-    [this, &errstream](const auto& ho) { compare_obj_in_maps(ho, errstream); });
+    [this, &errstream](const auto& ho) { 
+      if (auto maybe_clust_err = compare_obj_in_maps(ho); maybe_clust_err) {
+        errstream << *maybe_clust_err;
+        dout(6) << __func__ << ": RRRR DEBUG " << ho.oid << ": xx " << *maybe_clust_err << "DNE" << dendl;
+      }
+   /* DEBUG RRR */ dout(9) << __func__ << ": RRRRR DEBUG " << ho.oid << ": " << errstream.str() << "END" << dendl;
+});
+  dout(7) << fmt::format("{}: empty? {} <<{}>>", __func__, errstream.str().empty(), errstream.str())
+          << dendl;
 
   if (errstream.str().empty()) {
     return std::nullopt;
@@ -817,14 +826,14 @@ std::optional<std::string> ScrubBackend::compare_smaps()
   }
 }
 
-void ScrubBackend::compare_obj_in_maps(const hobject_t& ho,
-                                       stringstream& errstream)
+std::optional<std::string> ScrubBackend::compare_obj_in_maps(const hobject_t& ho)
 {
   // clear per-object data:
   this_chunk->cur_inconsistent.clear();
   this_chunk->cur_missing.clear();
   this_chunk->fix_digest = false;
 
+  stringstream errstream;  // for this shard
   auto auth_res = select_auth_object(ho, errstream);
 
   inconsistent_obj_wrapper object_error{ho};
@@ -847,7 +856,7 @@ void ScrubBackend::compare_obj_in_maps(const hobject_t& ho,
     m_scrubber.m_store->add_object_error(ho.pool, object_error);
     errstream << m_scrubber.m_pg_id.pgid << " soid " << ho
               << " : failed to pick suitable object info\n";
-    return;
+    return errstream.str();
   }
 
   auto& auth = auth_res.auth;
@@ -880,8 +889,8 @@ void ScrubBackend::compare_obj_in_maps(const hobject_t& ho,
   } else {
 
     // both the auth & errs containers are empty
-    errstream << m_scrubber.m_pg_id.pgid << " soid " << ho
-              << " : empty auth list\n";
+    //errstream << m_scrubber.m_pg_id.pgid << " soid " << ho
+    //        << " : empty auth list\n";
   }
 
   if (object_error.has_deep_errors()) {
@@ -893,6 +902,13 @@ void ScrubBackend::compare_obj_in_maps(const hobject_t& ho,
   if (object_error.errors || object_error.union_shards.errors) {
     m_scrubber.m_store->add_object_error(ho.pool, object_error);
   }
+
+  if (errstream.str().empty()) {
+    return std::nullopt;
+  } else {
+    return errstream.str();
+  }
+
 }
 
 
