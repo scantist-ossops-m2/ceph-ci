@@ -34,6 +34,12 @@
 
 >=16.2.8
 --------
+
+* A health warning will now be reported if the ``require-osd-release`` flag is not
+  set to the appropriate release after a cluster upgrade.
+
+>=16.2.7
+--------
 * MGR: The pg_autoscaler can now be turned `on` and `off` globally
   with the `noautoscale` flag. By default this flag is unset and
   the default pg_autoscale mode remains the same.
