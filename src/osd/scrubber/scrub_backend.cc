@@ -811,19 +811,21 @@ std::optional<std::string> ScrubBackend::compare_smaps()
     this_chunk->authoritative_set.end(),
     [this, &errstream](const auto& ho) { 
       if (auto maybe_clust_err = compare_obj_in_maps(ho); maybe_clust_err) {
-        errstream << *maybe_clust_err;
+        //errstream << *maybe_clust_err;
+        clog->error() << *maybe_clust_err;
         dout(6) << __func__ << ": RRRR DEBUG " << ho.oid << ": xx " << *maybe_clust_err << "DNE" << dendl;
+        
       }
    /* DEBUG RRR */ dout(9) << __func__ << ": RRRRR DEBUG " << ho.oid << ": " << errstream.str() << "END" << dendl;
 });
   dout(7) << fmt::format("{}: empty? {} <<{}>>", __func__, errstream.str().empty(), errstream.str())
           << dendl;
 
-  if (errstream.str().empty()) {
+  //if (errstream.str().empty()) {
     return std::nullopt;
-  } else {
-    return errstream.str();
-  }
+  //} else {
+   // return errstream.str();
+  //}
 }
 
 std::optional<std::string> ScrubBackend::compare_obj_in_maps(const hobject_t& ho)
@@ -833,8 +835,8 @@ std::optional<std::string> ScrubBackend::compare_obj_in_maps(const hobject_t& ho
   this_chunk->cur_missing.clear();
   this_chunk->fix_digest = false;
 
-  stringstream errstream;  // for this shard
-  auto auth_res = select_auth_object(ho, errstream);
+  stringstream errstream0;  // for this shard
+  auto auth_res = select_auth_object(ho, errstream0);
 
   inconsistent_obj_wrapper object_error{ho};
   if (!auth_res.is_auth_available) {
@@ -854,11 +856,12 @@ std::optional<std::string> ScrubBackend::compare_obj_in_maps(const hobject_t& ho
     }
 
     m_scrubber.m_store->add_object_error(ho.pool, object_error);
-    errstream << m_scrubber.m_pg_id.pgid << " soid " << ho
+    errstream0 << m_scrubber.m_pg_id.pgid << " soid " << ho
               << " : failed to pick suitable object info\n";
-    return errstream.str();
+    return errstream0.str();
   }
 
+  stringstream errstream;  // for this shard
   auto& auth = auth_res.auth;
 
   // an auth source was selected
@@ -888,9 +891,9 @@ std::optional<std::string> ScrubBackend::compare_obj_in_maps(const hobject_t& ho
                   errstream);
   } else {
 
-    // both the auth & errs containers are empty
-    //errstream << m_scrubber.m_pg_id.pgid << " soid " << ho
-    //        << " : empty auth list\n";
+    // both the auth & errs containers are empty  // RRR
+    errstream << m_scrubber.m_pg_id.pgid << " soid " << ho
+            << " : empty auth list\n";
   }
 
   if (object_error.has_deep_errors()) {
@@ -1157,6 +1160,7 @@ ScrubBackend::auth_and_obj_errs_t ScrubBackend::match_in_shards(
         if (discrep_found) {
           // Only true if compare_obj_details() found errors and put something
           // in ss
+          dout(11) << __func__ << " in ss-str: A[[" << ss.str() << "]]" << dendl;
           errstream << m_pg_id << " shard " << srd << " soid " << ho << " : "
                     << ss.str() << "\n";
         }
@@ -1166,6 +1170,7 @@ ScrubBackend::auth_and_obj_errs_t ScrubBackend::match_in_shards(
         // Track possible shards to use as authoritative, if needed
 
         // There are errors, without identifying the shard
+        dout(11) << __func__ << " in ss-str: B[[" << ss.str() << "]]" << dendl;
         object_errors.insert(srd);
         errstream << m_pg_id << " soid " << ho << " : " << ss.str() << "\n";
 
@@ -1184,11 +1189,12 @@ ScrubBackend::auth_and_obj_errs_t ScrubBackend::match_in_shards(
 
       // Can't have any other errors if there is no information available
       ++m_scrubber.m_shallow_errors;
+      dout(11) << __func__ << " in ss-str: C[[--]]" << dendl;
       errstream << m_pg_id << " shard " << srd << " " << ho << " : missing\n";
     }
     obj_result.add_shard(srd, auth_sel.shard_map[srd]);
 
-    dout(30) << __func__ << ": soid " << ho << " : " << errstream.str()
+    dout(/*30*/12) << __func__ << ": soid " << ho << " : " << errstream.str()
              << dendl;
   }
 
