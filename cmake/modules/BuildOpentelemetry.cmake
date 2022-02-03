@@ -6,7 +6,7 @@ function(target_create _target _lib)
 endfunction()
 
 function(build_opentelemetry)
-  set(opentelemetry_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/opentelemetry-cpp")
+  set(opentelemetry_SOURCE_DIR "${PROJECT_SOURCE_DIR}/src/opentelemetry-cpp")
   set(opentelemetry_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/opentelemetry-cpp")
   set(opentelemetry_cpp_targets opentelemetry_trace opentelemetry_exporter_jaeger_trace)
   set(opentelemetry_CMAKE_ARGS -DCMAKE_POSITION_INDEPENDENT_CODE=ON
@@ -23,10 +23,6 @@ function(build_opentelemetry)
       ${opentelemetry_BINARY_DIR}/ext/src/http/client/curl/libhttp_client_curl.a
       ${CURL_LIBRARIES}
   )
-  set(opentelemetry_include_dir ${opentelemetry_SOURCE_DIR}/api/include/
-                                ${opentelemetry_SOURCE_DIR}/exporters/jaeger/include/
-                                ${opentelemetry_SOURCE_DIR}/ext/include/
-                                ${opentelemetry_SOURCE_DIR}/sdk/include/)
   # TODO: add target based propogation
   set(opentelemetry_deps opentelemetry_trace opentelemetry_resources opentelemetry_common
                          opentelemetry_exporter_jaeger_trace http_client_curl
@@ -58,7 +54,7 @@ function(build_opentelemetry)
     INSTALL_COMMAND ""
     BUILD_BYPRODUCTS ${opentelemetry_libs}
     DEPENDS ${dependencies}
-    LOG_BUILD ON)
+    LOG_BUILD OFF)
 
   # CMake doesn't allow to add a list of libraries to the import property, hence
   # we create individual targets and link their libraries which finally

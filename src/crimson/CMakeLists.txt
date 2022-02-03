@@ -135,7 +135,7 @@ set(crimson_common_deps
   json_spirit)
 
 if(WITH_JAEGER)
-  include_directories(SYSTEM ${CMAKE_BINARY_DIR}/external/include)
+  include_directories(SYSTEM "${opentelemetry_include_dir}")
   list(APPEND crimson_common_deps ${jaeger_base})
 endif()
 
