@@ -13,7 +13,7 @@ function(build_opentelemetry)
                                -DWITH_JAEGER=ON
                                -DBUILD_TESTING=OFF
                                -DWITH_EXAMPLES=OFF
-                               -DBoost_INCLUDE_DIR=${CMAKE_BINARY_DIR}/boost/include)
+			       -DBoost_INCLUDE_DIR=${CMAKE_BINARY_DIR}/boost/include)
 
   set(opentelemetry_libs
       ${opentelemetry_BINARY_DIR}/sdk/src/trace/libopentelemetry_trace.a
@@ -23,6 +23,10 @@ function(build_opentelemetry)
       ${opentelemetry_BINARY_DIR}/ext/src/http/client/curl/libhttp_client_curl.a
       ${CURL_LIBRARIES}
   )
+  set(opentelemetry_include_dir ${opentelemetry_SOURCE_DIR}/api/include/
+                                ${opentelemetry_SOURCE_DIR}/exporters/jaeger/include/
+                                ${opentelemetry_SOURCE_DIR}/ext/include/
+                                ${opentelemetry_SOURCE_DIR}/sdk/include/)
   # TODO: add target based propogation
   set(opentelemetry_deps opentelemetry_trace opentelemetry_resources opentelemetry_common
                          opentelemetry_exporter_jaeger_trace http_client_curl
