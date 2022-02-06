@@ -7565,9 +7565,31 @@ void BlueStore::set_cache_shards(unsigned num)
   }
 }
 
+//---------------------------------------------
+bool BlueStore::has_null_manager()
+{
+  return (fm && fm->is_null_manager());
+}
+
+// GBH: REMOVE-ME
+#define NCB_SAFE_FAST_SHUTDOWN_DEBUG
 int BlueStore::_mount()
 {
   dout(5) << __func__ << "NCB:: path " << path << dendl;
+
+  // GBH: REMOVE-ME
+  // Verify that allocation-file content matches RocksDB state
+  // Temporary solution to debug the safe-fast-shutdown
+  // TBD - use a config-file option instead
+#ifdef NCB_SAFE_FAST_SHUTDOWN_DEBUG
+  static bool perform_bluestore_qfsck = true;
+  if (perform_bluestore_qfsck && cct->_conf->bluestore_qfsck_on_mount) {
+    perform_bluestore_qfsck = false;
+    dout(0) << __func__ << "::NCB::bluestore_qfsck_on_mount was initiated ... " << dendl;
+    int ret =read_allocation_from_drive_for_bluestore_tool();
+    ceph_assert(ret == 0);
+  }
+#endif
   _kv_only = false;
   if (cct->_conf->bluestore_fsck_on_mount) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
@@ -7681,12 +7703,21 @@ int BlueStore::umount()
 #endif
     dout(20) << __func__ << " stopping kv thread" << dendl;
     _kv_stop();
-    _shutdown_cache();
+    if (!m_fast_shutdown) {
+      _shutdown_cache();
+    }
     dout(20) << __func__ << " closing" << dendl;
   }
 
+  // raise debug level
+  if (m_fast_shutdown && 0) {
+    cct->_conf.set_val("debug_osd", "20");
+    cct->_conf.set_val("debug_bluestore", "20");
+    cct->_conf.set_val("debug_bluefs", "20");
+    cct->_conf.set_val("debug_rocksdb", "20");
+  }
   _close_db_and_around();
-  if (cct->_conf->bluestore_fsck_on_umount) {
+  if (cct->_conf->bluestore_fsck_on_umount && !m_fast_shutdown) {
     int rc = fsck(cct->_conf->bluestore_fsck_on_umount_deep);
     if (rc < 0)
       return rc;
@@ -10305,6 +10336,14 @@ int BlueStore::get_numa_node(
   return 0;
 }
 
+void BlueStore::prepare_for_fast_shutdown()
+{
+  m_fast_shutdown = true;
+  // TBD:  disable deferred_try_submit()
+  // TBD2: maybe disable _deferred_submit_unlock()
+  // TBD3: disable queue_transactions()
+}
+
 int BlueStore::get_devices(set<string> *ls)
 {
   if (bdev) {
@@ -10432,7 +10471,8 @@ int BlueStore::pool_statfs(uint64_t pool_id, struct store_statfs_t *buf,
   string key_prefix;
   _key_encode_u64(pool_id, &key_prefix);
   *out_per_pool_omap = per_pool_omap != OMAP_BULK;
-  if (*out_per_pool_omap) {
+  // stop calls after db was closed
+  if (*out_per_pool_omap && db) {
     auto prefix = per_pool_omap == OMAP_PER_POOL ?
       PREFIX_PERPOOL_OMAP :
       PREFIX_PERPG_OMAP;
@@ -18335,7 +18375,7 @@ int BlueStore::store_allocator(Allocator* src_allocator)
 
   uint64_t file_size = p_handle->file->fnode.size;
   uint64_t allocated = p_handle->file->fnode.get_allocated();
-  dout(5) << "file_size=" << file_size << ", allocated=" << allocated << dendl;
+  dout(10) << "file_size=" << file_size << ", allocated=" << allocated << dendl;
 
   unique_ptr<Allocator> allocator(clone_allocator_without_bluefs(src_allocator));
   if (!allocator) {
@@ -18413,7 +18453,6 @@ int BlueStore::store_allocator(Allocator* src_allocator)
 
   bluefs->close_writer(p_handle);
   need_to_destage_allocation_file = false;
-  dout(10) << "need_to_destage_allocation_file was clear" << dendl;
   return 0;
 }
 
@@ -19002,6 +19041,7 @@ int BlueStore::compare_allocators(Allocator* alloc1, Allocator* alloc2, uint64_t
     return 0;
   } else {
     derr << "mismatch:: idx1=" << idx1 << " idx2=" << idx2 << dendl;
+#if 0
     std::cout << "==================================================================="  << std::endl;
     for (uint64_t i = 0; i < idx1; i++) {
       std::cout << "arr1[" << i << "]<" << arr1[i].offset << "," << arr1[i].length << "> " << std::endl;
@@ -19011,6 +19051,7 @@ int BlueStore::compare_allocators(Allocator* alloc1, Allocator* alloc2, uint64_t
     for (uint64_t i = 0; i < idx2; i++) {
       std::cout << "arr2[" << i << "]<" << arr2[i].offset << "," << arr2[i].length << "> " << std::endl;
     }
+#endif
     return -1;
   }
 }
