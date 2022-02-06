@@ -2507,6 +2507,11 @@ void BlueFS::_rewrite_log_and_layout_sync_LNF_LD(bool allocate_with_fallback,
   }
 #endif
   _flush_bdev();
+  // Cherry Pick from Adam's PR Fix BlueFS sync compaction
+  // (https://github.com/ceph/ceph/pull/45246)
+  ++log.seq_live;
+  dirty.seq_live = log.seq_live;
+  log.t.seq = log.seq_live;
 
   super.memorized_layout = layout;
   super.log_fnode = log_file->fnode;
