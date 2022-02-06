@@ -1214,7 +1214,6 @@ def cluster(ctx, config):
             ),
         )
 
-
 def osd_scrub_pgs(ctx, config):
     """
     Scrub pgs when we exit.
@@ -1903,6 +1902,7 @@ def task(ctx, config):
                 # recoveries were triggered since the last health check
                 ctx.managers[config['cluster']].wait_for_clean()
                 osd_scrub_pgs(ctx, config)
+                osd_scrub_bluestore(ctx.managers[config['cluster']])
 
             # stop logging health to clog during shutdown, or else we generate
             # a bunch of scary messages unrelated to our actual run.

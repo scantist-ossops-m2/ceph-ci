@@ -1156,6 +1156,37 @@ class OSDThrasher(Thrasher):
         self.log('test_bluestore_reshard completed')
 
 
+    def osd_scrub_bluestore(self):
+    """
+    Scrub bluestore allocation after we exit making sure allocation file is consistent with ONodes.
+    OSDs must be down for the command to work!
+    """
+
+    self.log('osd_scrub_bluestore started')
+
+    for osd_id in self.live_osds:
+        self.kill_osd(osd=osd_id, mark_down=True, mark_out=True)
+        remote = self.ceph_manager.find_remote('osd', osd_id)
+        FSPATH = self.ceph_manager.get_filepath()
+
+        prefix = [
+                '--no-mon-config',
+                '--log-file=/var/log/ceph/bluestore_tool.$pid.log',
+                '--log-level=10',
+                '--path', FSPATH.format(id=osd_id)
+            ]
+
+        cmd = prefix + [
+            'qfsck'
+            ]
+        proc = self.run_ceph_bluestore_tool(remote, 'osd.' + osd_id, cmd)
+        if proc.exitstatus != 0:
+            raise Exception("ceph-bluestore-tool access failed.")
+        self.revive_osd(osd_id)
+
+    self.log('osd_scrub_bluestore completed')
+
+
     def test_map_discontinuity(self):
         """
         1) Allows the osds to recover
