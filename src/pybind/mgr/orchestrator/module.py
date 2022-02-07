@@ -1074,6 +1074,9 @@ Usage:
             placement=PlacementSpec.from_string(placement),
             unmanaged=unmanaged,
             preview_only=dry_run)
+
+        spec.validate()  # force any validation exceptions to be caught correctly
+
         return self._apply_misc([spec], dry_run, format, no_overwrite)
 
     @_cli_write_command('orch apply rgw')

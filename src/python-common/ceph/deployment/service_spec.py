@@ -680,7 +680,9 @@ class ServiceSpec(object):
                         f'Service of type \'{self.service_type}\' should not contain a service id')
 
         if self.service_id:
-            if not re.match('^[a-zA-Z0-9_.-]+$', self.service_id):
+            if self.service_type == 'mds' and str(self.service_id)[0].isdigit():
+                raise SpecValidationError('MDS service id cannot start with a numeric digit')
+            elif not re.match('^[a-zA-Z0-9_.-]+$', self.service_id): 
                 raise SpecValidationError('Service id contains invalid characters, '
                                           'only [a-zA-Z0-9_.-] allowed')
 
