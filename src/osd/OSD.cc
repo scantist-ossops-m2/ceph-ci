@@ -4294,7 +4294,7 @@ int OSD::shutdown()
   }
 
   // stop MgrClient earlier as it's more like an internal consumer of OSD
-  mgrc.shutdown();
+  //mgrc.shutdown();
   utime_t  start_time_fast = ceph_clock_now();
   if (cct->_conf->osd_fast_shutdown) {
     // first, stop new task from being taken from op_shardedwq
@@ -4334,7 +4334,7 @@ int OSD::shutdown()
     //dout(10) << "op sharded tp stopped" << dendl;
 
     //dout(10) << "stopping agent" << dendl;
-    service.agent_stop();
+    //service.agent_stop();
 
     utime_t  start_time_flush = ceph_clock_now();
     //cct->_log->flush();
