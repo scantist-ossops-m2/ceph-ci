@@ -4294,11 +4294,15 @@ int OSD::shutdown()
   }
 
   // stop MgrClient earlier as it's more like an internal consumer of OSD
-  //mgrc.shutdown();
   utime_t  start_time_fast = ceph_clock_now();
   if (cct->_conf->osd_fast_shutdown) {
+    //service.start_shutdown();
+
     // first, stop new task from being taken from op_shardedwq
     op_shardedwq.stop_for_fast_shutdown();
+
+    // do we still need to drain ???
+    //op_shardedwq.drain();
 
     utime_t  start_time_timer = ceph_clock_now();
     // TBD: Is this too early???
@@ -4307,9 +4311,6 @@ int OSD::shutdown()
       std::lock_guard l(tick_timer_lock);
       tick_timer_without_osd_lock.shutdown();
     }
-
-    // do we still need to drain ???
-    //op_shardedwq.drain();
 
     osd_lock.unlock();
 #if 0
@@ -4373,6 +4374,7 @@ int OSD::shutdown()
     _exit(0);
   }
 
+  mgrc.shutdown();
   service.start_shutdown();
 
   // stop sending work to pgs.  this just prevents any new work in _process
