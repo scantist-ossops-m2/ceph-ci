@@ -4293,7 +4293,6 @@ int OSD::shutdown()
     cct->_conf.apply_changes(nullptr);
   }
 
-  // stop MgrClient earlier as it's more like an internal consumer of OSD
   utime_t  start_time_fast = ceph_clock_now();
   if (cct->_conf->osd_fast_shutdown) {
     //service.start_shutdown();
@@ -4374,6 +4373,7 @@ int OSD::shutdown()
     _exit(0);
   }
 
+  // stop MgrClient earlier as it's more like an internal consumer of OSD
   mgrc.shutdown();
   service.start_shutdown();
 

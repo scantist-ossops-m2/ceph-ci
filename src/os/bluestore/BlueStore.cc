@@ -19099,9 +19099,9 @@ int BlueStore::read_allocation_from_drive_for_bluestore_tool()
   utime_t            start = ceph_clock_now();
 
   auto shutdown_cache = make_scope_guard([&] {
-    std::cout << "Allocation Recovery was completed in " << duration
-	      << " seconds; insert_count=" << stats.insert_count
-	      << "; extent_count=" << stats.extent_count << std::endl;
+    dout(1) << "Allocation Recovery was completed in " << duration
+	    << " seconds; insert_count=" << stats.insert_count
+	    << "; extent_count=" << stats.extent_count << dendl;
     _shutdown_cache();
     _close_db_and_around();
   });
@@ -19138,7 +19138,7 @@ int BlueStore::read_allocation_from_drive_for_bluestore_tool()
     }
   }
 
-  std::cout << stats << std::endl;
+  dout(1) << stats << dendl;
   return ret;
 }
 
