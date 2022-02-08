@@ -71,6 +71,9 @@ function(build_arrow)
     list(APPEND arrow_DEPENDS Boost)
   endif()
 
+  list(APPEND arrow_CMAKE_ARGS -DCMAKE_VERBOSE_MAKEFILE=ON) # XXX debugging
+  list(APPEND arrow_CMAKE_ARGS -DARROW_VERBOSE_THIRDPARTY_BUILD=ON) # XXX debugging
+
   # cmake doesn't properly handle arguments containing ";", such as
   # CMAKE_PREFIX_PATH, for which reason we'll have to use some other separator.
   string(REPLACE ";" "!" CMAKE_PREFIX_PATH_ALT_SEP "${CMAKE_PREFIX_PATH}")
