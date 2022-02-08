@@ -25,6 +25,7 @@
 #include "crimson/mon/MonClient.h"
 #include "crimson/net/Messenger.h"
 #include "global/pidfile.h"
+#include "global/privileges_drop.h"
 
 #include "osd.h"
 
@@ -263,6 +264,7 @@ int main(int argc, char* argv[])
           local_conf().parse_config_files(conf_file_list).get();
           local_conf().parse_env().get();
           local_conf().parse_argv(ceph_args).get();
+          maybe_drop_privileges(0);
           if (const auto ret = pidfile_write(local_conf()->pid_file);
               ret == -EACCES || ret == -EAGAIN) {
             ceph_abort_msg(
