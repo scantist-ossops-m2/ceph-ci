@@ -51,20 +51,9 @@ function(build_arrow)
     list(APPEND arrow_INTERFACE_LINK_LIBRARIES Zstd::Zstd)
   endif (WITH_SYSTEM_ZSTD)
 
+  list(APPEND arrow_CMAKE_ARGS -DBOOST_ROOT=${BOOST_ROOT})
   list(APPEND arrow_CMAKE_ARGS -DBOOST_INCLUDEDIR=${Boost_INCLUDE_DIR})
-  if (BOOST_ROOT)
-    list(APPEND arrow_CMAKE_ARGS -DBOOST_ROOT=${BOOST_ROOT})
-  endif()
-  # FindBoost may have trouble finding component libraries, even if it finds the root/headers
-  if (Boost_LIBRARY_DIR_RELEASE)
-    list(APPEND arrow_CMAKE_ARGS -DBOOST_LIBRARYDIR=${Boost_LIBRARY_DIR_RELEASE})
-    list(APPEND arrow_CMAKE_ARGS -DBOOST_FILESYSTEM_LIBRARY=${Boost_FILESYSTEM_LIBRARY_RELEASE})
-    list(APPEND arrow_CMAKE_ARGS -DBOOST_SYSTEM_LIBRARY=${Boost_SYSTEM_LIBRARY_RELEASE})
-  elseif (Boost_LIBRARY_DIR_DEBUG)
-    list(APPEND arrow_CMAKE_ARGS -DBOOST_LIBRARYDIR=${Boost_LIBRARY_DIR_DEBUG})
-    list(APPEND arrow_CMAKE_ARGS -DBOOST_FILESYSTEM_LIBRARY=${Boost_FILESYSTEM_LIBRARY_DEBUG})
-    list(APPEND arrow_CMAKE_ARGS -DBOOST_SYSTEM_LIBRARY=${Boost_SYSTEM_LIBRARY_DEBUG})
-  endif()
+  list(APPEND arrow_CMAKE_ARGS -DBOOST_LIBRARYDIR=${BOOST_LIBRARYDIR})
 
   if (NOT WITH_SYSTEM_BOOST)
     # make sure boost submodule builds first, so arrow can find its byproducts
