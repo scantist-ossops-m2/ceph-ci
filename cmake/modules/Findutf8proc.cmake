@@ -44,7 +44,7 @@ function(extract_utf8proc_version)
   endif()
 endfunction(extract_utf8proc_version)
 
-if(BUILD_SHARED_LIBS)
+if(NOT utf8proc_USE_STATIC_LIB)
   set(utf8proc_LIB_NAMES)
   if(CMAKE_IMPORT_LIBRARY_SUFFIX)
     list(APPEND utf8proc_LIB_NAMES
