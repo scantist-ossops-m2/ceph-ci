@@ -66,21 +66,21 @@ if(utf8proc_ROOT)
   find_library(utf8proc_LIB
                NAMES ${utf8proc_LIB_NAMES}
                PATHS ${utf8proc_ROOT}
-               PATH_SUFFIXES ${ARROW_LIBRARY_PATH_SUFFIXES}
+               PATH_SUFFIXES lib lib64
                NO_DEFAULT_PATH)
   find_path(utf8proc_INCLUDE_DIR
             NAMES utf8proc.h
             PATHS ${utf8proc_ROOT}
             NO_DEFAULT_PATH
-            PATH_SUFFIXES ${ARROW_INCLUDE_PATH_SUFFIXES})
+            PATH_SUFFIXES include)
   extract_utf8proc_version()
 else()
   find_library(utf8proc_LIB
                NAMES ${utf8proc_LIB_NAMES}
-               PATH_SUFFIXES ${ARROW_LIBRARY_PATH_SUFFIXES})
+               PATH_SUFFIXES lib lib64)
   find_path(utf8proc_INCLUDE_DIR
             NAMES utf8proc.h
-            PATH_SUFFIXES ${ARROW_INCLUDE_PATH_SUFFIXES})
+            PATH_SUFFIXES include)
   extract_utf8proc_version()
 endif()
 
