@@ -11,7 +11,7 @@ from prettytable import PrettyTable
 from ceph.deployment.inventory import Device
 from ceph.deployment.drive_group import DriveGroupSpec, DeviceSelection, OSDMethod
 from ceph.deployment.service_spec import PlacementSpec, ServiceSpec, service_spec_allow_invalid_from_json, \
-    SNMPGatewaySpec
+    SNMPGatewaySpec, MDSSpec
 from ceph.deployment.hostspec import SpecValidationError
 from ceph.utils import datetime_now
 
@@ -1068,7 +1068,7 @@ Usage:
         if inbuf:
             raise OrchestratorValidationError('unrecognized command -i; -h or --help for usage')
 
-        spec = ServiceSpec(
+        spec = MDSSpec(
             service_type='mds',
             service_id=fs_name,
             placement=PlacementSpec.from_string(placement),
