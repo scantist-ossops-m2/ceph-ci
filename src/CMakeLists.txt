@@ -526,14 +526,16 @@ endif()
 
 add_library(common STATIC ${ceph_common_objs})
 target_link_libraries(common ${ceph_common_deps})
+add_dependencies(common legacy-option-headers)
 if(WITH_JAEGER)
-add_dependencies(common legacy-option-headers jaeger_base)
+add_dependencies(common jaeger_base)
 endif()
 
 add_library(ceph-common SHARED ${ceph_common_objs})
 target_link_libraries(ceph-common ${ceph_common_deps})
+add_dependencies(ceph-common legacy-option-headers)
 if(WITH_JAEGER)
-add_dependencies(ceph-common legacy-option-headers jaeger_base)
+add_dependencies(ceph-common jaeger_base)
 endif()
 # appease dpkg-shlibdeps
 set_target_properties(ceph-common PROPERTIES
