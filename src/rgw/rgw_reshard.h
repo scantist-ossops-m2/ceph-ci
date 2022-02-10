@@ -105,7 +105,7 @@ public:
 		   const RGWBucketInfo& _bucket_info,
                    const std::map<string, bufferlist>& _bucket_attrs,
 		   RGWBucketReshardLock* _outer_reshard_lock);
-  int execute(int num_shards, const ReshardFaultInjector& f,
+  int execute(int num_shards, ReshardFaultInjector& f,
               int max_op_entries, const DoutPrefixProvider *dpp,
               bool verbose = false, ostream *out = nullptr,
               Formatter *formatter = nullptr,
