@@ -11,6 +11,7 @@ import time
 from mgr_util import verify_tls_files
 from orchestrator import DaemonDescriptionStatus, OrchestratorError
 from orchestrator._interface import daemon_type_to_service
+from cephadm.serve import CephadmServe
 from ceph.utils import datetime_now
 from ceph.deployment.inventory import Devices
 from ceph.deployment.service_spec import ServiceSpec, PlacementSpec
@@ -167,6 +168,9 @@ class HostData:
             # if we got here, we've already verified the keyring of the agent. If
             # host agent is reporting on is marked offline, it shouldn't be any more
             self.mgr.offline_hosts_remove(data['host'])
+            # This is the last time we checked that the agent on the host is offline
+            # If we got a report we can clear it.
+            self.mgr.agent_helpers.last_checked_host_offline.pop(data['host'], None)
             results['result'] = self.handle_metadata(data)
         return results
 
@@ -259,7 +263,23 @@ class HostData:
                     self.mgr._kick_serve_loop()
                 self.mgr.log.debug(
                     f'Received up-to-date metadata from agent on host {host}.')
-
+            # need to quickly discover offline hosts
+            for agent in self.mgr.cache.get_daemons_by_type('agent'):
+                assert agent.hostname
+                if agent.hostname not in self.mgr.offline_hosts and self.mgr.agent_helpers._agent_down(agent.hostname):
+                    if agent.hostname not in self.mgr.agent_helpers.last_checked_host_offline:
+                        self.mgr.agent_helpers.last_checked_host_offline[agent.hostname] = datetime.now(
+                        )
+                    else:
+                        if datetime.now() - self.mgr.agent_helpers.last_checked_host_offline[agent.hostname] <= timedelta(minutes=1):
+                            continue
+                        self.mgr.agent_helpers.last_checked_host_offline[agent.hostname] = datetime.now(
+                        )
+                    if not self.mgr.agent_helpers._message_agent(agent.hostname, self.mgr.agent_cache.agent_ports[host], {'counter': self.mgr.agent_cache.agent_counter[host]}, retry=False):
+                        self.mgr.ssh.reset_con(agent.hostname)
+                        r = CephadmServe(self.mgr)._check_host(agent.hostname)
+                        if r:
+                            self.mgr._kick_serve_loop()
             self.mgr.agent_cache.save_agent(host)
             return 'Successfully processed metadata.'
 
@@ -270,18 +290,50 @@ class HostData:
 
 
 class AgentMessageThread(threading.Thread):
-    def __init__(self, host: str, port: int, data: Dict[Any, Any], mgr: "CephadmOrchestrator", daemon_spec: Optional[CephadmDaemonDeploySpec] = None) -> None:
+    def __init__(self, mgr: "CephadmOrchestrator", host: str, port: int, data: Dict[Any, Any], daemon_spec: Optional[CephadmDaemonDeploySpec] = None) -> None:
         self.mgr = mgr
         self.host = host
-        self.addr = self.mgr.inventory.get_addr(host) if host in self.mgr.inventory else host
         self.port = port
-        self.data: str = json.dumps(data)
+        self.data = data
         self.daemon_spec: Optional[CephadmDaemonDeploySpec] = daemon_spec
         super(AgentMessageThread, self).__init__(target=self.run)
 
     def run(self) -> None:
-        self.mgr.log.debug(f'Sending message to agent on host {self.host}')
-        self.mgr.agent_cache.sending_agent_message[self.host] = True
+        self.mgr.agent_helpers._message_agent(
+            self.host, self.port, self.data, self.daemon_spec, retry=True)
+
+
+class CephadmAgentHelpers:
+    def __init__(self, mgr: "CephadmOrchestrator"):
+        self.mgr: "CephadmOrchestrator" = mgr
+        self.last_checked_host_offline: Dict[str, datetime] = {}
+
+    def _request_agent_acks(self, hosts: Set[str], increment: bool = False, daemon_spec: Optional[CephadmDaemonDeploySpec] = None) -> None:
+        for host in hosts:
+            if increment:
+                self.mgr.cache.metadata_up_to_date[host] = False
+            if host not in self.mgr.agent_cache.agent_counter:
+                self.mgr.agent_cache.agent_counter[host] = 1
+            elif increment:
+                self.mgr.agent_cache.agent_counter[host] = self.mgr.agent_cache.agent_counter[host] + 1
+            payload: Dict[str, Any] = {'counter': self.mgr.agent_cache.agent_counter[host]}
+            if daemon_spec:
+                payload['config'] = daemon_spec.final_config
+            message_thread = AgentMessageThread(
+                self.mgr, host, self.mgr.agent_cache.agent_ports[host], payload, daemon_spec)
+            message_thread.start()
+
+    def _request_ack_all_not_up_to_date(self) -> None:
+        self.mgr.agent_helpers._request_agent_acks(
+            set([h for h in self.mgr.cache.get_hosts() if
+                 (not self.mgr.cache.host_metadata_up_to_date(h)
+                 and h in self.mgr.agent_cache.agent_ports and not self.mgr.agent_cache.messaging_agent(h))]))
+
+    def _message_agent(self, host: str, port: int, data_dict: Dict[Any, Any], daemon_spec: Optional[CephadmDaemonDeploySpec] = None, retry: bool = True) -> bool:
+        data: str = json.dumps(data_dict)
+        addr: str = self.mgr.inventory.get_addr(host) if host in self.mgr.inventory else host
+        self.mgr.log.debug(f'Sending message to agent on host {host}')
+        self.mgr.agent_cache.sending_agent_message[host] = True
         try:
             assert self.mgr.cherrypy_thread
             root_cert = self.mgr.cherrypy_thread.ssl_certs.get_root_cert()
@@ -308,10 +360,10 @@ class AgentMessageThread(threading.Thread):
             ssl_ctx.load_cert_chain(cert_fname, key_fname)
         except Exception as e:
             self.mgr.log.error(f'Failed to get certs for connecting to agent: {e}')
-            self.mgr.agent_cache.sending_agent_message[self.host] = False
-            return
+            self.mgr.agent_cache.sending_agent_message[host] = False
+            return False
         try:
-            bytes_len: str = str(len(self.data.encode('utf-8')))
+            bytes_len: str = str(len(data.encode('utf-8')))
             if len(bytes_len.encode('utf-8')) > 10:
                 raise Exception(
                     f'Message is too big to send to agent. Message size is {bytes_len} bytes!')
@@ -319,61 +371,37 @@ class AgentMessageThread(threading.Thread):
                 bytes_len = '0' + bytes_len
         except Exception as e:
             self.mgr.log.error(f'Failed to get length of json payload: {e}')
-            self.mgr.agent_cache.sending_agent_message[self.host] = False
-            return
+            self.mgr.agent_cache.sending_agent_message[host] = False
+            return False
         for retry_wait in [3, 5]:
             try:
                 agent_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                secure_agent_socket = ssl_ctx.wrap_socket(agent_socket, server_hostname=self.addr)
-                secure_agent_socket.connect((self.addr, self.port))
-                msg = (bytes_len + self.data)
+                secure_agent_socket = ssl_ctx.wrap_socket(agent_socket, server_hostname=addr)
+                secure_agent_socket.connect((addr, port))
+                msg = (bytes_len + data)
                 secure_agent_socket.sendall(msg.encode('utf-8'))
                 agent_response = secure_agent_socket.recv(1024).decode()
-                self.mgr.log.debug(f'Received "{agent_response}" from agent on host {self.host}')
-                if self.daemon_spec:
-                    self.mgr.agent_cache.agent_config_successfully_delivered(self.daemon_spec)
-                self.mgr.agent_cache.sending_agent_message[self.host] = False
-                return
+                self.mgr.log.debug(f'Received "{agent_response}" from agent on host {host}')
+                if daemon_spec:
+                    self.mgr.agent_cache.agent_config_successfully_delivered(daemon_spec)
+                self.mgr.agent_cache.sending_agent_message[host] = False
+                return True
             except ConnectionError as e:
                 # if it's a connection error, possibly try to connect again.
                 # We could have just deployed agent and it might not be ready
                 self.mgr.log.debug(
-                    f'Retrying connection to agent on {self.host} in {str(retry_wait)} seconds. Connection failed with: {e}')
+                    f'Retrying connection to agent on {host} in {str(retry_wait)} seconds. Connection failed with: {e}')
+                if not retry:
+                    return False
                 time.sleep(retry_wait)
             except Exception as e:
                 # if it's not a connection error, something has gone wrong. Give up.
-                self.mgr.log.error(f'Failed to contact agent on host {self.host}: {e}')
-                self.mgr.agent_cache.sending_agent_message[self.host] = False
-                return
-        self.mgr.log.error(f'Could not connect to agent on host {self.host}')
-        self.mgr.agent_cache.sending_agent_message[self.host] = False
-        return
-
-
-class CephadmAgentHelpers:
-    def __init__(self, mgr: "CephadmOrchestrator"):
-        self.mgr: "CephadmOrchestrator" = mgr
-
-    def _request_agent_acks(self, hosts: Set[str], increment: bool = False, daemon_spec: Optional[CephadmDaemonDeploySpec] = None) -> None:
-        for host in hosts:
-            if increment:
-                self.mgr.cache.metadata_up_to_date[host] = False
-            if host not in self.mgr.agent_cache.agent_counter:
-                self.mgr.agent_cache.agent_counter[host] = 1
-            elif increment:
-                self.mgr.agent_cache.agent_counter[host] = self.mgr.agent_cache.agent_counter[host] + 1
-            payload: Dict[str, Any] = {'counter': self.mgr.agent_cache.agent_counter[host]}
-            if daemon_spec:
-                payload['config'] = daemon_spec.final_config
-            message_thread = AgentMessageThread(
-                host, self.mgr.agent_cache.agent_ports[host], payload, self.mgr, daemon_spec)
-            message_thread.start()
-
-    def _request_ack_all_not_up_to_date(self) -> None:
-        self.mgr.agent_helpers._request_agent_acks(
-            set([h for h in self.mgr.cache.get_hosts() if
-                 (not self.mgr.cache.host_metadata_up_to_date(h)
-                 and h in self.mgr.agent_cache.agent_ports and not self.mgr.agent_cache.messaging_agent(h))]))
+                self.mgr.log.error(f'Failed to contact agent on host {host}: {e}')
+                self.mgr.agent_cache.sending_agent_message[host] = False
+                return False
+        self.mgr.log.error(f'Could not connect to agent on host {host}')
+        self.mgr.agent_cache.sending_agent_message[host] = False
+        return False
 
     def _agent_down(self, host: str) -> bool:
         # if host is draining or drained (has _no_schedule label) there should not
