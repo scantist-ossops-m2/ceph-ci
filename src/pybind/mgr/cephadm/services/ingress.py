@@ -127,6 +127,7 @@ class IngressService(CephService):
                 'spec': spec,
                 'mode': mode,
                 'servers': servers,
+                'ip_frontend_stats': resolve_ip(self.mgr.inventory.get_addr(daemon_spec.host)),
                 'user': spec.monitor_user or 'admin',
                 'password': password,
                 'ip': str(spec.virtual_ip).split('/')[0] or daemon_spec.ip or '*',
@@ -227,7 +228,8 @@ class IngressService(CephService):
                 if d.daemon_type == 'haproxy':
                     assert d.ports
                     port = d.ports[1]   # monitoring port
-                    script = f'/usr/bin/curl {build_url(scheme="http", host=d.ip or "localhost", port=port)}/health'
+                    ip = resolve_ip(self.mgr.inventory.get_addr(daemon_spec.host))
+                    script = f'/usr/bin/curl {build_url(scheme="http", host=ip, port=port)}/health'
         assert script
 
         # set state. first host in placement is master all others backups
