@@ -121,12 +121,20 @@ def normalize_hostnames(ctx):
 @contextlib.contextmanager
 def download_cephadm(ctx, config):
     cluster_name = config['cluster']
+    bootstrap_remote = ctx.ceph[cluster_name].bootstrap_remote
 
     bp = packaging.get_builder_project()(
         config.get('project', 'ceph'),
         config,
         ctx=ctx,
+        remote=bootstrap_remote,
     )
+
+    log.info('builder_project result: %s' % (bp._result.json()))
+
+    flavor = config.get('flavor', 'default')
+    branch = config.get('branch')
+    sha1 = config.get('sha1')
 
     if config.get('cephadm_mode') != 'cephadm-package':
         # pull the cephadm binary from chacra
@@ -136,9 +144,9 @@ def download_cephadm(ctx, config):
                 distro=bp.distro.split('/')[0],
                 release=bp.distro.split('/')[1],
                 arch=bp.arch,
-                flavor=bp.flavor,
-                branch=bp.branch,
-                sha1=bp.sha1,
+                flavor=flavor,
+                branch=branch,
+                sha1=sha1,
         )
         ctx.cluster.run(
             args=[
