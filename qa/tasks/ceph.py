@@ -1214,6 +1214,43 @@ def cluster(ctx, config):
             ),
         )
 
+def osd_scrub_bluestore(ctx, config):
+    """
+    Scrub bluestore allocation after we exit making sure allocation file is consistent with ONodes.
+    OSDs must be down for the command to work!
+    """
+
+    self.log('osd_scrub_bluestore started')
+    self.kill_osd(mark_down=True, mark_out=True)
+
+    cluster_name = config['cluster']
+    all_roles = teuthology.all_roles(ctx.cluster)
+    for role in teuthology.cluster_roles_of_type(all_roles, 'osd', cluster_name):
+        log.info("Scrubbing {osd}".format(osd=role))
+        _, _, id_ = teuthology.split_role(role)
+
+        my_osd='osd.' + id_
+        remote = self.ceph_manager.find_remote('osd', id_)
+        FSPATH = self.ceph_manager.get_filepath()
+
+        prefix = [
+                '--no-mon-config',
+                '--log-file=/var/log/ceph/bluestore_tool.$pid.log',
+                '--log-level=10',
+                '--path', FSPATH.format(id=id_)
+            ]
+
+        cmd = prefix + [
+            'qfsck'
+            ]
+        proc = self.run_ceph_bluestore_tool(remote, 'osd.' + id_, cmd)
+        if proc.exitstatus != 0:
+            raise Exception("ceph-bluestore-tool access failed.")
+
+
+    self.revive_osd()
+    self.log('osd_scrub_bluestore completed')
+
 
 def osd_scrub_pgs(ctx, config):
     """
@@ -1903,6 +1940,7 @@ def task(ctx, config):
                 # recoveries were triggered since the last health check
                 ctx.managers[config['cluster']].wait_for_clean()
                 osd_scrub_pgs(ctx, config)
+                osd_scrub_bluestore(ctx, config)
 
             # stop logging health to clog during shutdown, or else we generate
             # a bunch of scary messages unrelated to our actual run.
