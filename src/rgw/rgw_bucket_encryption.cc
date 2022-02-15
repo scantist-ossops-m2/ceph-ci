@@ -11,15 +11,21 @@ void ApplyServerSideEncryptionByDefault::decode_xml(XMLObj *obj) {
 
 void ApplyServerSideEncryptionByDefault::dump_xml(Formatter *f) const {
   encode_xml("SSEAlgorithm", sseAlgorithm, f);
+  if (kmsMasterKeyID != "") {
+    encode_xml("KMSMasterKeyID", kmsMasterKeyID, f);
+  }
 }
 
 void ServerSideEncryptionConfiguration::decode_xml(XMLObj *obj) {
-  RGWXMLDecoder::decode_xml("ApplyServerSideEncryptionByDefault", applyServerSideEncryptionByDefault, obj, true);
+  RGWXMLDecoder::decode_xml("ApplyServerSideEncryptionByDefault", applyServerSideEncryptionByDefault, obj, false);
   RGWXMLDecoder::decode_xml("BucketKeyEnabled", bucketKeyEnabled, obj, false);
 }
 
 void ServerSideEncryptionConfiguration::dump_xml(Formatter *f) const {
   encode_xml("ApplyServerSideEncryptionByDefault", applyServerSideEncryptionByDefault, f);
+  if (bucketKeyEnabled) {
+    encode_xml("BucketKeyEnabled", true, f);
+  }
 }
 
 void RGWBucketEncryptionConfig::decode_xml(XMLObj *obj) {
@@ -27,5 +33,7 @@ void RGWBucketEncryptionConfig::decode_xml(XMLObj *obj) {
 }
 
 void RGWBucketEncryptionConfig::dump_xml(Formatter *f) const {
-  encode_xml("Rule", rule, f);
+  if (rule_exist) {
+    encode_xml("Rule", rule, f);
+  }
 }

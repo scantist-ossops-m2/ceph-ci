@@ -17,6 +17,7 @@
 #include "rgw_orphan.h"
 #include "rgw_bucket_sync.h"
 #include "rgw_tools.h"
+#include "rgw_bucket_encryption.h"
 
 #include "common/ceph_json.h"
 #include "common/Formatter.h"
@@ -2104,4 +2105,13 @@ void objexp_hint_entry::dump(Formatter *f) const
 void rgw_user::dump(Formatter *f) const
 {
   ::encode_json("user", *this, f);
+}
+
+void RGWBucketEncryptionConfig::dump(Formatter *f) const {
+  encode_json("rule_exist", has_rule(), f);
+  if (has_rule()) {
+    encode_json("sse_algorithm", sse_algorithm(), f);
+    encode_json("kms_master_key_id", kms_master_key_id(), f);
+    encode_json("bucket_key_enabled", bucket_key_enabled(), f);
+  }
 }
