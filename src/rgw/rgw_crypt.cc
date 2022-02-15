@@ -887,7 +887,9 @@ struct CryptAttributes {
     static_assert(
 	X_AMZ_SERVER_SIDE_ENCRYPTION_LAST == sizeof(crypt_options)/sizeof(*crypt_options),
 	"Missing items in crypt_options");
-    if (parts != nullptr) {
+    if (
+0 &&
+parts != nullptr) {
       auto iter
 	= parts->find(crypt_options[option].post_part_name);
       if (iter == parts->end())
