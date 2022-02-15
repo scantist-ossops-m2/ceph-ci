@@ -1276,7 +1276,6 @@ class Module(MgrModule):
                     devices = self.gather_device_report()
                     if devices:
                         num_devs = 0
-                        num_hosts = 0
                         for host, ls in devices.items():
                             self.log.debug('host %s devices %s' % (host, ls))
                             if not len(ls):
@@ -1287,7 +1286,6 @@ class Module(MgrModule):
                                 failed.append(fail_reason)
                             else:
                                 num_devs += len(ls)
-                                num_hosts += 1
                         if num_devs:
                             success.append('Reported %d devices across %d hosts' % (
                                 num_devs, len(devices)))
