@@ -776,14 +776,14 @@ class Module(MgrModule):
                 m = self.remote('devicehealth', 'get_recent_device_metrics',
                                 devid, min_sample)
             except Exception as e:
-                self.log.debug('Unable to get recent metrics from a device: {}'.format(e))
+                self.log.debug('Unable to get recent metrics from device with id "{}": {}'.format(devid, e))
                 continue
 
             # anonymize host id
             try:
                 host = d['location'][0]['host']
             except (KeyError, IndexError) as e:
-                self.log.debug("Unable to get host from a device: {}".format(e))
+                self.log.debug('Unable to get host from device with id "{}": {}'.format(devid, e))
                 continue
             anon_host = self.get_store('host-id/%s' % host)
             if not anon_host:
