@@ -7710,7 +7710,7 @@ int BlueStore::umount()
   }
 
   // raise debug level
-  if (unlikely(m_fast_shutdown && 0)) {
+  if (unlikely(m_fast_shutdown)) {
     cct->_conf.set_val("debug_osd", "20");
     cct->_conf.set_val("debug_bluestore", "20");
     cct->_conf.set_val("debug_bluefs", "20");
