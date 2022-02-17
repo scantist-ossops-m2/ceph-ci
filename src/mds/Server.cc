@@ -2536,7 +2536,39 @@ void Server::dispatch_client_request(MDRequestRef& mdr)
     respond_to_request(mdr, mdr->more()->peer_error);
     return;
   }
-  
+
+  Session *session = mds->get_session(req);
+  if (session && !session->info.has_feature(CEPHFS_FEATURE_ALTERNATE_NAME) &&
+      req->get_op() != CEPH_MDS_OP_LOOKUP &&
+      req->get_op() != CEPH_MDS_OP_LOOKUPHASH &&
+      req->get_op() != CEPH_MDS_OP_LOOKUPPARENT &&
+      req->get_op() != CEPH_MDS_OP_LOOKUPINO &&
+      req->get_op() != CEPH_MDS_OP_LOOKUPNAME &&
+      req->get_op() != CEPH_MDS_OP_LOOKUPSNAP &&
+      req->get_op() != CEPH_MDS_OP_RMSNAP &&
+      req->get_op() != CEPH_MDS_OP_LSSNAP &&
+      req->get_op() != CEPH_MDS_OP_GETATTR &&
+      req->get_op() != CEPH_MDS_OP_READDIR &&
+      req->get_op() != CEPH_MDS_OP_UNLINK &&
+      req->get_op() != CEPH_MDS_OP_RMDIR) {
+    CInode *cur = try_get_auth_inode(mdr, req->get_filepath().get_ino());
+    if (!cur)
+      return;
+    MutationImpl::LockOpVec lov;
+    /* We need 'As' caps for the fscrypt context */
+    lov.add_rdlock(&cur->authlock);
+    if (!mds->locker->acquire_locks(mdr, lov)) {
+      return;
+    }
+    if (!cur->get_inode()->fscrypt_auth.empty()) {
+      dout(10) << "blocking '" << ceph_mds_op_name(req->get_op())
+	       << "' operation in encrypted node" << dendl;
+      respond_to_request(mdr, -CEPHFS_EROFS);
+      return;
+    }
+    mds->locker->drop_locks(mdr.get());
+  }
+
   if (is_full) {
     CInode *cur = try_get_auth_inode(mdr, req->get_filepath().get_ino());
     if (!cur) {
