@@ -6,7 +6,7 @@ LGPL2.1.  See file COPYING.
 import errno
 import json
 import sqlite3
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, List
 from .fs.schedule_client import SnapSchedClient
 from mgr_module import MgrModule, CLIReadCommand, CLIWriteCommand, Option
 from mgr_util import CephfsConnectionException
@@ -35,7 +35,15 @@ class Module(MgrModule):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super(Module, self).__init__(*args, **kwargs)
         self._initialized = Event()
-        self.client = SnapSchedClient(self)
+        self.client = SnapSchedClient(self, self.get_all_filesystems())
+
+    def get_all_filesystems(self) -> List[str]:
+        fs_list: List[str] = []
+        fs_map = self.get('fs_map')
+        if fs_map['filesystems']:
+            for fs in fs_map['filesystems']:
+                fs_list.append(fs['mdsmap']['fs_name'])
+        return fs_list
 
     def resolve_subvolume_path(self, fs: str, subvol: Optional[str], path: str) -> str:
         if not subvol:
