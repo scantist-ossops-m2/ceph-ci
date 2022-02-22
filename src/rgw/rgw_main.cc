@@ -326,7 +326,7 @@ int radosgw_Main(int argc, const char **argv)
     derr << "ERROR: unable to initialize rgw tools" << dendl;
     return -r;
   }
-
+  tracing::rgw::tracer.init("rgw");
   rgw_init_resolver();
   rgw::curl::setup_curl(fe_map);
   rgw_http_client_init(g_ceph_context);
@@ -673,7 +673,6 @@ int radosgw_Main(int argc, const char **argv)
     cerr << "warning: unable to set dumpable flag: " << cpp_strerror(errno) << std::endl;
   }
 #endif
-  tracing::rgw::tracer.init("rgw");
   wait_shutdown();
 
   derr << "shutting down" << dendl;

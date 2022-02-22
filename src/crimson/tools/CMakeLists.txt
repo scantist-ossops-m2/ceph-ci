@@ -6,4 +6,7 @@ add_executable(crimson-store-nbd
   )
 target_link_libraries(crimson-store-nbd
   crimson-os)
+if(WITH_JAGEER)
+	target_link_libraries(crimson-osd jaeger_base)
+endif()
 install(TARGETS crimson-store-nbd DESTINATION bin)

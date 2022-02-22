@@ -48,6 +48,9 @@ if(HAS_VTA)
   set_source_files_properties(main.cc
     PROPERTIES COMPILE_FLAGS -fno-var-tracking-assignments)
 endif()
+if(WITH_JAGEER)
+  target_link_libraries(crimson-osd jaeger_base)
+endif()
 target_link_libraries(crimson-osd
   crimson-admin
   crimson-common
