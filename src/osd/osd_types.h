@@ -1103,6 +1103,7 @@ public:
     DEDUP_TIER,
     DEDUP_CHUNK_ALGORITHM,
     DEDUP_CDC_CHUNK_SIZE,
+    BULK,
   };
 
   enum type_t {

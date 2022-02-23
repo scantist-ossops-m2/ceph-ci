@@ -1372,7 +1372,9 @@ static opt_mapping_t opt_mapping = boost::assign::map_list_of
            ("dedup_chunk_algorithm", pool_opts_t::opt_desc_t(
 	     pool_opts_t::DEDUP_CHUNK_ALGORITHM, pool_opts_t::STR))
            ("dedup_cdc_chunk_size", pool_opts_t::opt_desc_t(
-	     pool_opts_t::DEDUP_CDC_CHUNK_SIZE, pool_opts_t::INT));
+	     pool_opts_t::DEDUP_CDC_CHUNK_SIZE, pool_opts_t::INT))
+	   ("bulk", pool_opts_t::opt_desc_t(
+	     pool_opts_t::BULK, pool_opts_t::INT));
 
 bool pool_opts_t::is_opt_name(const std::string& name)
 {
