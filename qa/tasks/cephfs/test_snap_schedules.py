@@ -355,7 +355,7 @@ class TestSnapSchedules(CephFSTestCase):
 
         self.mount_a.run_shell(['rmdir', TestSnapSchedules.TEST_DIRECTORY])
 
-    def verify_snap_stats(self, dir_path):
+    def get_snap_stats(self, dir_path):
         snap_path = f"{dir_path}/.snap"[1:]
         snapshots = self.mount_a.ls(path=snap_path)
         fs_count = len(snapshots)
@@ -366,7 +366,15 @@ class TestSnapSchedules(CephFSTestCase):
         db_count = int(json_res['created_count'])
         log.debug(f'json_res: {json_res}')
 
-        self.assertTrue(fs_count == db_count)
+        snap_stats = dict()
+        snap_stats['fs_count'] = fs_count
+        snap_stats['db_count'] = db_count
+        
+        return snap_stats
+
+    def verify_snap_stats(self, dir_path):
+        snap_stats = self.get_snap_stats(dir_path)
+        self.assertTrue(snap_stats['fs_count'] == snap_stats['db_count'])
 
     def test_concurrent_snap_creates(self):
         """
@@ -407,3 +415,40 @@ class TestSnapSchedules(CephFSTestCase):
             self.fs_snap_schedule_cmd('remove', path=d, snap_schedule='1M')
             self.remove_snapshots(d[1:])
             self.mount_a.run_shell(['rmdir', d[1:]])
+
+    def test_snap_schedule_with_mgr_restart(self):
+        """
+        Test that snap schedule is resumed after mgr restarts.
+        """
+        self.mount_a.run_shell(['mkdir', '-p', TestSnapSchedules.TEST_DIRECTORY])
+        testdir = os.path.join("/", TestSnapSchedules.TEST_DIRECTORY, "test_restart"))
+        self.mount_a.run_shell(['mkdir', '-p', testdir[1:])
+        self.fs_snap_schedule_cmd('add', path=testdir, snap_schedule='1M')
+
+        exec_time = time.time()
+        timo_1, snap_sfx = self.calc_wait_time_and_snap_name(exec_time, '1M')
+
+        self.fs_snap_schedule_cmd('activate', path=testdir, snap_schedule='1M')
+
+        # we wait for 10 snaps to be taken
+        wait_time = timo_1 + 10 * 60 + 15
+        time.sleep(wait_time)
+
+        old_stats = self.get_snap_stats(testdir)
+        self.assertTrue(old_stats['fs_count'] == old_stats['db_count'])
+        self.assertTrue(old_stats['fs_count'] > 9)
+
+        # restart mgr
+        self.mgr_cluster.mon_manager.revive_mgr('x')
+        time.sleep(300)  # sleep for 5 minutes
+        self.fs_snap_schedule_cmd('deactivate', path=testdir, snap_schedule='1M')
+
+        new_stats = self.get_snap_stats(testdir)
+        self.assertTrue(new_stats['fs_count'] == new_stats['db_count'])
+        self.assertTrue(new_stats['fs_count'] > old_stats['fs_count'])
+        self.assertTrue(new_stats['db_count'] > old_stats['db_count'])
+
+        # cleanup
+        self.fs_snap_schedule_cmd('remove', path=testdir, snap_schedule='1M')
+        self.remove_snapshots(testdir[1:])
+        self.mount_a.run_shell(['rmdir', testdir[1:]])
