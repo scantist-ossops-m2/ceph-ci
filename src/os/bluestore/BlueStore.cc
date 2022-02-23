@@ -7575,20 +7575,6 @@ int BlueStore::_mount()
 {
   dout(5) << __func__ << "NCB:: path " << path << dendl;
 
-  // GBH: REMOVE-ME
-  // Verify that allocation-file content matches RocksDB state
-  // Temporary solution to debug the safe-fast-shutdown
-  // cct->_conf->bluestore_qfsck_on_mount should be changed to false on GA
-  {
-    static bool perform_bluestore_qfsck = true;
-    if (perform_bluestore_qfsck && cct->_conf->bluestore_qfsck_on_mount) {
-      perform_bluestore_qfsck = false;
-      dout(0) << __func__ << "::NCB::bluestore_qfsck_on_mount was initiated ... " << dendl;
-      int ret = read_allocation_from_drive_for_bluestore_tool();
-      ceph_assert(ret == 0);
-    }
-  }
-
   _kv_only = false;
   if (cct->_conf->bluestore_fsck_on_mount) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
