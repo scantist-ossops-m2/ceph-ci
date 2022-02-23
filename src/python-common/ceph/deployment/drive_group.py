@@ -156,6 +156,7 @@ class DriveGroupSpec(ServiceSpec):
     def __init__(self,
                  placement=None,  # type: Optional[PlacementSpec]
                  service_id=None,  # type: Optional[str]
+                 extra_container_args=None, # type: Optional[List[str]]
                  data_devices=None,  # type: Optional[DeviceSelection]
                  db_devices=None,  # type: Optional[DeviceSelection]
                  wal_devices=None,  # type: Optional[DeviceSelection]
@@ -181,7 +182,8 @@ class DriveGroupSpec(ServiceSpec):
         super(DriveGroupSpec, self).__init__('osd', service_id=service_id,
                                              placement=placement,
                                              unmanaged=unmanaged,
-                                             preview_only=preview_only)
+                                             preview_only=preview_only,
+                                             extra_container_args=extra_container_args)
 
         #: A :class:`ceph.deployment.drive_group.DeviceSelection`
         self.data_devices = data_devices
