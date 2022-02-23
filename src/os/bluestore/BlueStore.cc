@@ -7575,20 +7575,6 @@ int BlueStore::_mount()
 {
   dout(5) << __func__ << "NCB:: path " << path << dendl;
 
-  // GBH: REMOVE-ME
-  // Verify that allocation-file content matches RocksDB state
-  // Temporary solution to debug the safe-fast-shutdown
-  // cct->_conf->bluestore_qfsck_on_mount should be changed to false on GA
-  {
-    static bool perform_bluestore_qfsck = true;
-    if (perform_bluestore_qfsck && cct->_conf->bluestore_qfsck_on_mount) {
-      perform_bluestore_qfsck = false;
-      dout(0) << __func__ << "::NCB::bluestore_qfsck_on_mount was initiated ... " << dendl;
-      int ret = read_allocation_from_drive_for_bluestore_tool();
-      ceph_assert(ret == 0);
-    }
-  }
-
   _kv_only = false;
   if (cct->_conf->bluestore_fsck_on_mount) {
     dout(5) << __func__ << "::NCB::calling fsck()" << dendl;
@@ -7702,21 +7688,12 @@ int BlueStore::umount()
 #endif
     dout(20) << __func__ << " stopping kv thread" << dendl;
     _kv_stop();
-    // skip cache cleanup step on fast shutdown 
+    // skip cache cleanup step on fast shutdown
     if (likely(!m_fast_shutdown)) {
       _shutdown_cache();
     }
     dout(20) << __func__ << " closing" << dendl;
   }
-
-  // raise debug level
-  if (unlikely(m_fast_shutdown)) {
-    cct->_conf.set_val("debug_osd", "20");
-    cct->_conf.set_val("debug_bluestore", "20");
-    cct->_conf.set_val("debug_bluefs", "20");
-    cct->_conf.set_val("debug_rocksdb", "20");
-  }
-
   _close_db_and_around();
   // disable fsck on fast-shutdown
   if (cct->_conf->bluestore_fsck_on_umount && !m_fast_shutdown) {
