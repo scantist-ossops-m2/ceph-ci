@@ -193,14 +193,14 @@ BuildRequires:	selinux-policy-devel
 BuildRequires:	gperf
 BuildRequires:  cmake > 3.5
 BuildRequires:	fuse-devel
-%if 0%{with seastar} && 0%{?rhel}
-BuildRequires:	gcc-toolset-10-gcc-c++ >= 10.3.1-1.2
-%else
+%if 0%{?fedora}
+BuildRequires:	gcc-c++ >= 11
+%endif
+%if 0%{?rhel} >= 8
+BuildRequires:	gcc-toolset-11-gcc-c++
+%endif
 %if 0%{?suse_version}
 BuildRequires:	gcc11-c++
-%else
-BuildRequires:	gcc-c++
-%endif
 %endif
 %if 0%{with tcmalloc}
 # libprofiler did not build on ppc64le until 2.7.90
@@ -315,10 +315,10 @@ BuildRequires:  libasan
 BuildRequires:  libatomic
 %endif
 %if 0%{?rhel}
-BuildRequires:  gcc-toolset-10-annobin
-BuildRequires:  gcc-toolset-10-libubsan-devel
-BuildRequires:  gcc-toolset-10-libasan-devel
-BuildRequires:  gcc-toolset-10-libatomic-devel
+BuildRequires:  gcc-toolset-11-annobin
+BuildRequires:  gcc-toolset-11-libubsan-devel
+BuildRequires:  gcc-toolset-11-libasan-devel
+BuildRequires:  gcc-toolset-11-libatomic-devel
 %endif
 %endif
 #################################################################################
@@ -1249,9 +1249,7 @@ This package provides Ceph default alerts for Prometheus.
 %define _lto_cflags %{nil}
 %endif
 
-%if 0%{with seastar} && 0%{?rhel}
-. /opt/rh/gcc-toolset-10/enable
-%endif
+. /opt/rh/gcc-toolset-11/enable
 
 %if 0%{with cephfs_java}
 # Find jni.h
