@@ -7,7 +7,7 @@
 #include "include/buffer.h"
 
 #ifdef HAVE_JAEGER
-#include "opentelemetry/sdk/trace/tracer_provider.h"
+#include "opentelemetry/trace/provider.h"
 
 
 
