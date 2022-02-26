@@ -14,3 +14,7 @@ target_link_libraries(crimson-os
   ${alienstore_lib}
   crimson-seastore
   crimson)
+
+if(WITH_JAEGER)
+  target_link_libraries(crimson-os jaeger_base)
+endif()
