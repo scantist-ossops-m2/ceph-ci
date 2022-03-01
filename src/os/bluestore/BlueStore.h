@@ -3733,7 +3733,7 @@ private:
   int  invalidate_allocation_file_on_bluefs();
   int  __restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
   int  restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
-  int  read_allocation_from_drive_on_startup();
+  int  read_allocation_from_drive_on_startup(Allocator* dest_allocator);
   int  reconstruct_allocations(SimpleBitmap *smbmp, read_alloc_stats_t &stats);
   int  read_allocation_from_onodes(SimpleBitmap *smbmp, read_alloc_stats_t& stats);
   void read_allocation_from_single_onode(SimpleBitmap *smbmp, BlueStore::OnodeRef& onode_ref, read_alloc_stats_t&  stats);

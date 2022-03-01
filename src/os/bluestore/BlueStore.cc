@@ -5874,7 +5874,7 @@ int BlueStore::_init_alloc(std::map<uint64_t, uint64_t> *zone_adjustments)
       // This must mean that we had an unplanned shutdown and didn't manage to destage the allocator
       dout(0) << __func__ << "::NCB::restore_allocator() failed! Run Full Recovery from ONodes (might take a while) ..." << dendl;
       // if failed must recover from on-disk ONode internal state
-      if (read_allocation_from_drive_on_startup() != 0) {
+      if (read_allocation_from_drive_on_startup(alloc) != 0) {
 	derr << __func__ << "::NCB::Failed Recovery" << dendl;
 	derr << __func__ << "::NCB::Ceph-OSD won't start, make sure your drives are connected and readable" << dendl;
 	derr << __func__ << "::NCB::If no HW fault is found, please report failure and consider redeploying OSD" << dendl;
@@ -18849,6 +18849,58 @@ int BlueStore::__restore_allocator(Allocator* allocator, uint64_t *num, uint64_t
   return 0;
 }
 
+#if 1
+//-----------------------------------------------------------------------------------
+// we are called from open_db_and_around->init_alloc() when DB is in Read-Only mode
+int BlueStore::restore_allocator(Allocator *dest_allocator, uint64_t *num, uint64_t *bytes)
+{
+  utime_t start      = ceph_clock_now();
+  auto    allocator1 = unique_ptr<Allocator>(create_bitmap_allocator(bdev->get_size()));
+  if (read_allocation_from_drive_on_startup(allocator1.get()) != 0) {
+    derr << __func__ << "::***NCB::Failed Recovery" << dendl;
+    return -1;
+  }
+
+  uint64_t entries_count = 0, alloc_size = 0;
+  auto count_entries = [&](uint64_t extent_offset, uint64_t extent_length) {
+    entries_count++;
+    alloc_size   += extent_length;
+  };
+  allocator1->dump(count_entries);
+
+  auto    allocator2 = unique_ptr<Allocator>(create_bitmap_allocator(bdev->get_size()));
+  int ret = __restore_allocator(allocator2.get(), num, bytes);
+  if (ret != 0) {
+    return ret;
+  }
+
+  if (entries_count != *num) {
+    derr << "Failure!! RocksDB::entries_count=" << entries_count << ", Allocation_File::entries_count=" << *num << dendl;
+    return -1;
+  }
+
+  if (alloc_size != *bytes) {
+    derr << "Failure!! RocksDB::alloc_size=" << alloc_size << ", Allocation_File::alloc_size=" << *bytes << dendl;
+    return -1;
+  }
+
+  uint64_t memory_target = cct->_conf.get_val<Option::size_t>("osd_memory_target");
+  ret = compare_allocators(allocator1.get(), allocator2.get(), entries_count, memory_target);
+  if (ret == 0) {
+    dout(1) << "Allocator drive - file integrity check OK" << dendl;
+  } else {
+    derr << "FAILURE. Allocator from file and allocator from metadata differ::ret=" << ret << dendl;
+  }
+
+  uint64_t num_entries = 0;
+  dout(5) << " calling copy_allocator(bitmap_allocator -> shared_alloc.a)" << dendl;
+  copy_allocator(allocator1.get(), dest_allocator, &num_entries);
+  utime_t duration = ceph_clock_now() - start;
+  dout(5) << "restored in " << duration << " seconds, num_entries=" << num_entries << dendl;
+
+  return 0;
+}
+#else
 //-----------------------------------------------------------------------------------
 // we are called from open_db_and_around->init_alloc() when DB is in Read-Only mode
 int BlueStore::restore_allocator(Allocator* dest_allocator, uint64_t *num, uint64_t *bytes)
@@ -18883,7 +18935,7 @@ int BlueStore::restore_allocator(Allocator* dest_allocator, uint64_t *num, uint6
 
   return ret;
 }
-
+#endif
 //-------------------------------------------------------------------------
 void BlueStore::ExtentMap::provide_shard_info_to_onode(bufferlist v, uint32_t shard_id)
 {
@@ -19141,7 +19193,7 @@ static void copy_simple_bitmap_to_allocator(SimpleBitmap* sbmap, Allocator* dest
 }
 
 //---------------------------------------------------------
-int BlueStore::read_allocation_from_drive_on_startup()
+int BlueStore::read_allocation_from_drive_on_startup(Allocator* dest_allocator)
 {
   int ret = 0;
 
@@ -19161,7 +19213,7 @@ int BlueStore::read_allocation_from_drive_on_startup()
     return ret;
   }
 
-  copy_simple_bitmap_to_allocator(&sbmap, alloc, min_alloc_size);
+  copy_simple_bitmap_to_allocator(&sbmap, dest_allocator, min_alloc_size);
 
   utime_t duration = ceph_clock_now() - start;
   dout(1) << "::Allocation Recovery was completed in " << duration << " seconds, extent_count=" << stats.extent_count << dendl;
