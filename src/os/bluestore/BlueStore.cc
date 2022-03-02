@@ -7574,6 +7574,11 @@ bool BlueStore::has_null_manager()
 
 int BlueStore::_mount()
 {
+  cct->_conf.set_val("debug_osd", "20");
+  cct->_conf.set_val("debug_bluestore", "20");
+  cct->_conf.set_val("debug_bluefs", "20");
+  cct->_conf.set_val("debug_rocksdb", "20");
+
   dout(5) << __func__ << "NCB:: path " << path << dendl;
   _kv_only = false;
   if (cct->_conf->bluestore_fsck_on_mount) {
@@ -7646,6 +7651,11 @@ int BlueStore::_mount()
 
   mempool_thread.init();
 
+  cct->_conf.set_val("debug_osd", "10");
+  cct->_conf.set_val("debug_bluestore", "10");
+  cct->_conf.set_val("debug_bluefs", "10");
+  cct->_conf.set_val("debug_rocksdb", "10");
+
   if ((!per_pool_stat_collection || per_pool_omap != OMAP_PER_PG) &&
     cct->_conf->bluestore_fsck_quick_fix_on_mount == true) {
 
@@ -7671,6 +7681,11 @@ int BlueStore::_mount()
 
 int BlueStore::umount()
 {
+  cct->_conf.set_val("debug_osd", "20");
+  cct->_conf.set_val("debug_bluestore", "20");
+  cct->_conf.set_val("debug_bluefs", "20");
+  cct->_conf.set_val("debug_rocksdb", "20");
+
   // move bluefs compaction to synchronous mode and force a compaction
   cct->_conf->bluefs_compact_log_sync = true;
   //bluefs->compact_log();
@@ -7709,6 +7724,13 @@ int BlueStore::umount()
   }
 
   _close_db_and_around();
+
+
+  cct->_conf.set_val("debug_osd", "10");
+  cct->_conf.set_val("debug_bluestore", "10");
+  cct->_conf.set_val("debug_bluefs", "10");
+  cct->_conf.set_val("debug_rocksdb", "10");
+
   // disable fsck on fast-shutdown
   if (cct->_conf->bluestore_fsck_on_umount && !m_fast_shutdown) {
     int rc = fsck(cct->_conf->bluestore_fsck_on_umount_deep);
