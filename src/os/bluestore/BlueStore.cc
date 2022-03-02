@@ -7686,10 +7686,6 @@ int BlueStore::umount()
   cct->_conf.set_val("debug_bluefs", "20");
   cct->_conf.set_val("debug_rocksdb", "20");
 
-  // move bluefs compaction to synchronous mode and force a compaction
-  cct->_conf->bluefs_compact_log_sync = true;
-  //bluefs->compact_log();
-
   ceph_assert(_kv_only || mounted);
   _osr_drain_all();
 
@@ -18535,21 +18531,13 @@ int BlueStore::store_allocator(Allocator* src_allocator)
 
   dout(1) << "1)file_size=" << file_size <<", allocated=" << allocated <<", required_space=" << required_space << ", extents_count="<< extents_count<< dendl;
   if (allocated < required_space) {
-#if 0
-    // double file size if we need more space
-    ret = bluefs->preallocate(p_handle->file, allocated, allocated);
-    if (ret != 0) {
-      derr <<  __func__ << "Failed preallocate(offset=" << allocated << ", len=" << allocated << ") with error-code=" << ret << dendl;
-      return ret;
-    }
-#else
     char buff[64*1024];
     memset(buff, 0, sizeof(buff));
     unsigned count = div_round_up(required_space, sizeof(buff));
     for (unsigned i = 0; i < count; i++) {
       p_handle->append(buff, sizeof(buff));
     }
-#endif
+
     bluefs->fsync(p_handle);
     file_size = p_handle->file->fnode.size;
     allocated = p_handle->file->fnode.get_allocated();
@@ -18578,10 +18566,6 @@ int BlueStore::store_allocator(Allocator* src_allocator)
     derr <<  __func__ << "Failed second open_for_write with error-code " << ret << dendl;
     return -1;
   }
-
-  file_size = p_handle->file->fnode.size;
-  allocated = p_handle->file->fnode.get_allocated();
-  dout(1) << "2)file_size=" << file_size <<", allocated=" << allocated <<", required_space=" << required_space <<", extents_count="<< extents_count << dendl;
 
   // store all extents (except for the bluefs extents we removed) in a single flat file
   utime_t                 timestamp = ceph_clock_now();

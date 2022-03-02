@@ -2310,7 +2310,7 @@ uint64_t BlueFS::_estimate_log_size_N()
 void BlueFS::compact_log()/*_LNF_LD_NF_D*/
 {
   if (!cct->_conf->bluefs_replay_recovery_disable_compact) {
-    if (cct->_conf->bluefs_compact_log_sync) {
+    if (cct->_conf->bluefs_compact_log_sync && false) {
       _compact_log_sync_LNF_LD();
     } else {
       _compact_log_async_LD_LNF_D();
@@ -3654,7 +3654,7 @@ void BlueFS::_maybe_compact_log_LNF_NF_LD_D()
 {
   if (!cct->_conf->bluefs_replay_recovery_disable_compact &&
       _should_start_compact_log_L_N()) {
-    if (cct->_conf->bluefs_compact_log_sync) {
+    if (cct->_conf->bluefs_compact_log_sync && false) {
       _compact_log_sync_LNF_LD();
     } else {
       _compact_log_async_LD_LNF_D();
