@@ -18861,10 +18861,17 @@ int BlueStore::__restore_allocator(Allocator* allocator, uint64_t *num, uint64_t
 int BlueStore::restore_allocator(Allocator *dest_allocator, uint64_t *num, uint64_t *bytes)
 {
   utime_t start      = ceph_clock_now();
+
   auto    allocator1 = unique_ptr<Allocator>(create_bitmap_allocator(bdev->get_size()));
-  if (read_allocation_from_drive_on_startup(allocator1.get()) != 0) {
+  int ret = __restore_allocator(allocator1.get(), num, bytes);
+  if (ret != 0) {
+    return ret;
+  }
+
+  auto    allocator2 = unique_ptr<Allocator>(create_bitmap_allocator(bdev->get_size()));
+  if (read_allocation_from_drive_on_startup(allocator2.get()) != 0) {
     derr << __func__ << "::***NCB::Failed Recovery" << dendl;
-    return -1;
+    ret = -1;
   }
 
   uint64_t entries_count = 0, alloc_size = 0;
@@ -18872,22 +18879,16 @@ int BlueStore::restore_allocator(Allocator *dest_allocator, uint64_t *num, uint6
     entries_count++;
     alloc_size   += extent_length;
   };
-  allocator1->dump(count_entries);
-
-  auto    allocator2 = unique_ptr<Allocator>(create_bitmap_allocator(bdev->get_size()));
-  int ret = __restore_allocator(allocator2.get(), num, bytes);
-  if (ret != 0) {
-    return ret;
-  }
+  allocator2->dump(count_entries);
 
   if (entries_count != *num) {
     derr << "Failure!! RocksDB::entries_count=" << entries_count << ", Allocation_File::entries_count=" << *num << dendl;
-    return -1;
+    ret = -1;
   }
 
   if (alloc_size != *bytes) {
     derr << "Failure!! RocksDB::alloc_size=" << alloc_size << ", Allocation_File::alloc_size=" << *bytes << dendl;
-    return -1;
+    ret = -1;
   }
 
   uint64_t memory_target = cct->_conf.get_val<Option::size_t>("osd_memory_target");
@@ -18896,6 +18897,7 @@ int BlueStore::restore_allocator(Allocator *dest_allocator, uint64_t *num, uint6
     dout(1) << "Allocator drive - file integrity check OK" << dendl;
   } else {
     derr << "FAILURE. Allocator from file and allocator from metadata differ::ret=" << ret << dendl;
+    ceph_assert(0);
   }
 
   uint64_t num_entries = 0;
