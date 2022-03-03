@@ -931,7 +931,7 @@ TEST_F(TestMockImageReplayerPrepareRemoteImageRequest, MirrorInfoNonPrimarySnaps
             mock_snapshot_state_builder.remote_mirror_uuid);
   ASSERT_EQ("remote mirror peer uuid",
             mock_snapshot_state_builder.remote_mirror_peer_uuid);
-  ASSERT_EQ("", mock_snapshot_state_builder.remote_image_id);
+  ASSERT_EQ("remote image id", mock_snapshot_state_builder.remote_image_id);
 }
 
 TEST_F(TestMockImageReplayerPrepareRemoteImageRequest, MirrorInfoNonPrimaryJournal) {

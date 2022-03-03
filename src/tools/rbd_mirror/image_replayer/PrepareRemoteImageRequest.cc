@@ -126,10 +126,6 @@ void PrepareRemoteImageRequest<I>::handle_get_mirror_info(int r) {
       return;
     }
     m_r = -ENOENT;
-    if (m_mirror_image.mode != cls::rbd::MIRROR_IMAGE_MODE_JOURNAL) {
-      finish(m_r);
-      return;
-    }
   }
 
   switch (m_mirror_image.mode) {
@@ -138,7 +134,7 @@ void PrepareRemoteImageRequest<I>::handle_get_mirror_info(int r) {
     break;
   case cls::rbd::MIRROR_IMAGE_MODE_SNAPSHOT:
     finalize_snapshot_state_builder();
-    finish(0);
+    finish(m_r);
     break;
   default:
     derr << "unsupported mirror image mode " << m_mirror_image.mode << " "
