@@ -623,7 +623,7 @@ void AdminSocket::unregister_commands(const AdminSocketHook *hook)
 class VersionHook : public AdminSocketHook {
 public:
   int call(std::string_view command, const cmdmap_t& cmdmap,
-	   const bufferlist& inbl,
+	   const bufferlist&,
 	   Formatter *f,
 	   std::ostream& errss,
 	   bufferlist& out) override {
@@ -650,7 +650,7 @@ class HelpHook : public AdminSocketHook {
 public:
   explicit HelpHook(AdminSocket *as) : m_as(as) {}
   int call(std::string_view command, const cmdmap_t& cmdmap,
-	   const bufferlist& inbl,
+	   const bufferlist&,
 	   Formatter *f,
 	   std::ostream& errss,
 	   bufferlist& out) override {
@@ -669,7 +669,7 @@ class GetdescsHook : public AdminSocketHook {
 public:
   explicit GetdescsHook(AdminSocket *as) : m_as(as) {}
   int call(std::string_view command, const cmdmap_t& cmdmap,
-	   const bufferlist& inbl,
+	   const bufferlist&,
 	   Formatter *f,
 	   std::ostream& errss,
 	   bufferlist& out) override {
