@@ -137,7 +137,7 @@ void KeyRing::encode_plaintext(bufferlist& bl)
 void KeyRing::encode_formatted(string label, Formatter *f, bufferlist& bl)
 {
   f->open_array_section(label.c_str());
-  for (auto &[ename, eauth] : keys) {
+  for (const auto &[ename, eauth] : keys) {
     f->open_object_section("auth_entities");
     f->dump_string("entity", ename.to_str().c_str());
     f->dump_string("key", stringify(eauth.key));
