@@ -261,7 +261,7 @@ class CephadmService(metaclass=ABCMeta):
                 'entity': entity,
                 'caps': caps,
             })
-            if ret:
+            if err:
                 self.mgr.log.warning(f"Unable to update caps for {entity}")
 
             # get keyring anyway
@@ -269,7 +269,7 @@ class CephadmService(metaclass=ABCMeta):
                 'prefix': 'auth get',
                 'entity': entity,
             })
-            if ret:
+            if err:
                 raise OrchestratorError(f"Unable to fetch keyring for {entity}: {err}")
 
         # strip down keyring
