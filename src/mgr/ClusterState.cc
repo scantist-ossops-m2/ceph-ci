@@ -198,7 +198,7 @@ class ClusterSocketHook : public AdminSocketHook {
 public:
   explicit ClusterSocketHook(ClusterState *o) : cluster_state(o) {}
   int call(std::string_view admin_command, const cmdmap_t& cmdmap,
-	   const bufferlist& inbl,
+	   const bufferlist&,
 	   Formatter *f,
 	   std::ostream& errss,
 	   bufferlist& out) override {
