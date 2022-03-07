@@ -3711,10 +3711,6 @@ class MgrListener(Thread):
                         logger.error(err_str)
                     else:
                         conn.send(b'ACK')
-                        if 'config' in data:
-                            self.agent.wakeup()
-                        self.agent.ls_gatherer.wakeup()
-                        self.agent.volume_gatherer.wakeup()
                         logger.debug(f'Got mgr message {data}')
             except Exception as e:
                 logger.error(f'Mgr Listener encountered exception: {e}')
@@ -3723,6 +3719,7 @@ class MgrListener(Thread):
         self.stop = True
 
     def handle_json_payload(self, data: Dict[Any, Any]) -> None:
+        old_counter = int(data['counter'])
         self.agent.ack = int(data['counter'])
         if 'config' in data:
             logger.info('Received new config from mgr')
@@ -3735,6 +3732,9 @@ class MgrListener(Thread):
                         os.rename(file_path + '.new', file_path)
             self.agent.pull_conf_settings()
             self.agent.wakeup()
+        if old_counter != self.agent.ack:
+            self.agent.ls_gatherer.wakeup()
+            self.agent.volume_gatherer.wakeup()
 
 
 class CephadmAgent():
