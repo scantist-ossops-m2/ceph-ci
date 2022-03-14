@@ -122,7 +122,7 @@ OMapInnerNode::get_value(
 {
   logger().debug("OMapInnerNode: {} key = {}",  __func__, key);
   auto child_pt = get_containing_child(key);
-  assert(child_pt != iter_end());
+  assert(child_pt != iter_cend());
   auto laddr = child_pt->get_val();
   return omap_load_extent(oc, laddr, get_meta().depth - 1).si_then(
     [oc, &key] (auto extent) {
@@ -138,7 +138,7 @@ OMapInnerNode::insert(
 {
   logger().debug("OMapInnerNode: {}  {}->{}",  __func__, key, value);
   auto child_pt = get_containing_child(key);
-  assert(child_pt != iter_end());
+  assert(child_pt != iter_cend());
   auto laddr = child_pt->get_val();
   return omap_load_extent(oc, laddr, get_meta().depth - 1).si_then(
     [oc, &key, &value] (auto extent) {
@@ -161,7 +161,7 @@ OMapInnerNode::rm_key(omap_context_t oc, const std::string &key)
 {
   logger().debug("OMapInnerNode: {}", __func__);
   auto child_pt = get_containing_child(key);
-  assert(child_pt != iter_end());
+  assert(child_pt != iter_cend());
   auto laddr = child_pt->get_val();
   return omap_load_extent(oc, laddr, get_meta().depth - 1).si_then(
     [this, oc, &key, child_pt] (auto extent) {
@@ -226,6 +226,7 @@ OMapInnerNode::list(
 	      start,
 	      config.with_reduced_max(result.size())
 	    ).si_then([&, config](auto &&child_ret) mutable {
+	      boost::ignore_unused(config);   // avoid clang warning;
 	      auto &[child_complete, child_result] = child_ret;
 	      if (result.size() && child_result.size()) {
 		assert(child_result.begin()->first > result.rbegin()->first);
@@ -320,7 +321,7 @@ OMapInnerNode::merge_entry(
     auto mut_iter = mut->iter_idx(iter->get_index());
     return mut->merge_entry(oc, mut_iter, entry);
   }
-  auto is_left = (iter + 1) == iter_end();
+  auto is_left = (iter + 1) == iter_cend();
   auto donor_iter = is_left ? iter - 1 : iter + 1;
   return omap_load_extent(oc, donor_iter->get_val(), get_meta().depth - 1)
     .si_then([=] (auto &&donor) mutable {

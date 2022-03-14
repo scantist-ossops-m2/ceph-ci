@@ -121,7 +121,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL GNU)
   else()
     string(APPEND CMAKE_EXE_LINKER_FLAGS " -rdynamic")
   endif()
-  string(APPEND CMAKE_CXX_FLAGS_DEBUG " -Og")
+  string(PREPEND CMAKE_CXX_FLAGS_DEBUG "-Og ")
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wstrict-null-sentinel>)
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Woverloaded-virtual>)
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-new-ttp-matching>)
@@ -135,7 +135,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL GNU)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_EXPORTS_C_FLAG}")
   string(APPEND CMAKE_LINKER_FLAGS " -rdynamic -export-dynamic ${CMAKE_EXE_EXPORTS_C_FLAG}")
-  string(APPEND CMAKE_CXX_FLAGS_DEBUG " -g")
+  string(PREPEND CMAKE_CXX_FLAGS_DEBUG "-g ")
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-inconsistent-missing-override>)
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-mismatched-tags>)
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-unused-private-field>)
@@ -490,7 +490,7 @@ if(NOT WITH_SYSTEM_BOOST)
 endif()
 
 if(HAVE_QATZIP)
-  list(APPEND ceph_common_deps ${QATZIP_LIBRARIES})
+  list(APPEND ceph_common_deps ${qatzip_LIBRARIES})
 endif()
 
 if(WITH_DPDK)
@@ -526,8 +526,18 @@ add_library(common STATIC ${ceph_common_objs})
 target_link_libraries(common ${ceph_common_deps})
 add_dependencies(common legacy-option-headers ${jaeger_base})
 
-add_library(ceph-common SHARED ${ceph_common_objs})
+if (WIN32)
+  # Statically building ceph-common on Windows fails. We're temporarily
+  # reverting this: 22fefb2338cfc4fcb03ece3cbf77aa964a7f17f2
+  add_library(ceph-common SHARED ${ceph_common_objs})
+else()
+  add_library(ceph-common ${CEPH_SHARED} ${ceph_common_objs})
+endif()
+
 target_link_libraries(ceph-common ${ceph_common_deps})
+if(ENABLE_COVERAGE)
+  target_link_libraries(ceph-common gcov)
+endif(ENABLE_COVERAGE)
 add_dependencies(ceph-common legacy-option-headers ${jaeger_base})
 # appease dpkg-shlibdeps
 set_target_properties(ceph-common PROPERTIES
@@ -593,6 +603,13 @@ if(WITH_LIBRADOSSTRIPER)
   add_subdirectory(libradosstriper)
 endif()
 
+# make rocksdb statically
+
+if(NOT WITH_SYSTEM_ROCKSDB)
+  include(BuildRocksDB)
+  build_rocksdb()
+endif(NOT WITH_SYSTEM_ROCKSDB)
+
 if(WITH_MGR)
   add_subdirectory(mgr)
 endif()
@@ -630,12 +647,6 @@ target_link_libraries(ceph-mon mon os global-static ceph-common
 install(TARGETS ceph-mon DESTINATION bin)
 
 # OSD/ObjectStore
-# make rocksdb statically
-
-if(NOT WITH_SYSTEM_ROCKSDB)
-  include(BuildRocksDB)
-  build_rocksdb()
-endif(NOT WITH_SYSTEM_ROCKSDB)
 
 include(TestBigEndian)
 test_big_endian(CEPH_BIG_ENDIAN)

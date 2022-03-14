@@ -284,7 +284,6 @@ ObjectDataHandler::clear_ret ObjectDataHandler::trim_data_reservation(
   context_t ctx, object_data_t &object_data, extent_len_t size)
 {
   ceph_assert(!object_data.is_null());
-  assert_aligned(size);
   ceph_assert(size <= object_data.get_reserved_data_len());
   return seastar::do_with(
     lba_pin_list_t(),
@@ -308,16 +307,21 @@ ObjectDataHandler::clear_ret ObjectDataHandler::trim_data_reservation(
 	  pin.get_laddr() <= object_data.get_reserved_data_base() + size);
 	auto pin_offset = pin.get_laddr() -
 	  object_data.get_reserved_data_base();
-	if (pin.get_paddr().is_zero()) {
+	if ((pin.get_laddr() == (object_data.get_reserved_data_base() + size)) ||
+	  (pin.get_paddr().is_zero())) {
+	  /* First pin is exactly at the boundary or is a zero pin.  Either way,
+	   * remove all pins and add a single zero pin to the end. */
 	  to_write.emplace_back(
 	    pin.get_laddr(),
 	    object_data.get_reserved_data_len() - pin_offset);
 	  return clear_iertr::now();
 	} else {
+	  /* First pin overlaps the boundary and has data, read in extent
+	   * and rewrite portion prior to size */
 	  return read_pin(
 	    ctx,
 	    pin.duplicate()
-	  ).si_then([size, pin_offset, &pin, &object_data, &to_write](
+	  ).si_then([ctx, size, pin_offset, &pin, &object_data, &to_write](
 		     auto extent) {
 	    bufferlist bl;
 	    bl.append(
@@ -326,12 +330,15 @@ ObjectDataHandler::clear_ret ObjectDataHandler::trim_data_reservation(
 		0,
 		size - pin_offset
 	      ));
+	    bl.append_zero(p2roundup(size, ctx.tm.get_block_size()) - size);
 	    to_write.emplace_back(
 	      pin.get_laddr(),
 	      bl);
 	    to_write.emplace_back(
-	      object_data.get_reserved_data_base() + size,
-	      object_data.get_reserved_data_len() - size);
+	      object_data.get_reserved_data_base() +
+                p2roundup(size, ctx.tm.get_block_size()),
+	      object_data.get_reserved_data_len() -
+                p2roundup(size, ctx.tm.get_block_size()));
 	    return clear_iertr::now();
 	  });
 	}
@@ -544,6 +551,60 @@ ObjectDataHandler::read_ret ObjectDataHandler::read(
     });
 }
 
+ObjectDataHandler::fiemap_ret ObjectDataHandler::fiemap(
+  context_t ctx,
+  objaddr_t obj_offset,
+  extent_len_t len)
+{
+  return seastar::do_with(
+    std::map<uint64_t, uint64_t>(),
+    [ctx, obj_offset, len](auto &ret) {
+    return with_object_data(
+      ctx,
+      [ctx, obj_offset, len, &ret](const auto &object_data) {
+      LOG_PREFIX(ObjectDataHandler::fiemap);
+      DEBUGT(
+	"{}~{}, reservation {}~{}",
+        ctx.t,
+        obj_offset,
+        len,
+        object_data.get_reserved_data_base(),
+        object_data.get_reserved_data_len());
+      /* Assumption: callers ensure that onode size is <= reserved
+       * size and that len is adjusted here prior to call */
+      ceph_assert(!object_data.is_null());
+      ceph_assert((obj_offset + len) <= object_data.get_reserved_data_len());
+      ceph_assert(len > 0);
+      laddr_t loffset =
+        object_data.get_reserved_data_base() + obj_offset;
+      return ctx.tm.get_pins(
+        ctx.t,
+        loffset,
+        len
+      ).si_then([loffset, len, &object_data, &ret](auto &&pins) {
+	ceph_assert(pins.size() >= 1);
+        ceph_assert((*pins.begin())->get_laddr() <= loffset);
+	for (auto &&i: pins) {
+	  if (!(i->get_paddr().is_zero())) {
+	    auto ret_left = std::max(i->get_laddr(), loffset);
+	    auto ret_right = std::min(
+	      i->get_laddr() + i->get_length(),
+	      loffset + len);
+	    assert(ret_right > ret_left);
+	    ret.emplace(
+	      std::make_pair(
+		ret_left - object_data.get_reserved_data_base(),
+		ret_right - ret_left
+	      ));
+	  }
+	}
+      });
+    }).si_then([&ret] {
+      return std::move(ret);
+    });
+  });
+}
+
 ObjectDataHandler::truncate_ret ObjectDataHandler::truncate(
   context_t ctx,
   objaddr_t offset)
@@ -563,7 +624,7 @@ ObjectDataHandler::truncate_ret ObjectDataHandler::truncate(
 	return prepare_data_reservation(
 	  ctx,
 	  object_data,
-	  offset);
+	  p2roundup(offset, ctx.tm.get_block_size()));
       } else {
 	return truncate_iertr::now();
       }

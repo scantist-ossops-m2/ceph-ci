@@ -174,6 +174,8 @@ class OpsLogFile : public JsonOpsLogSink, public Thread, public DoutPrefixProvid
   bool stopped;
   uint64_t data_size;
   uint64_t max_data_size;
+  std::string path;
+  std::atomic_bool need_reopen;
 
   void flush();
 protected:
@@ -185,6 +187,7 @@ public:
   CephContext *get_cct() const override { return cct; }
   unsigned get_subsys() const override { return dout_subsys; }
   std::ostream& gen_prefix(std::ostream& out) const override { return out << "rgw OpsLogFile: "; }
+  void reopen();
   void start();
   void stop();
 };
@@ -199,9 +202,11 @@ public:
 };
 
 class OpsLogRados : public OpsLogSink {
-  rgw::sal::Store* store;
+  // main()'s Store pointer as a reference, possibly modified by RGWRealmReloader
+  rgw::sal::Store* const& store;
+
 public:
-  OpsLogRados(rgw::sal::Store* store);
+  OpsLogRados(rgw::sal::Store* const& store);
   int log(struct req_state* s, struct rgw_log_entry& entry) override;
 };
 

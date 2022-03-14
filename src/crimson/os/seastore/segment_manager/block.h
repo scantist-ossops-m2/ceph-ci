@@ -73,10 +73,12 @@ public:
   }
 
   write_ertr::future<> write_out(
+    device_id_t device_id,
     seastar::file &device,
     uint64_t offset);
 
   read_ertr::future<> read_in(
+    device_id_t device_id,
     seastar::file &device,
     uint64_t offset);
 };
@@ -86,15 +88,15 @@ class BlockSegment final : public Segment {
   friend class BlockSegmentManager;
   BlockSegmentManager &manager;
   const segment_id_t id;
-  segment_off_t write_pointer = 0;
+  seastore_off_t write_pointer = 0;
 public:
   BlockSegment(BlockSegmentManager &manager, segment_id_t id);
 
   segment_id_t get_segment_id() const final { return id; }
-  segment_off_t get_write_capacity() const final;
-  segment_off_t get_write_ptr() const final { return write_pointer; }
+  seastore_off_t get_write_capacity() const final;
+  seastore_off_t get_write_ptr() const final { return write_pointer; }
   close_ertr::future<> close() final;
-  write_ertr::future<> write(segment_off_t offset, ceph::bufferlist bl) final;
+  write_ertr::future<> write(seastore_off_t offset, ceph::bufferlist bl) final;
 
   ~BlockSegment() {}
 };
@@ -132,15 +134,16 @@ public:
   size_t get_size() const final {
     return superblock.size;
   }
-  segment_off_t get_block_size() const {
+  seastore_off_t get_block_size() const {
     return superblock.block_size;
   }
-  segment_off_t get_segment_size() const {
+  seastore_off_t get_segment_size() const {
     return superblock.segment_size;
   }
 
   device_id_t get_device_id() const final {
-    return superblock.device_id;
+    assert(device_id <= DEVICE_ID_MAX_VALID);
+    return device_id;
   }
   secondary_device_set_t& get_secondary_devices() final {
     return superblock.secondary_devices;
@@ -154,7 +157,7 @@ public:
   device_spec_t get_device_spec() const final {
     return {superblock.magic,
 	    superblock.dtype,
-	    superblock.device_id};
+	    get_device_id()};
   }
 
   magic_t get_magic() const final {
@@ -203,7 +206,13 @@ private:
   block_sm_superblock_t superblock;
   seastar::file device;
 
-  device_id_t device_id = 0;
+  void set_device_id(device_id_t id) {
+    assert(id <= DEVICE_ID_MAX_VALID);
+    assert(device_id == DEVICE_ID_NULL ||
+           device_id == id);
+    device_id = id;
+  }
+  device_id_t device_id = DEVICE_ID_NULL;
 
   size_t get_offset(paddr_t addr) {
     auto& seg_addr = addr.as_seg_paddr();
@@ -221,7 +230,7 @@ private:
   char *buffer = nullptr;
 
   Segment::close_ertr::future<> segment_close(
-      segment_id_t id, segment_off_t write_pointer);
+      segment_id_t id, seastore_off_t write_pointer);
 };
 
 }

@@ -22,6 +22,7 @@ namespace {
 struct cache_test_t : public seastar_test_suite_t {
   segment_manager::EphemeralSegmentManagerRef segment_manager;
   ExtentReaderRef reader;
+  ExtentPlacementManagerRef epm;
   CacheRef cache;
   paddr_t current;
   journal_seq_t seq;
@@ -37,9 +38,9 @@ struct cache_test_t : public seastar_test_suite_t {
       bl.append(block.bl);
     }
 
-    ceph_assert((segment_off_t)bl.length() <
+    ceph_assert((seastore_off_t)bl.length() <
 		segment_manager->get_segment_size());
-    if (current.as_seg_paddr().get_segment_off() + (segment_off_t)bl.length() >
+    if (current.as_seg_paddr().get_segment_off() + (seastore_off_t)bl.length() >
 	segment_manager->get_segment_size())
       current = paddr_t::make_seg_paddr(
 	segment_id_t(
@@ -84,7 +85,8 @@ struct cache_test_t : public seastar_test_suite_t {
   seastar::future<> set_up_fut() final {
     segment_manager = segment_manager::create_test_ephemeral();
     reader.reset(new ExtentReader());
-    cache.reset(new Cache(*reader));
+    epm.reset(new ExtentPlacementManager());
+    cache.reset(new Cache(*reader, *epm));
     current = paddr_t::make_seg_paddr(segment_id_t(segment_manager->get_device_id(), 0), 0);
     reader->add_segment_manager(segment_manager.get());
     return segment_manager->init(
@@ -112,6 +114,7 @@ struct cache_test_t : public seastar_test_suite_t {
     ).safe_then([this] {
       segment_manager.reset();
       reader.reset();
+      epm.reset();
       cache.reset();
     }).handle_error(
       Cache::close_ertr::assert_all{}

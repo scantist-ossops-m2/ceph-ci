@@ -28,6 +28,8 @@
 
 #define dout_subsys ceph_subsys_rgw
 
+using namespace std;
+
 namespace rgw::sal {
 
   int DBUser::list_buckets(const DoutPrefixProvider *dpp, const string& marker,
@@ -39,7 +41,7 @@ namespace rgw::sal {
     int ret;
 
     buckets.clear();
-    ret = store->getDB()->list_buckets(dpp, info.user_id, marker, end_marker, max,
+    ret = store->getDB()->list_buckets(dpp, "", info.user_id, marker, end_marker, max,
         need_stats, &ulist, &is_truncated);
     if (ret < 0)
       return ret;
@@ -199,7 +201,13 @@ namespace rgw::sal {
 
     return ret;
   }
-
+  int DBUser::merge_and_store_attrs(const DoutPrefixProvider* dpp, Attrs& new_attrs, optional_yield y)
+  {
+    for(auto& it : new_attrs) {
+  	  attrs[it.first] = it.second;
+    }
+    return store_user(dpp, y, false);
+  }
   int DBUser::store_user(const DoutPrefixProvider* dpp, optional_yield y, bool exclusive, RGWUserInfo* old_info)
   {
     int ret = 0;
@@ -228,6 +236,32 @@ namespace rgw::sal {
 
     /* XXX: handle delete_children */
 
+    if (!delete_children) {
+      /* Check if there are any objects */
+      rgw::sal::Bucket::ListParams params;
+      params.list_versions = true;
+      params.allow_unordered = true;
+
+      rgw::sal::Bucket::ListResults results;
+
+      results.objs.clear();
+
+      ret = list(dpp, params, 2, results, null_yield);
+
+      if (ret < 0) {
+        ldpp_dout(dpp, 20) << __func__ << ": Bucket list objects returned " <<
+        ret << dendl;
+        return ret;
+      }
+
+      if (!results.objs.empty()) {
+        ret = -ENOTEMPTY;
+        ldpp_dout(dpp, -1) << __func__ << ": Bucket Not Empty.. returning " <<
+        ret << dendl;
+        return ret;
+      }
+    }
+
     ret = store->getDB()->remove_bucket(dpp, info);
 
     return ret;
@@ -240,7 +274,7 @@ namespace rgw::sal {
     return 0;
   }
 
-  int DBBucket::load_bucket(const DoutPrefixProvider *dpp, optional_yield y)
+  int DBBucket::load_bucket(const DoutPrefixProvider *dpp, optional_yield y, bool get_stats)
   {
     int ret = 0;
 
@@ -322,7 +356,9 @@ namespace rgw::sal {
   {
     int ret = 0;
 
-    Bucket::merge_and_store_attrs(dpp, new_attrs, y);
+    for(auto& it : new_attrs) {
+	    attrs[it.first] = it.second;
+    }
 
     /* XXX: handle has_instance_obj like in set_bucket_instance_attrs() */
 
@@ -531,9 +567,7 @@ namespace rgw::sal {
 
   int DBObject::get_obj_state(const DoutPrefixProvider* dpp, RGWObjectCtx* rctx, RGWObjState **state, optional_yield y, bool follow_olh)
   {
-    if (!*state) {
-      *state = new RGWObjState();
-    }
+    *state = &(this->state);
     DB::Object op_target(store->getDB(), get_bucket()->get_info(), get_obj());
     return op_target.get_obj_state(dpp, get_bucket()->get_info(), get_obj(), follow_olh, state);
   }
@@ -888,6 +922,7 @@ namespace rgw::sal {
 			       obj->get_obj());
     DB::Object::Write obj_op(&op_target);
 
+    /* Create meta object */
     obj_op.meta.owner = owner.get_id();
     obj_op.meta.category = RGWObjCategory::MultiMeta;
     obj_op.meta.flags = PUT_OBJ_CREATE_EXCL;
@@ -1064,17 +1099,9 @@ namespace rgw::sal {
     /* Original head object */
     DB::Object op_target(store->getDB(),
 			     target_obj->get_bucket()->get_info(),
-			     target_obj->get_obj());
+			     target_obj->get_obj(), get_upload_id());
     DB::Object::Write obj_op(&op_target);
-    obj_op.prepare(NULL);
-
-    /* Meta object */
-    std::unique_ptr<rgw::sal::Object> meta_obj = get_meta_obj();
-    DB::Object meta_op_target(store->getDB(),
-			     meta_obj->get_bucket()->get_info(),
-			     meta_obj->get_obj());
-    DB::Object::Write mp_op(&meta_op_target);
-    mp_op.update_mp_parts(dpp, target_obj->get_obj().key);
+    ret = obj_op.prepare(dpp);
 
     obj_op.meta.owner = owner.get_id();
     obj_op.meta.flags = PUT_OBJ_CREATE;
@@ -1192,12 +1219,13 @@ namespace rgw::sal {
                 oid(head_obj->get_name() + "." + upload_id +
                     "." + std::to_string(part_num)),
                 meta_obj(((DBMultipartUpload*)upload)->get_meta_obj()),
-                op_target(_store->getDB(), meta_obj->get_bucket()->get_info(), meta_obj->get_obj()),
+                op_target(_store->getDB(), head_obj->get_bucket()->get_info(), head_obj->get_obj(), upload_id),
                 parent_op(&op_target), part_num(_part_num),
-                part_num_str(_part_num_str) { parent_op.prepare(NULL);}
+                part_num_str(_part_num_str) {}
 
   int DBMultipartWriter::prepare(optional_yield y)
   {
+    parent_op.prepare(NULL);
     parent_op.set_mp_part_str(upload_id + "." + std::to_string(part_num));
     // XXX: do we need to handle part_num_str??
     return 0;
@@ -1753,6 +1781,11 @@ namespace rgw::sal {
     return 0;
   }
 
+  void DBStore::get_ratelimit(RGWRateLimitInfo& bucket_ratelimit, RGWRateLimitInfo& user_ratelimit, RGWRateLimitInfo& anon_ratelimit)
+  {
+    return;
+  }
+
   void DBStore::get_quota(RGWQuotaInfo& bucket_quota, RGWQuotaInfo& user_quota)
   {
     // XXX: Not handled for the first pass 
@@ -1866,6 +1899,11 @@ namespace rgw::sal {
     if (use_lc_thread) {
       ret = db->createLCTables(dpp);
       lc->start_processor();
+    }
+
+    ret = db->createGC(dpp);
+    if (ret < 0) {
+      ldpp_dout(dpp, 0) <<"GC thread creation failed: ret = " << ret << dendl;
     }
 
     return ret;

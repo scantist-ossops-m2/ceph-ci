@@ -54,7 +54,8 @@ from .services.osd import OSDRemovalQueue, OSDService, OSD, NotFoundError
 from .services.monitoring import GrafanaService, AlertmanagerService, PrometheusService, \
     NodeExporterService, SNMPGatewayService
 from .schedule import HostAssignment
-from .inventory import Inventory, SpecStore, HostCache, EventStore, ClientKeyringStore, ClientKeyringSpec
+from .inventory import Inventory, SpecStore, HostCache, AgentCache, EventStore, \
+    ClientKeyringStore, ClientKeyringSpec
 from .upgrade import CephadmUpgrade
 from .template import TemplateMgr
 from .utils import CEPH_IMAGE_TYPES, forall_hosts, cephadmNoImage
@@ -63,7 +64,7 @@ from .configchecks import CephadmConfigChecks
 try:
     import asyncssh
 except ImportError as e:
-    asyncssh = None
+    asyncssh = None  # type: ignore
     asyncssh_import_error = str(e)
 
 logger = logging.getLogger(__name__)
@@ -289,19 +290,19 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             'registry_url',
             type='str',
             default=None,
-            desc='Custom repository url'
+            desc='Registry url for login purposes. This is not the default registry'
         ),
         Option(
             'registry_username',
             type='str',
             default=None,
-            desc='Custom repository username'
+            desc='Custom repository username. Only used for logging into a registry.'
         ),
         Option(
             'registry_password',
             type='str',
             default=None,
-            desc='Custom repository password'
+            desc='Custom repository password. Only used for logging into a registry.'
         ),
         ####
         Option(
@@ -326,7 +327,8 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             'default_registry',
             type='str',
             default='docker.io',
-            desc='Registry to which we should normalize unqualified image names',
+            desc='Search-registry to which we should normalize unqualified image names. '
+                 'This is not the default registry',
         ),
         Option(
             'max_count_per_host',
@@ -473,6 +475,9 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
 
         self.cache = HostCache(self)
         self.cache.load()
+
+        self.agent_cache = AgentCache(self)
+        self.agent_cache.load()
 
         self.to_remove_osds = OSDRemovalQueue(self)
         self.to_remove_osds.load_from_store()
@@ -737,6 +742,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             sd.rank = int(d['rank']) if d.get('rank') is not None else None
             sd.rank_generation = int(d['rank_generation']) if d.get(
                 'rank_generation') is not None else None
+            sd.extra_container_args = d.get('extra_container_args')
             if 'state' in d:
                 sd.status_desc = d['state']
                 sd.status = {
@@ -1514,7 +1520,19 @@ Then run the following:
         return 'Added label %s to host %s' % (label, host)
 
     @handle_orch_error
-    def remove_host_label(self, host: str, label: str) -> str:
+    def remove_host_label(self, host: str, label: str, force: bool = False) -> str:
+        # if we remove the _admin label from the only host that has it we could end up
+        # removing the only instance of the config and keyring and cause issues
+        if not force and label == '_admin':
+            p = PlacementSpec(label='_admin')
+            admin_hosts = p.filter_matching_hostspecs(self.inventory.all_specs())
+            if len(admin_hosts) == 1 and admin_hosts[0] == host:
+                raise OrchestratorValidationError(f"Host {host} is the last host with the '_admin'"
+                                                  " label.\nRemoving the _admin label from this host could cause the removal"
+                                                  " of the last cluster config/keyring managed by cephadm.\n"
+                                                  "It is recommended to add the _admin label to another host"
+                                                  " before completing this operation.\nIf you're certain this is"
+                                                  " what you want rerun this command with --force.")
         self.inventory.rm_label(host, label)
         self.log.info('Removed label %s to host %s' % (label, host))
         self._kick_serve_loop()
@@ -2413,7 +2431,7 @@ Then run the following:
     @handle_orch_error
     def plan(self, specs: Sequence[GenericSpec]) -> List:
         results = [{'warning': 'WARNING! Dry-Runs are snapshots of a certain point in time and are bound \n'
-                               'to the current inventory setup. If any on these conditions changes, the \n'
+                               'to the current inventory setup. If any of these conditions change, the \n'
                                'preview will be invalid. Please make sure to have a minimal \n'
                                'timeframe between planning and applying the specs.'}]
         if any([spec.service_type == 'host' for spec in specs]):
@@ -2695,12 +2713,26 @@ Then run the following:
         return self.to_remove_osds.all_osds()
 
     @handle_orch_error
-    def drain_host(self, hostname):
-        # type: (str) -> str
+    def drain_host(self, hostname, force=False):
+        # type: (str, bool) -> str
         """
         Drain all daemons from a host.
         :param host: host name
         """
+
+        # if we drain the last admin host we could end up removing the only instance
+        # of the config and keyring and cause issues
+        if not force:
+            p = PlacementSpec(label='_admin')
+            admin_hosts = p.filter_matching_hostspecs(self.inventory.all_specs())
+            if len(admin_hosts) == 1 and admin_hosts[0] == hostname:
+                raise OrchestratorValidationError(f"Host {hostname} is the last host with the '_admin'"
+                                                  " label.\nDraining this host could cause the removal"
+                                                  " of the last cluster config/keyring managed by cephadm.\n"
+                                                  "It is recommended to add the _admin label to another host"
+                                                  " before completing this operation.\nIf you're certain this is"
+                                                  " what you want rerun this command with --force.")
+
         self.add_host_label(hostname, '_no_schedule')
 
         daemons: List[orchestrator.DaemonDescription] = self.cache.get_daemons_by_host(hostname)

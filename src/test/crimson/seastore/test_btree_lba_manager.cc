@@ -30,6 +30,7 @@ struct btree_test_base :
   segment_manager::EphemeralSegmentManagerRef segment_manager;
   ExtentReaderRef scanner;
   JournalRef journal;
+  ExtentPlacementManagerRef epm;
   CacheRef cache;
 
   size_t block_size;
@@ -40,16 +41,23 @@ struct btree_test_base :
 
   btree_test_base() = default;
 
+  seastar::lowres_system_clock::time_point get_last_modified(
+    segment_id_t id) const final {
+    return seastar::lowres_system_clock::time_point();
+  }
+
+  seastar::lowres_system_clock::time_point get_last_rewritten(
+    segment_id_t id) const final {
+    return seastar::lowres_system_clock::time_point();
+  }
   void update_segment_avail_bytes(paddr_t offset) final {}
 
-  get_segment_ret get_segment(device_id_t id) final {
+  segment_id_t get_segment(device_id_t id, segment_seq_t seq) final {
     auto ret = next;
     next = segment_id_t{
       next.device_id(),
       next.device_segment_id() + 1};
-    return get_segment_ret(
-      get_segment_ertr::ready_future_marker{},
-      ret);
+    return ret;
   }
 
   journal_seq_t get_journal_tail_target() const final { return journal_seq_t{}; }
@@ -73,13 +81,15 @@ struct btree_test_base :
   seastar::future<> set_up_fut() final {
     segment_manager = segment_manager::create_test_ephemeral();
     scanner.reset(new ExtentReader());
-    journal.reset(new Journal(*segment_manager, *scanner));
-    cache.reset(new Cache(*scanner));
+    auto& scanner_ref = *scanner.get();
+    journal = journal::make_segmented(
+      *segment_manager, scanner_ref, *this);
+    epm.reset(new ExtentPlacementManager());
+    cache.reset(new Cache(scanner_ref, *epm));
 
     block_size = segment_manager->get_block_size();
     next = segment_id_t{segment_manager->get_device_id(), 0};
-    scanner->add_segment_manager(segment_manager.get());
-    journal->set_segment_provider(this);
+    scanner_ref.add_segment_manager(segment_manager.get());
     journal->set_write_pipeline(&pipeline);
 
     return segment_manager->init(
@@ -117,6 +127,7 @@ struct btree_test_base :
       segment_manager.reset();
       scanner.reset();
       journal.reset();
+      epm.reset();
       cache.reset();
     }).handle_error(
       crimson::ct_error::all_same_way([] {
@@ -347,7 +358,7 @@ struct btree_lba_manager_test : btree_test_base {
     );
   }
 
-  segment_off_t next_off = 0;
+  seastore_off_t next_off = 0;
   paddr_t get_paddr() {
     next_off += block_size;
     return make_fake_paddr(next_off);

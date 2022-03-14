@@ -1028,18 +1028,30 @@ struct RGWPeriodConfig
 {
   RGWQuotaInfo bucket_quota;
   RGWQuotaInfo user_quota;
+  RGWRateLimitInfo user_ratelimit;
+  RGWRateLimitInfo bucket_ratelimit;
+  // rate limit unauthenticated user
+  RGWRateLimitInfo anon_ratelimit;
 
   void encode(bufferlist& bl) const {
-    ENCODE_START(1, 1, bl);
+    ENCODE_START(2, 1, bl);
     encode(bucket_quota, bl);
     encode(user_quota, bl);
+    encode(bucket_ratelimit, bl);
+    encode(user_ratelimit, bl);
+    encode(anon_ratelimit, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(bufferlist::const_iterator& bl) {
-    DECODE_START(1, bl);
+    DECODE_START(2, bl);
     decode(bucket_quota, bl);
     decode(user_quota, bl);
+    if (struct_v >= 2) {
+      decode(bucket_ratelimit, bl);
+      decode(user_ratelimit, bl);
+      decode(anon_ratelimit, bl);
+    }
     DECODE_FINISH(bl);
   }
 
@@ -1259,6 +1271,7 @@ public:
   const rgw_zone_id& get_master_zone() const { return master_zone; }
   const std::string& get_master_zonegroup() const { return master_zonegroup; }
   const std::string& get_realm() const { return realm_id; }
+  const std::string& get_realm_name() const { return realm_name; }
   const RGWPeriodMap& get_map() const { return period_map; }
   RGWPeriodConfig& get_config() { return period_config; }
   const RGWPeriodConfig& get_config() const { return period_config; }

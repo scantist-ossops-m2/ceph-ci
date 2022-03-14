@@ -1626,6 +1626,12 @@ public:
         drain_all();
         return set_cr_error(retcode);
       }
+      // clean up full sync index
+      yield {
+        const auto& pool = sync_env->svc->zone->get_zone_params().log_pool;
+        auto oid = full_data_sync_index_shard_oid(sc->source_zone.id, shard_id);
+        call(new RGWRadosRemoveCR(sync_env->store, {pool, oid}));
+      }
       // keep lease and transition to incremental_sync()
     }
     return 0;
@@ -4707,7 +4713,7 @@ int RGWRunBucketSyncCoroutine::operate(const DoutPrefixProvider *dpp)
     yield call(new RGWSyncGetBucketInfoCR(sync_env, sync_pair.dest_bs.bucket, &sync_pipe.dest_bucket_info, 
                                           &sync_pipe.dest_bucket_attrs, tn));
     if (retcode < 0) {
-      tn->log(0, SSTR("ERROR: failed to retrieve bucket info for bucket=" << bucket_str{sync_pair.source_bs.bucket}));
+      tn->log(0, SSTR("ERROR: failed to retrieve bucket info for bucket=" << bucket_str{sync_pair.dest_bs.bucket}));
       drain_all();
       return set_cr_error(retcode);
     }

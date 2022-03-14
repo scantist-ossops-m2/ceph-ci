@@ -2418,8 +2418,9 @@ void RGWZoneGroup::decode_json(JSONObj *obj)
   JSONDecoder::decode_json("master_zone", master_zone, obj);
   JSONDecoder::decode_json("zones", zones, decode_zones, obj);
   JSONDecoder::decode_json("placement_targets", placement_targets, decode_placement_targets, obj);
-  JSONDecoder::decode_json("default_placement", default_placement.name, obj);
-  JSONDecoder::decode_json("default_storage_class", default_placement.storage_class, obj);
+  string pr;
+  JSONDecoder::decode_json("default_placement", pr, obj);
+  default_placement.from_str(pr);
   JSONDecoder::decode_json("realm_id", realm_id, obj);
   JSONDecoder::decode_json("sync_policy", sync_policy, obj);
 }
@@ -2755,12 +2756,18 @@ void RGWPeriodConfig::dump(Formatter *f) const
 {
   encode_json("bucket_quota", bucket_quota, f);
   encode_json("user_quota", user_quota, f);
+  encode_json("user_ratelimit", user_ratelimit, f);
+  encode_json("bucket_ratelimit", bucket_ratelimit, f);
+  encode_json("anonymous_ratelimit", anon_ratelimit, f);
 }
 
 void RGWPeriodConfig::decode_json(JSONObj *obj)
 {
   JSONDecoder::decode_json("bucket_quota", bucket_quota, obj);
   JSONDecoder::decode_json("user_quota", user_quota, obj);
+  JSONDecoder::decode_json("user_ratelimit", user_ratelimit, obj);
+  JSONDecoder::decode_json("bucket_ratelimit", bucket_ratelimit, obj);
+  JSONDecoder::decode_json("anonymous_ratelimit", anon_ratelimit, obj);
 }
 
 void RGWRegionMap::dump(Formatter *f) const

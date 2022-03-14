@@ -564,6 +564,8 @@ struct spg_t {
 
   static const uint8_t calc_name_buf_size = pg_t::calc_name_buf_size + 4; // 36 + len('s') + len("255");
   char *calc_name(char *buf, const char *suffix_backwords) const;
+  // and a (limited) version that uses an internal buffer:
+  std::string calc_name_sring() const;
  
   bool parse(const char *s);
   bool parse(const std::string& s) {
@@ -1074,6 +1076,9 @@ inline std::ostream& operator<<(std::ostream& out, const pool_snap_info_t& si) {
  * pool options.
  */
 
+// The order of items in the list is important, therefore,
+// you should always add to the end of the list when adding new options.
+
 class pool_opts_t {
 public:
   enum key_t {
@@ -1093,7 +1098,6 @@ public:
     CSUM_MIN_BLOCK,
     FINGERPRINT_ALGORITHM,
     PG_NUM_MIN,         // min pg_num
-    PG_NUM_MAX,         // max pg_num
     TARGET_SIZE_BYTES,  // total bytes in pool
     TARGET_SIZE_RATIO,  // fraction of total cluster
     PG_AUTOSCALE_BIAS,
@@ -1101,6 +1105,7 @@ public:
     DEDUP_TIER,
     DEDUP_CHUNK_ALGORITHM,
     DEDUP_CDC_CHUNK_SIZE,
+    PG_NUM_MAX, // max pg_num
   };
 
   enum type_t {
@@ -2246,6 +2251,7 @@ struct pg_stat_t {
 
   int64_t log_size;
   int64_t ondisk_log_size;    // >= active_log_size
+  int64_t objects_scrubbed;
 
   std::vector<int32_t> up, acting;
   std::vector<pg_shard_t> avail_no_missing;
@@ -2286,6 +2292,7 @@ struct pg_stat_t {
       created(0), last_epoch_clean(0),
       parent_split_bits(0),
       log_size(0), ondisk_log_size(0),
+      objects_scrubbed(0),
       mapping_epoch(0),
       up_primary(-1),
       acting_primary(-1),
@@ -6598,13 +6605,6 @@ void create_pg_collection(
 
 void init_pg_ondisk(
   ceph::os::Transaction& t, spg_t pgid, const pg_pool_t *pool);
-
-// omap specific stats
-struct omap_stat_t {
- int large_omap_objects;
- int64_t omap_bytes;
- int64_t omap_keys;
-};
 
 // filter for pg listings
 class PGLSFilter {

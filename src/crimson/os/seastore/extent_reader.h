@@ -6,6 +6,7 @@
 #include "crimson/common/errorator.h"
 #include "crimson/os/seastore/seastore_types.h"
 #include "crimson/os/seastore/segment_manager.h"
+#include "crimson/os/seastore/logging.h"
 
 namespace crimson::os::seastore {
 
@@ -14,7 +15,7 @@ class TransactionManager;
 
 class ExtentReader {
 public:
-  segment_off_t get_block_size() const {
+  seastore_off_t get_block_size() const {
     assert(segment_managers.size());
     // assume all segment managers have the same block size
     return segment_managers[0]->get_block_size();
@@ -33,6 +34,16 @@ public:
     segment_header_t>;
   read_segment_header_ret read_segment_header(segment_id_t segment);
 
+  using read_segment_tail_ertr = read_segment_header_ertr;
+  using read_segment_tail_ret = read_segment_tail_ertr::future<
+    segment_tail_t>;
+  read_segment_tail_ret  read_segment_tail(segment_id_t segment);
+
+  struct commit_info_t {
+    mod_time_point_t commit_time;
+    record_commit_type_t commit_type;
+  };
+
   /**
    * scan_extents
    *
@@ -44,7 +55,8 @@ public:
    */
   using scan_extents_cursor = scan_valid_records_cursor;
   using scan_extents_ertr = read_ertr::extend<crimson::ct_error::enodata>;
-  using scan_extents_ret_bare = std::list<std::pair<paddr_t, extent_info_t>>;
+  using scan_extents_ret_bare =
+    std::list<std::pair<paddr_t, std::pair<commit_info_t, extent_info_t>>>;
   using scan_extents_ret = scan_extents_ertr::future<scan_extents_ret_bare>;
   scan_extents_ret scan_extents(
     scan_extents_cursor &cursor,

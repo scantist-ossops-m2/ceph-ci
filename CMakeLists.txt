@@ -270,10 +270,16 @@ endif()
 
 option(WITH_BLUEFS "libbluefs library" OFF)
 
+option(WITH_QAT "Enable Qat driver" OFF)
+if(WITH_QAT)
+  find_package(QatDrv REQUIRED COMPONENTS qat_s usdm_drv_s)
+  set(HAVE_QATDRV $(QatDrv_FOUND))
+endif()
+
 option(WITH_QATZIP "Enable QATZIP" OFF)
 if(WITH_QATZIP)
   find_package(qatzip REQUIRED)
-  set(HAVE_QATZIP ${QATZIP_FOUND})
+  set(HAVE_QATZIP ${qatzip_FOUND})
 endif(WITH_QATZIP)
 
 # needs mds and? XXX
@@ -357,10 +363,8 @@ else()
   set(EXE_LINKER_USE_PIE ${ENABLE_SHARED})
 endif()
 
-find_package(CURL REQUIRED)
-set(CMAKE_REQUIRED_INCLUDES ${CURL_INCLUDE_DIRS})
-set(CMAKE_REQUIRED_LIBRARIES ${CURL_LIBRARIES})
-CHECK_SYMBOL_EXISTS(curl_multi_wait curl/curl.h HAVE_CURL_MULTI_WAIT)
+# require libcurl with good curl_multi_wait(), see https://tracker.ceph.com/issues/15915
+find_package(CURL 7.32 REQUIRED)
 
 find_package(OpenSSL REQUIRED)
 set(CRYPTO_LIBS OpenSSL::Crypto)
@@ -394,6 +398,8 @@ option(WITH_RADOSGW_AMQP_ENDPOINT "Rados Gateway's pubsub support for AMQP push 
 option(WITH_RADOSGW_KAFKA_ENDPOINT "Rados Gateway's pubsub support for Kafka push endpoint" ON)
 option(WITH_RADOSGW_LUA_PACKAGES "Rados Gateway's support for dynamically adding lua packagess" ON)
 option(WITH_RADOSGW_DBSTORE "DBStore backend for Rados Gateway" ON)
+option(WITH_RADOSGW_MOTR "CORTX-Motr backend for Rados Gateway" OFF)
+option(WITH_RADOSGW_SELECT_PARQUET "Support for s3 select on parquet objects" OFF)
 
 if(WITH_RADOSGW)
   find_package(EXPAT REQUIRED)
@@ -661,8 +667,6 @@ option(WITH_SYSTEMD "build with systemd support" ON)
 add_subdirectory(src)
 
 add_subdirectory(qa)
-add_subdirectory(monitoring)
-
 add_subdirectory(doc)
 if(WITH_MANPAGE)
   add_subdirectory(man)
@@ -677,9 +681,7 @@ if(LINUX)
 endif()
 
 option(WITH_GRAFANA "install grafana dashboards" OFF)
-if(WITH_GRAFANA)
-  add_subdirectory(monitoring/grafana/dashboards)
-endif()
+add_subdirectory(monitoring/ceph-mixin)
 
 CMAKE_DEPENDENT_OPTION(WITH_BOOST_VALGRIND "Boost support for valgrind" OFF
   "NOT WITH_SYSTEM_BOOST" OFF)

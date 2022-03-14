@@ -2,6 +2,14 @@ find_program(GPERF gperf)
 if(NOT GPERF)
   message(FATAL_ERROR "Can't find gperf")
 endif()
+
+if(WITH_RADOSGW_SELECT_PARQUET)
+  find_package(Arrow QUIET REQUIRED)
+  set(ARROW_LIBRARIES "-larrow -lparquet")
+  add_definitions(-D_ARROW_EXIST)
+  message("-- arrow is installed, radosgw/s3select-op is able to process parquet objects")
+endif(WITH_RADOSGW_SELECT_PARQUET)
+
 function(gperf_generate input output)
   add_custom_command(
     OUTPUT ${output}
@@ -122,6 +130,7 @@ set(librgw_common_srcs
   rgw_rest_realm.cc
   rgw_rest_role.cc
   rgw_rest_s3.cc
+  rgw_s3select.cc
   rgw_role.cc
   rgw_sal.cc
   rgw_sal_rados.cc
@@ -167,6 +176,9 @@ if(WITH_RADOSGW_DBSTORE)
   add_subdirectory(store/dbstore)
   list(APPEND librgw_common_srcs rgw_sal_dbstore.cc)
 endif()
+if(WITH_RADOSGW_MOTR)
+  list(APPEND librgw_common_srcs rgw_sal_motr.cc)
+endif()
 if(WITH_JAEGER)
   list(APPEND librgw_common_srcs rgw_tracer.cc)
 endif()
@@ -204,10 +216,11 @@ target_link_libraries(rgw_common
     ${CURL_LIBRARIES}
     ${EXPAT_LIBRARIES}
     ${LUA_LIBRARIES}
+    ${ARROW_LIBRARIES}
   PUBLIC
     spawn)
 target_include_directories(rgw_common
-  SYSTEM PUBLIC "services"
+  PUBLIC "services"
   PUBLIC "${CMAKE_SOURCE_DIR}/src/rgw"
   PRIVATE "${LUA_INCLUDE_DIR}")
 if(WITH_RADOSGW_KAFKA_ENDPOINT)
@@ -248,6 +261,14 @@ if(WITH_RADOSGW_DBSTORE)
   target_link_libraries(rgw_common PRIVATE global dbstore)
 endif()
 
+if(WITH_RADOSGW_MOTR)
+  target_include_directories(rgw_common PRIVATE "/usr/include/motr")
+  target_compile_options(rgw_common PRIVATE "-Wno-attributes")
+  target_compile_definitions(rgw_common
+    PRIVATE "M0_EXTERN=extern" "M0_INTERNAL=")
+  target_link_libraries(rgw_common PRIVATE motr motr-helpers)
+endif()
+
 set(rgw_a_srcs
   rgw_auth_keystone.cc
   rgw_client_io.cc
@@ -269,6 +290,7 @@ set(rgw_a_srcs
   rgw_rest_usage.cc
   rgw_rest_info.cc
   rgw_rest_user.cc
+  rgw_rest_ratelimit.cc
   rgw_swift_auth.cc
   rgw_usage.cc
   rgw_opa.cc
@@ -288,7 +310,7 @@ add_library(rgw_a STATIC
 target_compile_definitions(rgw_a PUBLIC "-DCLS_CLIENT_HIDE_IOCTX")
 target_include_directories(rgw_a PUBLIC "${CMAKE_SOURCE_DIR}/src/dmclock/support/src")
 target_include_directories(rgw_a SYSTEM PUBLIC "../rapidjson/include")
-target_include_directories(rgw_a SYSTEM PUBLIC "${CMAKE_SOURCE_DIR}/src/rgw")
+target_include_directories(rgw_a PUBLIC "${CMAKE_SOURCE_DIR}/src/rgw")
 
 if(WITH_RADOSGW_AMQP_ENDPOINT)
   find_package(RabbitMQ REQUIRED)
@@ -302,6 +324,7 @@ target_link_libraries(rgw_a
     common_utf8 global
     ${CRYPTO_LIBS}
     ${LUA_LIBRARIES}
+    ${ARROW_LIBRARIES}
     OATH::OATH
   PUBLIC
     rgw_common

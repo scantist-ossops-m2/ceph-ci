@@ -15,7 +15,7 @@ except ImportError:
     pass
 
 from ceph.deployment.service_spec import ServiceSpec, PlacementSpec, RGWSpec, \
-    NFSServiceSpec, IscsiServiceSpec, HostPlacementSpec, CustomContainerSpec
+    NFSServiceSpec, IscsiServiceSpec, HostPlacementSpec, CustomContainerSpec, MDSSpec
 from ceph.deployment.drive_selection.selector import DriveSelection
 from ceph.deployment.inventory import Devices, Device
 from ceph.utils import datetime_to_str, datetime_now
@@ -165,8 +165,8 @@ class TestCephadm(object):
         with with_host(cephadm_module, 'test'):
             c = cephadm_module.list_daemons(refresh=True)
             assert wait(cephadm_module, c) == []
-            with with_service(cephadm_module, ServiceSpec('mds', 'name', unmanaged=True)) as _, \
-                    with_daemon(cephadm_module, ServiceSpec('mds', 'name'), 'test') as _:
+            with with_service(cephadm_module, MDSSpec('mds', 'name', unmanaged=True)) as _, \
+                    with_daemon(cephadm_module, MDSSpec('mds', 'name'), 'test') as _:
 
                 c = cephadm_module.list_daemons()
 
@@ -227,7 +227,7 @@ class TestCephadm(object):
             with with_host(cephadm_module, 'host2'):
                 with with_service(cephadm_module, ServiceSpec('mgr', placement=PlacementSpec(count=2)),
                                   CephadmOrchestrator.apply_mgr, '', status_running=True):
-                    with with_service(cephadm_module, ServiceSpec('mds', 'test-id', placement=PlacementSpec(count=2)),
+                    with with_service(cephadm_module, MDSSpec('mds', 'test-id', placement=PlacementSpec(count=2)),
                                       CephadmOrchestrator.apply_mds, '', status_running=True):
 
                         # with no service-type. Should provide info fot both services
@@ -435,13 +435,30 @@ class TestCephadm(object):
                 _run_cephadm.assert_called_with(
                     'test', 'mon.test', 'deploy', [
                         '--name', 'mon.test',
-                        '--meta-json', '{"service_name": "mon", "ports": [], "ip": null, "deployed_by": [], "rank": null, "rank_generation": null}',
+                        '--meta-json', '{"service_name": "mon", "ports": [], "ip": null, "deployed_by": [], "rank": null, "rank_generation": null, "extra_container_args": null}',
                         '--config-json', '-',
                         '--reconfig',
                     ],
                     stdin='{"config": "\\n\\n[mon]\\nk=v\\n[mon.test]\\npublic network = 127.0.0.0/8\\n", '
                     + '"keyring": "", "files": {"config": "[mon.test]\\npublic network = 127.0.0.0/8\\n"}}',
                     image='')
+
+    @mock.patch("cephadm.serve.CephadmServe._run_cephadm")
+    def test_extra_container_args(self, _run_cephadm, cephadm_module: CephadmOrchestrator):
+        _run_cephadm.side_effect = async_side_effect(('{}', '', 0))
+        with with_host(cephadm_module, 'test'):
+            with with_service(cephadm_module, ServiceSpec(service_type='crash', extra_container_args=['--cpus=2', '--quiet']), CephadmOrchestrator.apply_crash):
+                _run_cephadm.assert_called_with(
+                    'test', 'crash.test', 'deploy', [
+                        '--name', 'crash.test',
+                        '--meta-json', '{"service_name": "crash", "ports": [], "ip": null, "deployed_by": [], "rank": null, "rank_generation": null, "extra_container_args": ["--cpus=2", "--quiet"]}',
+                        '--config-json', '-',
+                        '--extra-container-args=--cpus=2',
+                        '--extra-container-args=--quiet'
+                    ],
+                    stdin='{"config": "", "keyring": ""}',
+                    image='',
+                )
 
     @mock.patch("cephadm.serve.CephadmServe._run_cephadm", _run_cephadm('{}'))
     def test_daemon_check_post(self, cephadm_module: CephadmOrchestrator):
@@ -1274,7 +1291,7 @@ class TestCephadm(object):
 
     @mock.patch("cephadm.serve.CephadmServe._run_cephadm", _run_cephadm('{}'))
     def test_mds_config_purge(self, cephadm_module: CephadmOrchestrator):
-        spec = ServiceSpec('mds', service_id='fsname')
+        spec = MDSSpec('mds', service_id='fsname', config={'test': 'foo'})
         with with_host(cephadm_module, 'test'):
             with with_service(cephadm_module, spec, host='test'):
                 ret, out, err = cephadm_module.check_mon_command({
@@ -1293,10 +1310,11 @@ class TestCephadm(object):
     @mock.patch("cephadm.serve.CephadmServe._run_cephadm", _run_cephadm('{}'))
     @mock.patch("cephadm.services.cephadmservice.CephadmService.ok_to_stop")
     def test_daemon_ok_to_stop(self, ok_to_stop, cephadm_module: CephadmOrchestrator):
-        spec = ServiceSpec(
+        spec = MDSSpec(
             'mds',
             service_id='fsname',
-            placement=PlacementSpec(hosts=['host1', 'host2'])
+            placement=PlacementSpec(hosts=['host1', 'host2']),
+            config={'test': 'foo'}
         )
         with with_host(cephadm_module, 'host1'), with_host(cephadm_module, 'host2'):
             c = cephadm_module.apply_mds(spec)

@@ -121,9 +121,6 @@
 #cmakedefine HAVE_LIBTCMALLOC
 #cmakedefine LIBTCMALLOC_MISSING_ALIGNED_ALLOC
 
-/* Define if have curl_multi_wait() */
-#cmakedefine HAVE_CURL_MULTI_WAIT 1
-
 /* AsyncMessenger RDMA conditional compilation */
 #cmakedefine HAVE_RDMA
 
@@ -350,6 +347,9 @@
 
 /* Backend dbstore for Rados Gateway */
 #cmakedefine WITH_RADOSGW_DBSTORE
+
+/* Backend CORTX-Motr for Rados Gateway */
+#cmakedefine WITH_RADOSGW_MOTR
 
 /* Defined if std::map::merge() is supported */
 #cmakedefine HAVE_STDLIB_MAP_SPLICING

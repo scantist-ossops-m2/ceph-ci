@@ -8,9 +8,8 @@
 #include <memory>
 #include <string.h>
 
-#include "crimson/common/log.h"
-
 #include "crimson/os/seastore/lba_manager.h"
+#include "crimson/os/seastore/logging.h"
 #include "crimson/os/seastore/seastore_types.h"
 #include "crimson/os/seastore/lba_manager/btree/lba_btree_node.h"
 
@@ -26,11 +25,6 @@ public:
   using iterator_fut = base_iertr::future<iterator>;
 
   using mapped_space_visitor_t = LBAManager::scan_mapped_space_func_t;
-
-  struct lba_tree_inner_stats_t {
-    uint64_t num_alloc_extents = 0;
-    uint64_t num_alloc_extents_iter_nexts = 0;
-  } static lba_tree_inner_stats;
 
   class iterator {
   public:
@@ -268,30 +262,26 @@ public:
   static base_iertr::future<> iterate_repeat(
     op_context_t c,
     iterator_fut &&iter_fut,
-    bool need_count,
     F &&f,
     mapped_space_visitor_t *visitor=nullptr) {
     return std::move(
       iter_fut
-    ).si_then([c, need_count, visitor, f=std::forward<F>(f)](auto iter) {
+    ).si_then([c, visitor, f=std::forward<F>(f)](auto iter) {
       return seastar::do_with(
 	iter,
 	std::move(f),
-	[c, need_count, visitor](auto &pos, auto &f) {
+	[c, visitor](auto &pos, auto &f) {
 	  return trans_intr::repeat(
-	    [c, need_count, visitor, &f, &pos] {
+	    [c, visitor, &f, &pos] {
 	      return f(
 		pos
-	      ).si_then([c, need_count, visitor, &pos](auto done) {
+	      ).si_then([c, visitor, &pos](auto done) {
 		if (done == seastar::stop_iteration::yes) {
 		  return iterate_repeat_ret_inner(
 		    interruptible::ready_future_marker{},
 		    seastar::stop_iteration::yes);
 		} else {
 		  ceph_assert(!pos.is_end());
-		  if (need_count) {
-		    ++LBABtree::lba_tree_inner_stats.num_alloc_extents_iter_nexts;
-		  }
 		  return pos.next(
 		    c, visitor
 		  ).si_then([&pos](auto next) {
@@ -378,10 +368,10 @@ public:
    * Checks whether e is live (reachable from lba tree) and drops or initializes
    * accordingly.
    *
-   * Returns e if live and a null CachedExtentRef otherwise.
+   * Returns if e is live.
    */
   using init_cached_extent_iertr = base_iertr;
-  using init_cached_extent_ret = init_cached_extent_iertr::future<CachedExtentRef>;
+  using init_cached_extent_ret = init_cached_extent_iertr::future<bool>;
   init_cached_extent_ret init_cached_extent(op_context_t c, CachedExtentRef e);
 
   /// get_leaf_if_live: get leaf node at laddr/addr if still live
@@ -391,7 +381,7 @@ public:
     op_context_t c,
     paddr_t addr,
     laddr_t laddr,
-    segment_off_t len);
+    seastore_off_t len);
 
   /// get_internal_if_live: get internal node at laddr/addr if still live
   using get_internal_if_live_iertr = base_iertr;
@@ -400,7 +390,7 @@ public:
     op_context_t c,
     paddr_t addr,
     laddr_t laddr,
-    segment_off_t len);
+    seastore_off_t len);
 
   /**
    * rewrite_lba_extent
@@ -555,7 +545,7 @@ private:
     mapped_space_visitor_t *visitor ///< [in] mapped space visitor
   ) {
     LOG_PREFIX(LBATree::lookup_depth_range);
-    SUBDEBUGT(seastore_lba, "{} -> {}", c.trans, from, to);
+    SUBDEBUGT(seastore_lba_details, "{} -> {}", c.trans, from, to);
     return seastar::do_with(
       from,
       [c, to, visitor, &iter, &li, &ll](auto &d) {
@@ -619,7 +609,7 @@ private:
 	    auto riter = ll(*(root_entry.node));
 	    root_entry.pos = riter->get_offset();
 	  }
-	  SUBDEBUGT(seastore_lba, "got root, depth {}", c.trans, root.get_depth());
+	  SUBDEBUGT(seastore_lba_details, "got root, depth {}", c.trans, root.get_depth());
 	  return lookup_depth_range(
 	    c,
 	    iter,

@@ -1,12 +1,9 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
 // vim: ts=8 sw=2 smarttab
 
-#include "crimson/common/log.h"
-#include "crimson/os/seastore/logging.h"
-
 #include "crimson/os/seastore/lba_manager/btree/lba_btree.h"
 
-SET_SUBSYS(seastore_lba);
+SET_SUBSYS(seastore_lba_details);
 
 namespace crimson::os::seastore::lba_manager::btree {
 
@@ -286,12 +283,11 @@ LBABtree::init_cached_extent_ret LBABtree::init_cached_extent(
 	  c.pins->add_pin(
 	    static_cast<BtreeLBAPin&>(logn->get_pin()).pin);
 	}
-	DEBUGT("logical extent {} live, initialized", c.trans, *logn);
-	return e;
+	DEBUGT("logical extent {} live", c.trans, *logn);
+	return true;
       } else {
-	DEBUGT("logical extent {} not live, dropping", c.trans, *logn);
-	c.cache.drop_from_cache(logn);
-	return CachedExtentRef();
+	DEBUGT("logical extent {} not live", c.trans, *logn);
+	return false;
       }
     });
   } else if (e->get_type() == extent_types_t::LADDR_INTERNAL) {
@@ -304,11 +300,10 @@ LBABtree::init_cached_extent_ret LBABtree::init_cached_extent(
       if (cand_depth <= iter.get_depth() &&
 	  &*iter.get_internal(cand_depth).node == &*eint) {
 	DEBUGT("extent {} is live", c.trans, *eint);
-	return e;
+	return true;
       } else {
 	DEBUGT("extent {} is not live", c.trans, *eint);
-	c.cache.drop_from_cache(eint);
-	return CachedExtentRef();
+	return false;
       }
     });
   } else if (e->get_type() == extent_types_t::LADDR_LEAF) {
@@ -319,11 +314,10 @@ LBABtree::init_cached_extent_ret LBABtree::init_cached_extent(
       // Note, this check is valid even if iter.is_end()
       if (iter.leaf.node == &*eleaf) {
 	DEBUGT("extent {} is live", c.trans, *eleaf);
-	return e;
+	return true;
       } else {
 	DEBUGT("extent {} is not live", c.trans, *eleaf);
-	c.cache.drop_from_cache(eleaf);
-	return CachedExtentRef();
+	return false;
       }
     });
   } else {
@@ -334,7 +328,7 @@ LBABtree::init_cached_extent_ret LBABtree::init_cached_extent(
       e->get_type());
     return init_cached_extent_ret(
       interruptible::ready_future_marker{},
-      e);
+      true);
   }
 }
 
@@ -343,9 +337,9 @@ LBABtree::get_internal_if_live(
   op_context_t c,
   paddr_t addr,
   laddr_t laddr,
-  segment_off_t len)
+  seastore_off_t len)
 {
-  LOG_PREFIX(BtreeLBAManager::get_leaf_if_live);
+  LOG_PREFIX(LBABtree::get_internal_if_live);
   return lower_bound(
     c, laddr
   ).si_then([FNAME, c, addr, laddr, len](auto iter) {
@@ -379,9 +373,9 @@ LBABtree::get_leaf_if_live(
   op_context_t c,
   paddr_t addr,
   laddr_t laddr,
-  segment_off_t len)
+  seastore_off_t len)
 {
-  LOG_PREFIX(BtreeLBAManager::get_leaf_if_live);
+  LOG_PREFIX(LBABtree::get_leaf_if_live);
   return lower_bound(
     c, laddr
   ).si_then([FNAME, c, addr, laddr, len](auto iter) {
@@ -427,6 +421,7 @@ LBABtree::rewrite_lba_extent_ret LBABtree::rewrite_lba_extent(
       lba_extent.get_length(),
       nlba_extent->get_bptr().c_str());
     nlba_extent->pin.set_range(nlba_extent->get_node_meta());
+    nlba_extent->set_last_modified(lba_extent.get_last_modified());
 
     /* This is a bit underhanded.  Any relative addrs here must necessarily
      * be record relative as we are rewriting a dirty extent.  Thus, we
@@ -596,6 +591,7 @@ LBABtree::find_insertion_ret LBABtree::find_insertion(
     return iter.prev(
       c
     ).si_then([laddr, &iter](auto p) {
+      boost::ignore_unused(laddr); // avoid clang warning;
       assert(p.leaf.node->get_node_meta().begin <= laddr);
       assert(p.get_key() < laddr);
       // Note, this is specifically allowed to violate the iterator
@@ -626,7 +622,7 @@ LBABtree::handle_split_ret LBABtree::handle_split(
     nroot->set_meta(meta);
     nroot->pin.set_range(meta);
     nroot->journal_insert(
-      nroot->begin(),
+      std::cbegin(*nroot),
       L_ADDR_MIN,
       root.get_location(),
       nullptr);
@@ -640,8 +636,7 @@ LBABtree::handle_split_ret LBABtree::handle_split(
 
   /* pos may be either node_position_t<LBALeafNode> or
    * node_position_t<LBAInternalNode> */
-  auto split_level = [&](auto &parent_pos, auto &pos) {
-    LOG_PREFIX(LBATree::handle_split);
+  auto split_level = [&, FNAME](auto &parent_pos, auto &pos) {
     auto [left, right, pivot] = pos.node->make_split_children(c);
 
     auto parent_node = parent_pos.node;
@@ -780,9 +775,8 @@ LBABtree::handle_merge_ret merge_level(
     donor_iter.get_val().maybe_relative_to(parent_pos.node->get_paddr()),
     begin,
     end
-  ).si_then([c, iter, donor_iter, donor_is_left, &parent_pos, &pos](
+  ).si_then([FNAME, c, iter, donor_iter, donor_is_left, &parent_pos, &pos](
 	      typename NodeType::Ref donor) {
-    LOG_PREFIX(LBABtree::merge_level);
     auto [l, r] = donor_is_left ?
       std::make_pair(donor, pos.node) : std::make_pair(pos.node, donor);
 
@@ -807,7 +801,6 @@ LBABtree::handle_merge_ret merge_level(
       c.cache.retire_extent(c.trans, l);
       c.cache.retire_extent(c.trans, r);
     } else {
-      LOG_PREFIX(LBABtree::merge_level);
       auto [replacement_l, replacement_r, pivot] =
 	l->make_balanced(
 	  c,

@@ -3,6 +3,69 @@
 
 #pragma once
 
+// clang-format off
+/*
+
+Main Scrubber interfaces:
+
+┌──────────────────────────────────────────────┬────┐
+│                                              │    │
+│                                              │    │
+│       PG                                     │    │
+│                                              │    │
+│                                              │    │
+├──────────────────────────────────────────────┘    │
+│                                                   │
+│       PrimaryLogPG                                │
+└────────────────────────────────┬──────────────────┘
+                                 │
+                                 │
+                                 │ ownes & uses
+                                 │
+                                 │
+                                 │
+┌────────────────────────────────▼──────────────────┐
+│               <<ScrubPgIF>>                       │
+└───────────────────────────▲───────────────────────┘
+                            │
+                            │
+                            │implements
+                            │
+                            │
+                            │
+┌───────────────────────────┴───────────────┬───────┐
+│                                           │       │
+│         PgScrubber                        │       │
+│                                           │       │
+│                                           │       ├───────┐
+├───────────────────────────────────────────┘       │       │
+│                                                   │       │
+│         PrimaryLogScrub                           │       │
+└─────┬───────────────────┬─────────────────────────┘       │
+      │                   │                         implements
+      │    ownes & uses   │                                 │
+      │                   │       ┌─────────────────────────▼──────┐
+      │                   │       │    <<ScrubMachineListener>>    │
+      │                   │       └─────────▲──────────────────────┘
+      │                   │                 │
+      │                   │                 │
+      │                   ▼                 │
+      │    ┌────────────────────────────────┴───────┐
+      │    │                                        │
+      │    │        ScrubMachine                    │
+      │    │                                        │
+      │    └────────────────────────────────────────┘
+      │
+  ┌───▼─────────────────────────────────┐
+  │                                     │
+  │       ScrubStore                    │
+  │                                     │
+  └─────────────────────────────────────┘
+
+*/
+// clang-format on
+
+
 #include <cassert>
 #include <chrono>
 #include <memory>
@@ -13,12 +76,12 @@
 #include <vector>
 
 #include "osd/PG.h"
-#include "ScrubStore.h"
-#include "scrub_machine_lstnr.h"
 #include "osd/scrubber_common.h"
-#include "osd_scrub_sched.h"
 
-class Callback;
+#include "ScrubStore.h"
+#include "osd_scrub_sched.h"
+#include "scrub_backend.h"
+#include "scrub_machine_lstnr.h"
 
 namespace Scrub {
 class ScrubMachine;
@@ -92,7 +155,7 @@ class LocalReservation {
 };
 
 /**
- *  wraps the OSD resource we are using when reserved as a replica by a scrubbing master.
+ *  wraps the OSD resource we are using when reserved as a replica by a scrubbing primary.
  */
 class ReservedByRemotePrimary {
   const PgScrubber* m_scrubber; ///< we will be using its gen_prefix()
@@ -192,10 +255,13 @@ ostream& operator<<(ostream& out, const scrub_flags_t& sf);
  * am forced to strongly decouple the state-machine implementation details from
  * the actual scrubbing code.
  */
-class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
-
+class PgScrubber : public ScrubPgIF,
+                   public ScrubMachineListener,
+                   public SnapMapperAccessor {
  public:
   explicit PgScrubber(PG* pg);
+
+  friend class ScrubBackend; // will be replaced by a limited interface
 
   //  ------------------  the I/F exposed to the PG (ScrubPgIF) -------------
 
@@ -444,6 +510,14 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
   utime_t scrub_begin_stamp;
   std::ostream& gen_prefix(std::ostream& out) const final;
 
+  //  fetching the snap-set for a given object (used by the scrub-backend)
+  int get_snaps(const hobject_t& hoid, std::set<snapid_t>* snaps_set) const final
+  {
+    return m_pg->snap_mapper.get_snaps(hoid, snaps_set);
+  }
+
+  void log_cluster_warning(const std::string& warning) const final;
+
  protected:
   bool state_test(uint64_t m) const { return m_pg->state_test(m); }
   void state_set(uint64_t m) { m_pg->state_set(m); }
@@ -462,7 +536,23 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
   ostream& show(ostream& out) const override;
 
  public:
-  // -------------------------------------------------------------------------------------------
+  //  ------------------  the I/F used by the ScrubBackend (not named yet)  -------------
+
+  // note: the reason we must have these forwarders, is because of the
+  //  artificial PG vs. PrimaryLogPG distinction. Some of the services used
+  //  by the scrubber backend are PrimaryLog-specific.
+
+  virtual void add_to_stats(const object_stat_sum_t& stat)
+  {
+    ceph_assert(0 && "expecting a PrimaryLogScrub object");
+  }
+
+  virtual void submit_digest_fixes(const digests_fixes_t& fixes)
+  {
+    ceph_assert(0 && "expecting a PrimaryLogScrub object");
+  }
+
+  // -------------------------------------------------------------------------------------
 
   friend ostream& operator<<(ostream& out, const PgScrubber& scrubber);
 
@@ -484,10 +574,6 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
   bool is_token_current(Scrub::act_token_t received_token);
 
   void requeue_waiting() const { m_pg->requeue_ops(m_pg->waiting_for_scrub); }
-
-  void _scan_snaps(ScrubMap& smap);
-
-  ScrubMap clean_meta_map();
 
   /**
    *  mark down some parameters of the initiated scrub:
@@ -545,13 +631,6 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
 
   epoch_t m_last_aborted{};  // last time we've noticed a request to abort
 
-  /**
-   * return true if any inconsistency/missing is repaired, false otherwise
-   */
-  [[nodiscard]] bool scrub_process_inconsistent();
-
-  void scrub_compare_maps();
-
   bool m_needs_sleep{true};  ///< should we sleep before being rescheduled? always
 			     ///< 'true', unless we just got out of a sleep period
 
@@ -576,12 +655,6 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
    * the derivative-specific scrub-finishing touches:
    */
   virtual void _scrub_finish() {}
-
-  /**
-   * Validate consistency of the object info and snap sets.
-   */
-  virtual void scrub_snapshot_metadata(ScrubMap& map, const missing_map_t& missing_digest)
-  {}
 
   // common code used by build_primary_map_chunk() and build_replica_map_chunk():
   int build_scrub_map_chunk(ScrubMap& map,  // primary or replica?
@@ -626,6 +699,9 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
 
   scrub_flags_t m_flags;
 
+  /// a reference to the details of the next scrub (as requested and managed by the PG)
+  requested_scrub_t& m_planned_scrub;
+
   bool m_active{false};
 
   /**
@@ -664,9 +740,6 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
   int m_shallow_errors{0};
   int m_deep_errors{0};
   int m_fixed_count{0};
-
-  /// Maps from objects with errors to missing peers
-  HobjToShardSetMapping m_missing;
 
  protected:
   /**
@@ -739,13 +812,7 @@ private:
   void message_all_replicas(int32_t opcode, std::string_view op_text);
 
   hobject_t m_max_end;	///< Largest end that may have been sent to replicas
-  ScrubMap m_primary_scrubmap;
   ScrubMapBuilder m_primary_scrubmap_pos;
-
-  std::map<pg_shard_t, ScrubMap> m_received_maps;
-
-  /// Cleaned std::map pending snap metadata scrub
-  ScrubMap m_cleaned_meta_map;
 
   void _request_scrub_map(pg_shard_t replica,
 			  eversion_t version,
@@ -757,13 +824,8 @@ private:
 
   Scrub::MapsCollectionStatus m_maps_status;
 
-  omap_stat_t m_omap_stats = (const struct omap_stat_t){0};
-
-  /// Maps from objects with errors to inconsistent peers
-  HobjToShardSetMapping m_inconsistent;
-
-  /// Maps from object with errors to good peers
-  std::map<hobject_t, std::list<std::pair<ScrubMap::object, pg_shard_t>>> m_authoritative;
+  void persist_scrub_results(inconsistent_objs_t&& all_errors);
+  void apply_snap_mapper_fixes(const std::vector<snap_mapper_fix_t>& fix_list);
 
   // ------------ members used if we are a replica
 
@@ -771,6 +833,9 @@ private:
 
   ScrubMapBuilder replica_scrubmap_pos;
   ScrubMap replica_scrubmap;
+
+  // the backend, handling the details of comparing maps & fixing objects
+  std::unique_ptr<ScrubBackend> m_be;
 
   /**
    * we mark the request priority as it arrived. It influences the queuing priority
@@ -789,12 +854,15 @@ private:
 
     [[nodiscard]] bool is_preemptable() const final { return m_preemptable; }
 
+    preemption_data_t(const preemption_data_t&) = delete;
+    preemption_data_t(preemption_data_t&&) = delete;
+
     bool do_preempt() final
     {
       if (m_preempted || !m_preemptable)
 	return false;
 
-      std::lock_guard<std::mutex> lk{m_preemption_lock};
+      std::lock_guard<ceph::mutex> lk{m_preemption_lock};
       if (!m_preemptable)
 	return false;
 
@@ -808,7 +876,7 @@ private:
 
     void enable_preemption()
     {
-      std::lock_guard<std::mutex> lk{m_preemption_lock};
+      std::lock_guard<ceph::mutex> lk{m_preemption_lock};
       if (are_preemptions_left() && !m_preempted) {
 	m_preemptable = true;
       }
@@ -824,7 +892,7 @@ private:
 
     bool disable_and_test() final
     {
-      std::lock_guard<std::mutex> lk{m_preemption_lock};
+      std::lock_guard<ceph::mutex> lk{m_preemption_lock};
       m_preemptable = false;
       return m_preempted;
     }
@@ -837,7 +905,7 @@ private:
 
     void adjust_parameters() final
     {
-      std::lock_guard<std::mutex> lk{m_preemption_lock};
+      std::lock_guard<ceph::mutex> lk{m_preemption_lock};
 
       if (m_preempted) {
 	m_preempted = false;
@@ -849,7 +917,7 @@ private:
 
    private:
     PG* m_pg;
-    mutable std::mutex m_preemption_lock;
+    mutable ceph::mutex m_preemption_lock = ceph::make_mutex("preemption_lock");
     bool m_preemptable{false};
     bool m_preempted{false};
     int m_left;

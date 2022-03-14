@@ -79,22 +79,19 @@ auto get_transaction_manager(
     SegmentCleaner::config_t::get_default(),
     std::move(scanner),
     true);
-  auto journal = std::make_unique<Journal>(segment_manager, scanner_ref);
-  auto cache = std::make_unique<Cache>(scanner_ref);
+  auto journal = journal::make_segmented(
+    segment_manager,
+    scanner_ref,
+    *segment_cleaner);
+  auto epm = std::make_unique<ExtentPlacementManager>();
+  auto cache = std::make_unique<Cache>(scanner_ref, *epm);
   auto lba_manager = lba_manager::create_lba_manager(segment_manager, *cache);
-
-  auto epm = std::make_unique<ExtentPlacementManager>(*cache, *lba_manager);
 
   epm->add_allocator(
     device_type_t::SEGMENTED,
     std::make_unique<SegmentedAllocator>(
       *segment_cleaner,
-      segment_manager,
-      *lba_manager,
-      *journal,
-      *cache));
-
-  journal->set_segment_provider(&*segment_cleaner);
+      segment_manager));
 
   return std::make_unique<TransactionManager>(
     segment_manager,
@@ -251,8 +248,8 @@ public:
   }
 
   size_t get_size() const final { return sm.get_size(); }
-  segment_off_t get_block_size() const final { return sm.get_block_size(); }
-  segment_off_t get_segment_size() const final {
+  seastore_off_t get_block_size() const final { return sm.get_block_size(); }
+  seastore_off_t get_segment_size() const final {
     return sm.get_segment_size();
   }
   const seastore_meta_t &get_meta() const final {

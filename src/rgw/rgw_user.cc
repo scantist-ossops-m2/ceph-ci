@@ -118,7 +118,7 @@ int rgw_user_get_all_buckets_stats(const DoutPrefixProvider *dpp,
       marker = i.first;
 
       auto& bucket_ent = i.second;
-      ret = bucket_ent->load_bucket(dpp, y);
+      ret = bucket_ent->load_bucket(dpp, y, true /* load user stats */);
       if (ret < 0) {
         ldpp_dout(dpp, 0) << "ERROR: could not get bucket stats: ret=" << ret << dendl;
         return ret;
@@ -134,6 +134,18 @@ int rgw_user_get_all_buckets_stats(const DoutPrefixProvider *dpp,
   } while (!done);
 
   return 0;
+}
+
+static string key_type_to_str(int key_type) {
+  switch (key_type) {
+    case KEY_TYPE_SWIFT:
+      return "swift";
+      break;
+
+    default:
+      return "s3";
+      break;
+  }
 }
 
 static bool char_is_unreserved_url(char c)
@@ -358,7 +370,7 @@ int RGWAccessKeyPool::init(RGWUserAdminOpState& op_state)
   const rgw_user& uid = op_state.get_user_id();
   if (uid.compare(RGW_USER_ANON_ID) == 0) {
     keys_allowed = false;
-    return -EACCES;
+    return -EINVAL;
   }
 
   swift_keys = op_state.get_swift_keys();
@@ -855,7 +867,8 @@ int RGWAccessKeyPool::execute_remove(const DoutPrefixProvider *dpp,
   map<std::string, RGWAccessKey> *keys_map;
 
   if (!op_state.has_existing_key()) {
-    set_err_msg(err_msg, "unable to find access key");
+    set_err_msg(err_msg, "unable to find access key,  with key type: " +
+                             key_type_to_str(key_type));
     return -ERR_INVALID_ACCESS_KEY;
   }
 

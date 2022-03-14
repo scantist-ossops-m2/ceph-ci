@@ -35,6 +35,8 @@ releases:
   octopus:
     target_eol: 2022-06-01
     releases:
+      - version: 15.2.16
+        released: 2022-03-01
       - version: 15.2.15  
         released: 2021-10-20
       - version: 15.2.14
@@ -70,6 +72,7 @@ releases:
 
   nautilus:
     target_eol: 2021-06-01
+    actual_eol: 2021-06-30
     releases:
       - version: 14.2.22
         released: 2021-06-30

@@ -11,6 +11,7 @@
 
 #include <optional>
 #include <seastar/core/future.hh>
+#include <seastar/core/metrics_types.hh>
 
 #include "include/uuid.h"
 
@@ -22,6 +23,7 @@
 #include "crimson/os/seastore/onode_manager.h"
 #include "crimson/os/seastore/omap_manager.h"
 #include "crimson/os/seastore/collection_manager.h"
+#include "crimson/os/seastore/object_data_handler.h"
 
 namespace crimson::os::seastore {
 
@@ -139,10 +141,14 @@ public:
     CollectionRef ch,
     ceph::os::Transaction&& txn) final;
 
+  /* Note, flush() machinery must go through the same pipeline
+   * stages and locks as do_transaction. */
+  seastar::future<> flush(CollectionRef ch) final;
+
   seastar::future<OmapIteratorRef> get_omap_iterator(
     CollectionRef ch,
     const ghobject_t& oid) final;
-  seastar::future<std::map<uint64_t, uint64_t>> fiemap(
+  read_errorator::future<std::map<uint64_t, uint64_t>> fiemap(
     CollectionRef ch,
     const ghobject_t& oid,
     uint64_t off,
@@ -264,6 +270,13 @@ private:
       });
     });
   }
+
+  using _fiemap_ret = ObjectDataHandler::fiemap_ret;
+  _fiemap_ret _fiemap(
+    Transaction &t,
+    Onode &onode,
+    uint64_t off,
+    uint64_t len) const;
 
   using _omap_get_value_iertr = OMapManager::base_iertr::extend<
     crimson::ct_error::enodata

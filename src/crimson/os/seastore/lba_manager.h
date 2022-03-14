@@ -118,9 +118,11 @@ public:
    * Implementation must initialize the LBAPin on any
    * LogicalCachedExtent's and may also read in any dependent
    * structures, etc.
+   *
+   * @return returns whether the extent is alive
    */
   using init_cached_extent_iertr = base_iertr;
-  using init_cached_extent_ret = init_cached_extent_iertr::future<>;
+  using init_cached_extent_ret = init_cached_extent_iertr::future<bool>;
   virtual init_cached_extent_ret init_cached_extent(
     Transaction &t,
     CachedExtentRef e) = 0;
@@ -162,17 +164,30 @@ public:
     CachedExtentRef extent) = 0;
 
   /**
-   * delayed_update_mapping
+   * update_mapping
    *
-   * update lba mapping for delayed allocated extents
+   * update lba mapping for a delayed allocated extent
    */
-  using update_le_mapping_iertr = base_iertr;
-  using update_le_mapping_ret = base_iertr::future<>;
-  virtual update_le_mapping_ret update_mapping(
+  using update_mapping_iertr = base_iertr;
+  using update_mapping_ret = base_iertr::future<>;
+  virtual update_mapping_ret update_mapping(
     Transaction& t,
     laddr_t laddr,
     paddr_t prev_addr,
     paddr_t paddr) = 0;
+
+  /**
+   * update_mappings
+   *
+   * update lba mappings for delayed allocated extents
+   */
+  using update_mappings_iertr = update_mapping_iertr;
+  using update_mappings_ret = update_mapping_ret;
+  update_mappings_ret update_mappings(
+    Transaction& t,
+    const std::list<LogicalCachedExtentRef>& extents,
+    const std::vector<paddr_t>& original_paddrs);
+
   /**
    * get_physical_extent_if_live
    *
@@ -190,7 +205,7 @@ public:
     extent_types_t type,
     paddr_t addr,
     laddr_t laddr,
-    segment_off_t len) = 0;
+    seastore_off_t len) = 0;
 
   virtual void add_pin(LBAPin &pin) = 0;
 

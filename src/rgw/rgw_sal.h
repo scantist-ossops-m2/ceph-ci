@@ -126,7 +126,7 @@ public:
  *
  * Data within RGW is stored as an Object.  Each Object is a single chunk of data, owned
  * by a single User, contained within a single Bucket.  It has metadata associated with
- * it, such as size, owner, and so in, and a set of key-value attributes that can
+ * it, such as size, owner, and so on, and a set of key-value attributes that can
  * contain anything needed by the top half.
  *
  * Data with RGW is organized into Buckets.  Each Bucket is owned by a User, and
@@ -244,7 +244,7 @@ class Store {
     Store() {}
     virtual ~Store() = default;
 
-    /** Name of this store provider (e.g., RADOS") */
+    /** Name of this store provider (e.g., "rados") */
     virtual const char* get_name() const = 0;
     /** Get cluster unique identifier */
     virtual std::string get_cluster_id(const DoutPrefixProvider* dpp,  optional_yield y) = 0;
@@ -288,7 +288,7 @@ class Store {
      /** Get a @a Notification object.  Used to communicate with non-RGW daemons, such as
       * management/tracking software */
     /** RGWOp variant */
-    virtual std::unique_ptr<Notification> get_notification(rgw::sal::Object* obj, rgw::sal::Object* src_obj, struct req_state* s, 
+    virtual std::unique_ptr<Notification> get_notification(rgw::sal::Object* obj, rgw::sal::Object* src_obj, struct req_state* s,
         rgw::notify::EventType event_type, const std::string* object_name=nullptr) = 0;
     /** No-req_state variant (e.g., rgwlc) */
     virtual std::unique_ptr<Notification> get_notification(
@@ -311,6 +311,8 @@ class Store {
 					const std::map<std::string, std::string>& meta) = 0;
     /** Get default quota info.  Used as fallback if a user or bucket has no quota set*/
     virtual void get_quota(RGWQuotaInfo& bucket_quota, RGWQuotaInfo& user_quota) = 0;
+    /** Get global rate limit configuration*/
+    virtual void get_ratelimit(RGWRateLimitInfo& bucket_ratelimit, RGWRateLimitInfo& user_ratelimit, RGWRateLimitInfo& anon_ratelimit) = 0;
     /** Enable or disable a set of bucket.  e.g. if a User is suspended */
     virtual int set_buckets_enabled(const DoutPrefixProvider* dpp, std::vector<rgw_bucket>& buckets, bool enabled) = 0;
     /** Get a new request ID */
@@ -398,7 +400,7 @@ class Store {
 
     /** Get the Ceph context associated with this store.  May be removed. */
     virtual CephContext* ctx(void) = 0;
-    
+
     /** Get the location of where lua packages are installed */
     virtual const std::string& get_luarocks_path() const = 0;
     /** Set the location of where lua packages are installed */
@@ -484,6 +486,9 @@ class User {
     static bool empty(std::unique_ptr<User>& u) { return (!u || u->info.user_id.id.empty()); }
     /** Read the User attributes from the backing Store */
     virtual int read_attrs(const DoutPrefixProvider* dpp, optional_yield y) = 0;
+    /** Set the attributes in attrs, leaving any other existing attrs set, and
+     * write them to the backing store; a merge operation */
+    virtual int merge_and_store_attrs(const DoutPrefixProvider* dpp, Attrs& new_attrs, optional_yield y) = 0;
     /** Read the User stats from the backing Store, synchronous */
     virtual int read_stats(const DoutPrefixProvider *dpp,
                            optional_yield y, RGWStorageStats* stats,
@@ -644,8 +649,9 @@ class Bucket {
       owner = _owner;
     }
 
-    /** Load this bucket from the backing store.  Requires the key to be set, fills other fields */
-    virtual int load_bucket(const DoutPrefixProvider* dpp, optional_yield y) = 0;
+    /** Load this bucket from the backing store.  Requires the key to be set, fills other fields.
+     * If @a get_stats is true, then statistics on the bucket are also looked up. */
+    virtual int load_bucket(const DoutPrefixProvider* dpp, optional_yield y, bool get_stats = false) = 0;
     /** Read the bucket stats from the backing Store, synchronous */
     virtual int read_stats(const DoutPrefixProvider *dpp, int shard_id,
 				 std::string* bucket_ver, std::string* master_ver,
@@ -676,12 +682,7 @@ class Bucket {
     virtual int check_quota(const DoutPrefixProvider *dpp, RGWQuotaInfo& user_quota, RGWQuotaInfo& bucket_quota, uint64_t obj_size, optional_yield y, bool check_size_only = false) = 0;
     /** Set the attributes in attrs, leaving any other existing attrs set, and
      * write them to the backing store; a merge operation */
-    virtual int merge_and_store_attrs(const DoutPrefixProvider* dpp, Attrs& new_attrs, optional_yield y) {
-      for(auto& it : new_attrs) {
-	attrs[it.first] = it.second;
-      }
-      return 0;
-    }
+    virtual int merge_and_store_attrs(const DoutPrefixProvider* dpp, Attrs& new_attrs, optional_yield y) = 0;
     /** Try to refresh the cached bucket info from the backing store.  Used in
      * read-modify-update loop. */
     virtual int try_refresh_info(const DoutPrefixProvider* dpp, ceph::real_time* pmtime) = 0;
@@ -1368,7 +1369,11 @@ public:
   /** prepare to start processing object data */
   virtual int prepare(optional_yield y) = 0;
 
-  /** Process a buffer.  Called multiple times to write different buffers. */
+  /**
+   * Process a buffer. Called multiple times to write different buffers.
+   * data.length() == 0 indicates the last call and may be used to flush
+   * the data buffers.
+   */
   virtual int process(bufferlist&& data, uint64_t offset) = 0;
 
   /** complete the operation and make its result visible to clients */
