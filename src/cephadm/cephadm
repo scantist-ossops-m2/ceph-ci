@@ -1873,7 +1873,12 @@ def infer_config(func: FuncT) -> FuncT:
             if not name:
                 daemon_list = list_daemons(ctx, detail=False)
                 for daemon in daemon_list:
-                    if daemon.get('name', '').startswith('mon.') and daemon.get('fsid', '') == ctx.fsid:
+                    if (
+                        daemon.get('name', '').startswith('mon.')
+                        and daemon.get('fsid', '') == ctx.fsid
+                        and daemon.get('style', '') == 'cephadm:v1'
+                        and os.path.exists(f'/var/lib/ceph/{ctx.fsid}/{daemon["name"]}/config')
+                    ):
                         name = daemon['name']
                         break
             if name:
