@@ -445,8 +445,8 @@ struct error_code;
 	  : cur(other.cur) {
 	}
 	// converting constructor, from iterator -> const_iterator only
-	template <class U, std::enable_if_t<
-	    std::is_const_v<T> && !std::is_const_v<U>, int> = 0>
+	template <class U, typename std::enable_if<
+	    std::is_const<T>::value && !std::is_const<U>::value, int>::type = 0>
 	buffers_iterator(const buffers_iterator<U>& other)
 	  : cur(other.cur) {
 	}
