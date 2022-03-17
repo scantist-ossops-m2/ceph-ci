@@ -196,14 +196,14 @@ class CephadmServe:
             if self.mgr.inventory._inventory[host].get("status", "").lower() == "maintenance":
                 return
 
-            if self.mgr.use_agent:
-                if self.mgr.agent_helpers._check_agent(host):
-                    agents_down.append(host)
-
             if self.mgr.cache.host_needs_check(host):
                 r = self._check_host(host)
                 if r is not None:
                     bad_hosts.append(r)
+
+            if self.mgr.use_agent:
+                if self.mgr.agent_helpers._check_agent(host):
+                    agents_down.append(host)
 
             if (
                 not self.mgr.use_agent
@@ -288,6 +288,7 @@ class CephadmServe:
             return None
         self.log.debug(' checking %s' % host)
         try:
+            self.mgr.ssh.reset_con(host)
             addr = self.mgr.inventory.get_addr(host) if host in self.mgr.inventory else host
             out, err, code = self.mgr.wait_async(self._run_cephadm(
                 host, cephadmNoImage, 'check-host', [],
