@@ -3429,6 +3429,10 @@ void PrimaryLogPG::cancel_manifest_ops(bool requeue, vector<ceph_tid_t> *tids)
 
 int PrimaryLogPG::get_manifest_ref_count(ObjectContextRef obc, std::string& fp_oid, OpRequestRef op) 
 {
+  ceph_assert(obc);
+  if (!obc->obs.oi.has_manifest() || !obc->obs.oi.manifest.is_chunked()) {
+    return -ENOLINK;
+  }
   int cnt = 0;
   // head
   for (auto &p : obc->obs.oi.manifest.chunk_map) {
