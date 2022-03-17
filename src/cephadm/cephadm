@@ -1873,11 +1873,16 @@ def infer_config(func: FuncT) -> FuncT:
             if not name:
                 daemon_list = list_daemons(ctx, detail=False)
                 for daemon in daemon_list:
-                    if daemon.get('name', '').startswith('mon.') and daemon.get('fsid', '') == ctx.fsid:
+                    if (
+                        daemon.get('name', '').startswith('mon.')
+                        and daemon.get('fsid', '') == ctx.fsid
+                        and daemon.get('style', '') == 'cephadm:v1'
+                        and os.path.exists(os.path.join(get_data_dir(ctx.fsid, ctx.data_dir, 'mon', daemon['name'].split('.', 1)[1]), 'config'))
+                    ):
                         name = daemon['name']
                         break
             if name:
-                ctx.config = f'/var/lib/ceph/{ctx.fsid}/{name}/config'
+                ctx.config = os.path.join(get_data_dir(ctx.fsid, ctx.data_dir, name.split('.', 1)[0], name.split('.', 1)[1]), 'config')
         if ctx.config:
             logger.info('Inferring config %s' % ctx.config)
         elif os.path.exists(SHELL_DEFAULT_CONF):
