@@ -40,8 +40,15 @@ jspan Tracer::start_trace(opentelemetry::nostd::string_view trace_name) {
   return noop_span;
 }
 
+jspan Tracer::start_trace(opentelemetry::nostd::string_view trace_name, bool trace_is_enabled) {
+  if (trace_is_enabled) {
+    return tracer->StartSpan(trace_name);
+  }
+  return noop_tracer->StartSpan(trace_name);
+}
+
 jspan Tracer::add_span(opentelemetry::nostd::string_view span_name, const jspan& parent_span) {
-  if (is_enabled() && parent_span) {
+  if (is_enabled() && parent_span->IsRecording()) {
     opentelemetry::trace::StartSpanOptions span_opts;
     span_opts.parent = parent_span->GetContext();
     return tracer->StartSpan(span_name, span_opts);
