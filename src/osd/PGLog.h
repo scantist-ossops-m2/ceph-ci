@@ -1475,6 +1475,9 @@ public:
 	    ceph_assert(dups.back().version < dup.version);
 	  }
 	  dups.push_back(dup);
+	  if (dups.size() >= g_conf()->osd_pg_log_dups_tracked) {
+	    dups.pop_front();
+	  }
 	} else {
 	  pg_log_entry_t e;
 	  e.decode_with_checksum(bp);
