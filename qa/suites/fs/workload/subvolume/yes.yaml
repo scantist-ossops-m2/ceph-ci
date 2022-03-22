@@ -1,0 +1,9 @@
+---
+tasks:
+  - ceph:
+      fs:
+        name: cephfs
+        subvols: 1
+  - ceph-fuse:
+      client.0:
+        mount_subvol_num: 0
