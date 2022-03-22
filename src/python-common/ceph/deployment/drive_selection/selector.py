@@ -121,6 +121,14 @@ class DriveSelection(object):
         for disk in self.disks:
             logger.debug("Processing disk {}".format(disk.path))
 
+            if not disk.available and ("Has GPT headers" in disk.rejected_reasons or
+                                       "Has BlueStore device label" in disk.rejected_reasons):
+                logger.debug(
+                    ("Ignoring disk {}. "
+                     "Disk is unavailable due to {}".format(disk.path, disk.rejected_reasons))
+                )
+                continue
+
             if not self._has_mandatory_idents(disk):
                 logger.debug(
                     "Ignoring disk {}. Missing mandatory idents".format(
