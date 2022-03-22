@@ -711,6 +711,23 @@ class Filesystem(MDSCluster):
             if session_timeout != 60:
                 self.set_session_timeout(session_timeout)
 
+            if self.fs_config.get('subvols', 0):
+                if 'created_subvols' not in self._ctx:
+                    self._ctx['created_subvols'] = dict()
+                for sv in range(0, self.fs_config.get('subvols', 0)):
+                    sv_name = f'sv_{sv}'
+                    self.mon_manager.raw_cluster_cmd(
+                        'fs', 'subvolume', 'create', self.name, sv_name,
+                        self.fs_config.get('subvol_options', ''))
+
+                    if self.name not in self._ctx['created_subvols']:
+                        self._ctx['created_subvols'][self.name] = []
+                    
+                    subvol_path = self.mon_manager.raw_cluster_cmd(
+                        'fs', 'subvolume', 'getpath', self.name, sv_name)
+                    self._ctx['created_subvols'][self.name].append(subvol_path)
+
+
         self.getinfo(refresh = True)
 
         # wait pgs to be clean

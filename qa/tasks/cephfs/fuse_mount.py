@@ -114,7 +114,17 @@ class FuseMount(CephFSMount):
         if self.client_keyring_path and self.client_id:
             mount_cmd += ['-k', self.client_keyring_path]
         if self.cephfs_mntpt:
-            mount_cmd += ["--client_mountpoint=" + self.cephfs_mntpt]
+            # mount_subvol must be an index into the subvol path array for the fs
+            if self.client_config.get('mount_subvol_num', None):
+                assert(self.cephfs_name)
+                assert('created_subvols' in self.ctx)
+                # mount_subvol must be specified under client.[0-9] yaml section
+                mount_subvol_num = self.client_config.get('mount_subvol_num')
+                created_subvols = self.ctx['created_subvols'][self.cephfs_name]
+                path_to_mount = created_subvols[mount_subvol_num]
+                mount_cmd += ["--client_mountpoint=" + path_to_mount]
+            else:
+                mount_cmd += ["--client_mountpoint=" + self.cephfs_mntpt]
         if self.cephfs_name:
             mount_cmd += ["--client_fs=" + self.cephfs_name]
         if mntopts:
