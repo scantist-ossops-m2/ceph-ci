@@ -66,6 +66,7 @@ class Device(object):
      {attr:<25} {value}"""
 
     report_fields = [
+        'ceph_device',
         'rejected_reasons',
         'available',
         'path',
@@ -105,6 +106,7 @@ class Device(object):
         self._parse()
         self.lsm_data = self.fetch_lsm(with_lsm)
 
+        self.ceph_device = self.is_ceph_device
         self.available_lvm, self.rejected_reasons_lvm = self._check_lvm_reject_reasons()
         self.available_raw, self.rejected_reasons_raw = self._check_raw_reject_reasons()
         self.available = self.available_lvm and self.available_raw
@@ -436,6 +438,15 @@ class Device(object):
                 return False
         else:
             return None
+
+    @property
+    def is_ceph_device(self):
+        osds_ids = [lv.tags.get("ceph.osd_id") is not None for lv in self.lvs]
+        from ceph_volume.devices.raw.list import List
+        if any(osds_ids) or List([]).generate([self.path]):
+            return True
+
+        return False
 
     @property
     def used_by_ceph(self):
