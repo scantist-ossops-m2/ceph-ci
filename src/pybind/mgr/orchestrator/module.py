@@ -352,6 +352,7 @@ class OrchestratorCli(OrchestratorClientMixin, MgrModule,
             labels = labels[0].split(',')
 
         s = HostSpec(hostname=hostname, addr=addr, labels=labels, status=_status)
+        s.validate()
 
         return self._apply_misc([s], False, Format.plain)
 
