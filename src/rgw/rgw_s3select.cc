@@ -564,7 +564,21 @@ void RGWSelectObj_ObjStore_S3::execute(optional_yield y)
     //parquet processing
     range_request(0, 4, parquet_magic, y);
     if(memcmp(parquet_magic, parquet_magic1, 4) && memcmp(parquet_magic, parquet_magicE, 4)) {
-      ldout(s->cct, 10) << s->object->get_name() << " does not contain parquet magic" << dendl;
+      std::string err_msg = s->object->get_name() + " header does not contain parquet magic";
+      ldout(s->cct, 10) << s->object->get_name() << "header does not contain parquet magic{" << parquet_magic << "}" << dendl;
+      fp_result_header_format(m_aws_response_handler.get_sql_result());
+      m_aws_response_handler.get_sql_result().append(err_msg);
+      fp_s3select_result_format(m_aws_response_handler.get_sql_result());
+      op_ret = -ERR_INVALID_REQUEST;
+      return;
+    }
+    range_request(get_obj_size() - 4, 4, parquet_magic, y);
+    if(memcmp(parquet_magic, parquet_magic1, 4) && memcmp(parquet_magic, parquet_magicE, 4)) {
+      std::string err_msg = s->object->get_name() + " footer does not contain parquet magic";
+      ldout(s->cct, 10) << s->object->get_name() << "footer does not contain parquet magic {" << parquet_magic << "}" << dendl;
+      fp_result_header_format(m_aws_response_handler.get_sql_result());
+      m_aws_response_handler.get_sql_result().append(err_msg);
+      fp_s3select_result_format(m_aws_response_handler.get_sql_result());
       op_ret = -ERR_INVALID_REQUEST;
       return;
     }
