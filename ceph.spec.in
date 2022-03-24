@@ -693,6 +693,15 @@ Requires:	libcephfs2 = %{_epoch_prefix}%{version}-%{release}
 %description -n cephfs-mirror
 Daemon for mirroring CephFS snapshots between Ceph clusters.
 
+%package -n ceph-exporter
+Summary:	Ceph daemon for collecting perf counters
+%if 0%{?suse_version}
+Group:		System/Filesystems
+%endif
+Requires:	ceph-base = %{_epoch_prefix}%{version}-%{release}
+%description -n ceph-exporter
+Daemon for collecting perf counters.
+
 %package -n rbd-fuse
 Summary:	Ceph fuse-based client
 %if 0%{?suse_version}
@@ -1396,6 +1405,8 @@ chmod 0700 %{buildroot}%{_sharedstatedir}/cephadm/.ssh
 touch %{buildroot}%{_sharedstatedir}/cephadm/.ssh/authorized_keys
 chmod 0600 %{buildroot}%{_sharedstatedir}/cephadm/.ssh/authorized_keys
 
+install -m 0755 -D build/bin/ceph-exporter %{buildroot}%{_bindir}/ceph-exporter
+
 # firewall templates and /sbin/mount.ceph symlink
 %if 0%{?suse_version} && !0%{?usrmerged}
 mkdir -p %{buildroot}/sbin
@@ -1924,6 +1935,9 @@ if [ $1 -ge 1 ] ; then
     /usr/bin/systemctl try-restart cephfs-mirror@\*.service > /dev/null 2>&1 || :
   fi
 fi
+
+%files -n ceph-exporter
+%{_bindir}/ceph-exporter
 
 %files -n rbd-fuse
 %{_bindir}/rbd-fuse
