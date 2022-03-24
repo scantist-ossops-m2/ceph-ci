@@ -81,6 +81,9 @@ class TestMDSMetrics(CephFSTestCase):
         # spread readdir I/O
         self.mount_a.run_shell(["find", "."])
         self.mount_b.run_shell(["find", "."])
+        #for i in range(0, len(self.mounts)):
+            #log.info("jos attr: ".format(getattr(self, "mount_{0}".format(chr(ord('a') + i)))))
+            #self."mount_{0}".format(chr(ord('a') + i)).run_shell(["find", "."])
 
     def _cleanup_test_dirs(self):
         dirnames = self.mount_a.run_shell(["ls"]).stdout.getvalue()
@@ -399,6 +402,10 @@ class TestMDSMetrics(CephFSTestCase):
         """
         That `ceph fs perf stats` doesn't output stale metrics after the rank0 MDS failover
         """
+        #if len(self.mounts) > TestMDSMetrics.CLIENTS_REQUIRED:
+        #    self.skipTest("This test cannot be performed with {0} clients, require {1}".format(
+        #        len(self.mounts), TestMDSMetrics.CLIENTS_REQUIRED))
+
         # validate
         valid, metrics = self._get_metrics(self.verify_mds_metrics(
             active_mds_count=1, client_count=TestMDSMetrics.CLIENTS_REQUIRED), 30)
@@ -406,6 +413,8 @@ class TestMDSMetrics(CephFSTestCase):
         self.assertTrue(valid)
 
         global_metrics = metrics['global_metrics']
+        log.info("length of global={0}".format(len(global_metrics)))
+        log.info("self.mounts={0}".format(len(self.mounts)))
 
         #TestMDSMetrics.CLIENTS_REQUIRED clients are mounted here. So they should be
         #the first two entries in the global_metrics and won't be culled later on.
