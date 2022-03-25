@@ -32,6 +32,7 @@ function(build_pmem)
       BUILD_COMMAND ${make_cmd} CC=${CMAKE_C_COMPILER} NDCTL_ENABLE=n BUILD_EXAMPLES=n BUILD_BENCHMARKS=n DOC=n
       BUILD_IN_SOURCE 1
       BUILD_BYPRODUCTS "<SOURCE_DIR>/src/${PMDK_LIB_DIR}/libpmem.a" "<SOURCE_DIR>/src/${PMDK_LIB_DIR}/libpmemobj.a"
+      "<SOURCE_DIR>/src/${PMDK_LIB_DIR}/libpmem2.a" "<SOURCE_DIR>/src/${PMDK_LIB_DIR}/libpmemcommon.a" "<SOURCE_DIR>/src/${PMDK_LIB_DIR}/libpmemcore.a"
       INSTALL_COMMAND "")
   unset(make_cmd)
 
@@ -48,6 +49,9 @@ function(build_pmem)
   set_target_properties(pmem::pmem PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES ${PMDK_INCLUDE}
     IMPORTED_LOCATION "${PMDK_LIB}/libpmem.a"
+    IMPORTED_LOCATION "${PMDK_LIB}/libpmem2.a"
+    IMPORTED_LOCATION "${PMDK_LIB}/libpmemcommon.a"
+    IMPORTED_LOCATION "${PMDK_LIB}/libpmemcore.a"
     INTERFACE_LINK_LIBRARIES Threads::Threads)
 
   # libpmemobj
