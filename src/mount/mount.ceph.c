@@ -323,7 +323,10 @@ static int parse_dev(const char *dev_str, struct ceph_mount_info *cmi,
 	return ret;
 }
 
-/* resolve monitor host and record in option string */
+/* resolve monitor host and optionallyrecord in option string.
+ * use opt_pos to determine if the caller wants to record the
+ * resolved address in mount option (c.f., mount_old_device_format).
+ */
 static int finalize_src(struct ceph_mount_info *cmi, int *opt_pos)
 {
 	char *src;
@@ -337,8 +340,10 @@ static int finalize_src(struct ceph_mount_info *cmi, int *opt_pos)
 	if (!src)
 		return -1;
 
-	resolved_mon_addr_as_mount_opt(src);
-	append_opt("mon_addr", src, cmi, opt_pos);
+	if (opt_pos) {
+		resolved_mon_addr_as_mount_opt(src);
+		append_opt("mon_addr", src, cmi, opt_pos);
+	}
 	free(src);
 	return 0;
 }
@@ -767,11 +772,37 @@ static int mount_old_device_format(const char *node, struct ceph_mount_info *cmi
 	int pos = 0;
 	char *mon_addr;
 	char *rsrc = NULL;
+	bool free_addr = true;
 
 	r = remove_opt(cmi, "mon_addr", &mon_addr);
 	if (r) {
 		fprintf(stderr, "failed to switch using old device format\n");
 		return -EINVAL;
+	}
+
+	if (!ms_mode_specified)
+		remove_opt(cmi, "ms_mode", NULL);
+	/* if we reach here and still have a v2 addr, we'd need to
+	 * refresh with v1 addrs, since we'll be not passing ms_mode
+	 * with the old syntax.
+	 */
+	if (v2_addrs && !mon_addr_specified) {
+		mount_ceph_debug("mount.ceph: switching to using v1 address with old syntax\n");
+		v2_addrs = false;
+		free(cmi->cmi_mons);
+		cmi->cmi_mons = NULL;
+		fetch_config_info(cmi);
+		if (!cmi->cmi_mons) {
+			fprintf(stderr, "unable to determine (v1) mon addresses\n");
+			return -EINVAL;
+		}
+		r = finalize_src(cmi, NULL);
+		if (r) {
+			fprintf(stderr, "failed to resolve (v1) mon addresses\n");
+			return -EINVAL;
+		}
+		mon_addr = cmi->cmi_mons;
+		free_addr = false;
 	}
 
 	pos = strlen(cmi->cmi_opts);
@@ -794,7 +825,8 @@ static int mount_old_device_format(const char *node, struct ceph_mount_info *cmi
 				 cmi->cmi_opts);
 
 	r = call_mount_system_call(rsrc, node, cmi);
-	free(mon_addr);
+	if (free_addr)
+		free(mon_addr);
 	free(rsrc);
 
 	return r;
