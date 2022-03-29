@@ -768,6 +768,9 @@ static int mount_old_device_format(const char *node, struct ceph_mount_info *cmi
 	char *mon_addr;
 	char *rsrc = NULL;
 
+        if (!ms_mode_specified)
+                remove_opt(cmi, "ms_mode", NULL);
+
 	r = remove_opt(cmi, "mon_addr", &mon_addr);
 	if (r) {
 		fprintf(stderr, "failed to switch using old device format\n");
