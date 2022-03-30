@@ -23,6 +23,11 @@
 - hosts: osds
   become: yes
   tasks:
+    - name: ensure loop device are rejected in lvm.conf
+      lineinfile:
+        path: /etc/lvm/lvm.conf
+        line: "\tfilter = [ 'r|loop.*|' ]"
+        insertafter: 'devices {'
 
     - name: zap devices used for OSDs
       command: "ceph-volume --cluster {{ cluster }} lvm zap {{ item }} --destroy"
