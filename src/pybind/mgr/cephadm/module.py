@@ -44,7 +44,7 @@ from orchestrator._interface import daemon_type_to_service
 from . import utils
 from . import ssh
 from .migrations import Migrations
-from .services.cephadmservice import MonService, MgrService, MdsService, RgwService, \
+from .services.cephadmservice import CephExporterService, MonService, MgrService, MdsService, RgwService, \
     RbdMirrorService, CrashService, CephadmService, CephfsMirrorService, CephadmAgent
 from .services.ingress import IngressService
 from .services.container import CustomContainerService
@@ -92,7 +92,7 @@ os._exit = os_exit_noop   # type: ignore
 
 
 # Default container images -----------------------------------------------------
-DEFAULT_IMAGE = 'quay.io/ceph/ceph'
+DEFAULT_IMAGE = 'docker.io/rhcsdashboard/ceph-exporter'
 DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.18.1'
 DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v0.18.1'
 DEFAULT_LOKI_IMAGE = 'docker.io/grafana/loki:2.4.0'
@@ -523,7 +523,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             RgwService, RbdMirrorService, GrafanaService, AlertmanagerService,
             PrometheusService, NodeExporterService, LokiService, PromtailService, CrashService, IscsiService,
             IngressService, CustomContainerService, CephfsMirrorService,
-            CephadmAgent, SNMPGatewayService
+            CephadmAgent, SNMPGatewayService, CephExporterService
         ]
 
         # https://github.com/python/mypy/issues/8993
@@ -677,7 +677,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         suffix = daemon_type not in [
             'mon', 'crash',
             'prometheus', 'node-exporter', 'grafana', 'alertmanager',
-            'container', 'agent', 'snmp-gateway', 'loki', 'promtail'
+            'container', 'agent', 'snmp-gateway', 'loki', 'promtail', 'exporter'
         ]
         if forcename:
             if len([d for d in existing if d.daemon_id == forcename]):
@@ -2498,6 +2498,7 @@ Then run the following:
                 'loki': PlacementSpec(count=1),
                 'promtail': PlacementSpec(host_pattern='*'),
                 'crash': PlacementSpec(host_pattern='*'),
+                'exporter': PlacementSpec(host_pattern='*'),
                 'container': PlacementSpec(count=1),
                 'snmp-gateway': PlacementSpec(count=1),
             }

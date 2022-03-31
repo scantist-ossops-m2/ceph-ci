@@ -45,8 +45,8 @@ from pathlib import Path
 FuncT = TypeVar('FuncT', bound=Callable)
 
 # Default container images -----------------------------------------------------
-DEFAULT_IMAGE = 'quay.ceph.io/ceph-ci/ceph:master'
-DEFAULT_IMAGE_IS_MASTER = True
+DEFAULT_IMAGE = 'docker.io/rhcsdashboard/ceph-exporter'
+DEFAULT_IMAGE_IS_MASTER = False
 DEFAULT_IMAGE_RELEASE = 'quincy'
 DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.18.1'
 DEFAULT_LOKI_IMAGE = 'docker.io/grafana/loki:2.4.0'
@@ -54,6 +54,7 @@ DEFAULT_PROMTAIL_IMAGE = 'docker.io/grafana/promtail:2.4.0'
 DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v0.18.1'
 DEFAULT_ALERT_MANAGER_IMAGE = 'quay.io/prometheus/alertmanager:v0.20.0'
 DEFAULT_GRAFANA_IMAGE = 'quay.io/ceph/ceph-grafana:6.7.4'
+# DEFAULT_CEPH_EXPORTER_IMAGE = 'docker.io/rhcsdashboard/exporter'
 DEFAULT_HAPROXY_IMAGE = 'docker.io/library/haproxy:2.3'
 DEFAULT_KEEPALIVED_IMAGE = 'docker.io/arcts/keepalived'
 DEFAULT_SNMP_GATEWAY_IMAGE = 'docker.io/maxwo/snmp-notifier:v1.2.1'
@@ -257,7 +258,7 @@ class TimeoutExpired(Error):
 
 class Ceph(object):
     daemons = ('mon', 'mgr', 'mds', 'osd', 'rgw', 'rbd-mirror',
-               'crash', 'cephfs-mirror')
+               'crash', 'cephfs-mirror', 'exporter')
 
 ##################################
 
@@ -2348,7 +2349,7 @@ def get_daemon_args(ctx, fsid, daemon_type, daemon_id):
     # type: (CephadmContext, str, str, Union[int, str]) -> List[str]
     r = list()  # type: List[str]
 
-    if daemon_type in Ceph.daemons and daemon_type != 'crash':
+    if daemon_type in Ceph.daemons and daemon_type not in ['crash', 'exporter']:
         r += [
             '--setuser', 'ceph',
             '--setgroup', 'ceph',
@@ -2615,7 +2616,7 @@ def get_container_mounts(ctx, fsid, daemon_type, daemon_id,
             crash_dir = '/var/lib/ceph/%s/crash' % fsid
             if os.path.exists(crash_dir):
                 mounts[crash_dir] = '/var/lib/ceph/crash:z'
-            if daemon_type != 'crash' and should_log_to_journald(ctx):
+            if daemon_type not in ['crash', 'exporter'] and should_log_to_journald(ctx):
                 journald_sock_dir = '/run/systemd/journal'
                 mounts[journald_sock_dir] = journald_sock_dir
 
@@ -2625,7 +2626,7 @@ def get_container_mounts(ctx, fsid, daemon_type, daemon_id,
             cdata_dir = '/var/lib/ceph/radosgw/ceph-rgw.%s' % (daemon_id)
         else:
             cdata_dir = '/var/lib/ceph/%s/ceph-%s' % (daemon_type, daemon_id)
-        if daemon_type != 'crash':
+        if daemon_type not in ['crash', 'exporter']:
             mounts[data_dir] = cdata_dir + ':z'
         if not no_config:
             mounts[data_dir + '/config'] = '/etc/ceph/ceph.conf:z'
@@ -2779,7 +2780,7 @@ def get_container(ctx: CephadmContext,
     elif daemon_type == 'crash':
         entrypoint = '/usr/bin/ceph-crash'
         name = 'client.crash.%s' % daemon_id
-    elif daemon_type in ['mon', 'mgr', 'mds', 'osd']:
+    elif daemon_type in ['mon', 'mgr', 'mds', 'osd', 'exporter']:
         entrypoint = '/usr/bin/ceph-' + daemon_type
         name = '%s.%s' % (daemon_type, daemon_id)
     elif daemon_type in Monitoring.components:
@@ -4780,6 +4781,10 @@ def prepare_ssh(
     if not ctx.orphan_initial_daemons:
         logger.info('Deploying crash service with default placement...')
         cli(['orch', 'apply', 'crash'])
+    
+    if not ctx.orphan_initial_daemons:
+        logger.info('Deploying ceph exporter service with default placement...')
+        cli(['orch', 'apply', 'exporter'])
 
     if not ctx.skip_monitoring_stack:
         for t in ['prometheus', 'grafana', 'node-exporter', 'alertmanager']:

@@ -59,6 +59,7 @@ class ServiceType(enum.Enum):
     rbd_mirror = 'rbd-mirror'
     cephfs_mirror = 'cephfs-mirror'
     crash = 'crash'
+    exporter = 'exporter',
     alertmanager = 'alertmanager'
     grafana = 'grafana'
     node_exporter = 'node-exporter'
