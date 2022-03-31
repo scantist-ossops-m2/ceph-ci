@@ -465,7 +465,7 @@ class CephService(CephadmService):
             return AuthEntity(f'client.{self.TYPE}.{host}')
         elif self.TYPE == 'mon':
             return AuthEntity('mon.')
-        elif self.TYPE in ['mgr', 'osd', 'mds']:
+        elif self.TYPE in ['mgr', 'osd', 'mds', 'exporter']:
             return AuthEntity(f'{self.TYPE}.{daemon_id}')
         else:
             raise OrchestratorError("unknown daemon type")
@@ -993,6 +993,18 @@ class CrashService(CephService):
                                               'mgr', 'profile crash'])
 
         daemon_spec.keyring = keyring
+
+        daemon_spec.final_config, daemon_spec.deps = self.generate_config(daemon_spec)
+
+        return daemon_spec
+
+
+class CephExporterService(CephService):
+    TYPE = 'exporter'
+
+    def prepare_create(self, daemon_spec: CephadmDaemonDeploySpec) -> CephadmDaemonDeploySpec:
+        assert self.TYPE == daemon_spec.daemon_type
+        daemon_id, host = daemon_spec.daemon_id, daemon_spec.host
 
         daemon_spec.final_config, daemon_spec.deps = self.generate_config(daemon_spec)
 

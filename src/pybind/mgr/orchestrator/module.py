@@ -7,7 +7,12 @@ import datetime
 
 import yaml
 from prettytable import PrettyTable
-from natsort import natsorted
+
+try:
+    from natsort import natsorted
+except ImportError:
+    # fallback to normal sort
+    natsorted = sorted  # type: ignore
 
 from ceph.deployment.inventory import Device
 from ceph.deployment.drive_group import DriveGroupSpec, DeviceSelection, OSDMethod
@@ -54,6 +59,7 @@ class ServiceType(enum.Enum):
     rbd_mirror = 'rbd-mirror'
     cephfs_mirror = 'cephfs-mirror'
     crash = 'crash'
+    exporter = 'exporter',
     alertmanager = 'alertmanager'
     grafana = 'grafana'
     node_exporter = 'node-exporter'
@@ -800,7 +806,7 @@ Usage:
                 method=method,
             )
         except (TypeError, KeyError, ValueError) as e:
-            msg = f"Invalid host:device spec: '{svc_arg}': {e}" + usage
+            msg = f"Invalid 'host:device' spec: '{svc_arg}': {e}" + usage
             return HandleCommandResult(-errno.EINVAL, stderr=msg)
 
         completion = self.create_osds(drive_group)

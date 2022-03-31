@@ -457,6 +457,7 @@ class Orchestrator(object):
         fns: Dict[str, Callable[..., OrchResult[str]]] = {
             'alertmanager': self.apply_alertmanager,
             'crash': self.apply_crash,
+            'exporter': self.apply_exporter,
             'grafana': self.apply_grafana,
             'iscsi': self.apply_iscsi,
             'mds': self.apply_mds,
@@ -655,6 +656,10 @@ class Orchestrator(object):
     def apply_crash(self, spec: ServiceSpec) -> OrchResult[str]:
         """Update existing a crash daemon(s)"""
         raise NotImplementedError()
+    
+    def apply_exporter(self, spec: ServiceSpec) -> OrchResult[str]:
+        """Update existing a exporter daemon(s)"""
+        raise NotImplementedError()
 
     def apply_grafana(self, spec: ServiceSpec) -> OrchResult[str]:
         """Update existing a grafana service"""
@@ -735,6 +740,7 @@ def daemon_type_to_service(dtype: str) -> str:
         'loki': 'loki',
         'promtail': 'promtail',
         'crash': 'crash',
+        'exporter': 'exporter',
         'crashcollector': 'crash',  # Specific Rook Daemon
         'container': 'container',
         'agent': 'agent',
@@ -762,6 +768,7 @@ def service_to_daemon_types(stype: str) -> List[str]:
         'promtail': ['promtail'],
         'node-exporter': ['node-exporter'],
         'crash': ['crash'],
+        'exporter': ['exporter'],
         'container': ['container'],
         'agent': ['agent'],
         'snmp-gateway': ['snmp-gateway'],
