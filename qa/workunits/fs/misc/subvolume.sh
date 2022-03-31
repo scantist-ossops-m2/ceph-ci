@@ -6,6 +6,12 @@ expect_failure() {
 
 set -e
 
+# If we are already running on a subvolume, declare the test as passed.
+# This script is supposed to run on a barebones volume.
+if getfattr -n ceph.dir.subvolume . ; then
+  exit 0
+fi
+
 mkdir group
 mkdir group/subvol1
 
