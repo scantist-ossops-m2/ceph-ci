@@ -138,7 +138,8 @@ void DaemonMetricCollector::send_requests() {
 
 void DaemonMetricCollector::update_sockets() {
   std::string path = "/var/run/ceph/";
-  for (const auto & entry : std::filesystem::directory_iterator(path)) {
+  for (const auto & entry : std::filesystem::recursive_directory_iterator(path)) {
+    std::cout << entry.path() << std::endl;
     if (entry.path().extension() == ".asok") {
       std::string daemon_socket_name = entry.path().filename().string();
       std::cout << "Got socket: " << daemon_socket_name << std::endl;
