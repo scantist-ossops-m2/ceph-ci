@@ -2707,7 +2707,8 @@ Then run the following:
             placement = PlacementSpec.from_string(host_placement)
             hosts = placement.filter_matching_hostspecs(all_hosts)
             if not hosts:
-                raise OrchestratorError(f'Upgrade aborted - hosts parameter "{host_placement}" provided did not match any hosts')
+                raise OrchestratorError(
+                    f'Upgrade aborted - hosts parameter "{host_placement}" provided did not match any hosts')
         return self.upgrade.upgrade_start(image, version, daemon_types, hosts, services)
 
     @handle_orch_error
