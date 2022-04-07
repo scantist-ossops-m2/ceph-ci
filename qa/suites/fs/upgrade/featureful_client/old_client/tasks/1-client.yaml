@@ -1,6 +1,6 @@
 tasks:
 - ceph-fuse:
-- print: "**** done octopus client"
+- print: "**** done pacific client"
 - workunit:
     clients:
       all:
