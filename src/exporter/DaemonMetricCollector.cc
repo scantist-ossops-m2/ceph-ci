@@ -69,6 +69,7 @@ void DaemonMetricCollector::send_requests() {
   for(auto client : clients) {
     AdminSocketClient &sock_client = client.second;
     std::string daemon_name = client.first;
+    // std::cout << "st1: " << daemon_name << std::endl;
     std::string request("{\"prefix\":\"perf dump\"}");
     std::string response;
     sock_client.do_request(request, &response);
@@ -78,6 +79,9 @@ void DaemonMetricCollector::send_requests() {
       response = "";
       sock_client.do_request(request, &response);
       json_object schema = boost::json::parse(response).as_object();
+      if (daemon_name.find("rgw") != std::string::npos || daemon_name.find("rbd-mirror") != std::string::npos) {
+        std::cout << "rgw/rbd: " << schema << std::endl;
+    }
       for (auto perf : schema) {
         std::string perf_group = perf.key().to_string();
         json_object perf_group_object = perf.value().as_object();
@@ -96,11 +100,13 @@ void DaemonMetricCollector::send_requests() {
           std::string labels;
           // Labels
           // FIXME: test this, based on mgr_module perfpath_to_path_labels
-          if (daemon_name.substr(0, 4) == "rgw.") {
+          if (daemon_name.find("rgw") != std::string::npos) {
+            std::cout << "rgw: " << daemon_name << std::endl;
             labels = std::string("instance_id=") + quote(daemon_name.substr(4, std::string::npos));
           } else {
+            std::cout << "rbd: " << daemon_name << std::endl;
             labels = "ceph_daemon=" + quote(daemon_name);
-            if (daemon_name.substr(0, 11) == "rbd-mirror.") {
+            if (daemon_name.find("rbd-mirror") != std::string::npos) {
               std::regex re("^rbd_mirror_image_([^/]+)/(?:(?:([^/]+)/)?)(.*)\\.(replay(?:_bytes|_latency)?)$");
               std::smatch match;
               if (std::regex_search(daemon_name, match, re) == true) {
@@ -140,13 +146,14 @@ void DaemonMetricCollector::send_requests() {
 }
 
 void DaemonMetricCollector::update_sockets() {
-  std::string path = "/var/run/ceph/";
-  for (const auto & entry : std::filesystem::recursive_directory_iterator(path)) {
+  for (const auto & entry : std::filesystem::recursive_directory_iterator(socketdir)) {
     if (entry.path().extension() == ".asok") {
+      // std::cout << entry.path() << std::endl;
       std::string daemon_socket_name = entry.path().filename().string();
       // remove .asok
       std::string daemon_name = daemon_socket_name.substr(0, daemon_socket_name.size() - 5);
-      if (clients.find(daemon_name) == clients.end()) {
+      if (clients.find(daemon_name) == clients.end() && !(daemon_name.find("mgr") != std::string::npos)) {
+        // std::cout << daemon_name << std::endl;
         AdminSocketClient sock(entry.path().string());
         clients.insert({daemon_name, std::move(sock)});
       }
