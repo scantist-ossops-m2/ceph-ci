@@ -87,6 +87,7 @@ public:
 	<< ceph_watch_event_name(opcode) << " (" << (int)opcode << ")"
 	<< " cookie " << cookie
 	<< " notify " << notify_id
+	<< " bl_val " << bl.to_str()
 	<< " ret " << return_code
 	<< ")";
   }

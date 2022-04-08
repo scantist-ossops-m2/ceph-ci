@@ -182,6 +182,7 @@ void PromoteRequest<I>::scheduler_unregister_update_watcher() {
     return;
   }
 
+  ldout(cct, 15) << "going for work queue" << dendl;
   m_image_ctx->op_work_queue->queue(new LambdaContext([this](int) {
       unregister_update_watcher();
     }), 0);
