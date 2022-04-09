@@ -77,6 +77,16 @@ class YAMLFormatter(Protocol):
         ...  # pragma: no cover
 
 
+@runtime_checkable
+class ReturnValueProvider(Protocol):
+    def mgr_return_value(self) -> int:
+        """Return an integer value to provide the Ceph MGR with a error code
+        for the MGR's response tuple. Zero means success. Return an negative
+        errno otherwise.
+        """
+        ...  # pragma: no cover
+
+
 class ObjectFormatAdapter:
     """A format adapater for a single object.
     Given an input object, this type will adapt the object, or a simplified
@@ -138,3 +148,24 @@ class ObjectFormatAdapter:
     def format_yaml(self) -> str:
         """Return a YAML formatted string representing the input object."""
         return yaml.safe_dump(self._fetch_yaml_data())
+
+
+class ReturnValueAdapter:
+    """A return-value adapter for an object.
+    Given an input object, this type will attempt to get a mgr return value
+    from the object if provides a `mgr_return_value` function.
+    If not it returns a default return value, typically 0.
+    """
+
+    def __init__(
+        self,
+        obj: Any,
+        default: int = 0,
+    ) -> None:
+        self.obj = obj
+        self.default_return_value = default
+
+    def mgr_return_value(self) -> int:
+        if isinstance(self.obj, ReturnValueProvider):
+            return int(self.obj.mgr_return_value())
+        return self.default_return_value
