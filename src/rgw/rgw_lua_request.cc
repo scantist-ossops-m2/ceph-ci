@@ -170,22 +170,23 @@ struct BucketMetaTable : public EmptyMetaTable {
   static std::string TableName() {return "Bucket";}
   static std::string Name() {return TableName() + "Meta";}
 
-  using Type = rgw::sal::Bucket;
-
   static int IndexClosure(lua_State* L) {
     const auto s = reinterpret_cast<req_state*>(lua_touserdata(L, lua_upvalueindex(1)));
     const auto bucket = s->bucket.get();
 
     const char* index = luaL_checkstring(L, 2);
 
-    if (strcasecmp(index, "Tenant") == 0) {
-      pushstring(L, bucket->get_tenant());
-    } else if (strcasecmp(index, "Name") == 0) {
-      if (rgw::sal::Bucket::empty(bucket)) {
+    if (rgw::sal::Bucket::empty(bucket)) {
+      if (strcasecmp(index, "Name") == 0) {
         pushstring(L, s->init_state.url_bucket);
       } else {
-        pushstring(L, bucket->get_name());
+        lua_pushnil(L);
       }
+    }
+    else if (strcasecmp(index, "Tenant") == 0) {
+      pushstring(L, bucket->get_tenant());
+    } else if (strcasecmp(index, "Name") == 0) {
+      pushstring(L, bucket->get_name());
     } else if (strcasecmp(index, "Marker") == 0) {
       pushstring(L, bucket->get_marker());
     } else if (strcasecmp(index, "Id") == 0) {
