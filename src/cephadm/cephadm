@@ -1611,9 +1611,8 @@ def call(ctx: CephadmContext,
         assert process.stdout
         assert process.stderr
         try:
-            stdout, stderr = await asyncio.gather(tee(process.stdout),
-                                                  tee(process.stderr))
             returncode = await asyncio.wait_for(process.wait(), timeout)
+            stdout, stderr = await asyncio.gather(tee(process.stdout), tee(process.stderr))
         except asyncio.TimeoutError:
             logger.info(prefix + f'timeout after {timeout} seconds')
             return '', '', 124
@@ -1676,15 +1675,15 @@ def json_loads_retry(cli_func: Callable[[], str]) -> Any:
     return json.loads(cli_func())
 
 
-def is_available(ctx, what, func):
-    # type: (CephadmContext, str, Callable[[], bool]) -> None
+def is_available(ctx: CephadmContext, what: str, func: Callable[[], bool], retry: Optional[int] = None) -> None:
     """
     Wait for a service to become available
 
     :param what: the name of the service
     :param func: the callable object that determines availability
     """
-    retry = ctx.retry
+    if retry is None:
+        retry = ctx.retry
     logger.info('Waiting for %s...' % what)
     num = 1
     while True:
@@ -4682,7 +4681,7 @@ def wait_for_mon(
                              timeout=timeout)
         return ret == 0
 
-    is_available(ctx, 'mon', is_mon_available)
+    is_available(ctx, 'mon', is_mon_available, 3)
 
 
 def create_mgr(
