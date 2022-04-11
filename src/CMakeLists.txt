@@ -320,7 +320,16 @@ list(APPEND mds_files
 add_subdirectory(json_spirit)
 
 include_directories(SYSTEM "${CMAKE_SOURCE_DIR}/src/xxHash")
-include_directories(SYSTEM "${CMAKE_SOURCE_DIR}/src/rapidjson/include")
+
+if(WITH_RADOSGW)
+  find_package(RapidJSON REQUIRED)
+  message(STATUS "RapidJSON version: ${RapidJSON_VERSION}")
+  if(NOT TARGET RapidJSON::RapidJSON)
+    add_library(RapidJSON::RapidJSON INTERFACE IMPORTED)
+    set_target_properties(RapidJSON::RapidJSON PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${RapidJSON_INCLUDE_DIR}")
+  endif()
+endif()
 
 option(WITH_FMT_HEADER_ONLY "use header-only version of fmt library" OFF)
 find_package(fmt 6.0.0 QUIET)
