@@ -501,7 +501,7 @@ docker.io/ceph/daemon-base:octopus
                 None,
                 None,
                 [],
-                cd.SHELL_DEFAULT_CONF,
+                cd.CEPH_DEFAULT_CONF,
             ),
             (
                 '00000000-0000-0000-0000-0000deadbeef',
@@ -515,21 +515,21 @@ docker.io/ceph/daemon-base:octopus
                 None,
                 None,
                 [{'name': 'mon.a', 'fsid': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'style': 'cephadm:v1'}],
-                cd.SHELL_DEFAULT_CONF,
+                cd.CEPH_DEFAULT_CONF,
             ),
             (
                 '00000000-0000-0000-0000-0000deadbeef',
                 None,
                 None,
                 [{'name': 'mon.a', 'fsid': '00000000-0000-0000-0000-0000deadbeef', 'style': 'legacy'}],
-                cd.SHELL_DEFAULT_CONF,
+                cd.CEPH_DEFAULT_CONF,
             ),
             (
                 '00000000-0000-0000-0000-0000deadbeef',
                 None,
                 None,
                 [{'name': 'osd.0'}],
-                cd.SHELL_DEFAULT_CONF,
+                cd.CEPH_DEFAULT_CONF,
             ),
             (
                 '00000000-0000-0000-0000-0000deadbeef',
@@ -557,7 +557,7 @@ docker.io/ceph/daemon-base:octopus
                 None,
                 None,
                 [],
-                cd.SHELL_DEFAULT_CONF,
+                cd.CEPH_DEFAULT_CONF,
             ),
         ])
     @mock.patch('cephadm.call')
@@ -1188,11 +1188,11 @@ class TestShell(object):
             assert retval == 0
             assert ctx.config == None
 
-        cephadm_fs.create_file(cd.SHELL_DEFAULT_CONF)
+        cephadm_fs.create_file(cd.CEPH_DEFAULT_CONF)
         with with_cephadm_ctx(cmd) as ctx:
             retval = cd.command_shell(ctx)
             assert retval == 0
-            assert ctx.config == cd.SHELL_DEFAULT_CONF
+            assert ctx.config == cd.CEPH_DEFAULT_CONF
 
         cmd = ['shell', '--config', 'foo']
         with with_cephadm_ctx(cmd) as ctx:
@@ -1207,11 +1207,11 @@ class TestShell(object):
             assert retval == 0
             assert ctx.keyring == None
 
-        cephadm_fs.create_file(cd.SHELL_DEFAULT_KEYRING)
+        cephadm_fs.create_file(cd.CEPH_DEFAULT_KEYRING)
         with with_cephadm_ctx(cmd) as ctx:
             retval = cd.command_shell(ctx)
             assert retval == 0
-            assert ctx.keyring == cd.SHELL_DEFAULT_KEYRING
+            assert ctx.keyring == cd.CEPH_DEFAULT_KEYRING
 
         cmd = ['shell', '--keyring', 'foo']
         with with_cephadm_ctx(cmd) as ctx:
