@@ -355,13 +355,18 @@ class TestCephAdm(object):
         assert result == 1
 
     def test_last_local_images(self):
-        out = '''
-docker.io/ceph/daemon-base@
-docker.io/ceph/ceph:v15.2.5
-docker.io/ceph/daemon-base:octopus
-        '''
+        out = '''quay.ceph.io/ceph-ci/ceph@sha256:87f200536bb887b36b959e887d5984dd7a3f008a23aa1f283ab55d48b22c6185|master|2022-03-23 16:29:19 +0000 UTC
+        quay.ceph.io/ceph-ci/ceph@sha256:b50b130fcda2a19f8507ddde3435bb4722266956e1858ac395c838bc1dcf1c0e|pacific|2022-03-23 15:58:34 +0000 UTC
+        docker.io/ceph/ceph@sha256:939a46c06b334e094901560c8346de33c00309e3e3968a2db240eb4897c6a508|v15.2.5|2020-09-16 14:15:15 +0000 UTC'''
         image = cd._filter_last_local_ceph_image(out)
-        assert image == 'docker.io/ceph/ceph:v15.2.5'
+        assert image == 'quay.ceph.io/ceph-ci/ceph@sha256:87f200536bb887b36b959e887d5984dd7a3f008a23aa1f283ab55d48b22c6185'
+
+        # make sure images without digest are discarded
+        out = '''quay.ceph.io/ceph-ci/ceph@||
+        docker.io/ceph/ceph@||
+        docker.io/ceph/ceph@sha256:939a46c06b334e094901560c8346de33c00309e3e3968a2db240eb4897c6a508|v15.2.5|2020-09-16 14:15:15 +0000 UTC'''
+        image = cd._filter_last_local_ceph_image(out)
+        assert image == 'docker.io/ceph/ceph@sha256:939a46c06b334e094901560c8346de33c00309e3e3968a2db240eb4897c6a508'
 
     def test_should_log_to_journald(self):
         ctx = cd.CephadmContext()
