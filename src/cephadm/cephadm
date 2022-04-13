@@ -73,7 +73,7 @@ CEPH_PUBKEY = 'ceph.pub'
 CEPH_KEYRING = 'ceph.client.admin.keyring'
 CEPH_DEFAULT_CONF = f'/etc/ceph/{CEPH_CONF}'
 CEPH_DEFAULT_KEYRING = f'/etc/ceph/{CEPH_KEYRING}'
-SHELL_DEFAULT_PUBKEY = f'/etc/ceph/{CEPH_PUBKEY}'
+CEPH_DEFAULT_PUBKEY = f'/etc/ceph/{CEPH_PUBKEY}'
 LOG_DIR_MODE = 0o770
 DATA_DIR_MODE = 0o700
 CONTAINER_INIT = True
@@ -1951,45 +1951,45 @@ def infer_config(func: FuncT) -> FuncT:
     Infer the clusater configuration using the followign priority order:
      1- if the user has provided custom conf file (-c option) use it
      2- otherwise if daemon --name has been provided use daemon conf
-     3- otherwise if {ctx.data_dir}/{fsid}/{CEPH_CONF_DIR} dir exists use it
-     4- otherwise find the mon daemon conf file and use it
+     3- otherwise find the mon daemon conf file and use it (if v1)
+     4- otherwise if {ctx.data_dir}/{fsid}/{CEPH_CONF_DIR} dir exists use it
      5- finally: fallback to the default file /etc/ceph/ceph.conf
     """
     @wraps(func)
     def _infer_config(ctx: CephadmContext) -> Any:
+
+        def config_path(daemon_type: str, daemon_name: str) -> str:
+            data_dir = get_data_dir(ctx.fsid, ctx.data_dir, daemon_type, daemon_name)
+            return os.path.join(data_dir, 'config')
+
+        def get_mon_daemon_name(fsid: str) -> Optional[str]:
+            daemon_list = list_daemons(ctx, detail=False)
+            for daemon in daemon_list:
+                if (
+                    daemon.get('name', '').startswith('mon.')
+                    and daemon.get('fsid', '') == fsid
+                    and daemon.get('style', '') == 'cephadm:v1'
+                    and os.path.exists(config_path('mon', daemon['name'].split('.', 1)[1]))
+                ):
+                    return daemon['name']
+            return None
+
         ctx.config = ctx.config if 'config' in ctx else None
         #  check if user has provided conf by using -c option
         if ctx.config and (ctx.config != CEPH_DEFAULT_CONF):
             logger.debug(f'Using specified config: {ctx.config}')
             return func(ctx)
 
-        def config_path(daemon_type: str, daemon_name: str) -> str:
-            data_dir = get_data_dir(ctx.fsid, ctx.data_dir, daemon_type, daemon_name)
-            return os.path.join(data_dir, 'config')
-
         if 'fsid' in ctx and ctx.fsid:
-            name = ctx.name if 'name' in ctx else None
-            if name:
-                # daemon name has been specified, let's use it
+            name = ctx.name if ('name' in ctx and ctx.name) else get_mon_daemon_name(ctx.fsid)
+            if name is not None:
+                # daemon name has been specified (or inffered from mon), let's use its conf
                 ctx.config = config_path(name.split('.', 1)[0], name.split('.', 1)[1])
             else:
-                # no daemon name has been specified, let's see if cluster has a conf dir
+                # no daemon, in case the cluster has a config dir then use it
                 ceph_conf = f'{ctx.data_dir}/{ctx.fsid}/{CEPH_CONF_DIR}/{CEPH_CONF}'
                 if os.path.exists(ceph_conf):
                     ctx.config = ceph_conf
-                else:
-                    # finally, if nothing has been provided let's use mon conf file
-                    daemon_list = list_daemons(ctx, detail=False)
-                    for daemon in daemon_list:
-                        if (
-                            daemon.get('name', '').startswith('mon.')
-                            and daemon.get('fsid', '') == ctx.fsid
-                            and daemon.get('style', '') == 'cephadm:v1'
-                            and os.path.exists(config_path('mon', daemon['name'].split('.', 1)[1]))
-                        ):
-                            name = daemon['name']
-                            ctx.config = config_path(name.split('.', 1)[0], name.split('.', 1)[1])
-                            break
 
         if ctx.config:
             logger.info(f'Inferring config {ctx.config}')
@@ -5114,7 +5114,7 @@ def parse_yaml_objs(f: Iterable[str]) -> List[Dict[str, str]]:
 
 def _distribute_ssh_keys(ctx: CephadmContext, host_spec: Dict[str, str], bootstrap_hostname: str) -> int:
     # copy ssh key to hosts in host spec (used for apply spec)
-    ssh_key = SHELL_DEFAULT_PUBKEY
+    ssh_key = CEPH_DEFAULT_PUBKEY
     if ctx.ssh_public_key:
         ssh_key = ctx.ssh_public_key.name
 
@@ -6789,7 +6789,7 @@ def command_rm_cluster(ctx):
         shutil.rmtree(dd, ignore_errors=True)
 
     # clean up config, keyring, and pub key files
-    files = [CEPH_DEFAULT_CONF, SHELL_DEFAULT_PUBKEY, CEPH_DEFAULT_KEYRING]
+    files = [CEPH_DEFAULT_CONF, CEPH_DEFAULT_PUBKEY, CEPH_DEFAULT_KEYRING]
     if os.path.exists(files[0]):
         valid_fsid = False
         with open(files[0]) as f:
