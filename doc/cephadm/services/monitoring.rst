@@ -391,6 +391,26 @@ Run ``reconfig`` on the service to update its configuration:
 
   ceph orch reconfig alertmanager
 
+Turn off Certificate Validation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+If you are using certificates for alertmanager that will fail validation
+such as self-signed certificates, you can specify "insecure" as true in
+the spec yaml.
+
+.. code-block:: yaml
+
+    service_type: alertmanager
+    spec:
+      insecure: true
+
+If you already had alertmanager daemons running before applying the spec
+you must reconfigure them to update their configuration
+
+.. prompt:: bash #
+
+  ceph orch reconfig alertmanager
+
 Further Reading
 ---------------
 
