@@ -968,6 +968,14 @@ class TestMisc(TestCephFSShell):
         o = self.get_cephfs_shell_cmd_output("help all")
         log.info("output:\n{}".format(o))
 
+    def test_chmod(self):
+        """Test chmod is allowed above o0777 """
+        
+        test_file1 = "test_file2.txt"
+        file1_content = 'A' * 102
+        self.run_cephfs_shell_cmd(f"write {test_file1}", stdin=file1_content)
+        self.run_cephfs_shell_cmd(f"chmod 01777 {test_file1}")
+        
 class TestShellOpts(TestCephFSShell):
     """
     Contains tests for shell options from conf file and shell prompt.
