@@ -182,8 +182,7 @@ struct BucketMetaTable : public EmptyMetaTable {
       } else {
         lua_pushnil(L);
       }
-    }
-    else if (strcasecmp(index, "Tenant") == 0) {
+    } else if (strcasecmp(index, "Tenant") == 0) {
       pushstring(L, bucket->get_tenant());
     } else if (strcasecmp(index, "Name") == 0) {
       pushstring(L, bucket->get_name());
