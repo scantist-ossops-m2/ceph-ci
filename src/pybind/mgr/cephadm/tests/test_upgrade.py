@@ -164,3 +164,48 @@ def test_enough_mds_for_ok_to_stop(get, get_daemons_by_service, cephadm_module: 
     get_daemons_by_service.side_effect = [[DaemonDescription(), DaemonDescription()]]
     assert cephadm_module.upgrade._enough_mds_for_ok_to_stop(
         DaemonDescription(daemon_type='mds', daemon_id='myfs.test.host1.gfknd', service_name='mds.myfs.test'))
+
+
+@pytest.mark.parametrize("tags, current_version, result",
+                         [
+                             # several candidate versions (from different major versions)
+                             (
+                                 [
+                                     'v17.1.0',
+                                     'v16.2.7',
+                                     'v16.2.6',
+                                     'v16.2.5',
+                                     'v16.1.4',
+                                     'v16.1.3',
+                                     'v15.2.0',
+                                 ],
+                                 (16, 1, '16.1.0'),
+                                 ['17.1.0', '16.2.7', '16.2.6', '16.2.5', '16.1.4', '16.1.3']
+                             ),
+                             # candidate minor versions are available
+                             (
+                                 [
+                                     'v16.2.2',
+                                     'v16.2.1',
+                                     'v16.1.6',
+                                 ],
+                                 (16, 1, '16.1.0'),
+                                 ['16.2.2', '16.2.1', '16.1.6']
+                             ),
+                             # all versions are less than the current version
+                             (
+                                 [
+                                     'v17.1.0',
+                                     'v16.2.7',
+                                     'v16.2.6',
+                                 ],
+                                 (17, 2, '17.2.0'),
+                                 []
+                             ),
+                         ])
+@mock.patch("cephadm.serve.CephadmServe._run_cephadm", _run_cephadm('{}'))
+def test_upgrade_ls(tags, current_version, result, cephadm_module: CephadmOrchestrator):
+    with mock.patch('cephadm.upgrade.Registry.get_tags', return_value=tags):
+        with mock.patch('cephadm.upgrade.CephadmUpgrade._get_current_version', return_value=current_version):
+            out = cephadm_module.upgrade.upgrade_ls(None, False)
+            assert out['versions'] == result
