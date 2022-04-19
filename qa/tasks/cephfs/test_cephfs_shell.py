@@ -393,6 +393,21 @@ class TestGetAndPut(TestCephFSShell):
             # if the int() fails then that means there's a valid stat output
             pass
 
+    def test_get_subdir_creation(self):
+        s = 'somedata'
+        self.get_cephfs_shell_cmd_output("mkdir tmp")
+        self.get_cephfs_shell_cmd_output("put - /tmp/dump7", stdin=s)
+        self.get_cephfs_shell_cmd_output("get /tmp/dump7 ./dump7")
+        # if get cmd is creating subdirs on its own then dump7 will be
+        # stored as ./dump7/tmp/dump7 and not ./dump7, therefore
+        # if doing `cat ./dump7` returns non-zero exit code(i.e. 1) then
+        # it implies that no such file exists at that location
+        r = self.mount_a.run_shell("cat ./dump7", cwd=None,
+                                   check_status=False)
+        log.info("cat ./dump7 output:\n{}".format(r.stdout.getvalue()))
+        self.assertEqual(r.returncode, 0,
+                         "file not found at expected location.")
+
     def test_get_to_console(self):
         """
         Test that get passes with target name
