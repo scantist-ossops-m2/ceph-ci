@@ -1,0 +1,34 @@
+tasks:
+- cephadm.shell:
+    env: [sha1]
+    mon.a:
+      - radosgw-admin realm create --rgw-realm=r --default
+      - radosgw-admin zonegroup create --rgw-zonegroup=default --master --default
+      - radosgw-admin zone create --rgw-zonegroup=default --rgw-zone=z --master --default
+      - radosgw-admin period update --rgw-realm=r --commit
+      - ceph orch apply rgw r z --placement=2 --port=8000
+      - sleep 120
+      - ceph config set mon mon_warn_on_insecure_global_id_reclaim false --force
+      - ceph config set mon mon_warn_on_insecure_global_id_reclaim_allowed false --force
+      - ceph config set global log_to_journald false --force
+      # doing staggered upgrade requires mgr daemons being on a version that contains the staggered upgrade code
+      # until there is a stable version that contains it, we can test by manually upgrading a mgr daemon
+      - ceph orch daemon redeploy "mgr.$(ceph mgr dump -f json | jq .standbys | jq .[] | jq -r .name)" --image quay.ceph.io/ceph-ci/ceph:$sha1
+      - ceph orch ps --refresh
+      - sleep 60
+      - ceph versions | jq -e '.mgr | length == 2'
+      - ceph mgr fail
+      - ceph orch upgrade start --image quay.ceph.io/ceph-ci/ceph:$sha1 --daemon-types mgr
+      - while ceph orch upgrade status | jq '.in_progress' | grep true && ! ceph orch upgrade status | jq '.message' | grep Error ; do ceph orch ps ; ceph versions ; ceph orch upgrade status ; sleep 30 ; done
+      - ceph versions | jq -e '.mgr | length == 1'
+      - ceph versions | jq -e '.overall | length == 2'
+      - ceph orch upgrade start --image quay.ceph.io/ceph-ci/ceph:$sha1 --daemon-types mon --hosts $(ceph orch ps | grep mgr.x | awk '{print $2}')
+      - while ceph orch upgrade status | jq '.in_progress' | grep true && ! ceph orch upgrade status | jq '.message' | grep Error ; do ceph orch ps ; ceph versions ; ceph orch upgrade status ; sleep 30 ; done
+      - ceph versions | jq -e '.mon | length == 2'
+      - ceph orch upgrade start --image quay.ceph.io/ceph-ci/ceph:$sha1 --services mon --hosts $(ceph orch ps | grep mgr.y | awk '{print $2}')
+      - while ceph orch upgrade status | jq '.in_progress' | grep true && ! ceph orch upgrade status | jq '.message' | grep Error ; do ceph orch ps ; ceph versions ; ceph orch upgrade status ; sleep 30 ; done
+      - ceph versions | jq -e '.mon | length == 1'
+      - ceph orch upgrade start --image quay.ceph.io/ceph-ci/ceph:$sha1 --daemon-types crash,osd --hosts $(ceph orch ps | grep mgr.x | awk '{print $2}')
+      - while ceph orch upgrade status | jq '.in_progress' | grep true && ! ceph orch upgrade status | jq '.message' | grep Error ; do ceph orch ps ; ceph versions ; ceph orch upgrade status ; sleep 30 ; done
+      - ceph versions | jq -e '.osd | length == 2'
+      - ceph orch upgrade start --image quay.ceph.io/ceph-ci/ceph:$sha1 --daemon-types osd,rgw
