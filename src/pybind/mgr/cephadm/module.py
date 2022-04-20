@@ -714,7 +714,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         Generate a unique random service name
         """
         suffix = daemon_type not in [
-            'mon', 'crash',
+            'mon', 'crash', 'ceph-exporter',
             'prometheus', 'node-exporter', 'grafana', 'alertmanager',
             'container', 'agent', 'snmp-gateway', 'loki', 'promtail',
             'elasticsearch', 'jaeger-collector', 'jaeger-agent', 'jaeger-query'
@@ -2371,8 +2371,13 @@ Then run the following:
             deps = [self.get_mgr_ip()]
         else:
             need = {
+<<<<<<< HEAD
                 'prometheus': ['mgr', 'alertmanager', 'node-exporter', 'ingress'],
                 'grafana': ['prometheus', 'loki'],
+=======
+                'prometheus': ['mgr', 'alertmanager', 'ceph-exporter', 'node-exporter', 'ingress'],
+                'grafana': ['prometheus'],
+>>>>>>> 6a1386126c0 (exporter: cephadm tox fixes)
                 'alertmanager': ['mgr', 'alertmanager', 'snmp-gateway'],
                 'promtail': ['loki'],
             }
@@ -2595,7 +2600,7 @@ Then run the following:
                 'alertmanager': PlacementSpec(count=1),
                 'prometheus': PlacementSpec(count=1),
                 'node-exporter': PlacementSpec(host_pattern='*'),
-                'exporter': PlacementSpec(host_pattern='*'),
+                'ceph-exporter': PlacementSpec(host_pattern='*'),
                 'loki': PlacementSpec(count=1),
                 'promtail': PlacementSpec(host_pattern='*'),
                 'crash': PlacementSpec(host_pattern='*'),
@@ -2710,7 +2715,7 @@ Then run the following:
         return self._apply(spec)
 
     @handle_orch_error
-    def apply_exporter(self, spec: ServiceSpec) -> str:
+    def apply_ceph_exporter(self, spec: ServiceSpec) -> str:
         return self._apply(spec)
 
     @handle_orch_error
