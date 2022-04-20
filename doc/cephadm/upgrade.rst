@@ -188,3 +188,94 @@ you need. For example, the following command upgrades to a development build:
   ceph orch upgrade start --image quay.io/ceph-ci/ceph:recent-git-branch-name
 
 For more information about available container images, see :ref:`containers`.
+
+Staggered Upgrade
+=================
+
+Some users may prefer to have their upgrade be done in shorter bursts rather
+than one fire-and-forget upgrade command. The upgrade command, starting
+in 16.2.9 and 17.2.1 allows specifying parameters to limit which daemons are
+upgraded by a single upgrade command. The options in include ``daemon_types``,
+``services`` and ``hosts``. ``daemon_types`` takes a comma separated list
+of daemon types and will only upgrade daemons of those types. ``services``
+is mutually exclusive with ``daemon_types``, only takes services of one type
+at a time (e.g. can't provide an osd and rgw service at the same time) and
+will only upgrade daemons belonging to those services. ``hosts`` can be combined
+with ``daemon_types`` or ``services`` or provided on its own. The argument
+follows the same format as the command line options for :ref:`orchestrator-cli-placement-spec`.
+
+Example, specifying daemon types and hosts:
+
+.. prompt:: bash #
+
+  ceph orch upgrade start --image <image-name> --daemon-types mgr,mon --hosts host1,host2
+
+Example, specifying services:
+
+.. prompt:: bash #
+
+  ceph orch upgrade start --image <image-name> --services rgw.example1,rgw.example2
+
+.. note::
+
+   cephadm strictly enforces an order to the upgrade of daemons that is still present
+   in staggered upgrade scenarios. The current upgrade ordering is
+   ``mgr -> mon -> crash -> osd -> mds -> rgw -> rbd-mirror -> cephfs-mirror -> iscsi -> nfs``.
+   If you attempt to specify parameters that would force us to upgrade daemons out of
+   order, the upgrade command will block and inform you of which daemons earlier
+   in the upgrade order will be missed using your parameters.
+
+.. note::
+
+   In order to verify the upgrade order will not be broken, upgrade commands with
+   extra limiting parameters must first validate the options before beginning the
+   upgrade. This may require pulling the image you are trying to upgrade to. Do
+   not be surprised if the upgrade start command takes a while to return when limiting
+   parameters are provided.
+
+.. note::
+
+   In staggered upgrade scenarios (when a limiting parameter is provide) monitoring
+   stack daemons such as prometheus or node-exporter are "upgraded" (if you are
+   not using the default image or if the default does not change between upgrade
+   versions it's actually just a redeploy) after the mgr daemons are finished
+   upgrading. Do not be surprised if you attempt to upgrade mgr daemons and it
+   takes longer than expected as it may just be upgrading monitoring stack daemons
+   as well.
+
+Upgrading to a version that supports staggered upgrade from one that doesn't
+----------------------------------------------------------------------------
+
+While upgrading from a version that already supports staggered upgrades the process
+simply requires providing the necessary arguments. However, if you wish to upgrade
+TO a version that supports staggered upgrade from one that does not, there is a
+workaround that can be used. It requires first manually upgrading the mgr daemons
+and then passing the limiting parameters normally from that point on.
+
+.. warning::
+  Make sure you have multiple running mgr daemons before attempting this procedure.
+
+To start with, determine which mgr is your active one and which are standby. This
+can be done in a variety of ways such as looking at the ``ceph -s`` output. Then,
+manually upgrade each standby mgr daemon with:
+
+.. prompt:: bash #
+
+  ceph orch daemon redeploy mgr.example1.abcdef --image <new-image-name>
+
+At this point, a mgr fail over should allow us to have the active mgr be one
+running the new version.
+
+.. prompt:: bash #
+
+  ceph mgr fail
+
+Verify the active mgr is now one running the new version. To complete the mgr
+upgrading:
+
+.. prompt:: bash #
+
+  ceph orch upgrade start --image <new-image-name> --daemon-types mgr
+
+You should now have all your mgr daemons on the new version and be able to
+make use of the limiting parameters for the rest of the upgrade.
