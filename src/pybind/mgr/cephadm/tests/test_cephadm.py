@@ -882,7 +882,8 @@ class TestCephadm(object):
             ds = DriveSelection(dg, Devices([Device(path) for path in devices]))
             preview = preview
             out = cephadm_module.osd_service.driveselection_to_ceph_volume(ds, [], preview)
-            assert all(any(cmd in exp_cmd for exp_cmd in exp_commands) for cmd in out), f'Expected cmds from f{out} in {exp_commands}'
+            assert all(any(cmd in exp_cmd for exp_cmd in exp_commands)
+                       for cmd in out), f'Expected cmds from f{out} in {exp_commands}'
 
     @pytest.mark.parametrize(
         "devices, preview, exp_commands",
@@ -907,7 +908,8 @@ class TestCephadm(object):
             ds = DriveSelection(dg, Devices([Device(path) for path in devices]))
             preview = preview
             out = cephadm_module.osd_service.driveselection_to_ceph_volume(ds, [], preview)
-            assert all(any(cmd in exp_cmd for exp_cmd in exp_commands) for cmd in out), f'Expected cmds from f{out} in {exp_commands}'
+            assert all(any(cmd in exp_cmd for exp_cmd in exp_commands)
+                       for cmd in out), f'Expected cmds from f{out} in {exp_commands}'
 
     @mock.patch("cephadm.serve.CephadmServe._run_cephadm", _run_cephadm(
         json.dumps([
