@@ -227,8 +227,23 @@ int radosgw_Main(int argc, const char **argv)
   // privileged ports
   flags |= CINIT_FLAG_DEFER_DROP_PRIVILEGES;
 
+  // Load the config from the files, but not the mon
+  global_pre_init(&defaults, args, CEPH_ENTITY_TYPE_CLIENT,
+		  CODE_ENVIRONMENT_DAEMON, flags);
+
+  // Get the store backend
+  const auto& config_store = g_conf().get_val<std::string>("rgw_backend_store");
+
+  cerr << "config_store: " << config_store << std::endl;
+  if ((config_store == "dbstore") ||
+      (config_store == "motr")) {
+    // These stores don't use the mon
+    flags |= CINIT_FLAG_NO_MON_CONFIG;
+  }
+
+  // Finish global init, indicating we already ran pre-init
   auto cct = global_init(&defaults, args, CEPH_ENTITY_TYPE_CLIENT,
-			 CODE_ENVIRONMENT_DAEMON, flags);
+			 CODE_ENVIRONMENT_DAEMON, flags, false);
 
   // First, let's determine which frontends are configured.
   list<string> frontends;
@@ -361,7 +376,6 @@ int radosgw_Main(int argc, const char **argv)
 
   std::string rgw_store = (!rgw_d3n_datacache_enabled) ? "rados" : "d3n";
 
-  const auto& config_store = g_conf().get_val<std::string>("rgw_backend_store");
 #ifdef WITH_RADOSGW_DBSTORE
   if (config_store == "dbstore") {
     rgw_store = "dbstore";
