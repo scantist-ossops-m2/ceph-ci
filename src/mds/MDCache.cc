@@ -5946,9 +5946,12 @@ void MDCache::open_snaprealms()
 
 bool MDCache::open_undef_inodes_dirfrags()
 {
-  dout(10) << "open_undef_inodes_dirfrags "
-	   << rejoin_undef_inodes.size() << " inodes "
-	   << rejoin_undef_dirfrags.size() << " dirfrags" << dendl;
+  dout(10) << __func__ << " "
+           << rejoin_undef_inodes.size() << " inodes "
+           << rejoin_undef_dirfrags.size() << " dirfrags" << dendl;
+  dout(10) << __func__ << ": inodes=["
+           << rejoin_undef_inodes << "], dirfrags=["
+           << rejoin_undef_dirfrags << "]" << dendl;
 
   // dirfrag -> (fetch_complete, keys_to_fetch)
   map<CDir*, pair<bool, std::vector<dentry_key_t> > > fetch_queue;
@@ -5969,13 +5972,19 @@ bool MDCache::open_undef_inodes_dirfrags()
       CDentry *dn = in->get_parent_dn();
       auto& p = fetch_queue[dn->get_dir()];
 
+      dout(20) << __func__ << ": dir=" << *(dn->get_dir()) << dendl;
+      dout(20) << __func__ << ": adding dn=" << *dn << ", fetch_queue entry="
+               << p.first << "," << p.second << dendl;
       if (dn->last != CEPH_NOSNAP) {
+        dout(20) << __func__ << ": is no CEPH_NOSNAP" << dendl;
         p.first = true;
         p.second.clear();
       } else if (!p.first) {
+        dout(20) << __func__ << ": fetch_complete is false" << dendl;
         p.second.push_back(dn->key());
       }
-         }
+      dout(20) << __func__ << ": fetch_complete is true and CEPH_NOSNAP" << dendl;
+    }
   }
 
   if (fetch_queue.empty())
@@ -5997,10 +6006,13 @@ bool MDCache::open_undef_inodes_dirfrags()
       continue;
     if (dir->state_test(CDir::STATE_REJOINUNDEF))
       ceph_assert(diri->dirfragtree.is_leaf(dir->get_frag()));
-    if (p.second.first)
+    if (p.second.first) {
+      dout(20) << __func__ << ": fetch(): dir=" << *dir << dendl;
       dir->fetch(gather.new_sub());
-    else
+    } else {
+      dout(20) << __func__ << ": fetch_keys(): dir=" << *dir << dendl;
       dir->fetch_keys(p.second.second, gather.new_sub());
+    }
   }
   ceph_assert(gather.has_subs());
   gather.activate();
