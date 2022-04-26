@@ -47,6 +47,9 @@ class Module(MgrModule):
             raise CephfsConnectionException(
                 -errno.ENOENT, "no filesystem found")
 
+    def has_fs(self, fs_name: str) -> bool:
+        return fs_name in self.client.get_all_filesystems()
+
     def serve(self) -> None:
         self._initialized.set()
 
@@ -63,6 +66,8 @@ class Module(MgrModule):
         List current snapshot schedules
         '''
         use_fs = fs if fs else self.default_fs
+        if not self.has_fs(use_fs):
+            return -errno.EINVAL, '', f"no such filesystem: {use_fs}"
         try:
             ret_scheds = self.client.get_snap_schedules(use_fs, path)
         except CephfsConnectionException as e:
@@ -82,6 +87,8 @@ class Module(MgrModule):
         '''
         try:
             use_fs = fs if fs else self.default_fs
+            if not self.has_fs(use_fs):
+                return -errno.EINVAL, '', f"no such filesystem: {use_fs}"
             scheds = self.client.list_snap_schedules(use_fs, path, recursive)
             self.log.debug(f'recursive is {recursive}')
         except CephfsConnectionException as e:
@@ -112,6 +119,8 @@ class Module(MgrModule):
             use_fs = fs if fs else self.default_fs
             abs_path = path
             subvol = None
+            if not self.has_fs(use_fs):
+                return -errno.EINVAL, '', f"no such filesystem: {use_fs}"
             self.client.store_snap_schedule(use_fs,
                                             abs_path,
                                             (abs_path, snap_schedule,
@@ -141,6 +150,8 @@ class Module(MgrModule):
         try:
             use_fs = fs if fs else self.default_fs
             abs_path = path
+            if not self.has_fs(use_fs):
+                return -errno.EINVAL, '', f"no such filesystem: {use_fs}"
             self.client.rm_snap_schedule(use_fs, abs_path, repeat, start)
         except CephfsConnectionException as e:
             return e.to_tuple()
@@ -160,6 +171,8 @@ class Module(MgrModule):
         try:
             use_fs = fs if fs else self.default_fs
             abs_path = path
+            if not self.has_fs(use_fs):
+                return -errno.EINVAL, '', f"no such filesystem: {use_fs}"
             self.client.add_retention_spec(use_fs, abs_path,
                                           retention_spec_or_period,
                                           retention_count)
@@ -181,6 +194,8 @@ class Module(MgrModule):
         try:
             use_fs = fs if fs else self.default_fs
             abs_path = path
+            if not self.has_fs(use_fs):
+                return -errno.EINVAL, '', f"no such filesystem: {use_fs}"
             self.client.rm_retention_spec(use_fs, abs_path,
                                           retention_spec_or_period,
                                           retention_count)
@@ -202,6 +217,8 @@ class Module(MgrModule):
         try:
             use_fs = fs if fs else self.default_fs
             abs_path = path
+            if not self.has_fs(use_fs):
+                return -errno.EINVAL, '', f"no such filesystem: {use_fs}"
             self.client.activate_snap_schedule(use_fs, abs_path, repeat, start)
         except CephfsConnectionException as e:
             return e.to_tuple()
@@ -221,6 +238,8 @@ class Module(MgrModule):
         try:
             use_fs = fs if fs else self.default_fs
             abs_path = path
+            if not self.has_fs(use_fs):
+                return -errno.EINVAL, '', f"no such filesystem: {use_fs}"
             self.client.deactivate_snap_schedule(use_fs, abs_path, repeat, start)
         except CephfsConnectionException as e:
             return e.to_tuple()
