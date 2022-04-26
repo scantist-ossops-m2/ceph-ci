@@ -1,4 +1,4 @@
-shaman trigger 001
+shaman trigger 002
 
 # Ceph - a scalable distributed storage system
 
