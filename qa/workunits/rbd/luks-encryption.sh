@@ -42,6 +42,10 @@ function test_encryption_format() {
   LIBRBD_DEV=$(_sudo rbd -p rbd map testimg -t nbd -o encryption-format=$format,encryption-passphrase-file=/tmp/passphrase)
   sudo chmod 666 $LIBRBD_DEV
 
+  # open encryption with librbd (without specifying luks version)
+  LIBRBD_DEV2=$(_sudo rbd -p rbd map testimg -t nbd -o encryption-format=luks,encryption-passphrase-file=/tmp/passphrase)
+  sudo chmod 666 $LIBRBD_DEV2
+
   # write via librbd && compare
   dd if=/tmp/testdata1 of=$LIBRBD_DEV oflag=direct bs=1M
   dd if=/dev/mapper/cryptsetupdev of=/tmp/cmpdata iflag=direct bs=4M count=4
@@ -49,7 +53,7 @@ function test_encryption_format() {
 
   # write via cryptsetup && compare
   dd if=/tmp/testdata2 of=/dev/mapper/cryptsetupdev oflag=direct bs=1M
-  dd if=$LIBRBD_DEV of=/tmp/cmpdata iflag=direct bs=4M count=4
+  dd if=$LIBRBD_DEV2 of=/tmp/cmpdata iflag=direct bs=4M count=4
   cmp -n 16MB /tmp/cmpdata /tmp/testdata2
 }
 

@@ -103,6 +103,9 @@ void LoadRequest<I>::handle_read_header(int r) {
     case RBD_ENCRYPTION_FORMAT_LUKS2:
       type = CRYPT_LUKS2;
       break;
+    case RBD_ENCRYPTION_FORMAT_LUKS:
+      type = CRYPT_LUKS;
+      break;
     default:
       lderr(m_image_ctx->cct) << "unsupported format type: " << m_format
                               << dendl;
