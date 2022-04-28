@@ -4,6 +4,7 @@
 #ifndef CEPH_LIBRBD_CRYPTO_LUKS_LOAD_REQUEST_H
 #define CEPH_LIBRBD_CRYPTO_LUKS_LOAD_REQUEST_H
 
+#include <string_view>
 #include "include/rbd/librbd.hpp"
 #include "librbd/ImageCtx.h"
 #include "librbd/crypto/CryptoInterface.h"
@@ -25,15 +26,17 @@ template <typename I>
 class LoadRequest {
 public:
     static LoadRequest* create(
-            I* image_ctx, encryption_format_t format, std::string&& passphrase,
-            ceph::ref_t<CryptoInterface>* result_crypto, Context* on_finish) {
-      return new LoadRequest(image_ctx, format, std::move(passphrase),
-                             result_crypto, on_finish);
+            I* image_ctx, encryption_format_t format,
+            std::string_view passphrase,
+            std::unique_ptr<CryptoInterface>* result_crypto,
+            Context* on_finish) {
+      return new LoadRequest(image_ctx, format, passphrase, result_crypto,
+                             on_finish);
     }
 
     LoadRequest(I* image_ctx, encryption_format_t format,
-                std::string&& passphrase,
-                ceph::ref_t<CryptoInterface>* result_crypto,
+                std::string_view passphrase,
+                std::unique_ptr<CryptoInterface>* result_crypto,
                 Context* on_finish);
     void send();
     void finish(int r);
@@ -42,10 +45,10 @@ public:
 private:
     I* m_image_ctx;
     encryption_format_t m_format;
-    std::string m_passphrase;
+    std::string_view m_passphrase;
     Context* m_on_finish;
     ceph::bufferlist m_bl;
-    ceph::ref_t<CryptoInterface>* m_result_crypto;
+    std::unique_ptr<CryptoInterface>* m_result_crypto;
     uint64_t m_initial_read_size;
     Header m_header;
     uint64_t m_offset;

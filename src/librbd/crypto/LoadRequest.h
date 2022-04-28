@@ -28,12 +28,17 @@ public:
     LoadRequest(I* image_ctx, std::unique_ptr<EncryptionFormat<I>> format,
                 Context* on_finish);
     void send();
+    void load();
+    void handle_load(int r);
     void finish(int r);
 
 private:
     I* m_image_ctx;
-    std::unique_ptr<EncryptionFormat<I>> m_format;
     Context* m_on_finish;
+
+    size_t m_format_idx;
+    std::vector<std::unique_ptr<EncryptionFormat<I>>> m_formats;
+    I* m_current_image_ctx;
 };
 
 } // namespace crypto

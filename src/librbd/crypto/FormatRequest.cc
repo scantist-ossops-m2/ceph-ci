@@ -40,7 +40,10 @@ void FormatRequest<I>::send() {
     return;
   }
 
-  if (m_image_ctx->crypto == nullptr) {
+  m_image_ctx->image_lock.lock_shared();
+  bool is_encryption_loaded = m_image_ctx->encryption_format.get() != nullptr;
+  m_image_ctx->image_lock.unlock_shared();
+  if (!is_encryption_loaded) {
     format();
     return;
   }
@@ -107,7 +110,7 @@ void FormatRequest<I>::handle_flush(int r) {
 template <typename I>
 void FormatRequest<I>::finish(int r) {
   if (r == 0) {
-    util::set_crypto(m_image_ctx, m_format->get_crypto());
+    util::set_crypto(m_image_ctx, std::move(m_format));
   }
   m_on_finish->complete(r);
   delete this;
