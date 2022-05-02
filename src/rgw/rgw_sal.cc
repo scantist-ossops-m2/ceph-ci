@@ -103,6 +103,10 @@ rgw::sal::Store* StoreManager::init_storage_provider(const DoutPrefixProvider* d
       delete store;
       return nullptr;
     }
+    if (rados->init_complete(dpp) < 0) {
+      delete store;
+      return nullptr;
+    }
     return store;
   }
   else if (svc.compare("d3n") == 0) {
@@ -119,6 +123,14 @@ rgw::sal::Store* StoreManager::init_storage_provider(const DoutPrefixProvider* d
                 .set_run_sync_thread(run_sync_thread)
                 .set_run_reshard_thread(run_reshard_thread)
                 .initialize(cct, dpp) < 0) {
+      delete store;
+      return nullptr;
+    }
+    if (store->initialize(cct, dpp) < 0) {
+      delete store;
+      return nullptr;
+    }
+    if (rados->init_complete(dpp) < 0) {
       delete store;
       return nullptr;
     }

@@ -1377,11 +1377,7 @@ int RGWRados::initialize(const DoutPrefixProvider *dpp)
 
   host_id = svc.zone_utils->gen_host_id();
 
-  ret = init_rados();
-  if (ret < 0)
-    return ret;
-
-  return init_complete(dpp);
+  return init_rados();
 }
 
 /**
