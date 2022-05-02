@@ -1379,7 +1379,7 @@ int RGWRados::init_ctl(const DoutPrefixProvider *dpp)
  * Initialize the RADOS instance and prepare to do other ops
  * Returns 0 on success, -ERR# on failure.
  */
-int RGWRados::initialize(const DoutPrefixProvider *dpp)
+int RGWRados::init_begin(const DoutPrefixProvider *dpp)
 {
   int ret;
 
@@ -1401,11 +1401,7 @@ int RGWRados::initialize(const DoutPrefixProvider *dpp)
 
   host_id = svc.zone_utils->gen_host_id();
 
-  ret = init_rados();
-  if (ret < 0)
-    return ret;
-
-  return init_complete(dpp);
+  return init_rados();
 }
 
 /**
