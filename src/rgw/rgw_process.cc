@@ -283,6 +283,8 @@ int process_request(rgw::sal::Store* const store,
 
   RGWEnv& rgw_env = client_io->get_env();
 
+  bool trace_enabled = tracing::rgw::tracer.is_enabled();
+
   struct req_state rstate(g_ceph_context, &rgw_env, req->id);
   struct req_state *s = &rstate;
 
@@ -328,7 +330,6 @@ int process_request(rgw::sal::Store* const store,
     goto done;
   }
   {
-    s->trace_enabled = tracing::rgw::tracer.is_enabled();
     std::string script;
     auto rc = rgw::lua::read_script(s, store, s->bucket_tenant, s->yield, rgw::lua::context::preRequest, script);
     if (rc == -ENOENT) {
@@ -386,7 +387,7 @@ int process_request(rgw::sal::Store* const store,
 
 
     const auto trace_name = std::string(op->name()) + " " + s->trans_id;
-    s->trace = tracing::rgw::tracer.start_trace(trace_name, s->trace_enabled);
+    s->trace = tracing::rgw::tracer.start_trace(trace_name, trace_enabled);
     s->trace->SetAttribute(tracing::rgw::OP, op->name());
     s->trace->SetAttribute(tracing::rgw::TYPE, tracing::rgw::REQUEST);
 
