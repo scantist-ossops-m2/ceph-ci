@@ -1,3 +1,4 @@
+shaman trigger i02
 # Ceph - a scalable distributed storage system
 
 Please see http://ceph.com/ for current info.
