@@ -304,6 +304,7 @@ public:
 				   &Message::dispatch_q>> Queue;
 
   ceph::mono_time queue_start;
+  bool is_prepared = false;
 protected:
   CompletionHook* completion_hook = nullptr; // owned by Messenger
 

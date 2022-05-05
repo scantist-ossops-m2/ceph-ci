@@ -217,8 +217,9 @@ void ProtocolV1::send_message(Message *m) {
   // TODO: Currently not all messages supports reencode like MOSDMap, so here
   // only let fast dispatch support messages prepare message
   bool can_fast_prepare = messenger->ms_can_fast_dispatch(m);
-  if (can_fast_prepare) {
+  if (can_fast_prepare && f) {
     prepare_send_message(f, m, bl);
+    m->is_prepared = true;
   }
 
   std::lock_guard<std::mutex> l(connection->write_lock);
@@ -337,7 +338,7 @@ void ProtocolV1::write_event() {
       connection->write_lock.unlock();
 
       // send_message or requeue messages may not encode message
-      if (!data.length()) {
+      if (!data.length() || !m->is_prepared) {
         prepare_send_message(connection->get_features(), m, data);
       }
 
