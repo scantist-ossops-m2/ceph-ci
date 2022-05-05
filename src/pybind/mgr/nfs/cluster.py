@@ -135,7 +135,7 @@ class NFSCluster:
             log.exception(f"NFS Cluster {cluster_id} could not be created")
             raise ErrorResponse.wrap(e)
 
-    def delete_nfs_cluster(self, cluster_id: str) -> Tuple[int, str, str]:
+    def delete_nfs_cluster(self, cluster_id: str) -> None:
         try:
             cluster_list = available_clusters(self.mgr)
             if cluster_id in cluster_list:
@@ -145,10 +145,12 @@ class NFSCluster:
                 completion = self.mgr.remove_service('nfs.' + cluster_id)
                 orchestrator.raise_if_exception(completion)
                 self.delete_config_obj(cluster_id)
-                return 0, "", ""
-            return 0, "", "Cluster does not exist"
+                return
+            raise ErrorResponse("Cluster does not exist",
+                                return_value=-errno.ENOENT)
         except Exception as e:
-            return exception_handler(e, f"Failed to delete NFS Cluster {cluster_id}")
+            log.exception(f"Failed to delete NFS Cluster {cluster_id}")
+            raise ErrorResponse.wrap(e)
 
     def list_nfs_cluster(self) -> List[str]:
         try:
