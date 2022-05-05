@@ -1,3 +1,4 @@
+import errno
 import ipaddress
 import logging
 import re
@@ -105,8 +106,7 @@ class NFSCluster:
             virtual_ip: Optional[str],
             ingress: Optional[bool] = None,
             port: Optional[int] = None,
-    ) -> Tuple[int, str, str]:
-
+    ) -> None:
         try:
             if virtual_ip:
                 # validate virtual_ip value: ip_address throws a ValueError
@@ -128,10 +128,12 @@ class NFSCluster:
 
             if cluster_id not in available_clusters(self.mgr):
                 self._call_orch_apply_nfs(cluster_id, placement, virtual_ip, port)
-                return 0, "", ""
-            return 0, "", f"{cluster_id} cluster already exists"
+                return
+            raise ErrorResponse(f"{cluster_id} cluster already exists",
+                                return_value=-errno.EEXIST)
         except Exception as e:
-            return exception_handler(e, f"NFS Cluster {cluster_id} could not be created")
+            log.exception(f"NFS Cluster {cluster_id} could not be created")
+            raise ErrorResponse.wrap(e)
 
     def delete_nfs_cluster(self, cluster_id: str) -> Tuple[int, str, str]:
         try:
