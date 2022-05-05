@@ -378,8 +378,8 @@ class ExportMgr:
             raise ErrorResponse(f"Cluster {cluster_id!r} does not exist",
                                 return_value=-errno.ENOENT)
 
-    @export_cluster_checker
-    def create_export(self, addr: Optional[List[str]] = None, **kwargs: Any) -> Tuple[int, str, str]:
+    def create_export(self, addr: Optional[List[str]] = None, **kwargs: Any) -> Dict[str, Any]:
+        self._validate_cluster_id(kwargs['cluster_id'])
         # if addr(s) are provided, construct client list and adjust outer block
         clients = []
         if addr:
@@ -409,7 +409,8 @@ class ExportMgr:
                 return self.create_rgw_export(**kwargs)
             raise NotImplementedError()
         except Exception as e:
-            return exception_handler(e, f"Failed to create {kwargs['pseudo_path']} export for {kwargs['cluster_id']}")
+            log.exception(f"Failed to create {kwargs['pseudo_path']} export for {kwargs['cluster_id']}")
+            raise ErrorResponse.wrap(e)
 
     @export_cluster_checker
     def delete_export(self,
@@ -645,7 +646,7 @@ class ExportMgr:
                              path: str,
                              squash: str,
                              access_type: str,
-                             clients: list = []) -> Tuple[int, str, str]:
+                             clients: list = []) -> Dict[str, Any]:
         pseudo_path = normalize_path(pseudo_path)
 
         if not self._fetch_export(cluster_id, pseudo_path):
@@ -674,8 +675,8 @@ class ExportMgr:
                 "cluster": cluster_id,
                 "mode": export.access_type,
             }
-            return (0, json.dumps(result, indent=4), '')
-        return 0, "", "Export already exists"
+            return result
+        raise ErrorResponse("Export already exists", return_value=-errno.EEXIST)
 
     def create_rgw_export(self,
                           cluster_id: str,
@@ -685,11 +686,11 @@ class ExportMgr:
                           squash: str,
                           bucket: Optional[str] = None,
                           user_id: Optional[str] = None,
-                          clients: list = []) -> Tuple[int, str, str]:
+                          clients: list = []) -> Dict[str, Any]:
         pseudo_path = normalize_path(pseudo_path)
 
         if not bucket and not user_id:
-            return -errno.EINVAL, "", "Must specify either bucket or user_id"
+            raise ErrorResponse("Must specify either bucket or user_id")
 
         if not self._fetch_export(cluster_id, pseudo_path):
             export = self.create_export_from_dict(
@@ -717,8 +718,8 @@ class ExportMgr:
                 "mode": export.access_type,
                 "squash": export.squash,
             }
-            return (0, json.dumps(result, indent=4), '')
-        return 0, "", "Export already exists"
+            return result
+        raise ErrorResponse("Export already exists", return_value=-errno.EEXIST)
 
     def _apply_export(
             self,

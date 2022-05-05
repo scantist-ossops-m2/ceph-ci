@@ -814,7 +814,7 @@ NFS_CORE_PARAM {
             squash='root',
             addr=["192.168.0.0/16"]
         )
-        assert r[0] == 0
+        assert r["bind"] == "/mybucket"
 
         ls = conf.list_exports(cluster_id=self.cluster_id)
         assert len(ls) == 3
@@ -857,7 +857,7 @@ NFS_CORE_PARAM {
             squash='root',
             addr=["192.168.0.0/16"]
         )
-        assert r[0] == 0
+        assert r["bind"] == "/mybucket"
 
         ls = conf.list_exports(cluster_id=self.cluster_id)
         assert len(ls) == 3
@@ -899,7 +899,7 @@ NFS_CORE_PARAM {
             squash='root',
             addr=["192.168.0.0/16"]
         )
-        assert r[0] == 0
+        assert r["bind"] == "/mybucket"
 
         ls = conf.list_exports(cluster_id=self.cluster_id)
         assert len(ls) == 3
@@ -942,7 +942,7 @@ NFS_CORE_PARAM {
             squash='root',
             addr=["192.168.1.0/8"],
         )
-        assert r[0] == 0
+        assert r["bind"] == "/cephfs2"
 
         ls = conf.list_exports(cluster_id=self.cluster_id)
         assert len(ls) == 3
