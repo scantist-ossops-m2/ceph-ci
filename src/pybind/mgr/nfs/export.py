@@ -31,6 +31,7 @@ from .exception import NFSException, NFSInvalidOperation, FSNotFound
 from .utils import (
     CONF_PREFIX,
     EXPORT_PREFIX,
+    ManualRestartRequired,
     USER_CONF_PREFIX,
     export_obj_name,
     conf_obj_name,
@@ -184,6 +185,27 @@ def nfs_rados_configs(rados: 'Rados', nfs_pool: str = POOL_NAME) -> Set[str]:
             if obj.key.startswith(prefixes):
                 ns.add(obj.nspace)
     return ns
+
+
+class AppliedExportResults:
+    """Gathers the results of multiple changed exports.
+    Returned by apply_export.
+    """
+
+    def __init__(self) -> None:
+        self.changes: List[Dict[str, str]] = []
+        self.has_error = False
+
+    def append(self, value: Dict[str, str]) -> None:
+        if value.get("state", "") == "error":
+            self.has_error = True
+        self.changes.append(value)
+
+    def to_simplified(self) -> List[Dict[str, str]]:
+        return self.changes
+
+    def mgr_return_value(self) -> int:
+        return -errno.EIO if self.has_error else 0
 
 
 class ExportMgr:
@@ -496,46 +518,44 @@ class ExportMgr:
         export = self._fetch_export(cluster_id, pseudo_path)
         return export.to_dict() if export else None
 
-    def apply_export(self, cluster_id: str, export_config: str) -> Tuple[int, str, str]:
+    def apply_export(self, cluster_id: str, export_config: str) -> AppliedExportResults:
         try:
-            if not export_config:
-                raise NFSInvalidOperation("Empty Config!!")
-            try:
-                j = json.loads(export_config)
-            except ValueError:
-                # okay, not JSON.  is it an EXPORT block?
+            aeresults = AppliedExportResults()
+            for export in self._read_export_config(cluster_id, export_config):
                 try:
-                    blocks = GaneshaConfParser(export_config).parse()
-                    exports = [
-                        Export.from_export_block(block, cluster_id)
-                        for block in blocks
-                    ]
-                    j = [export.to_dict() for export in exports]
+                    chg = self._apply_export(cluster_id, export)
                 except Exception as ex:
-                    raise NFSInvalidOperation(f"Input must be JSON or a ganesha EXPORT block: {ex}")
-
-            # check export type
-            if isinstance(j, list):
-                ret, out, err = (0, '', '')
-                for export in j:
-                    try:
-                        r, o, e = self._apply_export(cluster_id, export)
-                    except Exception as ex:
-                        r, o, e = exception_handler(ex, f'Failed to apply export: {ex}')
-                        if r:
-                            ret = r
-                    if o:
-                        out += o + '\n'
-                    if e:
-                        err += e + '\n'
-                return ret, out, err
-            else:
-                r, o, e = self._apply_export(cluster_id, j)
-                return r, o, e
+                    msg = f'Failed to apply export: {ex}'
+                    log.exception(msg)
+                    chg = {"state": "error", "msg": msg}
+                aeresults.append(chg)
+            return aeresults
         except NotImplementedError:
-            return 0, " Manual Restart of NFS PODS required for successful update of exports", ""
+            raise ManualRestartRequired("Changes applied")
         except Exception as e:
-            return exception_handler(e, f'Failed to update export: {e}')
+            log.exception(f'Failed to update export: {e}')
+            raise ErrorResponse.wrap(e)
+
+    def _read_export_config(self, cluster_id: str, export_config: str) -> List[Dict]:
+        if not export_config:
+            raise NFSInvalidOperation("Empty Config!!")
+        try:
+            j = json.loads(export_config)
+        except ValueError:
+            # okay, not JSON.  is it an EXPORT block?
+            try:
+                blocks = GaneshaConfParser(export_config).parse()
+                exports = [
+                    Export.from_export_block(block, cluster_id)
+                    for block in blocks
+                ]
+                j = [export.to_dict() for export in exports]
+            except Exception as ex:
+                raise NFSInvalidOperation(f"Input must be JSON or a ganesha EXPORT block: {ex}")
+        # check export type - always return a list
+        if isinstance(j, list):
+            return j  # j is already a list object
+        return [j]  # return a single object list, with j as the only item
 
     def _update_user_id(
             self,
@@ -728,7 +748,7 @@ class ExportMgr:
             self,
             cluster_id: str,
             new_export_dict: Dict,
-    ) -> Tuple[int, str, str]:
+    ) -> Dict[str, str]:
         for k in ['path', 'pseudo']:
             if k not in new_export_dict:
                 raise NFSInvalidOperation(f'Export missing required field {k}')
@@ -764,7 +784,7 @@ class ExportMgr:
         if not old_export:
             self._create_export_user(new_export)
             self._save_export(cluster_id, new_export)
-            return 0, f'Added export {new_export.pseudo}', ''
+            return {"pseudo": new_export.pseudo, "state": "added"}
 
         need_nfs_service_restart = True
         if old_export.fsal.name != new_export.fsal.name:
@@ -827,7 +847,7 @@ class ExportMgr:
 
         self._update_export(cluster_id, new_export, need_nfs_service_restart)
 
-        return 0, f"Updated export {new_export.pseudo}", ""
+        return {"pseudo": new_export.pseudo, "state": "updated"}
 
     def _rados(self, cluster_id: str) -> NFSRados:
         """Return a new NFSRados object for the given cluster id."""
