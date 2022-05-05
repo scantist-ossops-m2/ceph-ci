@@ -767,6 +767,8 @@ void PG::send_cluster_message(
   if (share_map_update) {
     osd->maybe_share_map(con.get(), get_osdmap());
   }
+  dout(10) << "features: " << con->get_features() << dendl;
+
   osd->send_message_osd_cluster(m, con.get());
 }
 
