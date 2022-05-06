@@ -13,7 +13,7 @@ import orchestrator
 
 from .exception import NFSInvalidOperation, ClusterNotFound
 from .utils import (available_clusters, restart_nfs_service, conf_obj_name,
-                    user_conf_obj_name)
+                    user_conf_obj_name, ManualRestartRequired)
 from .export import NFSRados, exception_handler
 
 if TYPE_CHECKING:
@@ -233,23 +233,24 @@ class NFSCluster:
         except Exception as e:
             return exception_handler(e, f"Fetching NFS-Ganesha Config failed for {cluster_id}")
 
-    def set_nfs_cluster_config(self, cluster_id: str, nfs_config: str) -> Tuple[int, str, str]:
+    def set_nfs_cluster_config(self, cluster_id: str, nfs_config: str) -> None:
         try:
             if cluster_id in available_clusters(self.mgr):
                 rados_obj = self._rados(cluster_id)
                 if rados_obj.check_user_config():
-                    return 0, "", "NFS-Ganesha User Config already exists"
+                    raise ErrorResponse("NFS-Ganesha User Config already exists",
+                                        return_value=-errno.EEXIST)
                 rados_obj.write_obj(nfs_config, user_conf_obj_name(cluster_id),
                                     conf_obj_name(cluster_id))
                 log.debug("Successfully saved %s's user config: \n %s", cluster_id, nfs_config)
                 restart_nfs_service(self.mgr, cluster_id)
-                return 0, "NFS-Ganesha Config Set Successfully", ""
+                return
             raise ClusterNotFound()
         except NotImplementedError:
-            return 0, "NFS-Ganesha Config Added Successfully "\
-                "(Manual Restart of NFS PODS required)", ""
+            raise ManualRestartRequired("NFS-Ganesha Config Added Successfully")
         except Exception as e:
-            return exception_handler(e, f"Setting NFS-Ganesha Config failed for {cluster_id}")
+            log.exception(f"Setting NFS-Ganesha Config failed for {cluster_id}")
+            raise ErrorResponse.wrap(e)
 
     def reset_nfs_cluster_config(self, cluster_id: str) -> Tuple[int, str, str]:
         try:
