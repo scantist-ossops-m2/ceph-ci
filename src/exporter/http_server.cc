@@ -145,14 +145,10 @@ std::string dns_lookup(std::string hostname) {
   return ip_address;
 }
 
-void http_server_thread_entrypoint(std::string cert_path, std::string key_path,
-                                   std::string tls_options) {
+void http_server_thread_entrypoint(std::string exporter_addrs, std::string exporter_port) {
   try {
-    std::string hostname = ceph_get_short_hostname();
-
-    std::string ip_address = dns_lookup(hostname);
-    auto const address = net::ip::make_address(ip_address);
-    unsigned short port = 9926;
+    auto const address = net::ip::make_address(exporter_addrs);
+    unsigned short port = !exporter_port.empty() ? std::stoul(exporter_port) : 9926;
 
     net::io_context ioc{1};
 

@@ -14,7 +14,7 @@ using json_object = boost::json::object;
 using json_value = boost::json::value;
 using json_array = boost::json::array;
 
-const char *DaemonMetricCollector::SOCKETDIR = "/var/run/ceph/";
+// const char *DaemonMetricCollector::SOCKETDIR = "/var/run/ceph/";
 
 void DaemonMetricCollector::request_loop(boost::asio::steady_timer &timer) {
   timer.async_wait([&](const boost::system::error_code &e) {
@@ -24,6 +24,10 @@ void DaemonMetricCollector::request_loop(boost::asio::steady_timer &timer) {
     timer.expires_from_now(std::chrono::seconds(stats_period));
     request_loop(timer);
   });
+}
+
+void DaemonMetricCollector::set_sock_path(std::string sock_path) {
+  SOCKETDIR = sock_path;
 }
 
 void DaemonMetricCollector::main() {
