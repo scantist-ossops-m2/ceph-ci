@@ -49,6 +49,7 @@ extern "C" {
 #define LIBRBD_SUPPORTS_WRITESAME 1
 #define LIBRBD_SUPPORTS_WRITE_ZEROES 1
 #define LIBRBD_SUPPORTS_ENCRYPTION 1
+#define LIBRBD_SUPPORTS_ENCRYPTION_LOAD2 1
 
 #if __GNUC__ >= 4
   #define CEPH_RBD_API          __attribute__ ((visibility ("default")))
@@ -385,6 +386,12 @@ typedef enum {
 } rbd_encryption_algorithm_t;
 
 typedef void *rbd_encryption_options_t;
+
+typedef struct {
+    rbd_encryption_format_t format;
+    rbd_encryption_options_t opts;
+    size_t opts_size;
+} rbd_encryption_spec_t;
 
 typedef struct {
     rbd_encryption_algorithm_t alg;
@@ -831,6 +838,9 @@ CEPH_RBD_API int rbd_encryption_load(rbd_image_t image,
                                      rbd_encryption_format_t format,
                                      rbd_encryption_options_t opts,
                                      size_t opts_size);
+CEPH_RBD_API int rbd_encryption_load2(rbd_image_t image,
+                                      rbd_encryption_spec_t specs[],
+                                      size_t spec_count);
 
 /* snapshots */
 CEPH_RBD_API int rbd_snap_list(rbd_image_t image, rbd_snap_info_t *snaps,
