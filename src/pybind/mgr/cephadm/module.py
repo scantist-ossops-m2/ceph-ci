@@ -1939,6 +1939,13 @@ Then run the following:
                 stdin=pending_key.encode()
             )
         if rc:
+            # commmit the pending-key right now to decouple from `note_used_pending_key`
+            # for mgrs
+            rc, out, err = self.mon_command({
+                'prefix': 'auth commit-pending',
+                'entity': daemon_spec.entity_name(),
+                'format': 'json',
+            })
             self._daemon_action(daemon_spec, 'restart')
 
         return f'Rotated key for {daemon_spec.name()}'
