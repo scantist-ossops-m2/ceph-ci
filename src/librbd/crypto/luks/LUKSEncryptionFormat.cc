@@ -45,10 +45,11 @@ void LUKSEncryptionFormat<I>::format(I* image_ctx, Context* on_finish) {
 }
 
 template <typename I>
-void LUKSEncryptionFormat<I>::load(I* image_ctx, Context* on_finish) {
+void LUKSEncryptionFormat<I>::load(
+        I* image_ctx, std::string* detected_format_name, Context* on_finish) {
   auto req = luks::LoadRequest<I>::create(
           image_ctx, RBD_ENCRYPTION_FORMAT_LUKS, m_passphrase, &m_crypto,
-          on_finish);
+          detected_format_name, on_finish);
   req->send();
 }
 

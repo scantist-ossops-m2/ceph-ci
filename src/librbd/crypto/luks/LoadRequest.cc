@@ -27,11 +27,13 @@ template <typename I>
 LoadRequest<I>::LoadRequest(
         I* image_ctx, encryption_format_t format, std::string_view passphrase,
         std::unique_ptr<CryptoInterface>* result_crypto,
+        std::string* detected_format_name,
         Context* on_finish) : m_image_ctx(image_ctx),
                               m_format(format),
                               m_passphrase(passphrase),
                               m_on_finish(on_finish),
                               m_result_crypto(result_crypto),
+                              m_detected_format_name(detected_format_name),
                               m_initial_read_size(DEFAULT_INITIAL_READ_SIZE),
                               m_header(image_ctx->cct), m_offset(0) {
 }
@@ -85,6 +87,11 @@ bool LoadRequest<I>::handle_read(int r) {
   if (m_last_read_bl.length() > 0) {
     m_last_read_bl.claim_append(m_bl);
     m_bl = std::move(m_last_read_bl);
+  }
+
+  if (m_offset == 0 &&
+      (0 == Magic::is_luks(m_bl) || 0 == Magic::is_rbd_clone(m_bl))) {
+    *m_detected_format_name = "LUKS";
   }
 
   if (m_image_ctx->parent != nullptr && m_bl.length() == m_offset &&
@@ -158,6 +165,8 @@ void LoadRequest<I>::handle_read_header(int r) {
     finish(r);
     return;
   }
+
+  *m_detected_format_name = m_header.get_format_name();
 
   auto cipher = m_header.get_cipher();
   if (strcmp(cipher, "aes") != 0) {
