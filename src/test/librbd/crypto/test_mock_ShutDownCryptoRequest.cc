@@ -17,6 +17,8 @@ struct MockTestImageCtx : public MockImageCtx {
   MockTestImageCtx(librbd::ImageCtx &image_ctx)
     : librbd::MockImageCtx(image_ctx) {
   }
+
+  MockTestImageCtx *parent = nullptr;
 };
 
 } // anonymous namespace
@@ -132,6 +134,30 @@ TEST_F(TestMockShutDownCryptoRequest, Success) {
   expect_shutdown_crypto_image_dispatch();
   shutdown_object_dispatch_context->complete(0);
   ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  shutdown_image_dispatch_context->complete(0);
+  ASSERT_EQ(0, finished_cond.wait());
+  ASSERT_EQ(nullptr, mock_image_ctx->encryption_format.get());
+}
+
+TEST_F(TestMockShutDownCryptoRequest, ShutdownParent) {
+  mock_image_ctx->parent = mock_image_ctx;
+  expect_crypto_object_layer_exists_check(true);
+  expect_shutdown_crypto_object_dispatch();
+  mock_shutdown_crypto_request->send();
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  expect_crypto_image_layer_exists_check(true);
+  expect_shutdown_crypto_image_dispatch();
+  shutdown_object_dispatch_context->complete(0);
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  expect_crypto_object_layer_exists_check(true);
+  expect_shutdown_crypto_object_dispatch();
+  shutdown_image_dispatch_context->complete(0);
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  expect_crypto_image_layer_exists_check(true);
+  expect_shutdown_crypto_image_dispatch();
+  shutdown_object_dispatch_context->complete(0);
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  mock_image_ctx->parent = nullptr;
   shutdown_image_dispatch_context->complete(0);
   ASSERT_EQ(0, finished_cond.wait());
   ASSERT_EQ(nullptr, mock_image_ctx->encryption_format.get());
