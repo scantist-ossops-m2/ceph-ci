@@ -36,11 +36,6 @@ be lower than the raw image size. See the `Supported Formats`_ section for more
 details.
 
 .. note::
-   Currently only flat images (i.e. not cloned) can be formatted.
-   Clones of an encrypted image are inherently encrypted using the same format
-   and secret.
-
-.. note::
    Any data written to the image prior to its format may become unreadable,
    though it may still occupy storage resources.
 
