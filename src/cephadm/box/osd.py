@@ -27,10 +27,8 @@ def create_loopback_devices(osds: int) -> Dict:
         img_name = f'osd{i}'
         loop_dev = create_loopback_device(img_name)
         osd_devs[i] = dict(img_name=img_name, device=loop_dev)
-    metadata_path = os.path.join(Config.get('loop_img_dir'), 'devs.json')
-    print("md path {metadata_path}")
-    with open(metadata_path, 'w') as metadata_file:
-        metadata_file.write(json.dumps(osd_devs))
+    with open(DEVICES_FILE, 'w') as dev_file:
+        dev_file.write(json.dumps(osd_devs))
     return osd_devs
 
 
@@ -55,15 +53,20 @@ def create_scsi_devices(count, size_gb=6):
     size_mb = size_gb * 1024
     run_shell_command(
         f'sudo modprobe scsi_debug add_host={count} dev_size_mb={size_mb}')
-    devs = run_shell_command("lsscsi | grep scsi_debug | awk '{print $6}'")\
+    devices = run_shell_command("lsscsi | grep scsi_debug | awk '{print $6}'")\
         .splitlines()
+    osd_devs = dict()
+    for i in range(count):
+        osd_devs[i] = dict(device=devices[i])
     run_shell_command(f"sudo chmod 777 {' '.join(devs)}")
     with open(DEVICES_FILE, 'w') as dev_file:
-        dev_file.write(json.dumps(devs))
+        dev_file.write(json.dumps(osd_devs))
     return devs
 
 
-def load_scsi_devices():
+def load_osd_devices():
+    if not os.path.exists(DEVICES_FILE):
+        return dict()
     with open(DEVICES_FILE) as dev_file:
         devs = json.loads(dev_file.read())
     return devs
@@ -75,25 +78,16 @@ def deploy_osd(data: str, hostname: str) -> bool:
     return 'Created osd(s)' in out
 
 
-def load_loop_devs():
-    metadata_path = os.path.join(Config.get('loop_img_dir'), 'devs.json')
-    if not os.path.exists(metadata_path):
-        return dict()
-    with open(metadata_path) as metadata_file:
-        loop_devs = json.loads(metadata_file.read())
-    return loop_devs
-
-
 def cleanup() -> None:
     run_shell_command('sudo rmmod scsi_debug', expect_error=True)
-    return
     loop_img_dir = Config.get('loop_img_dir')
-    loop_devs = load_loop_devs()
-    for osd in loop_devs.values():
+    osd_devs = load_osd_devices()
+    for osd in osd_devs.values():
         device = osd['device']
-        loop_img = os.path.join(loop_img_dir, osd['img_name'])
-        run_shell_command(f'sudo losetup -d {device}')
-        os.remove(loop_img)
+        if 'loop' in device:
+            loop_img = os.path.join(loop_img_dir, osd['img_name'])
+            run_shell_command(f'sudo losetup -d {device}')
+            os.remove(loop_img)
     run_shell_command(f'rm -rf {loop_img_dir}')
 
 
@@ -101,16 +95,16 @@ def deploy_osds(count):
     if inside_container():
         print('xd')
         return
-    devs = load_scsi_devices()
+    osd_devs = load_osd_devices()
     hosts = get_orch_hosts()
     host_index = 0
     v = '-v' if Config.get('verbose') else ''
-    for dev in devs:
+    for osd in osd_devs.values():
         deployed = False
         while not deployed:
             hostname = hosts[host_index]['hostname']
             deployed = run_dc_shell_command(
-                f'/cephadm/box/box.py {v} osd deploy --data {dev} --hostname {hostname}',
+                f'/cephadm/box/box.py {v} osd deploy --data {osd["device"]} --hostname {hostname}',
                 1,
                 'seed'
             )
@@ -134,6 +128,10 @@ class Osd(Target):
         self.parser.add_argument('--hostname', type=str, help='host to deploy osd')
         self.parser.add_argument('--osds', type=int, default=0, help='number of osds')
         self.parser.add_argument(
+            '--osd-type', choices=['loop', 'scsi_debug'], default='loop',
+            help='the type of device to use'
+        )
+        self.parser.add_argument(
             '--vg', type=str, help='Deploy with all lv from virtual group'
         )
 
@@ -152,5 +150,9 @@ class Osd(Target):
     @ensure_outside_container
     def create_loop(self):
         osds = Config.get('osds')
-        create_scsi_devices(int(osds))
+        osd_type = Config.get('osd_type')
+        if osd_type == 'loop':
+            create_loopback_devices(int(osds))
+        elif osd_type == 'scsi_debug':
+            create_scsi_devices(int(osds))
         print('Successfully added logical volumes in loopback devices')

@@ -104,6 +104,10 @@ class Cluster(Target):
             'action', choices=Cluster.actions, help='Action to perform on the box'
         )
         self.parser.add_argument('--osds', type=int, default=3, help='Number of osds')
+        self.parser.add_argument(
+            '--osd-type', choices=['loop', 'scsi_debug'], default='loop',
+            help='the type of device to use'
+        )
 
         self.parser.add_argument('--hosts', type=int, default=1, help='Number of hosts')
         self.parser.add_argument('--skip-deploy-osds', action='store_true', help='skip deploy osd')
@@ -229,10 +233,12 @@ class Cluster(Target):
             get_box_image()
 
         if not Config.get('skip_create_loop'):
-            print('Adding logical volumes (block devices) in loopback device...')
-            osd.create_scsi_devices(osds)
-            print(f'Added {osds} logical volumes in a loopback device')
-
+            print("Creating OSD devices...")
+            osd_type = Config.get('osd_type')
+            if osd_type == 'loop':
+                osd.create_loopback_devices(osds)
+            elif osd_type == 'scsi_debug':
+                osd.create_scsi_devices(osds)
             
 
         print('Starting containers')

@@ -12,9 +12,9 @@ podman run --rm -i \
   -v /sys/fs/cgroup:/sys/fs/cgroup \
   -v /dev/fuse:/dev/fuse \
   -v /dev/disk:/dev/disk \
-  --device /dev/sdb \
-  --device /dev/sdc \
-  --device /dev/sdd \
+  --device /dev/loop0 \
+  --device /dev/loop1 \
+  --device /dev/loop2 \
   --security-opt unmask=/sys/dev/block \
   --network box \
   -p 2222:22 \
