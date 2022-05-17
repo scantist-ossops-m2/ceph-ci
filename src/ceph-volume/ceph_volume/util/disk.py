@@ -327,15 +327,15 @@ def is_device(dev):
     if not os.path.exists(dev):
         return False
     # use lsblk first, fall back to using stat
+    lsblk_types = ['disk', 'mpath']
+    if os.environ.get("CEPH_VOLUME_USE_LOOP_DEVICES", False):
+        lsblk_types.append('loop')
     TYPE = lsblk(dev).get('TYPE')
     if TYPE:
-        return TYPE in ['disk', 'mpath']
+        return TYPE in lsblk_types
 
     # fallback to stat
     return _stat_is_device(os.lstat(dev).st_mode)
-    if stat.S_ISBLK(os.lstat(dev)):
-        return True
-    return False
 
 
 def is_partition(dev):
