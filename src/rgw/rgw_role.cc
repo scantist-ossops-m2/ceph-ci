@@ -144,6 +144,16 @@ void RGWRole::decode_json(JSONObj *obj)
   JSONDecoder::decode_json("assume_role_policy_document", trust_policy, obj);
 }
 
+bool RGWRole::validate_max_session_duration(const DoutPrefixProvider* dpp)
+{
+  if (max_session_duration < SESSION_DURATION_MIN ||
+          max_session_duration > SESSION_DURATION_MAX) {
+    ldpp_dout(dpp, 0) << "ERROR: Invalid session duration, should be between 3600 and 43200 seconds " << dendl;
+    return false;
+  }
+  return true;
+}
+
 bool RGWRole::validate_input(const DoutPrefixProvider* dpp)
 {
   if (name.length() > MAX_ROLE_NAME_LEN) {
@@ -168,11 +178,10 @@ bool RGWRole::validate_input(const DoutPrefixProvider* dpp)
     return false;
   }
 
-  if (max_session_duration < SESSION_DURATION_MIN ||
-          max_session_duration > SESSION_DURATION_MAX) {
-    ldpp_dout(dpp, 0) << "ERROR: Invalid session duration, should be between 3600 and 43200 seconds " << dendl;
+  if (!validate_max_session_duration(dpp)) {
     return false;
   }
+
   return true;
 }
 
@@ -214,6 +223,15 @@ void RGWRole::erase_tags(const vector<string>& tagKeys)
 {
   for (auto& it : tagKeys) {
     this->tags.erase(it);
+  }
+}
+
+void RGWRole::update_max_session_duration(const std::string& max_session_duration_str)
+{
+  if (max_session_duration_str.empty()) {
+    this->max_session_duration = RGWRole::SESSION_DURATION_MIN;
+  } else {
+    this->max_session_duration = std::stoull(max_session_duration_str);
   }
 }
 
