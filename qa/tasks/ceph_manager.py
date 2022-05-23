@@ -1534,10 +1534,11 @@ class CephManager:
         self.rook = rook
         self.cephadm = cephadm
         self.testdir = teuthology.get_testdir(self.ctx)
-        self.run_cluster_cmd_prefix = [
-            'sudo', 'adjust-ulimits', 'ceph-coverage',
-            f'{self.testdir}/archive/coverage', 'timeout', '120', 'ceph',
-            '--cluster', self.cluster]
+        # prefix args for ceph cmds to be executed
+        pre = ['sudo', 'adjust-ulimits', 'ceph-coverage',
+               f'{self.testdir}/archive/coverage', 'timeout', '120']
+        self.ceph_cmd = pre + ['ceph', '--cluster', self.cluster]
+        self.rados_cmd = pre + ['rados', '--cluster', self.cluster]
         self.run_ceph_w_prefix = ['sudo', 'daemon-helper', 'kill', 'ceph',
                                   '--cluster', self.cluster]
 
@@ -1584,7 +1585,7 @@ class CephManager:
                            stdout=StringIO(),
                            check_status=kwargs.get('check_status', True))
 
-        kwargs['args'] = self.run_cluster_cmd_prefix + kwargs['args']
+        kwargs['args'] = self.ceph_cmd + kwargs['args']
         return self.controller.run(**kwargs)
 
     def raw_cluster_cmd(self, *args, **kwargs) -> str:
@@ -1719,14 +1720,7 @@ class CephManager:
         if remote is None:
             remote = self.controller
 
-        pre = [
-            'adjust-ulimits',
-            'ceph-coverage',
-           f'{self.testdir}/archive/coverage',
-            'rados',
-            '--cluster',
-            self.cluster,
-            ]
+        pre = self.rados_cmd
         if pool is not None:
             pre += ['--pool', pool]
         if namespace is not None:
