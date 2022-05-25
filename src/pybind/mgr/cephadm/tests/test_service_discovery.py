@@ -1,5 +1,5 @@
 from unittest.mock import MagicMock
-from cephadm.agent import Root
+from cephadm.service_discovery import Root
 
 
 class FakeDaemonDescription:
@@ -88,11 +88,11 @@ class FakeMgr:
         return "9283"
 
 
-class TestCephadmService:
+class TestServiceDiscovery:
 
     def test_get_sd_config_prometheus(self):
         mgr = FakeMgr()
-        root = Root(mgr)
+        root = Root(mgr, '', '', '', '')
         cfg = root.get_sd_config('mgr-prometheus')
 
         # check response structure
@@ -106,7 +106,7 @@ class TestCephadmService:
 
     def test_get_sd_config_node_exporter(self):
         mgr = FakeMgr()
-        root = Root(mgr)
+        root = Root(mgr, '', '', '', '')
         cfg = root.get_sd_config('node-exporter')
 
         # check response structure
@@ -123,7 +123,7 @@ class TestCephadmService:
 
     def test_get_sd_config_alertmgr(self):
         mgr = FakeMgr()
-        root = Root(mgr)
+        root = Root(mgr, '', '', '', '')
         cfg = root.get_sd_config('alertmanager')
 
         # check response structure
@@ -137,7 +137,7 @@ class TestCephadmService:
 
     def test_get_sd_config_haproxy(self):
         mgr = FakeMgr()
-        root = Root(mgr)
+        root = Root(mgr, '', '', '', '')
         cfg = root.get_sd_config('haproxy')
 
         # check response structure
@@ -152,6 +152,6 @@ class TestCephadmService:
 
     def test_get_sd_config_invalid_service(self):
         mgr = FakeMgr()
-        root = Root(mgr)
+        root = Root(mgr, '', '', '', '')
         cfg = root.get_sd_config('invalid-service')
         assert cfg == []
