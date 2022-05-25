@@ -8,36 +8,70 @@ rule_files:
 {% if alertmanager_sd_url %}
 alerting:
   alertmanagers:
-    - scheme: http
+    - scheme: https
       http_sd_configs:
         - url: {{ alertmanager_sd_url }}
           tls_config:
+{% if secure_monitoring_stack %}
             ca_file: root_cert.pem
+{% else %}
+            insecure_skip_verify: true
+{% endif %}
 {% endif %}
 
 scrape_configs:
   - job_name: 'ceph'
+{% if secure_monitoring_stack %}
+    scheme: https
+    tls_config:
+      ca_file: mgr_prometheus_cert.pem
+{% endif %}
     honor_labels: true
     http_sd_configs:
     - url: {{ mgr_prometheus_sd_url }}
+{% if secure_monitoring_stack %}
+      basic_auth:
+        username: {{ service_discovery_username }}
+        password: {{ service_discovery_password }}
       tls_config:
         ca_file: root_cert.pem
+{% endif %}
 
 {% if node_exporter_sd_url %}
   - job_name: 'node'
+{% if secure_monitoring_stack %}
+    scheme: https
+    tls_config:
+      ca_file: root_cert.pem
+{% endif %}
     http_sd_configs:
     - url: {{ node_exporter_sd_url }}
+{% if secure_monitoring_stack %}
+      basic_auth:
+        username: {{ service_discovery_username }}
+        password: {{ service_discovery_password }}
       tls_config:
         ca_file: root_cert.pem
+{% endif %}
 {% endif %}
 
 {% if haproxy_sd_url %}
   - job_name: 'haproxy'
+{% if secure_monitoring_stack %}
+    scheme: https
+    tls_config:
+      ca_file: root_cert.pem
+{% endif %}
     http_sd_configs:
     - url: {{ haproxy_sd_url }}
+{% if secure_monitoring_stack %}
+      basic_auth:
+        username: {{ service_discovery_username }}
+        password: {{ service_discovery_password }}
       tls_config:
         ca_file: root_cert.pem
 {% endif %}
+
 
 {% if ceph_exporter_sd_url %}
   - job_name: 'ceph-exporter'

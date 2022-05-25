@@ -442,6 +442,36 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             default=False,
             desc='Log all refresh metadata. Includes daemon, device, and host info collected regularly. Only has effect if logging at debug level'
         ),
+        Option(
+            'prometheus_web_user',
+            type='str',
+            default='admin',
+            desc='Prometheus web user'
+        ),
+        Option(
+            'prometheus_web_password',
+            type='str',
+            default='$2b$12$iDhDKyxU6aosNsJExL19eO5JZ.cXMqiSfcE20X6ivleEIqzFdIimy',
+            desc='Prometheus web password'
+        ),
+        Option(
+            'alertmanager_web_user',
+            type='str',
+            default='admin',
+            desc='Alertmanager web user'
+        ),
+        Option(
+            'alertmanager_web_password',
+            type='str',
+            default='$2b$12$iDhDKyxU6aosNsJExL19eO5JZ.cXMqiSfcE20X6ivleEIqzFdIimy',
+            desc='Alertmanager web password'
+        ),
+        Option(
+            'secure_monitoring_stack',
+            type='bool',
+            default=False,
+            desc='Enable TLS security for all the monitoring stack daemons'
+        ),
     ]
 
     def __init__(self, *args: Any, **kwargs: Any):
@@ -514,6 +544,11 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             self.agent_down_multiplier = 0.0
             self.agent_starting_port = 0
             self.service_discovery_port = 0
+            self.secure_monitoring_stack = False
+            self.prometheus_web_password: Optional[str] = None
+            self.prometheus_web_user: Optional[str] = None
+            self.alertmanager_web_password: Optional[str] = None
+            self.alertmanager_web_user: Optional[str] = None
             self.apply_spec_fails: List[Tuple[str, str]] = []
             self.max_osd_draining_count = 10
             self.device_enhanced_scan = False
@@ -2523,6 +2558,10 @@ Then run the following:
             for dep_type in need.get(daemon_type, []):
                 for dd in self.cache.get_daemons_by_type(dep_type):
                     deps.append(dd.name())
+
+        if daemon_type in ['prometheus', 'node-exporter', 'alertmanager']:
+            deps.append(str(self.secure_monitoring_stack))
+
         return sorted(deps)
 
     @forall_hosts

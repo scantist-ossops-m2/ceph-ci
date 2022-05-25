@@ -24,13 +24,14 @@ logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
 cherrypy.log.access_log.propagate = False
 
 
-class CephadmHttpServer(threading.Thread):
+class CephAdmHttpServer(threading.Thread):
     def __init__(self, mgr: "CephadmOrchestrator") -> None:
         self.mgr = mgr
         self.agent = AgentEndpoint(mgr)
         self.service_discovery = ServiceDiscovery(mgr)
         self.cherrypy_shutdown_event = threading.Event()
         self._service_discovery_port = self.mgr.service_discovery_port
+        self.secure_monitoring_stack = self.mgr.secure_monitoring_stack
         super().__init__(target=self.run)
 
     def configure_cherrypy(self) -> None:
@@ -42,10 +43,15 @@ class CephadmHttpServer(threading.Thread):
     def configure(self) -> None:
         self.configure_cherrypy()
         self.agent.configure()
-        self.service_discovery.configure(self.mgr.service_discovery_port, self.mgr.get_mgr_ip())
+        self.service_discovery.configure(self.mgr.service_discovery_port,
+                                         self.mgr.get_mgr_ip(),
+                                         self.secure_monitoring_stack)
 
     def config_update(self) -> None:
         self.service_discovery_port = self.mgr.service_discovery_port
+        if self.secure_monitoring_stack != self.mgr.secure_monitoring_stack:
+            self.secure_monitoring_stack = self.mgr.secure_monitoring_stack
+            self.restart()
 
     @property
     def service_discovery_port(self) -> int:

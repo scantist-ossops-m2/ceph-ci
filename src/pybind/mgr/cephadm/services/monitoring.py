@@ -244,6 +244,7 @@ class AlertmanagerService(CephadmService):
                                      port=dd.ports[0], path='/alerts'))
 
         context = {
+            'secure_monitoring_stack': self.mgr.secure_monitoring_stack,
             'dashboard_urls': dashboard_urls,
             'default_webhook_urls': default_webhook_urls,
             'snmp_gateway_urls': snmp_gateway_urls,
@@ -259,12 +260,33 @@ class AlertmanagerService(CephadmService):
             addr = self._inventory_get_fqdn(dd.hostname)
             peers.append(build_url(host=addr, port=port).lstrip('/'))
 
-        return {
-            "files": {
-                "alertmanager.yml": yml
-            },
-            "peers": peers
-        }, sorted(deps)
+        deps.append(str(self.mgr.secure_monitoring_stack))
+        if self.mgr.secure_monitoring_stack:
+            node_ip = self.mgr.inventory.get_addr(daemon_spec.host)
+            cert, key = self.mgr.http_server.service_discovery.ssl_certs.generate_cert(
+                daemon_spec.host, node_ip)
+            context = {
+                'alertmanager_web_user': self.mgr.alertmanager_web_user,
+                'alertmanager_web_password': self.mgr.alertmanager_web_password,
+            }
+            return {
+                "files": {
+                    "alertmanager.yml": yml,
+                    'alertmanager.crt': cert,
+                    'alertmanager.key': key,
+                    'web.yml': self.mgr.template.render('services/alertmanager/web.yml.j2', context),
+                    'root_cert.pem': self.mgr.http_server.service_discovery.ssl_certs.get_root_cert()
+                },
+                'peers': peers,
+                'web_config': '/etc/alertmanager/web.yml'
+            }, sorted(deps)
+        else:
+            return {
+                "files": {
+                    "alertmanager.yml": yml
+                },
+                "peers": peers
+            }, sorted(deps)
 
     def get_active_daemon(self, daemon_descrs: List[DaemonDescription]) -> DaemonDescription:
         # TODO: if there are multiple daemons, who is the active one?
@@ -326,6 +348,14 @@ class PrometheusService(CephadmService):
     ) -> Tuple[Dict[str, Any], List[str]]:
 
         assert self.TYPE == daemon_spec.daemon_type
+        deps = []  # type: List[str]
+        port = cast(int, self.mgr.get_module_option_ex(
+            'prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
+        deps.append(str(port))
+        # add an explicit dependency on the active manager. This will force to
+        # re-deploy prometheus if the mgr has changed (due to a fail-over i.e).
+        deps.append(self.mgr.get_active_mgr().name())
+        deps.append(str(self.mgr.secure_monitoring_stack))
 
         spec = cast(PrometheusSpec, self.mgr.spec_store[daemon_spec.service_name].spec)
 
@@ -356,6 +386,9 @@ class PrometheusService(CephadmService):
 
         # generate the prometheus configuration
         context = {
+            'secure_monitoring_stack': self.mgr.secure_monitoring_stack,
+            'service_discovery_username': self.mgr.http_server.service_discovery.username,
+            'service_discovery_password': self.mgr.http_server.service_discovery.password,
             'mgr_prometheus_sd_url': mgr_prometheus_sd_url,
             'node_exporter_sd_url': node_exporter_sd_url,
             'alertmanager_sd_url': alertmanager_sd_url,
@@ -371,6 +404,39 @@ class PrometheusService(CephadmService):
             'retention_time': retention_time,
             'retention_size': retention_size
         }
+
+        web_context = {
+            'prometheus_web_user': self.mgr.prometheus_web_user,
+            'prometheus_web_password': self.mgr.prometheus_web_password,
+        }
+
+        if self.mgr.secure_monitoring_stack:
+            key = 'mgr/prometheus/root/cert'
+            cmd = {'prefix': 'config-key get', 'key': key}
+            ret, mgr_prometheus_rootca, err = self.mgr.mon_command(cmd)
+            if ret < 0 and not ret == -errno.ENOENT:
+                logger.error(f'mon command to get config-key {key} failed: {err}')
+            else:
+                node_ip = self.mgr.inventory.get_addr(daemon_spec.host)
+                cert, key = self.mgr.http_server.service_discovery.ssl_certs.generate_cert(
+                    daemon_spec.host, node_ip)
+                r = {
+                    'files': {
+                        'prometheus.yml': self.mgr.template.render('services/prometheus/prometheus.yml.j2', context),
+                        'root_cert.pem': self.mgr.http_server.service_discovery.ssl_certs.get_root_cert(),
+                        'mgr_prometheus_cert.pem': mgr_prometheus_rootca,
+                        'web.yml': self.mgr.template.render('services/prometheus/web.yml.j2', web_context),
+                        'prometheus.crt': cert,
+                        'prometheus.key': key,
+                    },
+                    'web_config': '/etc/prometheus/web.yml'
+                }
+        else:
+            r = {
+                'files': {
+                    'prometheus.yml': self.mgr.template.render('services/prometheus/prometheus.yml.j2', context)
+                }
+            }
 
         # include alerts, if present in the container
         if os.path.exists(self.mgr.prometheus_alerts_path):
@@ -454,7 +520,24 @@ class NodeExporterService(CephadmService):
 
     def generate_config(self, daemon_spec: CephadmDaemonDeploySpec) -> Tuple[Dict[str, Any], List[str]]:
         assert self.TYPE == daemon_spec.daemon_type
-        return {}, []
+        deps = [str(self.mgr.secure_monitoring_stack)]
+        if self.mgr.secure_monitoring_stack:
+            node_ip = self.mgr.inventory.get_addr(daemon_spec.host)
+            cert, key = self.mgr.http_server.service_discovery.ssl_certs.generate_cert(
+                daemon_spec.host, node_ip)
+            r = {
+                'files': {
+                    'web.yml': self.mgr.template.render('services/node-exporter/web.yml.j2', {}),
+                    'root_cert.pem': self.mgr.http_server.service_discovery.ssl_certs.get_root_cert(),
+                    'node_exporter.crt': cert,
+                    'node_exporter.key': key,
+                },
+                'web_config': '/etc/node-exporter/web.yml'
+            }
+        else:
+            r = {}
+
+        return r, deps
 
     def ok_to_stop(self,
                    daemon_ids: List[str],

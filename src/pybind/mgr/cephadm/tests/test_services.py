@@ -411,20 +411,23 @@ class TestMonitoring:
                 rule_files:
                   - /etc/prometheus/alerting/*
 
+                alerting:
+                  alertmanagers:
+                    - scheme: https
+                      http_sd_configs:
+                        - url: http://[::1]:8765/sd/prometheus/sd-config?service=alertmanager
+                          tls_config:
+                            insecure_skip_verify: true
 
                 scrape_configs:
                   - job_name: 'ceph'
                     honor_labels: true
                     http_sd_configs:
-                    - url: https://[::1]:8765/sd/prometheus/sd-config?service=mgr-prometheus
-                      tls_config:
-                        ca_file: root_cert.pem
+                    - url: http://[::1]:8765/sd/prometheus/sd-config?service=mgr-prometheus
 
                   - job_name: 'node'
                     http_sd_configs:
-                    - url: https://[::1]:8765/sd/prometheus/sd-config?service=node-exporter
-                      tls_config:
-                        ca_file: root_cert.pem
+                    - url: http://[::1]:8765/sd/prometheus/sd-config?service=node-exporter
 
 
                   - job_name: 'ceph-exporter'
@@ -433,6 +436,10 @@ class TestMonitoring:
                     - url: https://[::1]:8765/sd/prometheus/sd-config?service=ceph-exporter
                       tls_config:
                         ca_file: root_cert.pem
+
+                  - job_name: 'haproxy'
+                    http_sd_configs:
+                    - url: http://[::1]:8765/sd/prometheus/sd-config?service=haproxy
                 """).lstrip()
 
                 _run_cephadm.assert_called_with(
