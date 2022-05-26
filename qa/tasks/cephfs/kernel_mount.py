@@ -62,8 +62,6 @@ class KernelMount(CephFSMount):
                 self.enable_dynamic_debug()
             self.ctx[f'kmount_count.{self.client_remote.hostname}'] = kmount_count + 1
 
-        self.mounted = True
-
     def _run_mount_cmd(self, mntopts, check_status):
         mount_cmd = self._get_mount_cmd(mntopts)
         mountcmd_stdout, mountcmd_stderr = StringIO(), StringIO()
@@ -151,7 +149,6 @@ class KernelMount(CephFSMount):
                 self.disable_dynamic_debug()
             self.ctx[f'kmount_count.{self.client_remote.hostname}'] = kmount_count - 1
 
-        self.mounted = False
         self.cleanup()
 
     def umount_wait(self, force=False, require_clean=False,
@@ -175,7 +172,6 @@ class KernelMount(CephFSMount):
                                          self.mountpoint], timeout=timeout,
                                    omit_sudo=False)
 
-            self.mounted = False
             self.cleanup()
 
     def wait_until_mounted(self):
@@ -183,11 +179,11 @@ class KernelMount(CephFSMount):
         Unlike the fuse client, the kernel client is up and running as soon
         as the initial mount() function returns.
         """
-        assert self.mounted
+        assert self.is_mounted()
 
     def teardown(self):
         super(KernelMount, self).teardown()
-        if self.mounted:
+        if self.is_mounted():
             self.umount()
 
     def _get_debug_dir(self):
@@ -293,7 +289,7 @@ echo '{fdata}' | sudo tee /sys/kernel/debug/dynamic_debug/control
         Look up the CephFS client ID for this mount, using debugfs.
         """
 
-        assert self.mounted
+        assert self.is_mounted()
 
         return self._get_global_id()
 
