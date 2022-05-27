@@ -1899,6 +1899,13 @@ int make_crawling_daemon(const map<string, string> &opts,
     cerr << " operate fail : " << cpp_strerror(ret) << std::endl;
     return ret;
   }
+  ret = rados.mon_command(
+      make_pool_str(base_pool_name, "dedup_tier", chunk_pool_name),
+      inbl, NULL, NULL);
+  if (ret < 0) {
+    cerr << " operate fail : " << cpp_strerror(ret) << std::endl;
+    return ret;
+  }
   
   cout << "SampleRatio : " << sampling_ratio << std::endl
     << "Object Dedup Threshold : " << object_dedup_threshold << std::endl
