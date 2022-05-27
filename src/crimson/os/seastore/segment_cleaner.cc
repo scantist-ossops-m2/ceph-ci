@@ -3,17 +3,10 @@
 
 #include <seastar/core/metrics.hh>
 
-#include "crimson/common/log.h"
 #include "crimson/os/seastore/logging.h"
 
 #include "crimson/os/seastore/segment_cleaner.h"
 #include "crimson/os/seastore/transaction_manager.h"
-
-namespace {
-  seastar::logger& logger() {
-    return crimson::get_logger(ceph_subsys_seastore_cleaner);
-  }
-}
 
 SET_SUBSYS(seastore_cleaner);
 
@@ -269,10 +262,11 @@ void segments_info_t::update_written_to(
 
 bool SpaceTrackerSimple::equals(const SpaceTrackerI &_other) const
 {
+  LOG_PREFIX(SpaceTrackerSimple::equals);
   const auto &other = static_cast<const SpaceTrackerSimple&>(_other);
 
   if (other.live_bytes_by_segment.size() != live_bytes_by_segment.size()) {
-    logger().error("{}: different segment counts, bug in test");
+    ERROR("different segment counts, bug in test");
     assert(0 == "segment counts should match");
     return false;
   }
@@ -282,12 +276,8 @@ bool SpaceTrackerSimple::equals(const SpaceTrackerI &_other) const
        i != live_bytes_by_segment.end(); ++i, ++j) {
     if (i->second.live_bytes != j->second.live_bytes) {
       all_match = false;
-      logger().debug(
-	"{}: segment_id {} live bytes mismatch *this: {}, other: {}",
-	__func__,
-	i->first,
-	i->second.live_bytes,
-	j->second.live_bytes);
+      DEBUG("segment_id {} live bytes mismatch *this: {}, other: {}",
+            i->first, i->second.live_bytes, j->second.live_bytes);
     }
   }
   return all_match;
@@ -299,6 +289,7 @@ int64_t SpaceTrackerDetailed::SegmentMap::allocate(
   extent_len_t len,
   const extent_len_t block_size)
 {
+  LOG_PREFIX(SegmentMap::allocate);
   assert(offset % block_size == 0);
   assert(len % block_size == 0);
 
@@ -309,16 +300,10 @@ int64_t SpaceTrackerDetailed::SegmentMap::allocate(
   for (auto i = b; i < e; ++i) {
     if (bitmap[i]) {
       if (!error) {
-	logger().error(
-	  "SegmentMap::allocate found allocated in {}, {} ~ {}",
-	  segment,
-	  offset,
-	  len);
+        ERROR("found allocated in {}, {} ~ {}", segment, offset, len);
 	error = true;
       }
-      logger().debug(
-	"SegmentMap::allocate block {} allocated",
-	i * block_size);
+      DEBUG("block {} allocated", i * block_size);
     }
     bitmap[i] = true;
   }
@@ -331,6 +316,7 @@ int64_t SpaceTrackerDetailed::SegmentMap::release(
   extent_len_t len,
   const extent_len_t block_size)
 {
+  LOG_PREFIX(SegmentMap::release);
   assert(offset % block_size == 0);
   assert(len % block_size == 0);
 
@@ -341,16 +327,10 @@ int64_t SpaceTrackerDetailed::SegmentMap::release(
   for (auto i = b; i < e; ++i) {
     if (!bitmap[i]) {
       if (!error) {
-	logger().error(
-	  "SegmentMap::release found unallocated in {}, {} ~ {}",
-	  segment,
-	  offset,
-	  len);
+	ERROR("found unallocated in {}, {} ~ {}", segment, offset, len);
 	error = true;
       }
-      logger().debug(
-	"SegmentMap::release block {} unallocated",
-	i * block_size);
+      DEBUG("block {} unallocated", i * block_size);
     }
     bitmap[i] = false;
   }
@@ -359,10 +339,11 @@ int64_t SpaceTrackerDetailed::SegmentMap::release(
 
 bool SpaceTrackerDetailed::equals(const SpaceTrackerI &_other) const
 {
+  LOG_PREFIX(SpaceTrackerDetailed::equals);
   const auto &other = static_cast<const SpaceTrackerDetailed&>(_other);
 
   if (other.segment_usage.size() != segment_usage.size()) {
-    logger().error("{}: different segment counts, bug in test");
+    ERROR("different segment counts, bug in test");
     assert(0 == "segment counts should match");
     return false;
   }
@@ -372,12 +353,8 @@ bool SpaceTrackerDetailed::equals(const SpaceTrackerI &_other) const
        i != segment_usage.end(); ++i, ++j) {
     if (i->second.get_usage() != j->second.get_usage()) {
       all_match = false;
-      logger().error(
-	"{}: segment_id {} live bytes mismatch *this: {}, other: {}",
-	__func__,
-	i->first,
-	i->second.get_usage(),
-	j->second.get_usage());
+      ERROR("segment_id {} live bytes mismatch *this: {}, other: {}",
+            i->first, i->second.get_usage(), j->second.get_usage());
     }
   }
   return all_match;
@@ -385,39 +362,39 @@ bool SpaceTrackerDetailed::equals(const SpaceTrackerI &_other) const
 
 void SpaceTrackerDetailed::SegmentMap::dump_usage(extent_len_t block_size) const
 {
+  LOG_PREFIX(SegmentMap::dump_usage);
+  INFO("dump start");
   for (unsigned i = 0; i < bitmap.size(); ++i) {
     if (bitmap[i]) {
-      logger().debug("    {} still live", i * block_size);
+      LOCAL_LOGGER.info("    {} still live", i * block_size);
     }
   }
 }
 
 void SpaceTrackerDetailed::dump_usage(segment_id_t id) const
 {
-  logger().debug("SpaceTrackerDetailed::dump_usage {}", id);
+  LOG_PREFIX(SpaceTrackerDetailed::dump_usage);
+  INFO("{}", id);
   segment_usage[id].dump_usage(
     block_size_by_segment_manager[id.device_id()]);
 }
 
 void SpaceTrackerSimple::dump_usage(segment_id_t id) const
 {
-  logger().info(
-    "SpaceTrackerSimple::dump_usage id: {}, live_bytes: {}",
-    id,
-    live_bytes_by_segment[id].live_bytes);
+  LOG_PREFIX(SpaceTrackerSimple::dump_usage);
+  INFO("id: {}, live_bytes: {}",
+       id, live_bytes_by_segment[id].live_bytes);
 }
 
 SegmentCleaner::SegmentCleaner(
   config_t config,
   SegmentManagerGroupRef&& sm_group,
   BackrefManager &backref_manager,
-  Cache &cache,
   bool detailed)
   : detailed(detailed),
     config(config),
     sm_group(std::move(sm_group)),
     backref_manager(backref_manager),
-    cache(cache),
     ool_segment_seq_allocator(
       new SegmentSeqAllocator(segment_type_t::OOL)),
     gc_process(*this)
@@ -675,7 +652,7 @@ SegmentCleaner::trim_backrefs_ret SegmentCleaner::trim_backrefs(
   Transaction &t,
   journal_seq_t limit)
 {
-  return backref_manager.batch_insert_from_cache(
+  return backref_manager.merge_cached_backrefs(
     t,
     limit,
     config.rewrite_backref_bytes_per_cycle
@@ -695,11 +672,10 @@ SegmentCleaner::rewrite_dirty_ret SegmentCleaner::rewrite_dirty(
     DEBUGT("rewrite {} dirty extents", t, dirty_list.size());
     return seastar::do_with(
       std::move(dirty_list),
-      [this, &t](auto &dirty_list) {
+      [this, FNAME, &t](auto &dirty_list) {
 	return trans_intr::do_for_each(
 	  dirty_list,
-	  [this, &t](auto &e) {
-	  LOG_PREFIX(SegmentCleaner::rewrite_dirty);
+	  [this, FNAME, &t](auto &e) {
 	  DEBUGT("cleaning {}", t, *e);
 	  return ecb->rewrite_extent(t, e);
 	});
@@ -791,33 +767,6 @@ SegmentCleaner::gc_trim_journal_ret SegmentCleaner::gc_trim_journal()
   });
 }
 
-SegmentCleaner::retrieve_backref_extents_ret
-SegmentCleaner::_retrieve_backref_extents(
-  Transaction &t,
-  std::set<
-    Cache::backref_extent_buf_entry_t,
-    Cache::backref_extent_buf_entry_t::cmp_t> &&backref_extents,
-  std::vector<CachedExtentRef> &extents)
-{
-  return trans_intr::parallel_for_each(
-    backref_extents,
-    [this, &extents, &t](auto &ent) {
-    // only the gc fiber which is single can rewrite backref extents,
-    // so it must be alive
-    assert(is_backref_node(ent.type));
-    LOG_PREFIX(SegmentCleaner::_retrieve_backref_extents);
-    DEBUGT("getting backref extent of type {} at {}",
-      t,
-      ent.type,
-      ent.paddr);
-    return cache.get_extent_by_type(
-      t, ent.type, ent.paddr, L_ADDR_NULL, BACKREF_NODE_SIZE
-    ).si_then([&extents](auto ext) {
-      extents.emplace_back(std::move(ext));
-    });
-  });
-}
-
 SegmentCleaner::retrieve_live_extents_ret
 SegmentCleaner::_retrieve_live_extents(
   Transaction &t,
@@ -833,7 +782,7 @@ SegmentCleaner::_retrieve_live_extents(
     return trans_intr::do_for_each(
       backrefs,
       [this, &extents, &t, &seq](auto &ent) {
-      LOG_PREFIX(SegmentCleaner::gc_reclaim_space);
+      LOG_PREFIX(SegmentCleaner::_retrieve_live_extents);
       DEBUGT("getting extent of type {} at {}~{}",
 	t,
 	ent.type,
@@ -841,13 +790,10 @@ SegmentCleaner::_retrieve_live_extents(
 	ent.len);
       return ecb->get_extent_if_live(
 	t, ent.type, ent.paddr, ent.laddr, ent.len
-      ).si_then([this, &extents, &ent, &seq](auto ext) {
+      ).si_then([this, FNAME, &extents, &ent, &seq, &t](auto ext) {
 	if (!ext) {
-	  logger().debug(
-	    "SegmentCleaner::gc_reclaim_space:"
-	    " addr {} dead, skipping",
-	    ent.paddr);
-	  auto backref = cache.get_del_backref(ent.paddr);
+	  DEBUGT("addr {} dead, skipping", t, ent.paddr);
+	  auto backref = backref_manager.get_cached_backref_removal(ent.paddr);
 	  if (seq == JOURNAL_SEQ_NULL || seq < backref.seq) {
 	    seq = backref.seq;
 	  }
@@ -863,6 +809,31 @@ SegmentCleaner::_retrieve_live_extents(
   });
 }
 
+SegmentCleaner::retrieve_backref_mappings_ret
+SegmentCleaner::retrieve_backref_mappings(
+  paddr_t start_paddr,
+  paddr_t end_paddr)
+{
+  return seastar::do_with(
+    backref_pin_list_t(),
+    [this, start_paddr, end_paddr](auto &pin_list) {
+    return repeat_eagain([this, start_paddr, end_paddr, &pin_list] {
+      return ecb->with_transaction_intr(
+	Transaction::src_t::READ,
+	"get_backref_mappings",
+	[this, start_paddr, end_paddr](auto &t) {
+	return backref_manager.get_mappings(
+	  t, start_paddr, end_paddr
+	);
+      }).safe_then([&pin_list](auto&& list) {
+	pin_list = std::move(list);
+      });
+    }).safe_then([&pin_list] {
+      return seastar::make_ready_future<backref_pin_list_t>(std::move(pin_list));
+    });
+  });
+}
+
 SegmentCleaner::gc_reclaim_space_ret SegmentCleaner::gc_reclaim_space()
 {
   if (!next_reclaim_pos) {
@@ -870,7 +841,7 @@ SegmentCleaner::gc_reclaim_space_ret SegmentCleaner::gc_reclaim_space()
     next_reclaim_pos = std::make_optional<paddr_t>(next.offset);
   }
   LOG_PREFIX(SegmentCleaner::gc_reclaim_space);
-  INFO("cleaning {}", *next_reclaim_pos);
+  DEBUG("cleaning {}", *next_reclaim_pos);
   auto &seg_paddr = next_reclaim_pos->as_seg_paddr();
   paddr_t end_paddr;
   auto segment_id = seg_paddr.get_segment_id();
@@ -892,89 +863,96 @@ SegmentCleaner::gc_reclaim_space_ret SegmentCleaner::gc_reclaim_space()
     [this, segment_id, pavail_ratio, start, end_paddr](
       auto &reclaimed,
       auto &runs) {
-    return repeat_eagain(
-      [this, &reclaimed, segment_id, &runs, end_paddr]() mutable {
-      reclaimed = 0;
-      runs++;
+    return retrieve_backref_mappings(
+      *next_reclaim_pos,
+      end_paddr
+    ).safe_then([this, &reclaimed, segment_id, &runs, end_paddr](auto pin_list) {
       return seastar::do_with(
-	cache.get_backref_extents_in_range(
-	  *next_reclaim_pos, end_paddr),
-	cache.get_backrefs_in_range(*next_reclaim_pos, end_paddr),
-	cache.get_del_backrefs_in_range(
-	  *next_reclaim_pos, end_paddr),
-	JOURNAL_SEQ_NULL,
-	[this, segment_id, &reclaimed, end_paddr]
-	(auto &backref_extents, auto &backrefs, auto &del_backrefs, auto &seq) {
-	return ecb->with_transaction_intr(
-	  Transaction::src_t::CLEANER_RECLAIM,
-	  "reclaim_space",
-	  [segment_id, this, &backref_extents, &backrefs, &seq,
-	  &del_backrefs, &reclaimed, end_paddr](auto &t) {
-	  return backref_manager.get_mappings(
-	    t, *next_reclaim_pos, end_paddr
-	  ).si_then(
-	    [segment_id, this, &backref_extents, &backrefs, &seq,
-	    &del_backrefs, &reclaimed, &t](auto pin_list) {
-	    LOG_PREFIX(SegmentCleaner::gc_reclaim_space);
-	    DEBUG("{} backrefs, {} del_backrefs, {} pins",
-	      backrefs.size(), del_backrefs.size(), pin_list.size());
-	    for (auto &br : backrefs) {
-	      if (seq == JOURNAL_SEQ_NULL
-		  || (br.seq != JOURNAL_SEQ_NULL && br.seq > seq))
-		seq = br.seq;
-	    }
-	    for (auto &pin : pin_list) {
-	      backrefs.emplace(
-		pin->get_key(),
-		pin->get_val(),
-		pin->get_length(),
-		pin->get_type(),
-		journal_seq_t());
-	    }
-	    for (auto &del_backref : del_backrefs) {
-	      INFO("del_backref {}~{} {} {}",
-		del_backref.paddr, del_backref.len, del_backref.type, del_backref.seq);
-	      auto it = backrefs.find(del_backref.paddr);
-	      if (it != backrefs.end())
-		backrefs.erase(it);
-	      if (seq == JOURNAL_SEQ_NULL
-		  || (del_backref.seq != JOURNAL_SEQ_NULL && del_backref.seq > seq))
-		seq = del_backref.seq;
-	    }
-	    return seastar::do_with(
-	      std::vector<CachedExtentRef>(),
-	      [this, &backref_extents, &backrefs, &reclaimed, &t, &seq]
-	      (auto &extents) {
-	      return _retrieve_backref_extents(
-		t, std::move(backref_extents), extents
-	      ).si_then([this, &extents, &t, &backrefs] {
-		return _retrieve_live_extents(
-		  t, std::move(backrefs), extents);
-	      }).si_then([this, &seq, &t](auto nseq) {
-		if (nseq != JOURNAL_SEQ_NULL && nseq > seq)
-		  seq = nseq;
-		auto fut = BackrefManager::batch_insert_iertr::now();
-		if (seq != JOURNAL_SEQ_NULL) {
-		  fut = backref_manager.batch_insert_from_cache(
-		    t, seq, std::numeric_limits<uint64_t>::max()
-		  ).si_then([](auto) {
-		    return BackrefManager::batch_insert_iertr::now();
+	std::move(pin_list),
+	[this, &reclaimed, segment_id, &runs, end_paddr](auto &pin_list) {
+	return repeat_eagain(
+	  [this, &reclaimed, segment_id, &runs, end_paddr, &pin_list]() mutable {
+	  reclaimed = 0;
+	  runs++;
+	  return seastar::do_with(
+	    backref_manager.get_cached_backref_extents_in_range(
+	      *next_reclaim_pos, end_paddr),
+	    backref_manager.get_cached_backrefs_in_range(
+	      *next_reclaim_pos, end_paddr),
+	    backref_manager.get_cached_backref_removals_in_range(
+	      *next_reclaim_pos, end_paddr),
+	    JOURNAL_SEQ_NULL,
+	    [this, segment_id, &reclaimed, &pin_list](
+	      auto &backref_extents,
+	      auto &backrefs,
+	      auto &del_backrefs,
+	      auto &seq) {
+	    return ecb->with_transaction_intr(
+	      Transaction::src_t::CLEANER_RECLAIM,
+	      "reclaim_space",
+	      [segment_id, this, &backref_extents, &backrefs, &seq,
+	      &del_backrefs, &reclaimed, &pin_list](auto &t) {
+	      LOG_PREFIX(SegmentCleaner::gc_reclaim_space);
+	      DEBUG("{} backrefs, {} del_backrefs, {} pins",
+		backrefs.size(), del_backrefs.size(), pin_list.size());
+	      for (auto &br : backrefs) {
+		if (seq == JOURNAL_SEQ_NULL
+		    || (br.seq != JOURNAL_SEQ_NULL && br.seq > seq))
+		  seq = br.seq;
+	      }
+	      for (auto &pin : pin_list) {
+		backrefs.emplace(
+		  pin->get_key(),
+		  pin->get_val(),
+		  pin->get_length(),
+		  pin->get_type(),
+		  journal_seq_t());
+	      }
+	      for (auto &del_backref : del_backrefs) {
+		DEBUG("del_backref {}~{} {} {}",
+		  del_backref.paddr, del_backref.len, del_backref.type, del_backref.seq);
+		auto it = backrefs.find(del_backref.paddr);
+		if (it != backrefs.end())
+		  backrefs.erase(it);
+		if (seq == JOURNAL_SEQ_NULL
+		    || (del_backref.seq != JOURNAL_SEQ_NULL && del_backref.seq > seq))
+		  seq = del_backref.seq;
+	      }
+	      return seastar::do_with(
+		std::vector<CachedExtentRef>(),
+		[this, &backref_extents, &backrefs, &reclaimed, &t, &seq]
+		(auto &extents) {
+		return backref_manager.retrieve_backref_extents(
+		  t, std::move(backref_extents), extents
+		).si_then([this, &extents, &t, &backrefs] {
+		  return _retrieve_live_extents(
+		    t, std::move(backrefs), extents);
+		}).si_then([this, &seq, &t](auto nseq) {
+		  if (nseq != JOURNAL_SEQ_NULL && nseq > seq)
+		    seq = nseq;
+		  auto fut = BackrefManager::merge_cached_backrefs_iertr::now();
+		  if (seq != JOURNAL_SEQ_NULL) {
+		    fut = backref_manager.merge_cached_backrefs(
+		      t, seq, std::numeric_limits<uint64_t>::max()
+		    ).si_then([](auto) {
+		      return BackrefManager::merge_cached_backrefs_iertr::now();
+		    });
+		  }
+		  return fut;
+		}).si_then([&extents, this, &t, &reclaimed] {
+		  return trans_intr::do_for_each(
+		    extents,
+		    [this, &t, &reclaimed](auto &ext) {
+		    reclaimed += ext->get_length();
+		    return ecb->rewrite_extent(t, ext);
 		  });
-		}
-		return fut;
-	      }).si_then([&extents, this, &t, &reclaimed] {
-		return trans_intr::do_for_each(
-		  extents,
-		  [this, &t, &reclaimed](auto &ext) {
-		  reclaimed += ext->get_length();
-		  return ecb->rewrite_extent(t, ext);
 		});
+	      }).si_then([this, &t, segment_id, &seq] {
+		if (final_reclaim())
+		  t.mark_segment_to_release(segment_id);
+		return ecb->submit_transaction_direct(
+		  t, std::make_optional<journal_seq_t>(std::move(seq)));
 	      });
-	    }).si_then([this, &t, segment_id, &seq] {
-	      if (final_reclaim())
-		t.mark_segment_to_release(segment_id);
-	      return ecb->submit_transaction_direct(
-		t, std::make_optional<journal_seq_t>(std::move(seq)));
 	    });
 	  });
 	});
@@ -983,8 +961,9 @@ SegmentCleaner::gc_reclaim_space_ret SegmentCleaner::gc_reclaim_space()
       [&reclaimed, this, pavail_ratio, start, &runs, end_paddr] {
       LOG_PREFIX(SegmentCleaner::gc_reclaim_space);
 #ifndef NDEBUG
-      auto ndel_backrefs = cache.get_del_backrefs_in_range(
-	*next_reclaim_pos, end_paddr);
+      auto ndel_backrefs =
+	backref_manager.get_cached_backref_removals_in_range(
+	  *next_reclaim_pos, end_paddr);
       if (!ndel_backrefs.empty()) {
 	for (auto &del_br : ndel_backrefs) {
 	  ERROR("unexpected del_backref {}~{} {} {}",
@@ -995,7 +974,7 @@ SegmentCleaner::gc_reclaim_space_ret SegmentCleaner::gc_reclaim_space()
 #endif
       stats.reclaiming_bytes += reclaimed;
       auto d = seastar::lowres_system_clock::now() - start;
-      INFO("duration: {}, pavail_ratio before: {}, repeats: {}", d, pavail_ratio, runs);
+      DEBUG("duration: {}, pavail_ratio before: {}, repeats: {}", d, pavail_ratio, runs);
       if (final_reclaim()) {
 	stats.reclaimed_bytes += stats.reclaiming_bytes;
 	stats.reclaimed_segment_bytes += segments.get_segment_size();
@@ -1011,9 +990,9 @@ SegmentCleaner::gc_reclaim_space_ret SegmentCleaner::gc_reclaim_space()
 
 SegmentCleaner::mount_ret SegmentCleaner::mount()
 {
+  LOG_PREFIX(SegmentCleaner::mount);
   const auto& sms = sm_group->get_segment_managers();
-  logger().info(
-    "SegmentCleaner::mount: {} segment managers", sms.size());
+  INFO("{} segment managers", sms.size());
   init_complete = false;
   stats = {};
   journal_tail_target = JOURNAL_SEQ_NULL;
@@ -1035,26 +1014,22 @@ SegmentCleaner::mount_ret SegmentCleaner::mount()
   metrics.clear();
   register_metrics();
 
-  logger().info("SegmentCleaner::mount: {} segments", segments.get_num_segments());
+  INFO("{} segments", segments.get_num_segments());
   return seastar::do_with(
     std::vector<std::pair<segment_id_t, segment_header_t>>(),
-    [this](auto& segment_set) {
+    [this, FNAME](auto& segment_set) {
     return crimson::do_for_each(
       segments.begin(),
       segments.end(),
-      [this, &segment_set](auto& it) {
+      [this, FNAME, &segment_set](auto& it) {
 	auto segment_id = it.first;
 	return sm_group->read_segment_header(
 	  segment_id
-	).safe_then([segment_id, this, &segment_set](auto header) {
-	  logger().info(
-	    "SegmentCleaner::mount: segment_id={} -- {}",
-	    segment_id, header);
+	).safe_then([segment_id, this, FNAME, &segment_set](auto header) {
+	  INFO("segment_id={} -- {}", segment_id, header);
 	  auto s_type = header.get_type();
 	  if (s_type == segment_type_t::NULL_SEG) {
-	    logger().error(
-	      "SegmentCleaner::mount: got null segment, segment_id={} -- {}",
-	      segment_id, header);
+	    ERROR("got null segment, segment_id={} -- {}", segment_id, header);
 	    ceph_abort();
 	  }
 	  return sm_group->read_segment_tail(
@@ -1229,6 +1204,217 @@ void SegmentCleaner::complete_init()
   ceph_assert(segments.get_journal_head() != JOURNAL_SEQ_NULL);
   init_complete = true;
   gc_process.start();
+}
+
+void SegmentCleaner::mark_space_used(
+  paddr_t addr,
+  extent_len_t len,
+  time_point last_modified,
+  time_point last_rewritten,
+  bool init_scan)
+{
+  LOG_PREFIX(SegmentCleaner::mark_space_used);
+  if (addr.get_addr_type() != addr_types_t::SEGMENT) {
+    return;
+  }
+  auto& seg_addr = addr.as_seg_paddr();
+
+  if (!init_scan && !init_complete) {
+    return;
+  }
+
+  stats.used_bytes += len;
+  auto old_usage = calc_utilization(seg_addr.get_segment_id());
+  [[maybe_unused]] auto ret = space_tracker->allocate(
+    seg_addr.get_segment_id(),
+    seg_addr.get_segment_off(),
+    len);
+  auto new_usage = calc_utilization(seg_addr.get_segment_id());
+  adjust_segment_util(old_usage, new_usage);
+
+  // use the last extent's last modified time for the calculation of the projected
+  // time the segments' live extents are to stay unmodified; this is an approximation
+  // of the sprite lfs' segment "age".
+
+  segments.update_last_modified_rewritten(
+      seg_addr.get_segment_id(), last_modified, last_rewritten);
+
+  gc_process.maybe_wake_on_space_used();
+  assert(ret > 0);
+  DEBUG("segment {} new len: {}~{}, live_bytes: {}",
+        seg_addr.get_segment_id(),
+        addr,
+        len,
+        space_tracker->get_usage(seg_addr.get_segment_id()));
+}
+
+void SegmentCleaner::mark_space_free(
+  paddr_t addr,
+  extent_len_t len,
+  bool force)
+{
+  LOG_PREFIX(SegmentCleaner::mark_space_free);
+  if (!init_complete && !force) {
+    return;
+  }
+  if (addr.get_addr_type() != addr_types_t::SEGMENT) {
+    return;
+  }
+
+  ceph_assert(stats.used_bytes >= len);
+  stats.used_bytes -= len;
+  auto& seg_addr = addr.as_seg_paddr();
+
+  DEBUG("segment {} free len: {}~{}",
+        seg_addr.get_segment_id(), addr, len);
+  auto old_usage = calc_utilization(seg_addr.get_segment_id());
+  [[maybe_unused]] auto ret = space_tracker->release(
+    seg_addr.get_segment_id(),
+    seg_addr.get_segment_off(),
+    len);
+  auto new_usage = calc_utilization(seg_addr.get_segment_id());
+  adjust_segment_util(old_usage, new_usage);
+  maybe_wake_gc_blocked_io();
+  assert(ret >= 0);
+  DEBUG("segment {} free len: {}~{}, live_bytes: {}",
+        seg_addr.get_segment_id(),
+        addr,
+        len,
+        space_tracker->get_usage(seg_addr.get_segment_id()));
+}
+
+journal_seq_t SegmentCleaner::get_next_gc_target() const
+{
+  LOG_PREFIX(SegmentCleaner::get_next_gc_target);
+  segment_id_t id = NULL_SEG_ID;
+  segment_seq_t seq = NULL_SEG_SEQ;
+  double max_benefit_cost = 0;
+  for (auto& [_id, segment_info] : segments) {
+    if (segment_info.is_closed() &&
+        !segment_info.is_in_journal(journal_tail_committed)) {
+      double benefit_cost = calc_gc_benefit_cost(_id);
+      if (benefit_cost > max_benefit_cost) {
+        id = _id;
+        seq = segment_info.seq;
+        max_benefit_cost = benefit_cost;
+      }
+    }
+  }
+  if (id != NULL_SEG_ID) {
+    DEBUG("segment {} seq {}, benefit_cost {}",
+          id, seq, max_benefit_cost);
+    return journal_seq_t{seq, paddr_t::make_seg_paddr(id, 0)};
+  } else {
+    ceph_assert(get_segments_reclaimable() == 0);
+    // see gc_should_reclaim_space()
+    ceph_abort("impossible!");
+    return JOURNAL_SEQ_NULL;
+  }
+}
+
+void SegmentCleaner::log_gc_state(const char *caller) const
+{
+  LOG_PREFIX(SegmentCleaner::log_gc_state);
+  if (LOCAL_LOGGER.is_enabled(seastar::log_level::debug) &&
+      !disable_trim) {
+    DEBUG(
+      "caller {}, "
+      "empty {}, "
+      "open {}, "
+      "closed {}, "
+      "in_journal {}, "
+      "total {}B, "
+      "available {}B, "
+      "unavailable {}B, "
+      "unavailable_used {}B, "
+      "unavailable_unused {}B; "
+      "reclaim_ratio {}, "
+      "available_ratio {}, "
+      "should_block_on_gc {}, "
+      "gc_should_reclaim_space {}, "
+      "journal_head {}, "
+      "journal_tail_target {}, "
+      "journal_tail_commit {}, "
+      "dirty_tail {}, "
+      "dirty_tail_limit {}, "
+      "gc_should_trim_journal {}, ",
+      caller,
+      segments.get_num_empty(),
+      segments.get_num_open(),
+      segments.get_num_closed(),
+      get_segments_in_journal(),
+      segments.get_total_bytes(),
+      segments.get_available_bytes(),
+      segments.get_unavailable_bytes(),
+      stats.used_bytes,
+      get_unavailable_unused_bytes(),
+      get_reclaim_ratio(),
+      segments.get_available_ratio(),
+      should_block_on_gc(),
+      gc_should_reclaim_space(),
+      segments.get_journal_head(),
+      journal_tail_target,
+      journal_tail_committed,
+      get_dirty_tail(),
+      get_dirty_tail_limit(),
+      gc_should_trim_journal()
+    );
+  }
+}
+
+seastar::future<>
+SegmentCleaner::reserve_projected_usage(std::size_t projected_usage)
+{
+  if (disable_trim) {
+    return seastar::now();
+  }
+  ceph_assert(init_complete);
+  // The pipeline configuration prevents another IO from entering
+  // prepare until the prior one exits and clears this.
+  ceph_assert(!blocked_io_wake);
+  ++stats.io_count;
+  bool is_blocked = false;
+  if (should_block_on_trim()) {
+    is_blocked = true;
+    ++stats.io_blocked_count_trim;
+  }
+  if (should_block_on_reclaim()) {
+    is_blocked = true;
+    ++stats.io_blocked_count_reclaim;
+  }
+  if (is_blocked) {
+    ++stats.io_blocking_num;
+    ++stats.io_blocked_count;
+    stats.io_blocked_sum += stats.io_blocking_num;
+  }
+  return seastar::do_until(
+    [this] {
+      log_gc_state("await_hard_limits");
+      return !should_block_on_gc();
+    },
+    [this] {
+      blocked_io_wake = seastar::promise<>();
+      return blocked_io_wake->get_future();
+    }
+  ).then([this, projected_usage, is_blocked] {
+    ceph_assert(!blocked_io_wake);
+    stats.projected_used_bytes += projected_usage;
+    ++stats.projected_count;
+    stats.projected_used_bytes_sum += stats.projected_used_bytes;
+    if (is_blocked) {
+      assert(stats.io_blocking_num > 0);
+      --stats.io_blocking_num;
+    }
+  });
+}
+
+void SegmentCleaner::release_projected_usage(std::size_t projected_usage)
+{
+  if (disable_trim) return;
+  ceph_assert(init_complete);
+  ceph_assert(stats.projected_used_bytes >= projected_usage);
+  stats.projected_used_bytes -= projected_usage;
+  return maybe_wake_gc_blocked_io();
 }
 
 }
