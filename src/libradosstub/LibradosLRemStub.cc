@@ -2215,6 +2215,18 @@ int cls_cxx_stat2(cls_method_context_t hctx, uint64_t *size, ceph::real_time *mt
   return 0;
 }
 
+const object_info_t& cls_get_object_info(cls_method_context_t hctx) {
+  librados::LRemClassHandler::MethodContext *ctx =
+    reinterpret_cast<librados::LRemClassHandler::MethodContext*>(hctx);
+
+  return ctx->oi;
+}
+
+const ConfigProxy& cls_get_config(cls_method_context_t hctx)
+{
+  return g_ceph_context->_conf;
+}
+
 int cls_get_request_origin(cls_method_context_t hctx, entity_inst_t *origin) {
   librados::LRemClassHandler::MethodContext *ctx =
     reinterpret_cast<librados::LRemClassHandler::MethodContext*>(hctx);

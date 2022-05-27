@@ -5,6 +5,7 @@
 #define CEPH_LREM_CLASS_HANDLER_H
 
 #include "objclass/objclass.h"
+#include "osd/osd_types.h"
 #include "common/snap_types.h"
 #include <boost/shared_ptr.hpp>
 #include <list>
@@ -32,6 +33,7 @@ public:
     uint64_t snap_id;
     SnapContext snapc;
     LRemTransactionStateRef trans;
+    object_info_t oi;
   };
   typedef boost::shared_ptr<MethodContext> SharedMethodContext;
 

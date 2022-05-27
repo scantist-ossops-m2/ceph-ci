@@ -144,6 +144,7 @@ LRemClassHandler::SharedMethodContext LRemClassHandler::get_method_context(
   ctx->snap_id = snap_id;
   ctx->snapc = snapc;
   ctx->trans = trans;
+  ctx->oi.soid.oid = oid; /* very partial implementation */
   return ctx;
 }
 
