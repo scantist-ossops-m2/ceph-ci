@@ -1,0 +1,12 @@
+bcrypt
+CherryPy
+more-itertools
+PyJWT
+pyopenssl
+requests
+Routes
+prettytable
+pytest
+pyyaml
+natsort
+ceph-common

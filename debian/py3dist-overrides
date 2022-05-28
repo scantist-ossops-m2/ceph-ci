@@ -1,1 +1,2 @@
 cephfs python3-cephfs; PEP386
+ceph-common python3-ceph-common
