@@ -1336,7 +1336,7 @@ Scrub::schedule_result_t PG::sched_scrub()
     return Scrub::schedule_result_t::already_started;
   }
 
-  if (!is_primary() || !is_active() || !is_clean()) {
+  if (!is_primary() || !is_active() || !is_clean() || state_test(PG_STATE_SNAPTRIM)) {
     return Scrub::schedule_result_t::bad_pg_state;
   }
 
