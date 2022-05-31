@@ -1425,6 +1425,7 @@ class TracingSpec(ServiceSpec):
 yaml.add_representer(TracingSpec, ServiceSpec.yaml_representer)
 
 
+<<<<<<< HEAD
 class TunedProfileSpec():
     def __init__(self,
                  profile_name: str,
@@ -1475,8 +1476,7 @@ class TunedProfileSpec():
         # for making deep copies so you can edit the settings in one without affecting the other
         # mostly for testing purposes
         return TunedProfileSpec(self.profile_name, self.placement, self.settings.copy())
-
-
+=======
 class CephExporterSpec(ServiceSpec):
     def __init__(self,
                  service_type: str = 'ceph-exporter',
@@ -1508,3 +1508,4 @@ class CephExporterSpec(ServiceSpec):
 
 
 yaml.add_representer(CephExporterSpec, ServiceSpec.yaml_representer)
+>>>>>>> dd449e91c54 (exporter: refactor cephadm container code)
