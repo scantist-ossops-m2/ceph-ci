@@ -166,6 +166,8 @@ export class HostsPageHelper extends PageHelper {
 
     // unselect it to avoid colliding with any other selection
     // in different steps
-    this.getTableCell(this.columnIndex.hostname, hostname).click();
+    cy.get('cd-hosts').within(() => {
+      this.getTableCell(this.columnIndex.hostname, hostname).click();
+    });
   }
 }
