@@ -3633,10 +3633,21 @@ void Locker::_do_snap_update(CInode *in, snapid_t snap, int dirty, snapid_t foll
   // xattr
   if (xattrs) {
     dout(7) << " xattrs v" << i->xattr_version << " -> " << m->head.xattr_version
-	    << " len " << m->xattrbl.length() << dendl;
-    i->xattr_version = m->head.xattr_version;
-    auto p = m->xattrbl.cbegin();
-    decode(*px, p);
+            << " len " << m->xattrbl.length() << dendl;
+    __u32 total = 0;
+    for (const auto &p : *px)
+      total += (p.first.length() + p.second.length());
+    if ((total + m->xattrbl.length()) > mds->mdsmap->get_max_xattr_size()) {
+      dout(0) << "Maximum xattr size exceeded.  current size: " << total
+              << " new size: " << (total + m->xattrbl.length())
+              << " max size: " << mds->mdsmap->get_max_xattr_size() << dendl;
+      // Ignore new xattr (!!!) but increase xattr version
+      i->xattr_version = m->head.xattr_version + 1;
+    } else {
+      i->xattr_version = m->head.xattr_version;
+      auto p = m->xattrbl.cbegin();
+      decode(*px, p);
+    }
   }
 
   {
@@ -3928,9 +3939,21 @@ bool Locker::_do_cap_update(CInode *in, Capability *cap,
   // xattrs update?
   if (xattr) {
     dout(7) << " xattrs v" << pi.inode->xattr_version << " -> " << m->head.xattr_version << dendl;
-    pi.inode->xattr_version = m->head.xattr_version;
-    auto p = m->xattrbl.cbegin();
-    decode_noshare(*pi.xattrs, p);
+    __u32 total = 0;
+    for (const auto &p : *pi.xattrs)
+      total += (p.first.length() + p.second.length());
+    if ((total + m->xattrbl.length()) > mds->mdsmap->get_max_xattr_size()) {
+      dout(0) << "Maximum xattr size exceeded.  current size: " << total
+              << " new size: " << (total + m->xattrbl.length())
+              << " max size: " << mds->mdsmap->get_max_xattr_size() << dendl;
+      // Ignore new xattr (!!!) but increase xattr version
+      // XXX how to force the client to drop cached xattrs?
+      pi.inode->xattr_version = m->head.xattr_version + 1;
+    } else {
+      pi.inode->xattr_version = m->head.xattr_version;
+      auto p = m->xattrbl.cbegin();
+      decode_noshare(*pi.xattrs, p);
+    }
     wrlock_force(&in->xattrlock, mut);
   }
   
