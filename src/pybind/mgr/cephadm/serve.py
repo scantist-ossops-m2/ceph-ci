@@ -155,6 +155,7 @@ class CephadmServe:
                         'name': 'osd_memory_target',
                     })
                     any_changed = True
+        host_crush_name = self.mgr.get_crush_map_hostname(host)
         if val is not None:
             if any_changed:
                 self.mgr.log.info(
@@ -162,7 +163,7 @@ class CephadmServe:
                 )
                 ret, out, err = self.mgr.mon_command({
                     'prefix': 'config set',
-                    'who': f'osd/host:{host}',
+                    'who': f'osd/host:{host_crush_name}',
                     'name': 'osd_memory_target',
                     'value': str(val),
                 })
@@ -171,11 +172,15 @@ class CephadmServe:
                         f'Unable to set osd_memory_target on {host} to {val}: {err}'
                     )
         else:
-            self.mgr.check_mon_command({
-                'prefix': 'config rm',
-                'who': f'osd/host:{host}',
-                'name': 'osd_memory_target',
-            })
+            # if osd memory autotuning is off, we don't want to remove these config
+            # options as users may be using them. Since there is no way to set autotuning
+            # on/off at a host level, best we can do is check if it is globally on.
+            if self.mgr.get_foreign_ceph_option('osd', 'osd_memory_target_autotune'):
+                self.mgr.check_mon_command({
+                    'prefix': 'config rm',
+                    'who': f'osd/host:{host_crush_name}',
+                    'name': 'osd_memory_target',
+                })
         self.mgr.cache.update_autotune(host)
 
     def _refresh_hosts_and_daemons(self) -> None:
