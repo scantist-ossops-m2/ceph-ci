@@ -804,6 +804,29 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             self.set_health_warning('CEPHADM_FAILED_DAEMON', f'{len(failed_daemons)} failed cephadm daemon(s)', len(
                 failed_daemons), failed_daemons)
 
+    def get_crush_map_hostname(self, host: str) -> str:
+        # Give best effort attempt to get hostname from crush map.
+        # Intended to help with FQDN vs. shortname issues as hosts
+        # known by FQDN to cephadm might be a shortname in the crush map
+        ret, out, err = self.check_mon_command({
+            'prefix': 'osd crush tree',
+            'format': 'json-pretty',
+        })
+        if ret:
+            logger.debug(f'Failed to get crush tree with rc {ret}: {err}')
+            return host
+        try:
+            crush_map = json.loads(out)
+            crush_hosts = [h['name'] for h in crush_map['nodes'] if h['type'] == 'host']
+            for hostname in crush_hosts:
+                if hostname == host or hostname == host.split('.')[0]:
+                    logger.debug(f'Found crush map hostname for {host}: {hostname}')
+                    return hostname
+        except Exception as e:
+            logger.debug(f'Failed to get crush name for host {host}: {e}')
+        logger.debug(f'Failed to find matching crush map hostname for {host}. Defaulting to {host}')
+        return host
+
     @staticmethod
     def can_run() -> Tuple[bool, str]:
         if asyncssh is not None:
