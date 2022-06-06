@@ -2334,18 +2334,20 @@ void Server::set_trace_dist(const ref_t<MClientReply> &reply,
     encode(dn->get_name(), bl);
 
     int lease_mask = 0;
-    CDentry::linkage_t *dnl = dn->get_linkage(mdr->get_client(), mdr);
-    if (dnl->is_primary()) {
-      ceph_assert(dnl->get_inode() == in);
-      lease_mask = CEPH_LEASE_PRIMARY_LINK;
-    } else {
-      if (dnl->is_remote())
-	ceph_assert(dnl->get_remote_ino() == in->ino());
-      else
-	ceph_assert(!in);
+    if (!dn->is_projected() || dn->use_projected(mdr->get_client(), mdr)) {
+      CDentry::linkage_t *dnl = dn->get_linkage(mdr->get_client(), mdr);
+      if (dnl->is_primary()) {
+        ceph_assert(dnl->get_inode() == in);
+        lease_mask = CEPH_LEASE_PRIMARY_LINK;
+      } else {
+        if (dnl->is_remote())
+          ceph_assert(dnl->get_remote_ino() == in->ino());
+        else
+          ceph_assert(!in);
+      }
+      mds->locker->issue_client_lease(dn, mdr, lease_mask, now, bl);
+      dout(20) << "set_trace_dist added dn   " << snapid << " " << *dn << dendl;
     }
-    mds->locker->issue_client_lease(dn, mdr, lease_mask, now, bl);
-    dout(20) << "set_trace_dist added dn   " << snapid << " " << *dn << dendl;
   } else
     reply->head.is_dentry = 0;
 
