@@ -31,23 +31,28 @@ class TestMDSMetrics(CephFSTestCase):
         if curr_max_mds > 1:
             self.fs.shrink(1)
 
-    def verify_mds_metrics(self, active_mds_count=1, client_count=1, ranks=[]):
+    def verify_mds_metrics(self, active_mds_count=1, client_count=1, ranks=[], mul_fs=[]):
         def verify_metrics_cbk(metrics):
             mds_metrics = metrics['metrics']
             if not len(mds_metrics) == active_mds_count + 1: # n active mdss + delayed set
                 return False
             fs_status = self.fs.status()
-            nonlocal ranks
+            nonlocal ranks, mul_fs
             if not ranks:
-                ranks = set([info['rank'] for info in fs_status.get_ranks(self.fs.id)])
+                if not mul_fs:
+                    mul_fs = [self.fs.id]
+                for filesystem in mul_fs:
+                    ranks = set([info['rank'] for info in fs_status.get_ranks(filesystem)])
             for rank in ranks:
                 r = mds_metrics.get("mds.{}".format(rank), None)
                 if not r or not len(mds_metrics['delayed_ranks']) == 0:
                     return False
-            global_metrics = metrics['global_metrics']
-            client_metadata = metrics['client_metadata']
-            if not len(global_metrics) >= client_count or not len(client_metadata) >= client_count:
-                return False
+            for item in mul_fs:
+                key = fs_status.get_fsmap(item)['mdsmap']['fs_name']
+                global_metrics = metrics['global_metrics'].get(key, {})
+                client_metadata = metrics['client_metadata'].get(key, {})
+                if not len(global_metrics) >= client_count or not len(client_metadata) >= client_count:
+                    return False
             return True
         return verify_metrics_cbk
 
@@ -326,7 +331,7 @@ class TestMDSMetrics(CephFSTestCase):
         log.debug("metrics={0}".format(metrics))
         self.assertTrue(valid)
 
-        client_matadata = metrics['client_metadata']
+        client_matadata = metrics['client_metadata'][self.fs.name]
         # pick an random client
         client = random.choice(list(client_matadata.keys()))
         # get IP of client to use in filter
@@ -338,8 +343,8 @@ class TestMDSMetrics(CephFSTestCase):
         self.assertTrue(valid)
 
         # verify IP from output with filter IP
-        for i in metrics['client_metadata']:
-            self.assertEqual(client_ip, metrics['client_metadata'][i]['IP'])
+        for i in metrics['client_metadata'][self.fs.name]:
+            self.assertEqual(client_ip, metrics['client_metadata'][self.fs.name][i]['IP'])
 
     def test_query_mds_and_client_filter(self):
         # validate
@@ -412,47 +417,6 @@ class TestMDSMetrics(CephFSTestCase):
                 raise
         else:
             raise RuntimeError("expected the 'fs perf stat' command to fail for invalid client_ip")
-    
-    def test_client_metrics_and_metadata(self):
-        self.mount_a.umount_wait()
-        self.mount_b.umount_wait()
-
-        self.mds_cluster.mon_manager.raw_cluster_cmd("fs", "flag", "set",
-            "enable_multiple", "true",
-            "--yes-i-really-mean-it")
-            
-        #creating filesystem
-        fs_a = self._setup_fs(fs_name = "fs1")
-
-        # Mount a client on fs_a
-        self.mount_a.mount_wait(cephfs_name=fs_a.name)
-        self.mount_a.write_n_mb("pad.bin", 1)
-        self.mount_a.write_n_mb("test.bin", 2)
-        self.mount_a.path_to_ino("test.bin")
-        self.mount_a.create_files()
-
-        #creating another filesystem
-        fs_b = self._setup_fs(fs_name = "fs2")
-
-        # Mount a client on fs_b
-        self.mount_b.mount_wait(cephfs_name=fs_b.name)
-        self.mount_b.write_n_mb("test.bin", 1)
-        self.mount_b.path_to_ino("test.bin")
-        self.mount_b.create_files()
-
-        # validate
-        valid, metrics = self._get_metrics(
-            self.verify_mds_metrics(client_count=TestMDSMetrics.CLIENTS_REQUIRED), 30)
-        log.debug(f"metrics={metrics}")
-        self.assertTrue(valid)
-        
-        client_metadata = metrics['client_metadata']
-
-        for i in client_metadata:
-            if not (client_metadata[i]['hostname']):
-                raise RuntimeError("hostname not found!")
-            if not (client_metadata[i]['valid_metrics']):
-                raise RuntimeError("valid_metrics not found!")
 
     def test_perf_stats_stale_metrics(self):
         """
@@ -514,13 +478,13 @@ class TestMDSMetrics(CephFSTestCase):
     def test_client_metrics_and_metadata(self):
         self.mount_a.umount_wait()
         self.mount_b.umount_wait()
+        self.fs.delete_all_filesystems()
 
         self.mds_cluster.mon_manager.raw_cluster_cmd("fs", "flag", "set",
-            "enable_multiple", "true",
-            "--yes-i-really-mean-it")
-            
-        #creating filesystem
-        fs_a = self._setup_fs(fs_name = "fs1")
+            "enable_multiple", "true", "--yes-i-really-mean-it")
+
+        # creating filesystem
+        fs_a = self._setup_fs(fs_name="fs1")
 
         # Mount a client on fs_a
         self.mount_a.mount_wait(cephfs_name=fs_a.name)
@@ -529,26 +493,35 @@ class TestMDSMetrics(CephFSTestCase):
         self.mount_a.path_to_ino("test.bin")
         self.mount_a.create_files()
 
-        #creating another filesystem
-        fs_b = self._setup_fs(fs_name = "fs2")
+        # creating another filesystem
+        fs_b = self._setup_fs(fs_name="fs2")
 
         # Mount a client on fs_b
         self.mount_b.mount_wait(cephfs_name=fs_b.name)
         self.mount_b.write_n_mb("test.bin", 1)
         self.mount_b.path_to_ino("test.bin")
         self.mount_b.create_files()
+        
+        fscid_list = [fs_a.id, fs_b.id]
 
         # validate
         valid, metrics = self._get_metrics(
-            self.verify_mds_metrics(client_count=TestMDSMetrics.CLIENTS_REQUIRED), 30)
+            self.verify_mds_metrics(client_count=1, mul_fs=fscid_list), 30)
         log.debug(f"metrics={metrics}")
         self.assertTrue(valid)
-        
-        client_metadata = metrics['client_metadata']
 
-        for i in client_metadata:
-            if not (client_metadata[i]['hostname']):
-                raise RuntimeError("hostname not found!")
-            if not (client_metadata[i]['valid_metrics']):
-                raise RuntimeError("valid_metrics not found!")
+        client_metadata_a = metrics['client_metadata']['fs1']
+        client_metadata_b = metrics['client_metadata']['fs2']
+
+        for i in client_metadata_a:
+            if not (client_metadata_a[i]['hostname']):
+                raise RuntimeError("hostname of fs1 not found!")
+            if not (client_metadata_a[i]['valid_metrics']):
+                raise RuntimeError("valid_metrics of fs1 not found!")
+
+        for i in client_metadata_b:
+            if not (client_metadata_b[i]['hostname']):
+                raise RuntimeError("hostname of fs2 not found!")
+            if not (client_metadata_b[i]['valid_metrics']):
+                raise RuntimeError("valid_metrics of fs2 not found!")
 
