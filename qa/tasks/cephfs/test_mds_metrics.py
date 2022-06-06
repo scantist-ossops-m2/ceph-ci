@@ -503,11 +503,18 @@ class TestMDSMetrics(CephFSTestCase):
         log.debug(f"metrics={metrics}")
         self.assertTrue(valid)
         
-        client_metadata = metrics['client_metadata']
+        client_metadata_a = metrics['client_metadata']['fs1']
+        client_metadata_b = metrics['client_metadata']['fs2']
 
-        for i in client_metadata:
-            if not (client_metadata[i]['hostname']):
-                raise RuntimeError("hostname not found!")
-            if not (client_metadata[i]['valid_metrics']):
-                raise RuntimeError("valid_metrics not found!")
+        for i in client_metadata_a:
+            if not (client_metadata_a[i]['hostname']):
+                raise RuntimeError("hostname of fs1 not found!")
+            if not (client_metadata_a[i]['valid_metrics']):
+                raise RuntimeError("valid_metrics of fs1 not found!")
+        
+        for i in client_metadata_b:
+            if not (client_metadata_b[i]['hostname']):
+                raise RuntimeError("hostname of fs2 not found!")
+            if not (client_metadata_b[i]['valid_metrics']):
+                raise RuntimeError("valid_metrics of fs2 not found!")
 
