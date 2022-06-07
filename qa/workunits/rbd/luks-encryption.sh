@@ -39,7 +39,7 @@ function test_encryption_format() {
   sudo chmod 666 /dev/mapper/cryptsetupdev
 
   # open encryption with librbd
-  LIBRBD_DEV=$(_sudo rbd -p rbd map testimg -t nbd -o encryption-format=$format,encryption-passphrase-file=/tmp/passphrase)
+  LIBRBD_DEV=$(_sudo rbd -p rbd map testimg -t nbd -o encryption-format=luks,encryption-passphrase-file=/tmp/passphrase)
   sudo chmod 666 $LIBRBD_DEV
 
   # write via librbd && compare
