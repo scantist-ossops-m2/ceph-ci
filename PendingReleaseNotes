@@ -43,6 +43,10 @@
   * system
   * truncated
   * user_stats_sync
+* New MDSMap field `max_xattr_size` which can be set using the `fs set` command.
+  This MDSMap field allows to configure the maximum size allowed for the full
+  key/value set for a filesystem extended attributes.  It effectively replaces
+  the old per-MDS `max_xattr_pairs_size` setting, which is now dropped.
 
 >=17.2.1
 
