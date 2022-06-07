@@ -201,7 +201,7 @@ int Header::load(const char* type) {
 
   auto r = crypt_load(m_cd, type, NULL);
   if (r != 0) {
-    lderr(m_cct) << "crypt_load failed: " << cpp_strerror(r) << dendl;
+    ldout(m_cct, 20) << "crypt_load failed: " << cpp_strerror(r) << dendl;
     return r;
   }
 
@@ -219,8 +219,8 @@ int Header::read_volume_key(const char* passphrase, size_t passphrase_size,
           m_cd, CRYPT_ANY_SLOT, volume_key, volume_key_size, passphrase,
           passphrase_size);
   if (r < 0) {
-    lderr(m_cct) << "crypt_volume_key_get failed: " << cpp_strerror(r)
-                 << dendl;
+    ldout(m_cct, 20) << "crypt_volume_key_get failed: " << cpp_strerror(r)
+                     << dendl;
     return r;
   }
 
