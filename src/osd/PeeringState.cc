@@ -3514,6 +3514,7 @@ void PeeringState::update_calc_stats()
   info.stats.last_epoch_clean = info.history.last_epoch_clean;
 
   info.stats.log_size = pg_log.get_head().version - pg_log.get_tail().version;
+  info.stats.log_dups_size = pg_log.get_log().dups.size();
   info.stats.ondisk_log_size = info.stats.log_size;
   info.stats.log_start = pg_log.get_tail();
   info.stats.ondisk_log_start = pg_log.get_tail();
@@ -4164,6 +4165,8 @@ void PeeringState::append_log(
 
   psdout(10) << __func__ << " approx pg log length =  "
 	     << pg_log.get_log().approx_size() << dendl;
+  psdout(10) << __func__ << " dups pg log length =  "
+	     << pg_log.get_log().dups.size() << dendl;
   psdout(10) << __func__ << " transaction_applied = "
 	     << transaction_applied << dendl;
   if (!transaction_applied || async)
