@@ -40,6 +40,7 @@ struct TestMockCryptoLuksLoadRequest : public TestMockFixture {
   Context* image_read_request;
   ceph::bufferlist header_bl;
   uint64_t data_offset;
+  std::string detected_format_name;
 
   void SetUp() override {
     TestMockFixture::SetUp();
@@ -48,7 +49,9 @@ struct TestMockCryptoLuksLoadRequest : public TestMockFixture {
     ASSERT_EQ(0, open_image(m_image_name, &ictx));
     mock_image_ctx = new MockImageCtx(*ictx);
     mock_load_request = MockLoadRequest::create(
-            mock_image_ctx, std::move(passphrase), &crypto, on_finish);
+            mock_image_ctx, std::move(passphrase), &crypto,
+            &detected_format_name, on_finish);
+    detected_format_name = "";
   }
 
   void TearDown() override {
@@ -123,7 +126,8 @@ TEST_F(TestMockCryptoLuksLoadRequest, AES256) {
 TEST_F(TestMockCryptoLuksLoadRequest, LUKS1) {
   delete mock_load_request;
   mock_load_request = MockLoadRequest::create(
-          mock_image_ctx, {passphrase_cstr}, &crypto, on_finish);
+          mock_image_ctx, {passphrase_cstr}, &crypto, &detected_format_name,
+          on_finish);
   generate_header(CRYPT_LUKS1, "aes", 32, "xts-plain64", 512, false);
   expect_image_read(0, DEFAULT_INITIAL_READ_SIZE);
   mock_load_request->send();
@@ -183,7 +187,8 @@ TEST_F(TestMockCryptoLuksLoadRequest, LUKS1FormattedClone) {
   mock_image_ctx->parent = mock_image_ctx;
   delete mock_load_request;
   mock_load_request = MockLoadRequest::create(
-          mock_image_ctx, {passphrase_cstr}, &crypto, on_finish);
+          mock_image_ctx, {passphrase_cstr}, &crypto, &detected_format_name,
+          on_finish);
   generate_header(CRYPT_LUKS1, "aes", 64, "xts-plain64", 512, true);
   expect_image_read(0, DEFAULT_INITIAL_READ_SIZE);
   mock_load_request->send();
@@ -219,7 +224,7 @@ TEST_F(TestMockCryptoLuksLoadRequest, KeyslotsBiggerThanInitialRead) {
 TEST_F(TestMockCryptoLuksLoadRequest, WrongPassphrase) {
   delete mock_load_request;
   mock_load_request = MockLoadRequest::create(
-        mock_image_ctx, "wrong", &crypto, on_finish);
+        mock_image_ctx, "wrong", &crypto, &detected_format_name, on_finish);
 
   generate_header(CRYPT_LUKS2, "aes", 64, "xts-plain64", 4096, false);
   expect_image_read(0, DEFAULT_INITIAL_READ_SIZE);

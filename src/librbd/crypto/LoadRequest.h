@@ -42,6 +42,7 @@ private:
     bool m_is_current_format_cloned;
     std::vector<std::unique_ptr<EncryptionFormat<I>>> m_formats;
     I* m_current_image_ctx;
+    std::string m_detected_format_name;
 };
 
 } // namespace crypto
