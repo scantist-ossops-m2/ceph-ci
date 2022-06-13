@@ -23,6 +23,7 @@ os.environ["RBD_FORCE_ALLOW_V1"] = "1"
 log = logging.getLogger(__name__)
 
 ENCRYPTION_PASSPHRASE = "password"
+CLONE_ENCRYPTION_PASSPHRASE = "password2"
 
 @contextlib.contextmanager
 def create_image(ctx, config):
@@ -142,6 +143,7 @@ def clone_image(ctx, config):
             client.0:
                 parent_name: testimage
                 image_name: cloneimage
+                encryption_format: luks2
     """
     assert isinstance(config, dict) or isinstance(config, list), \
         "task clone_image only supports a list or dictionary for configuration"
@@ -152,6 +154,7 @@ def clone_image(ctx, config):
         images = [(role, None) for role in config]
 
     testdir = teuthology.get_testdir(ctx)
+    clone_passphrase_file = '{tdir}/clone-passphrase'.format(tdir=testdir)
     for role, properties in images:
         if properties is None:
             properties = {}
@@ -165,9 +168,23 @@ def clone_image(ctx, config):
         (remote,) = ctx.cluster.only(role).remotes.keys()
         log.info('Clone image {parent} to {child}'.format(parent=parent_name,
                                                           child=name))
+
+        encryption_format = properties.get('encryption_format', 'none')
+        if encryption_format != 'none':
+            remote.run(
+                args=[
+                    'echo',
+                    CLONE_ENCRYPTION_PASSPHRASE,
+                    run.Raw('>'),
+                    clone_passphrase_file
+                    ]
+                )
+
         for cmd in [('snap', 'create', parent_spec),
                     ('snap', 'protect', parent_spec),
-                    ('clone', parent_spec, name)]:
+                    ('clone', parent_spec, name),
+                    ('encryption', 'format', name, encryption_format,
+                     clone_passphrase_file)]:
             args = [
                     'adjust-ulimits',
                     'ceph-coverage',
@@ -181,6 +198,7 @@ def clone_image(ctx, config):
         yield
     finally:
         log.info('Deleting rbd clones...')
+        remote.run(args=['rm', '-f', clone_passphrase_file])
         for role, properties in images:
             if properties is None:
                 properties = {}
@@ -273,6 +291,7 @@ def dev_create(ctx, config):
 
     testdir = teuthology.get_testdir(ctx)
     passphrase_file = '{tdir}/passphrase'.format(tdir=testdir)
+    clone_passphrase_file = '{tdir}/clone-passphrase'.format(tdir=testdir)
     device_path = {}
 
     for role, properties in images:
@@ -294,10 +313,28 @@ def dev_create(ctx, config):
                     passphrase_file
                     ]
                 )
-            device_specific_args = [
-                '-t', 'nbd', '-o',
-                'encryption-format=%s,encryption-passphrase-file=%s' % (
-                    encryption_format, passphrase_file)]
+            device_specific_args = ['-t', 'nbd', '-o']
+
+            is_cloned = properties.get('parent_name') is not None
+            if is_cloned:
+                remote.run(
+                    args=[
+                        'echo',
+                        CLONE_ENCRYPTION_PASSPHRASE,
+                        run.Raw('>'),
+                        clone_passphrase_file
+                        ]
+                    )
+
+                device_specific_args += [
+                    'encryption-format=%s,encryption-passphrase-file=%s,'
+                    'encryption-format=%s,encryption-passphrase-file=%s' % (
+                        encryption_format, clone_passphrase_file,
+                        encryption_format, passphrase_file)]
+            else:
+                device_specific_args += [
+                    'encryption-format=%s,encryption-passphrase-file=%s' % (
+                        encryption_format, passphrase_file)]
 
         map_fp = StringIO()
         remote.run(
@@ -322,7 +359,7 @@ def dev_create(ctx, config):
         yield
     finally:
         log.info('Unmapping rbd devices...')
-        remote.run(args=['rm', '-f', passphrase_file])
+        remote.run(args=['rm', '-f', passphrase_file, clone_passphrase_file])
         for role, properties in images:
             if not device_path.get(role):
                 continue
