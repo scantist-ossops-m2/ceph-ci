@@ -248,6 +248,7 @@ void MgrClient::_send_open()
 
 void MgrClient::_send_update()
 {
+  dout(20) << __func__ << dendl;
   if (session && session->con) {
     auto update = make_message<MMgrUpdate>();
     if (!service_name.empty()) {
@@ -257,9 +258,11 @@ void MgrClient::_send_update()
       update->daemon_name = cct->_conf->name.get_id();
     }
     if (service_daemon) {
+      dout(20) << __func__ << " updating the daemon metadata " << dendl;
       update->service_daemon = service_daemon;
       update->daemon_metadata = daemon_metadata;
     }
+    dout(20) << __func__ << " last part of function reached " << dendl;
     update->need_metadata_update = need_metadata_update;
     session->con->send_message2(update);
   }
@@ -591,6 +594,7 @@ int MgrClient::update_daemon_metadata(
   const std::string& name,
   const std::map<std::string,std::string>& metadata)
 {
+  dout(20) << __func__ << dendl;
   std::lock_guard l(lock);
   if (service_daemon) {
     return -EEXIST;
@@ -604,6 +608,7 @@ int MgrClient::update_daemon_metadata(
 
   if (need_metadata_update == true &&
       !daemon_metadata.empty()) {
+    dout(20) << __func__ << " " << need_metadata_update << " " << daemon_metadata_empty() << dendl;
     _send_update();
     need_metadata_update = false;
   }

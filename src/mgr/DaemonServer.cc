@@ -483,6 +483,7 @@ bool DaemonServer::handle_open(const ref_t<MMgrOpen>& m)
   }
   if (daemon) {
     if (m->service_daemon) {
+      dout(10) << __func__ << " updating metadata through the daemon state index for " << key << dendl;
       // update the metadata through the daemon state index to
       // ensure it's kept up-to-date
       daemon_state.update_metadata(daemon, m->daemon_metadata);
@@ -536,6 +537,7 @@ bool DaemonServer::handle_open(const ref_t<MMgrOpen>& m)
 
 bool DaemonServer::handle_update(const ref_t<MMgrUpdate>& m)
 {
+  dout(20) << __func__ << dendl;
   DaemonKey key;
   if (!m->service_name.empty()) {
     key.type = m->service_name;
