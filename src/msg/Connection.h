@@ -121,7 +121,6 @@ public:
 
   virtual int send_message2(MessageRef m)
   {
-    dout(20) << __func__ << dendl;
     return send_message(m.detach()); /* send_message(Message *m) consumes a reference */
   }
 
