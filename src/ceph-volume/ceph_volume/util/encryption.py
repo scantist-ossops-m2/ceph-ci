@@ -145,7 +145,8 @@ def get_dmcrypt_key(osd_id, osd_fsid, lockbox_keyring=None):
             'get',
             config_key
         ],
-        show_command=True
+        show_command=True,
+        logfile_verbose=False
     )
     if returncode != 0:
         raise RuntimeError('Unable to retrieve dmcrypt secret')
