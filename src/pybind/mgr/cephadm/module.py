@@ -29,7 +29,8 @@ from ceph.deployment.service_spec import \
 from ceph.utils import str_to_datetime, datetime_to_str, datetime_now
 from cephadm.serve import CephadmServe
 from cephadm.services.cephadmservice import CephadmDaemonDeploySpec
-from cephadm.agent import CherryPyThread, CephadmAgentHelpers
+from cephadm.http_server import CephadmHttpServer
+from cephadm.agent import CephadmAgentHelpers
 
 
 from mgr_module import MgrModule, HandleCommandResult, Option, NotifyType
@@ -393,6 +394,12 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             default=10,
             desc='max number of osds that will be drained simultaneously when osds are removed'
         ),
+        Option(
+            'service_discovery_port',
+            type='int',
+            default=9000,
+            desc='cephadm service discovery port'
+        ),
     ]
 
     def __init__(self, *args: Any, **kwargs: Any):
@@ -460,6 +467,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             self.agent_refresh_rate = 0
             self.agent_down_multiplier = 0.0
             self.agent_starting_port = 0
+            self.service_discovery_port = 0
             self.apply_spec_fails: List[Tuple[str, str]] = []
             self.max_osd_draining_count = 10
             self.device_enhanced_scan = False
@@ -541,8 +549,8 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
 
         self.config_checker = CephadmConfigChecks(self)
 
-        self.cherrypy_thread = CherryPyThread(self)
-        self.cherrypy_thread.start()
+        self.http_server = CephadmHttpServer(self)
+        self.http_server.start()
         self.agent_helpers = CephadmAgentHelpers(self)
         if self.use_agent:
             self.agent_helpers._apply_agent()
@@ -554,7 +562,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         self.log.debug('shutdown')
         self._worker_pool.close()
         self._worker_pool.join()
-        self.cherrypy_thread.shutdown()
+        self.http_server.shutdown()
         self.offline_watcher.shutdown()
         self.run = False
         self.event.set()
@@ -1977,6 +1985,9 @@ Then run the following:
     def daemon_is_self(self, daemon_type: str, daemon_id: str) -> bool:
         return daemon_type == 'mgr' and daemon_id == self.get_mgr_id()
 
+    def get_active_mgr(self) -> DaemonDescription:
+        return self.mgr_service.get_active_daemon(self.cache.get_daemons_by_type('mgr'))
+
     def get_active_mgr_digests(self) -> List[str]:
         digests = self.mgr_service.get_active_daemon(
             self.cache.get_daemons_by_type('mgr')).container_image_digests
@@ -2314,25 +2325,28 @@ Then run the following:
             root_cert = ''
             server_port = ''
             try:
-                server_port = str(self.cherrypy_thread.server_port)
-                root_cert = self.cherrypy_thread.ssl_certs.get_root_cert()
+                server_port = str(self.http_server.agent.server_port)
+                root_cert = self.http_server.agent.ssl_certs.get_root_cert()
             except Exception:
                 pass
             deps = sorted([self.get_mgr_ip(), server_port, root_cert,
                            str(self.device_enhanced_scan)])
         elif daemon_type == 'iscsi':
             deps = [self.get_mgr_ip()]
+
+        elif daemon_type == 'prometheus':
+            # for prometheus we add the active mgr as an explicit dependency,
+            # this way we force a redeploy after a mgr failover
+            deps.append(self.get_active_mgr().name())
+            deps.append(str(self.get_module_option_ex('prometheus', 'server_port', 9283)))
         else:
             need = {
-                'prometheus': ['mgr', 'alertmanager', 'node-exporter', 'ingress'],
                 'grafana': ['prometheus'],
                 'alertmanager': ['mgr', 'alertmanager', 'snmp-gateway'],
             }
             for dep_type in need.get(daemon_type, []):
                 for dd in self.cache.get_daemons_by_type(dep_type):
                     deps.append(dd.name())
-            if daemon_type == 'prometheus':
-                deps.append(str(self.get_module_option_ex('prometheus', 'server_port', 9283)))
         return sorted(deps)
 
     @forall_hosts
