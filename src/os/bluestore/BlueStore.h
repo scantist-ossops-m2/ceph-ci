@@ -60,6 +60,7 @@ class Allocator;
 class FreelistManager;
 class BlueStoreRepairer;
 class SimpleBitmap;
+class SnapMapper;
 //#define DEBUG_CACHE
 //#define DEBUG_DEFERRED
 
@@ -218,6 +219,7 @@ enum {
 
 #define META_POOL_ID ((uint64_t)-1ull)
 
+struct snap_listing_entry_t;
 class BlueStore : public ObjectStore,
 		  public md_config_obs_t {
   // -----------------------------------------------------
@@ -2133,6 +2135,9 @@ public:
   };
 
   bool has_null_fm();
+  int  store_snap_maps  (const std::unordered_map<spg_t, const SnapMapper*>& snap_mappers);
+  int  restore_snap_maps();
+
   // --------------------------------------------------------
   // members
 private:
@@ -2148,6 +2153,7 @@ private:
   Allocator *alloc = nullptr;   ///< allocator consumed by BlueStore
   bluefs_shared_alloc_context_t shared_alloc; ///< consumed by BlueFS (may be == alloc)
 
+  std::unordered_map<spg_t, SnapMapper*> snap_mappers;
   uuid_d fsid;
   int path_fd = -1;  ///< open handle to $path
   int fsid_fd = -1;  ///< open handle (locked) to $path/fsid
@@ -3741,13 +3747,23 @@ private:
 
   int  copy_allocator(Allocator* src_alloc, Allocator *dest_alloc, uint64_t* p_num_entries);
   int  store_allocator(Allocator* allocator);
+  int  restore_obj_to_snaps(std::unordered_map<hobject_t, std::vector<snapid_t>>& obj_to_snaps,
+			    const snap_listing_entry_t& entry);
+  int  __restore_snap_maps(const std::vector<snap_listing_entry_t> &sdir);
+  int  store_obj_to_snaps(const std::unordered_map<hobject_t, std::vector<snapid_t>>& obj_to_snaps,
+			  std::vector<snap_listing_entry_t> &sdir,
+			  const spg_t& pgid,
+			  const std::string& spg_name);
+  int  restore_snap_map_listing_file(std::vector<snap_listing_entry_t> &sdir);
+  int  store_snap_map_listing_file(const std::vector<snap_listing_entry_t> &sdir);
   int  invalidate_allocation_file_on_bluefs();
   int  __restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
   int  restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
   int  read_allocation_from_drive_on_startup();
   int  reconstruct_allocations(SimpleBitmap *smbmp, read_alloc_stats_t &stats);
   int  read_allocation_from_onodes(SimpleBitmap *smbmp, read_alloc_stats_t& stats);
-  void read_allocation_from_single_onode(SimpleBitmap *smbmp, BlueStore::OnodeRef& onode_ref, read_alloc_stats_t&  stats);
+  void read_allocation_from_single_onode(SimpleBitmap *smbmp, BlueStore::OnodeRef& onode_ref, SnapMapper*, read_alloc_stats_t&  stats);
+  void process_snapset(hobject_t &hobj, SnapMapper* snap_map, const SnapSet &snapset);
   void set_allocation_in_simple_bmap(SimpleBitmap* sbmap, uint64_t offset, uint64_t length);
   int  commit_to_null_manager();
   int  commit_to_real_manager();

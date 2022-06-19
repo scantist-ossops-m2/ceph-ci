@@ -404,11 +404,12 @@ void PrimaryLogPG::on_local_recover(
     dout(20) << " snapset " << recovery_info.ss << dendl;
     auto p = recovery_info.ss.clone_snaps.find(hoid.snap);
     if (p != recovery_info.ss.clone_snaps.end()) {
-      snaps.insert(p->second.begin(), p->second.end());
-      dout(20) << " snaps " << snaps << dendl;
+      //snaps.insert(p->second.begin(), p->second.end());
+      //dout(20) << " snaps " << snaps << dendl;
+      //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling add_oid()::snaps=" << snaps << dendl;
       snap_mapper.add_oid(
 	recovery_info.soid,
-	snaps,
+	p->second,
 	&_t);
     } else {
       derr << __func__ << " " << hoid << " had no clone_snaps" << dendl;
@@ -4635,7 +4636,7 @@ int PrimaryLogPG::trim_object(
   }
 
   SnapSet& snapset = obc->ssc->snapset;
-
+  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::hoid=" << head_oid << "::coid=" << coid << "::snapset=" << snapset << dendl;
   object_info_t &coi = obc->obs.oi;
   auto citer = snapset.clone_snaps.find(coid.snap);
   if (citer == snapset.clone_snaps.end()) {
@@ -4651,6 +4652,7 @@ int PrimaryLogPG::trim_object(
 
   dout(10) << coid << " old_snaps " << old_snaps
 	   << " old snapset " << snapset << dendl;
+  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::" << coid << " old_snaps " << old_snaps << " old snapset " << snapset << dendl;
   if (snapset.seq == 0) {
     osd->clog->error() << "No snapset.seq for object " << coid;
     return -ENOENT;
@@ -8517,7 +8519,7 @@ void PrimaryLogPG::make_writeable(OpContext *ctx)
   // clone?
   ceph_assert(soid.snap == CEPH_NOSNAP);
   dout(20) << "make_writeable " << soid << " snapset=" << ctx->new_snapset
-	   << "  snapc=" << snapc << dendl;
+          << "  snapc=" << snapc << dendl;
 
   bool was_dirty = ctx->obc->obs.oi.is_dirty();
   if (ctx->new_obs.exists) {
@@ -8574,6 +8576,7 @@ void PrimaryLogPG::make_writeable(OpContext *ctx)
       return vector<snapid_t>{begin(snapc.snaps), last};
     }();
 
+    //ldout(cct, 1) << __func__ << "::GBH::SNAPMAP::" << "snaps=" << snaps << dendl;
     // prepare clone
     object_info_t static_snap_oi(coid);
     object_info_t *snap_oi;
@@ -8641,10 +8644,11 @@ void PrimaryLogPG::make_writeable(OpContext *ctx)
     }
 
     // log clone
-    dout(10) << " cloning v " << ctx->obs->oi.version
-	     << " to " << coid << " v " << ctx->at_version
-	     << " snaps=" << snaps
-	     << " snapset=" << ctx->new_snapset << dendl;
+    ldout(cct, 10) << __func__ << "::GBH::SNAPMAP::" 
+		  << " cloning v " << ctx->obs->oi.version
+		  << " to " << coid << " v " << ctx->at_version
+		  << " snaps=" << snaps
+		  << " snapset=" << ctx->new_snapset << dendl;
     ctx->log.push_back(pg_log_entry_t(
 			 pg_log_entry_t::CLONE, coid, ctx->at_version,
 			 ctx->obs->oi.version,
@@ -15623,7 +15627,6 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
   }
 
   ldout(pg->cct, 10) << "AwaitAsyncWork: trimming snap " << snap_to_trim << dendl;
-
   vector<hobject_t> to_trim;
   unsigned max = pg->cct->_conf->osd_pg_max_concurrent_snap_trims;
   // we need to look for at least 1 snaptrim, otherwise we'll misinterpret
@@ -15635,11 +15638,13 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
     max,
     &to_trim);
   if (r != 0 && r != -ENOENT) {
+    ldout(pg->cct, 1) << "GBH::SNAPMAP::" << "ERR::get_next_objects_to_trim returned "  << cpp_strerror(r) << dendl;
     lderr(pg->cct) << "get_next_objects_to_trim returned "
 		   << cpp_strerror(r) << dendl;
     ceph_abort_msg("get_next_objects_to_trim returned an invalid code");
   } else if (r == -ENOENT) {
     // Done!
+    //ldout(pg->cct, 1) << "GBH::SNAPMAP::" << "ERR::got ENOENT" << dendl;
     ldout(pg->cct, 10) << "got ENOENT" << dendl;
 
     pg->snap_trimq.erase(snap_to_trim);
@@ -15673,9 +15678,11 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
   }
   ceph_assert(!to_trim.empty());
 
+  //ldout(pg->cct, 1) << "GBH::SNAPMAP::" << __func__ << "::hobjects::" << to_trim << "::snap_to_trim::" << snap_to_trim << dendl;
   for (auto &&object: to_trim) {
     // Get next
     ldout(pg->cct, 10) << "AwaitAsyncWork react trimming " << object << dendl;
+    //ldout(pg->cct, 1) << "GBH::SNAPMAP::AwaitAsyncWork react trimming " << object << dendl;
     OpContextUPtr ctx;
     int error = pg->trim_object(in_flight.empty(), object, snap_to_trim, &ctx);
     if (error) {
@@ -15712,7 +15719,6 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
 	  }
 	}
       });
-
     pg->simple_opc_submit(std::move(ctx));
   }
 

@@ -492,7 +492,7 @@ public:
       recovery_state.update_hset(*hset_history);
     }
     if (transaction_applied) {
-      update_snap_map(logv, t);
+	update_snap_map(logv, t);
     }
     auto last = logv.rbegin();
     if (is_primary() && last != logv.rend()) {

@@ -191,6 +191,7 @@ PG::PG(OSDService *o, OSDMapRef curmap,
   cct(o->cct),
   osdriver(osd->store, coll_t(), OSD::make_snapmapper_oid()),
   snap_mapper(
+    pg_id,
     cct,
     &osdriver,
     p.ps(),
@@ -340,9 +341,11 @@ void PG::update_object_snap_mapping(
     derr << __func__ << ": remove_oid returned " << cpp_strerror(r) << dendl;
     ceph_abort();
   }
+  std::vector<snapid_t> _snaps(snaps.begin(), snaps.end());
+  //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling add_oid()::snaps=" << snaps << dendl;
   snap_mapper.add_oid(
     soid,
-    snaps,
+    _snaps,
     &_t);
 }
 
@@ -1162,6 +1165,7 @@ void PG::update_snap_map(
     OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
     if (i->soid.snap < CEPH_MAXSNAP) {
       if (i->is_delete()) {
+	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::snap_mapper.remove_oid(oid=" << i->soid << ")" << dendl;
 	int r = snap_mapper.remove_oid(
 	  i->soid,
 	  &_t);
@@ -1180,18 +1184,17 @@ void PG::update_snap_map(
 	  derr << __func__ << " decode snaps failure on " << *i << dendl;
 	  snaps.clear();
 	}
-	set<snapid_t> _snaps(snaps.begin(), snaps.end());
 
 	if (i->is_clone() || i->is_promote()) {
+	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::snap_mapper.add_oid(oid=" << i->soid << ", _snaps=" << _snaps <<")" << dendl;
 	  snap_mapper.add_oid(
 	    i->soid,
-	    _snaps,
+	    snaps,
 	    &_t);
 	} else if (i->is_modify()) {
 	  int r = snap_mapper.update_snaps(
 	    i->soid,
-	    _snaps,
-	    0,
+	    snaps,
 	    &_t);
 	  ceph_assert(r == 0);
 	} else {
@@ -2710,6 +2713,7 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     }
     int r = snap_mapper.remove_oid(oid.hobj, &_t);
     if (r != 0 && r != -ENOENT) {
+      dout(1) << "GBH::SNAPMAP::" << __func__ << "::Failed removing oid= " << oid.hobj << dendl;
       ceph_abort();
     }
     t.remove(coll, oid);

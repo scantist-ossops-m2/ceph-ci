@@ -554,7 +554,10 @@ class PgScrubber : public ScrubPgIF,
   int get_snaps(const hobject_t& hoid,
 		std::set<snapid_t>* snaps_set) const final
   {
-    return m_pg->snap_mapper.get_snaps(hoid, snaps_set);
+    std::vector<snapid_t> snaps_vec;
+    int ret = m_pg->snap_mapper.get_snaps(hoid, &snaps_vec);
+    *snaps_set = std::set<snapid_t>(snaps_vec.begin(), snaps_vec.end());
+    return ret;
   }
 
   void log_cluster_warning(const std::string& warning) const final;

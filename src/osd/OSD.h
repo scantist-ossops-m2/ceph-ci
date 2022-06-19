@@ -2007,7 +2007,7 @@ private:
   static int write_meta(CephContext *cct,
 			ObjectStore *store,
 			uuid_d& cluster_fsid, uuid_d& osd_fsid, int whoami, std::string& osdspec_affinity);
-
+  void store_snap_maps();
   void handle_fast_scrub(class MOSDScrub2 *m);
   void handle_osd_ping(class MOSDPing *m);
 
