@@ -1796,12 +1796,13 @@ def remove_sync_group_flow_directional(cluster, group, flow_id, src_zones, dest_
         assert False, 'failed to remove sync group flow directional groupid=%s, flow_id=%s, src_zones=%s, dest_zones=%s, bucket=%s' % (group, flow_id, src_zones, dest_zones, bucket)
     return json.loads(result_json)
 
-def create_sync_group_pipe(cluster, group, pipe_id, src_zones, dest_zones, bucket = None, args = None):
+def create_sync_group_pipe(cluster, group, pipe_id, src_zones, dest_zones, bucket = None, args = []):
     cmd = ['sync', 'group', 'pipe', 'create', '--group-id', group, '--pipe-id' , pipe_id, '--source-zones=%s' % src_zones, '--dest-zones=%s' % dest_zones]
     if bucket:
-        cmd += ['--bucket', bucket]
+        b_args = '--bucket=' + bucket
+        cmd.append(b_args)
     if args:
-        cmd += [args]
+       cmd += args
     (result_json, retcode) = cluster.admin(cmd)
     if retcode != 0:
         assert False, 'failed to create sync group pipe groupid=%s, pipe_id=%s, src_zones=%s, dest_zones=%s, bucket=%s' % (group, pipe_id, src_zones, dest_zones, bucket)
@@ -1810,9 +1811,10 @@ def create_sync_group_pipe(cluster, group, pipe_id, src_zones, dest_zones, bucke
 def remove_sync_group_pipe(cluster, group, pipe_id, bucket = None, args = None):
     cmd = ['sync', 'group', 'pipe', 'remove', '--group-id', group, '--pipe-id' , pipe_id]
     if bucket:
-        cmd += ['--bucket', bucket]
+        b_args = '--bucket=' + bucket
+        cmd.append(b_args)
     if args:
-        cmd += args
+        cmd.append(args)
     (result_json, retcode) = cluster.admin(cmd)
     if retcode != 0:
         assert False, 'failed to remove sync group pipe groupid=%s, pipe_id=%s, src_zones=%s, dest_zones=%s, bucket=%s' % (group, pipe_id, src_zones, dest_zones, bucket)
@@ -1850,6 +1852,7 @@ def check_objects_not_exist(bucket, obj_arr):
     for objname in obj_arr:
         check_object_not_exists(bucket, objname)
 
+@attr('sync_policy')
 def test_sync_policy_config_zonegroup():
     """
     test_sync_policy_config_zonegroup:
@@ -1864,7 +1867,7 @@ def test_sync_policy_config_zonegroup():
 
     zones = z1.name+","+z2.name
 
-    c1.admin(['sync policy get'])
+    c1.admin(['sync', 'policy', 'get'])
 
     # (a) zonegroup level
     create_sync_policy_group(c1, "sync-group")
@@ -1920,6 +1923,7 @@ def test_sync_policy_config_zonegroup():
 
     return
 
+@attr('sync_policy')
 def test_sync_flow_symmetrical_zonegroup_all():
     """
     test_sync_flow_symmetrical_zonegroup_all:
@@ -1936,7 +1940,7 @@ def test_sync_flow_symmetrical_zonegroup_all():
 
     c1 = zoneA.cluster
 
-    c1.admin(['sync policy get'])
+    c1.admin(['sync', 'policy', 'get'])
 
     zones = zoneA.name + ',' + zoneB.name
     create_sync_policy_group(c1, "sync-group")
@@ -1976,6 +1980,7 @@ def test_sync_flow_symmetrical_zonegroup_all():
     remove_sync_policy_group(c1, "sync-group")
     return
 
+@attr('sync_policy')
 def test_sync_flow_symmetrical_zonegroup_select():
     """
     test_sync_flow_symmetrical_zonegroup_select:
@@ -1998,7 +2003,7 @@ def test_sync_flow_symmetrical_zonegroup_select():
 
     # configure sync policy
     zones = zoneA.name + ',' + zoneB.name
-    c1.admin(['sync policy get'])
+    c1.admin(['sync', 'policy', 'get'])
     create_sync_policy_group(c1, "sync-group")
     create_sync_group_flow_symmetrical(c1, "sync-group", "sync-flow", zones)
     create_sync_group_pipe(c1, "sync-group", "sync-pipe", zones, zones)
@@ -2043,6 +2048,7 @@ def test_sync_flow_symmetrical_zonegroup_select():
     remove_sync_policy_group(c1, "sync-group")
     return
 
+@attr('sync_policy')
 def test_sync_flow_directional_zonegroup_select():
     """
     test_sync_flow_directional_zonegroup_select:
@@ -2067,7 +2073,7 @@ def test_sync_flow_directional_zonegroup_select():
 
     # configure sync policy
     zones = zoneA.name + ',' + zoneB.name
-    c1.admin(['sync policy get'])
+    c1.admin(['sync', 'policy', 'get'])
     create_sync_policy_group(c1, "sync-group")
     create_sync_group_flow_directional(c1, "sync-group", "sync-flow", zoneA.name, zoneB.name)
     create_sync_group_pipe(c1, "sync-group", "sync-pipe", zoneA.name, zoneB.name)
@@ -2130,7 +2136,7 @@ def test_sync_flow_directional_zonegroup_select():
     # configure sync policy for only bucketA and enable it
     create_sync_policy_group(c1, "sync-bucket", "allowed", bucketA.name)
     create_sync_group_flow_symmetrical(c1, "sync-bucket", "sync-flowA", zones, bucketA.name)
-    args = '--source-bucket=' + '*' + ' --dest-bucket=' + '*'
+    args = ['--source-bucket=*', '--dest-bucket=*']
     create_sync_group_pipe(c1, "sync-bucket", "sync-pipe", zoneA.name, zoneB.name, bucketA.name, args)
     set_sync_policy_group_status(c1, "sync-bucket", "enabled", bucketA.name)
 
@@ -2159,6 +2165,7 @@ def test_sync_flow_directional_zonegroup_select():
     remove_sync_policy_group(c1, "sync-group")
     return
 
+@attr('sync_policy')
 def test_sync_single_bucket():
     """
     test_sync_single_bucket:
@@ -2179,7 +2186,7 @@ def test_sync_single_bucket():
 
     c1 = zoneA.cluster
 
-    c1.admin(['sync policy get'])
+    c1.admin(['sync', 'policy', 'get'])
 
     zones = zoneA.name + ',' + zoneB.name
     get_sync_policy(c1)
@@ -2202,7 +2209,7 @@ def test_sync_single_bucket():
     # configure sync policy & pipe for only bucketA
     create_sync_policy_group(c1, "sync-group")
     create_sync_group_flow_symmetrical(c1, "sync-group", "sync-flow1", zones)
-    args = "--source-bucket " + bucketA.name + " --dest-bucket " + bucketA.name
+    args = ['--source-bucket=' +  bucketA.name, '--dest-bucket=' + bucketA.name]
 
     create_sync_group_pipe(c1, "sync-group", "sync-pipe", zones, zones, None, args)
     set_sync_policy_group_status(c1, "sync-group", "enabled")
@@ -2270,6 +2277,7 @@ def test_sync_single_bucket():
     remove_sync_policy_group(c1, "sync-group")
     return
 
+@attr('sync_policy')
 def test_sync_different_buckets():
     """
     test_sync_different_buckets:
@@ -2296,7 +2304,7 @@ def test_sync_different_buckets():
 
     c1 = zoneA.cluster
 
-    c1.admin(['sync policy get'])
+    c1.admin(['sync', 'policy', 'get'])
 
     objnames = [ 'obj1', 'obj2' ]
     objnamesB = [ 'obj3', 'obj4' ]
@@ -2317,7 +2325,7 @@ def test_sync_different_buckets():
     # configure pipe from zoneA bucketA to zoneB bucketB
     create_sync_policy_group(c1, "sync-group")
     create_sync_group_flow_symmetrical(c1, "sync-group", "sync-flow1", zones)
-    args = '--source-bucket=' + bucketA.name + ' --dest-bucket=' + bucketB.name
+    args = ['--source-bucket=' +  bucketA.name, '--dest-bucket=' + bucketB.name]
     create_sync_group_pipe(c1, "sync-group", "sync-pipe", zoneA.name, zoneB.name, None, args)
     set_sync_policy_group_status(c1, "sync-group", "enabled")
     zonegroup.period.update(zoneA, commit=True)
@@ -2353,7 +2361,7 @@ def test_sync_different_buckets():
     # configure sync policy for only bucketA and enable it
     create_sync_policy_group(c1, "sync-bucket", "allowed", bucketA.name)
     create_sync_group_flow_symmetrical(c1, "sync-bucket", "sync-flowA", zones, bucketA.name)
-    args = '--source-bucket=' + '*' + ' --dest-bucket=' + bucketB.name
+    args = ['--source-bucket=' + '*', '--dest-bucket=' + bucketB.name]
     create_sync_group_pipe(c1, "sync-bucket", "sync-pipeA", zones, zones, bucketA.name, args)
     set_sync_policy_group_status(c1, "sync-bucket", "enabled", bucketA.name)
 
@@ -2391,7 +2399,7 @@ def test_sync_different_buckets():
     # configure sync policy for only bucketA and enable it
     create_sync_policy_group(c1, "sync-bucket", "allowed", bucketA.name)
     create_sync_group_flow_symmetrical(c1, "sync-bucket", "sync-flowA", zones, bucketA.name)
-    args = '--source-bucket=' + bucketB.name + ' --dest-bucket=' + '*'
+    args = ['--source-bucket=' +  bucketB.name, '--dest-bucket=' + '*']
     create_sync_group_pipe(c1, "sync-bucket", "sync-pipe", zones, zones, bucketA.name, args)
     set_sync_policy_group_status(c1, "sync-bucket", "enabled", bucketA.name)
 
@@ -2418,6 +2426,7 @@ def test_sync_different_buckets():
     remove_sync_policy_group(c1, "sync-group")
     return
 
+@attr('sync_policy')
 def test_sync_multiple_buckets_to_single():
     """
     test_sync_multiple_buckets_to_single:
@@ -2441,7 +2450,7 @@ def test_sync_multiple_buckets_to_single():
 
     c1 = zoneA.cluster
 
-    c1.admin(['sync policy get'])
+    c1.admin(['sync', 'policy', 'get'])
 
     objnamesA = [ 'obj1', 'obj2' ]
     objnamesB = [ 'obj3', 'obj4' ]
@@ -2461,7 +2470,7 @@ def test_sync_multiple_buckets_to_single():
     create_sync_group_flow_directional(c1, "sync-group", "sync-flow", zoneA.name, zoneB.name)
     source_buckets = [ bucketA.name, bucketB.name ]
     for source_bucket in source_buckets:
-        args = '--source-bucket=' + source_bucket + ' --dest-bucket=' + bucketB.name
+        args = ['--source-bucket=' +  source_bucket, '--dest-bucket=' + bucketB.name]
         create_sync_group_pipe(c1, "sync-group", "sync-pipe-%s" % source_bucket, zoneA.name, zoneB.name, None, args)
 
     set_sync_policy_group_status(c1, "sync-group", "enabled")
@@ -2509,7 +2518,7 @@ def test_sync_multiple_buckets_to_single():
     create_sync_group_flow_symmetrical(c1, "sync-bucket", "sync-flowA", zones, bucketA.name)
     source_buckets = [ bucketA.name, bucketB.name ]
     for source_bucket in source_buckets:
-        args = '--source-bucket=' + source_bucket + ' --dest-bucket=' + '*'
+        args = ['--source-bucket=' +  source_bucket, '--dest-bucket=' + '*']
         create_sync_group_pipe(c1, "sync-bucket", "sync-pipe-%s" % source_bucket, zoneA.name, zoneB.name, bucketA.name, args)
 
     set_sync_policy_group_status(c1, "sync-bucket", "enabled", bucketA.name)
@@ -2538,6 +2547,7 @@ def test_sync_multiple_buckets_to_single():
     remove_sync_policy_group(c1, "sync-group")
     return
 
+@attr('sync_policy')
 def test_sync_single_bucket_to_multiple():
     """
     test_sync_single_bucket_to_multiple:
@@ -2561,7 +2571,7 @@ def test_sync_single_bucket_to_multiple():
 
     c1 = zoneA.cluster
 
-    c1.admin(['sync policy get'])
+    c1.admin(['sync', 'policy', 'get'])
 
     objnamesA = [ 'obj1', 'obj2' ]
     content = 'asdasd'
@@ -2581,7 +2591,7 @@ def test_sync_single_bucket_to_multiple():
 
     dest_buckets = [ bucketA.name, bucketB.name ]
     for dest_bucket in dest_buckets:
-        args = '--source-bucket=' + bucketA.name + ' --dest-bucket=' + dest_bucket
+        args = ['--source-bucket=' +  bucketA.name, '--dest-bucket=' + dest_bucket]
         create_sync_group_pipe(c1, "sync-group", "sync-pipe-%s" % dest_bucket, zoneA.name, zoneB.name, None, args)
 
     create_sync_group_pipe(c1, "sync-group", "sync-pipe", zoneA.name, zoneB.name, None, args)
@@ -2622,7 +2632,7 @@ def test_sync_single_bucket_to_multiple():
     create_sync_group_flow_symmetrical(c1, "sync-bucket", "sync-flowA", zones, bucketA.name)
     dest_buckets = [ bucketA.name, bucketB.name ]
     for dest_bucket in dest_buckets:
-        args = '--source-bucket=' + '*' + ' --dest-bucket=' + dest_bucket
+        args = ['--source-bucket=' + '*', '--dest-bucket=' + dest_bucket]
         create_sync_group_pipe(c1, "sync-bucket", "sync-pipe-%s" % dest_bucket, zoneA.name, zoneB.name, bucketA.name, args)
 
     set_sync_policy_group_status(c1, "sync-bucket", "enabled", bucketA.name)
