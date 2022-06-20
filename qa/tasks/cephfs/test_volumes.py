@@ -2029,6 +2029,41 @@ class TestSubvolumes(TestVolumesHelper):
         # verify trash dir is clean
         self._wait_for_trash_empty()
 
+    def test_subvolume_create_and_ls_providing_group_as_nogroup(self):
+        """
+        That a 'subvolume create' and 'subvolume ls' should throw
+        permission denied error if option --group=_nogroup is provided.
+        """
+
+        subvolname = self._generate_random_subvolume_name()
+
+        # try to create subvolume providing --group_name=_nogroup option
+        try:
+            self._fs_cmd("subvolume", "create", self.volname, subvolname, "--group_name", "_nogroup")
+        except CommandFailedError as ce:
+            self.assertEqual(ce.exitstatus, errno.EPERM)
+        else:
+            self.fail("expected the 'fs subvolume create' command to fail")
+
+        # create subvolume
+        self._fs_cmd("subvolume", "create", self.volname, subvolname)
+
+        # try to list subvolumes providing --group_name=_nogroup option
+        try:
+            self._fs_cmd("subvolume", "ls", self.volname, "--group_name", "_nogroup")
+        except CommandFailedError as ce:
+            self.assertEqual(ce.exitstatus, errno.EPERM)
+        else:
+            self.fail("expected the 'fs subvolume ls' command to fail")
+
+        # list subvolumes
+        self._fs_cmd("subvolume", "ls", self.volname)
+
+        self._fs_cmd("subvolume", "rm", self.volname, subvolname)
+
+        # verify trash dir is clean.
+        self._wait_for_trash_empty()
+
     def test_subvolume_expand(self):
         """
         That a subvolume can be expanded in size and its quota matches the expected size.
@@ -4011,7 +4046,7 @@ class TestSubvolumeSnapshots(TestVolumesHelper):
         tests the 'fs subvolume snapshot info' command
         """
 
-        snap_md = ["created_at", "data_pool", "has_pending_clones", "size"]
+        snap_md = ["created_at", "data_pool", "has_pending_clones"]
 
         subvolume = self._generate_random_subvolume_name()
         snapshot, snap_missing = self._generate_random_snapshot_name(2)
@@ -4338,7 +4373,7 @@ class TestSubvolumeSnapshots(TestVolumesHelper):
         """
         ensure a retained subvolume can be recreated and further snapshotted
         """
-        snap_md = ["created_at", "data_pool", "has_pending_clones", "size"]
+        snap_md = ["created_at", "data_pool", "has_pending_clones"]
 
         subvolume = self._generate_random_subvolume_name()
         snapshot1, snapshot2 = self._generate_random_snapshot_name(2)
@@ -4401,7 +4436,7 @@ class TestSubvolumeSnapshots(TestVolumesHelper):
         ensure retain snapshots based delete of a subvolume with snapshots retains the subvolume
         also test allowed and dis-allowed operations on a retained subvolume
         """
-        snap_md = ["created_at", "data_pool", "has_pending_clones", "size"]
+        snap_md = ["created_at", "data_pool", "has_pending_clones"]
 
         subvolume = self._generate_random_subvolume_name()
         snapshot = self._generate_random_snapshot_name()
@@ -6952,7 +6987,7 @@ class TestMisc(TestVolumesHelper):
         subvol_md = ["atime", "bytes_pcent", "bytes_quota", "bytes_used", "created_at", "ctime",
                      "data_pool", "gid", "mode", "mon_addrs", "mtime", "path", "pool_namespace",
                      "type", "uid", "features", "state"]
-        snap_md = ["created_at", "data_pool", "has_pending_clones", "size"]
+        snap_md = ["created_at", "data_pool", "has_pending_clones"]
 
         subvolume = self._generate_random_subvolume_name()
         snapshot = self._generate_random_snapshot_name()
