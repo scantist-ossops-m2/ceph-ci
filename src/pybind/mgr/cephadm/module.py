@@ -1,5 +1,6 @@
 import json
 import errno
+import ipaddress
 import logging
 import re
 import shlex
@@ -58,8 +59,10 @@ from .inventory import Inventory, SpecStore, HostCache, AgentCache, EventStore, 
     ClientKeyringStore, ClientKeyringSpec
 from .upgrade import CephadmUpgrade
 from .template import TemplateMgr
-from .utils import CEPH_IMAGE_TYPES, forall_hosts, cephadmNoImage
+from .utils import CEPH_IMAGE_TYPES, RESCHEDULE_FROM_OFFLINE_HOSTS_TYPES, forall_hosts, \
+    cephadmNoImage, CEPH_UPGRADE_ORDER
 from .configchecks import CephadmConfigChecks
+from .offline_watcher import OfflineHostWatcher
 
 try:
     import asyncssh
@@ -91,14 +94,14 @@ os._exit = os_exit_noop   # type: ignore
 
 # Default container images -----------------------------------------------------
 DEFAULT_IMAGE = 'quay.io/ceph/ceph'
-DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.18.1'
-DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v0.18.1'
+DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.33.4'
+DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v1.3.1'
 DEFAULT_LOKI_IMAGE = 'docker.io/grafana/loki:2.4.0'
 DEFAULT_PROMTAIL_IMAGE = 'docker.io/grafana/promtail:2.4.0'
-DEFAULT_ALERT_MANAGER_IMAGE = 'quay.io/prometheus/alertmanager:v0.20.0'
-DEFAULT_GRAFANA_IMAGE = 'quay.io/ceph/ceph-grafana:6.7.4'
-DEFAULT_HAPROXY_IMAGE = 'docker.io/library/haproxy:2.3'
-DEFAULT_KEEPALIVED_IMAGE = 'docker.io/arcts/keepalived'
+DEFAULT_ALERT_MANAGER_IMAGE = 'quay.io/prometheus/alertmanager:v0.23.0'
+DEFAULT_GRAFANA_IMAGE = 'quay.io/ceph/ceph-grafana:8.3.5'
+DEFAULT_HAPROXY_IMAGE = 'quay.io/ceph/haproxy:2.3'
+DEFAULT_KEEPALIVED_IMAGE = 'quay.io/ceph/keepalived:2.1.5'
 DEFAULT_SNMP_GATEWAY_IMAGE = 'docker.io/maxwo/snmp-notifier:v1.2.1'
 # ------------------------------------------------------------------------------
 
@@ -544,11 +547,15 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         if self.use_agent:
             self.agent_helpers._apply_agent()
 
+        self.offline_watcher = OfflineHostWatcher(self)
+        self.offline_watcher.start()
+
     def shutdown(self) -> None:
         self.log.debug('shutdown')
         self._worker_pool.close()
         self._worker_pool.join()
         self.cherrypy_thread.shutdown()
+        self.offline_watcher.shutdown()
         self.run = False
         self.event.set()
 
@@ -748,6 +755,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             sd.memory_usage = d.get('memory_usage')
             sd.memory_request = d.get('memory_request')
             sd.memory_limit = d.get('memory_limit')
+            sd.cpu_percentage = d.get('cpu_percentage')
             sd._service_name = d.get('service_name')
             sd.deployed_by = d.get('deployed_by')
             sd.version = d.get('version')
@@ -773,6 +781,12 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         self.cache.update_host_daemons(host, dm)
         self.cache.save_host(host)
         return None
+
+    def update_watched_hosts(self) -> None:
+        # currently, we are watching hosts with nfs daemons
+        hosts_to_watch = [d.hostname for d in self.cache.get_daemons(
+        ) if d.daemon_type in RESCHEDULE_FROM_OFFLINE_HOSTS_TYPES]
+        self.offline_watcher.set_hosts(list(set([h for h in hosts_to_watch if h is not None])))
 
     def offline_hosts_remove(self, host: str) -> None:
         if host in self.offline_hosts:
@@ -967,6 +981,9 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             return 0, "value unchanged", ""
 
         self._validate_and_set_ssh_val('ssh_user', user, current_user)
+        current_ssh_config = self._get_ssh_config()
+        new_ssh_config = re.sub(r"(\s{2}User\s)(.*)", r"\1" + user, current_ssh_config.stdout)
+        self._set_ssh_config(new_ssh_config)
 
         msg = 'ssh user set to %s' % user
         if user != 'root':
@@ -1330,11 +1347,6 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         return image
 
     def _check_valid_addr(self, host: str, addr: str) -> str:
-        # make sure mgr is not resolving own ip
-        if addr in self.get_mgr_id():
-            raise OrchestratorError(
-                "Can not automatically resolve ip address of host where active mgr is running. Please explicitly provide the address.")
-
         # make sure hostname is resolvable before trying to make a connection
         try:
             ip_addr = utils.resolve_ip(addr)
@@ -1357,6 +1369,15 @@ Then run the following:
 > ssh -F ssh_config -i ~/cephadm_private_key {self.ssh_user}@{addr}'''
             raise OrchestratorError(msg)
 
+        if ipaddress.ip_address(ip_addr).is_loopback and host == addr:
+            # if this is a re-add, use old address. otherwise error
+            if host not in self.inventory or self.inventory.get_addr(host) == host:
+                raise OrchestratorError(
+                    (f'Cannot automatically resolve ip address of host {host}. Ip resolved to loopback address: {ip_addr}\n'
+                     + f'Please explicitly provide the address (ceph orch host add {host} --addr <ip-addr>)'))
+            self.log.debug(
+                f'Received loopback address resolving ip for {host}: {ip_addr}. Falling back to previous address.')
+            ip_addr = self.inventory.get_addr(host)
         out, err, code = self.wait_async(CephadmServe(self)._run_cephadm(
             host, cephadmNoImage, 'check-host',
             ['--expect-hostname', host],
@@ -1379,7 +1400,7 @@ Then run the following:
 
         :param host: host name
         """
-        spec.validate()
+        HostSpec.validate(spec)
         ip_addr = self._check_valid_addr(spec.hostname, spec.addr)
         if spec.addr == spec.hostname and ip_addr:
             spec.addr = ip_addr
@@ -1869,6 +1890,9 @@ Then run the following:
 
     @handle_orch_error
     def service_action(self, action: str, service_name: str) -> List[str]:
+        if service_name not in self.spec_store.all_specs.keys():
+            raise OrchestratorError(f'Invalid service name "{service_name}".'
+                                    + ' View currently running services using "ceph orch ls"')
         dds: List[DaemonDescription] = self.cache.get_daemons_by_service(service_name)
         if not dds:
             raise OrchestratorError(f'No daemons exist under service name "{service_name}".'
@@ -1993,6 +2017,8 @@ Then run the following:
             if self.spec_store[service_name].spec.service_type in ('mon', 'mgr'):
                 return f'Unable to remove {service_name} service.\n' \
                        f'Note, you might want to mark the {service_name} service as "unmanaged"'
+        else:
+            return f"Invalid service '{service_name}'. Use 'ceph orch ls' to list available services.\n"
 
         # Report list of affected OSDs?
         if not force and service_name.startswith('osd.'):
@@ -2226,6 +2252,10 @@ Then run the following:
 
     @handle_orch_error
     def create_osds(self, drive_group: DriveGroupSpec) -> str:
+        hosts: List[HostSpec] = self.inventory.all_specs()
+        filtered_hosts: List[str] = drive_group.placement.filter_matching_hostspecs(hosts)
+        if not filtered_hosts:
+            return "Invalid 'host:device' spec: host not found in cluster. Please check 'ceph orch host ls' for available hosts"
         return self.osd_service.create_from_spec(drive_group)
 
     def _preview_osdspecs(self,
@@ -2301,6 +2331,8 @@ Then run the following:
             for dep_type in need.get(daemon_type, []):
                 for dd in self.cache.get_daemons_by_type(dep_type):
                     deps.append(dd.name())
+            if daemon_type == 'prometheus':
+                deps.append(str(self.get_module_option_ex('prometheus', 'server_port', 9283)))
         return sorted(deps)
 
     @forall_hosts
@@ -2659,14 +2691,41 @@ Then run the following:
         return self.upgrade.upgrade_status()
 
     @handle_orch_error
-    def upgrade_ls(self, image: Optional[str], tags: bool) -> Dict[Any, Any]:
-        return self.upgrade.upgrade_ls(image, tags)
+    def upgrade_ls(self, image: Optional[str], tags: bool, show_all_versions: Optional[bool]) -> Dict[Any, Any]:
+        return self.upgrade.upgrade_ls(image, tags, show_all_versions)
 
     @handle_orch_error
-    def upgrade_start(self, image: str, version: str) -> str:
+    def upgrade_start(self, image: str, version: str, daemon_types: Optional[List[str]] = None, host_placement: Optional[str] = None,
+                      services: Optional[List[str]] = None, limit: Optional[int] = None) -> str:
         if self.inventory.get_host_with_state("maintenance"):
             raise OrchestratorError("upgrade aborted - you have host(s) in maintenance state")
-        return self.upgrade.upgrade_start(image, version)
+        if daemon_types is not None and services is not None:
+            raise OrchestratorError('--daemon-types and --services are mutually exclusive')
+        if daemon_types is not None:
+            for dtype in daemon_types:
+                if dtype not in CEPH_UPGRADE_ORDER:
+                    raise OrchestratorError(f'Upgrade aborted - Got unexpected daemon type "{dtype}".\n'
+                                            f'Viable daemon types for this command are: {utils.CEPH_TYPES + utils.GATEWAY_TYPES}')
+        if services is not None:
+            for service in services:
+                if service not in self.spec_store:
+                    raise OrchestratorError(f'Upgrade aborted - Got unknown service name "{service}".\n'
+                                            f'Known services are: {self.spec_store.all_specs.keys()}')
+        hosts: Optional[List[str]] = None
+        if host_placement is not None:
+            all_hosts = list(self.inventory.all_specs())
+            placement = PlacementSpec.from_string(host_placement)
+            hosts = placement.filter_matching_hostspecs(all_hosts)
+            if not hosts:
+                raise OrchestratorError(
+                    f'Upgrade aborted - hosts parameter "{host_placement}" provided did not match any hosts')
+
+        if limit is not None:
+            if limit < 1:
+                raise OrchestratorError(
+                    f'Upgrade aborted - --limit arg must be a positive integer, not {limit}')
+
+        return self.upgrade.upgrade_start(image, version, daemon_types, hosts, services, limit)
 
     @handle_orch_error
     def upgrade_pause(self) -> str:
