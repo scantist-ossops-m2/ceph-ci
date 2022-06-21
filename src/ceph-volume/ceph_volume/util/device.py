@@ -33,10 +33,17 @@ class Devices(object):
     """
 
     def __init__(self, filter_for_batch=False, with_lsm=False):
+        lvs = lvm.get_lvs()
+        lsblk = disk.lsblk()
+        all_devices_vgs = lvm.get_all_devices_vgs()
         if not sys_info.devices:
             sys_info.devices = disk.get_devices()
-        self.devices = [Device(k, with_lsm) for k in
-                            sys_info.devices.keys()]
+        self.devices = [Device(k,
+                               with_lsm,
+                               lvs=lvs,
+                               lsblk=lsblk,
+                               all_devices_vgs=all_devices_vgs) for k in
+                        sys_info.devices.keys()]
         if filter_for_batch:
             self.devices = [d for d in self.devices if d.available_lvm_batch]
 
@@ -89,18 +96,23 @@ class Device(object):
     # unittests
     lvs = []
 
-    def __init__(self, path, with_lsm=False):
+    def __init__(self, path, with_lsm=False, lvs=None, lsblk=None, all_devices_vgs=None):
         self.path = path
         # LVs can have a vg/lv path, while disks will have /dev/sda
         self.abspath = path
+        if not sys_info.devices:
+            sys_info.devices = disk.get_devices()
+        self.sys_api = sys_info.devices.get(self.abspath, {})
+        self.partitions = self._get_partitions()
         self.lv_api = None
-        self.lvs = []
+        self.lvs = [] if not lvs else lvs
+        self.lsblk = lsblk if lsblk else disk.lsblk(self.path)
+        self.all_devices_vgs = all_devices_vgs
         self.vgs = []
         self.vg_name = None
         self.lv_name = None
         self.disk_api = {}
         self.blkid_api = {}
-        self.sys_api = {}
         self._exists = None
         self._is_lvm_member = None
         self._parse()
@@ -149,9 +161,7 @@ class Device(object):
         return hash(self.path)
 
     def _parse(self):
-        if not sys_info.devices:
-            sys_info.devices = disk.get_devices()
-        self.sys_api = sys_info.devices.get(self.abspath, {})
+        lv = None
         if not self.sys_api:
             # if no device was found check if we are a partition
             partname = self.abspath.split('/')[-1]
@@ -161,14 +171,27 @@ class Device(object):
                     self.sys_api = part
                     break
 
-        # if the path is not absolute, we have 'vg/lv', let's use LV name
-        # to get the LV.
-        if self.path[0] == '/':
-            lv = lvm.get_single_lv(filters={'lv_path': self.path})
+        if self.lvs:
+            for _lv in self.lvs:
+                # if the path is not absolute, we have 'vg/lv', let's use LV name
+                # to get the LV.
+                if self.path[0] == '/':
+                    if _lv.lv_path == self.path:
+                        lv = _lv
+                        break
+                else:
+                    vgname, lvname = self.path.split('/')
+                    if _lv.lv_name == lvname and _lv.vg_name == vgname:
+                        lv = _lv
+                        break
         else:
-            vgname, lvname = self.path.split('/')
-            lv = lvm.get_single_lv(filters={'lv_name': lvname,
-                                            'vg_name': vgname})
+            if self.path[0] == '/':
+                lv = lvm.get_single_lv(filters={'lv_path': self.path})
+            else:
+                vgname, lvname = self.path.split('/')
+                lv = lvm.get_single_lv(filters={'lv_name': lvname,
+                                                'vg_name': vgname})
+
         if lv:
             self.lv_api = lv
             self.lvs = [lv]
@@ -177,7 +200,12 @@ class Device(object):
             self.lv_name = lv.name
             self.ceph_device = lvm.is_ceph_device(lv)
         else:
-            dev = disk.lsblk(self.path)
+            if self.lsblk:
+                for dev in self.lsblk:
+                    if dev['NAME'] == os.path.basename(self.path):
+                        break
+            else:
+                dev = disk.lsblk(device=self.path)
             self.blkid_api = disk.blkid(self.path)
             self.disk_api = dev
             device_type = dev.get('TYPE', '')
@@ -281,29 +309,37 @@ class Device(object):
             # VGs, should we consider it as part of LVM? We choose not to
             # here, because most likely, we need to use VGs from this PV.
             self._is_lvm_member = False
-            for path in self._get_device_with_partitions_list():
-                vgs = lvm.get_device_vgs(path)
+            device_to_check = [self.abspath]
+            device_to_check.extend(self.partitions)
+
+            # a pv can only be in one vg, so this should be safe
+            # FIXME: While the above assumption holds, sda1 and sda2
+            # can each host a PV and VG. I think the vg_name property is
+            # actually unused (not 100% sure) and can simply be removed
+            vgs = None
+            for path in device_to_check:
+                if self.all_devices_vgs:
+                    for dev_vg in self.all_devices_vgs:
+                        if dev_vg.pv_name == path:
+                            vgs = [dev_vg]
+                else:
+                    vgs = lvm.get_device_vgs(path)
                 if vgs:
                     self.vgs.extend(vgs)
-                    # a pv can only be in one vg, so this should be safe
-                    # FIXME: While the above assumption holds, sda1 and sda2
-                    # can each host a PV and VG. I think the vg_name property is
-                    # actually unused (not 100% sure) and can simply be removed
                     self.vg_name = vgs[0]
                     self._is_lvm_member = True
                     self.lvs.extend(lvm.get_device_lvs(path))
-        return self._is_lvm_member
 
-    def _get_device_with_partitions_list(self):
+    def _get_partitions(self):
         """
         For block devices LVM can reside on the raw block device or on a
         partition. Return a list of paths to be checked for a pv.
         """
-        paths = [self.abspath]
+        partitions = []
         path_dir = os.path.dirname(self.abspath)
-        for part in self.sys_api.get('partitions', {}).keys():
-            paths.append(os.path.join(path_dir, part))
-        return paths
+        for partition in self.sys_api.get('partitions', {}).keys():
+            partitions.append(os.path.join(path_dir, partition))
+        return partitions
 
     @property
     def exists(self):
