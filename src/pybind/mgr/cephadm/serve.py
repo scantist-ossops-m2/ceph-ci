@@ -973,13 +973,12 @@ class CephadmServe:
             elif last_deps != deps:
                 self.log.debug(f'{dd.name()} deps {last_deps} -> {deps}')
                 self.log.info(f'Reconfiguring {dd.name()} (dependencies changed)...')
-                # TODO(redo): this is ungly, but we need only to redeploy if secure_monitoring_stack
-                # has changed.
                 action = 'reconfig'
                 service_name = dd.name().split('.')[0]
+                # we need only redeploy if secure_monitoring_stack value has changed:
                 if service_name in ['prometheus', 'node-exporter', 'alertmanager']:
                     diff = list(set(last_deps) - set(deps))
-                    if 'True' in diff or 'False' in diff:
+                    if any('secure_monitoring_stack' in e for e in diff):
                         action = 'redeploy'
 
             elif spec is not None and hasattr(spec, 'extra_container_args') and dd.extra_container_args != spec.extra_container_args:

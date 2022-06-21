@@ -24,7 +24,7 @@ logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
 cherrypy.log.access_log.propagate = False
 
 
-class CephAdmHttpServer(threading.Thread):
+class CephadmHttpServer(threading.Thread):
     def __init__(self, mgr: "CephadmOrchestrator") -> None:
         self.mgr = mgr
         self.agent = AgentEndpoint(mgr)

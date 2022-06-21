@@ -2560,7 +2560,7 @@ Then run the following:
                     deps.append(dd.name())
 
         if daemon_type in ['prometheus', 'node-exporter', 'alertmanager']:
-            deps.append(str(self.secure_monitoring_stack))
+            deps.append(f'secure_monitoring_stack:{self.secure_monitoring_stack}')
 
         return sorted(deps)
 

@@ -220,6 +220,7 @@ class AlertmanagerService(CephadmService):
                 f'{p_result.scheme}://{hostname}:{p_result.port}{p_result.path}')
             proto = p_result.scheme
             port = p_result.port
+
         # scan all mgrs to generate deps and to get standbys too.
         # assume that they are all on the same port as the active mgr.
         for dd in self.mgr.cache.get_daemons_by_service('mgr'):
@@ -260,7 +261,7 @@ class AlertmanagerService(CephadmService):
             addr = self._inventory_get_fqdn(dd.hostname)
             peers.append(build_url(host=addr, port=port).lstrip('/'))
 
-        deps.append(str(self.mgr.secure_monitoring_stack))
+        deps.append(f'secure_monitoring_stack:{self.mgr.secure_monitoring_stack}')
         if self.mgr.secure_monitoring_stack:
             node_ip = self.mgr.inventory.get_addr(daemon_spec.host)
             cert, key = self.mgr.http_server.service_discovery.ssl_certs.generate_cert(
@@ -465,13 +466,13 @@ class PrometheusService(CephadmService):
 
     def calculate_deps(self) -> List[str]:
         deps = []  # type: List[str]
-        port = cast(int, self.mgr.get_module_option_ex(
-            'prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
+        port = cast(int, self.mgr.get_module_option_ex('prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
         deps.append(str(port))
         deps.append(str(self.mgr.service_discovery_port))
         # add an explicit dependency on the active manager. This will force to
         # re-deploy prometheus if the mgr has changed (due to a fail-over i.e).
         deps.append(self.mgr.get_active_mgr().name())
+        deps.append(f'secure_monitoring_stack:{self.mgr.secure_monitoring_stack}')
         # add dependency on ceph-exporter daemons
         deps += [d.name() for d in self.mgr.cache.get_daemons_by_service('ceph-exporter')]
         deps += [s for s in ['node-exporter', 'alertmanager'] if self.mgr.cache.get_daemons_by_service(s)]
@@ -520,7 +521,7 @@ class NodeExporterService(CephadmService):
 
     def generate_config(self, daemon_spec: CephadmDaemonDeploySpec) -> Tuple[Dict[str, Any], List[str]]:
         assert self.TYPE == daemon_spec.daemon_type
-        deps = [str(self.mgr.secure_monitoring_stack)]
+        deps = [f'secure_monitoring_stack:{self.mgr.secure_monitoring_stack}']
         if self.mgr.secure_monitoring_stack:
             node_ip = self.mgr.inventory.get_addr(daemon_spec.host)
             cert, key = self.mgr.http_server.service_discovery.ssl_certs.generate_cert(

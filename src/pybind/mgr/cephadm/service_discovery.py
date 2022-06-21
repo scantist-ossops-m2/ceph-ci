@@ -11,6 +11,7 @@ import orchestrator  # noqa
 from mgr_module import ServiceInfoT
 from mgr_util import build_url
 from typing import Dict, List, TYPE_CHECKING, cast, Collection, Callable, NamedTuple, Optional
+import secrets
 from cephadm.services.monitoring import AlertmanagerService, NodeExporterService, PrometheusService
 import secrets
 
@@ -124,7 +125,7 @@ class Root(Server):
         self.unsubscribe()
         super().stop()
 
-    def __init__(self, mgr: "CephadmOrchestrator", port: int, host: str):
+    def __init__(self, mgr: "CephadmOrchestrator", port: int = 0, host: str = ''):
         self.mgr = mgr
         super().__init__()
         self.socket_port = port
