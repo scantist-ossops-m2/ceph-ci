@@ -2350,7 +2350,7 @@ def test_sync_different_buckets():
     """
 
     remove_sync_group_pipe(c1, "sync-group", "sync-pipe")
-    create_sync_group_pipe(c1, "sync-group", "sync-pipe", '*', '*')
+    create_sync_group_pipe(c1, "sync-group", "sync-pipe", zones, zones)
 
     # change state to allowed
     set_sync_policy_group_status(c1, "sync-group", "allowed")
@@ -2361,7 +2361,7 @@ def test_sync_different_buckets():
     # configure sync policy for only bucketA and enable it
     create_sync_policy_group(c1, "sync-bucket", "allowed", bucketA.name)
     create_sync_group_flow_symmetrical(c1, "sync-bucket", "sync-flowA", zones, bucketA.name)
-    args = ['--source-bucket=' + '*', '--dest-bucket=' + bucketB.name]
+    args = ['--source-bucket=*', '--dest-bucket=' + bucketB.name]
     create_sync_group_pipe(c1, "sync-bucket", "sync-pipeA", zones, zones, bucketA.name, args)
     set_sync_policy_group_status(c1, "sync-bucket", "enabled", bucketA.name)
 
