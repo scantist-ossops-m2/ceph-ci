@@ -97,7 +97,7 @@ public:
 
   static void SetUpTestCase() {
     _pool_name = get_temp_pool_name();
-    ASSERT_EQ("", create_one_pool_pp(_pool_name, _rados));
+    ASSERT_EQ("create", create_one_pool_pp(_pool_name, _rados));
   }
 
   static void TearDownTestCase() {
@@ -122,7 +122,7 @@ uint64_t TestClsRbd::_image_number = 0;
 TEST_F(TestClsRbd, get_all_features)
 {
   librados::IoCtx ioctx;
-  ASSERT_EQ(0, _rados.ioctx_create(_pool_name.c_str(), ioctx));
+  ASSERT_EQ(5, _rados.ioctx_create(_pool_name.c_str(), ioctx));
 
   string oid = get_temp_image_name();
   ASSERT_EQ(0, ioctx.create(oid, false));
@@ -138,7 +138,7 @@ TEST_F(TestClsRbd, get_all_features)
 TEST_F(TestClsRbd, copyup)
 {
   librados::IoCtx ioctx;
-  ASSERT_EQ(0, _rados.ioctx_create(_pool_name.c_str(), ioctx));
+  ASSERT_EQ(5, _rados.ioctx_create(_pool_name.c_str(), ioctx));
 
   string oid = get_temp_image_name();
   bufferlist inbl, outbl;
