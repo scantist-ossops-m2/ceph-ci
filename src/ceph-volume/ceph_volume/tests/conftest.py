@@ -238,7 +238,9 @@ def ceph_parttype(request):
 @pytest.fixture
 def lsblk_ceph_disk_member(monkeypatch, request, ceph_partlabel, ceph_parttype):
     monkeypatch.setattr("ceph_volume.util.device.disk.lsblk",
-                        lambda path: {'TYPE': 'disk', 'PARTLABEL': ceph_partlabel})
+                        lambda path: [{'TYPE': 'disk',
+                                      'NAME': 'sda',
+                                      'PARTLABEL': ceph_partlabel}])
     # setting blkid here too in order to be able to fall back to PARTTYPE based
     # membership
     monkeypatch.setattr("ceph_volume.util.device.disk.blkid",
@@ -263,8 +265,9 @@ def blkid_ceph_disk_member(monkeypatch, request, ceph_partlabel, ceph_parttype):
 ])
 def device_info_not_ceph_disk_member(monkeypatch, request):
     monkeypatch.setattr("ceph_volume.util.device.disk.lsblk",
-                        lambda path: {'TYPE': 'disk',
-                                      'PARTLABEL': request.param[0]})
+                        lambda path: [{'TYPE': 'disk',
+                                       'NAME': 'sda',
+                                       'PARTLABEL': request.param[0]}])
     monkeypatch.setattr("ceph_volume.util.device.disk.blkid",
                         lambda path: {'TYPE': 'disk',
                                       'PARTLABEL': request.param[1]})
@@ -297,7 +300,7 @@ def device_info(monkeypatch, patch_bluestore_label):
         else:
             monkeypatch.setattr("ceph_volume.util.device.lvm.get_device_lvs",
                                 lambda path: [lv])
-        monkeypatch.setattr("ceph_volume.util.device.disk.lsblk", lambda path: lsblk)
+        monkeypatch.setattr("ceph_volume.util.device.disk.lsblk", lambda device='': lsblk)
         monkeypatch.setattr("ceph_volume.util.device.disk.blkid", lambda path: blkid)
         monkeypatch.setattr("ceph_volume.util.disk.udevadm_property", lambda *a, **kw: udevadm)
     return apply

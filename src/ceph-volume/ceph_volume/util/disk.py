@@ -228,7 +228,7 @@ def _udevadm_info(device):
     return out
 
 
-def lsblk(device, columns=None, abspath=False):
+def lsblk(device='', columns=None, abspath=False):
     """
     Create a dictionary of identifying values for a device using ``lsblk``.
     Each supported column is a key, in its *raw* format (all uppercase
@@ -308,13 +308,21 @@ def lsblk(device, columns=None, abspath=False):
         base_command.append('-p')
     base_command.append('-o')
     base_command.append(','.join(columns))
-    base_command.append(device)
+    if device:
+        base_command.append(device)
     out, err, rc = process.call(base_command)
 
     if rc != 0:
         return {}
 
-    return _lsblk_parser(' '.join(out))
+    result = []
+    if device:
+        result.append(_lsblk_parser(' '.join(out)))
+    else:
+        for line in out:
+            result.append(_lsblk_parser(line))
+
+    return result
 
 
 def is_device(dev):
@@ -731,7 +739,7 @@ def is_locked_raw_device(disk_path):
     return 0
 
 
-def get_block_devs_lsblk():
+def get_block_devs_lsblk(device=''):
     '''
     This returns a list of lists with 3 items per inner list.
     KNAME - reflects the kernel device name , for example /dev/sda or /dev/dm-0
@@ -741,14 +749,15 @@ def get_block_devs_lsblk():
 
     '''
     cmd = ['lsblk', '-plno', 'KNAME,NAME,TYPE']
+    if device:
+        cmd.extend(['--nodeps', device])
     stdout, stderr, rc = process.call(cmd)
     # lsblk returns 1 on failure
     if rc == 1:
         raise OSError('lsblk returned failure, stderr: {}'.format(stderr))
     return [re.split(r'\s+', line) for line in stdout]
 
-
-def get_devices(_sys_block_path='/sys/block'):
+def get_devices(_sys_block_path='/sys/block', device=''):
     """
     Captures all available block devices as reported by lsblk.
     Additional interesting metadata like sectors, size, vendor,
@@ -761,7 +770,7 @@ def get_devices(_sys_block_path='/sys/block'):
 
     device_facts = {}
 
-    block_devs = get_block_devs_lsblk()
+    block_devs = get_block_devs_lsblk(device=device)
 
     for block in block_devs:
         devname = os.path.basename(block[0])
