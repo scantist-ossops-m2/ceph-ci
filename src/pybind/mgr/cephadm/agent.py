@@ -53,11 +53,11 @@ class AgentEndpoint:
 
         # configure routes
         d = cherrypy.dispatch.RoutesDispatcher()
-        d.connect(name='host-data', route='/data',
+        d.connect(name='host-data', route='/',
                   controller=self.host_data.POST,
                   conditions=dict(method=['POST']))
 
-        cherrypy.tree.mount(None, '/', config={'/': {'request.dispatch': d}})
+        cherrypy.tree.mount(None, '/data', config={'/': {'request.dispatch': d}})
 
     def configure_tls(self) -> None:
         try:
