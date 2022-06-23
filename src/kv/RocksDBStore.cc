@@ -33,7 +33,7 @@
 #include "common/debug.h"
 
 #define dout_context cct
-#define dout_subsys ceph_subsys_rocksdb
+#define dout_subsys ceph_subsys_osd
 #undef dout_prefix
 #define dout_prefix *_dout << "rocksdb: "
 
@@ -1735,10 +1735,13 @@ void RocksDBStore::RocksDBTransactionImpl::rmkeys_by_prefix(const string &prefix
   }
 }
 
+#undef dout_context
+#define dout_context db->cct
 void RocksDBStore::RocksDBTransactionImpl::rm_range_keys(const string &prefix,
                                                          const string &start,
                                                          const string &end)
 {
+  dout(1) << __func__ << " enter start=" << start << " end=" << end << dendl;
   auto p_iter = db->cf_handles.find(prefix);
   if (p_iter == db->cf_handles.end()) {
     uint64_t cnt = db->delete_range_threshold;
@@ -1750,6 +1753,7 @@ void RocksDBStore::RocksDBTransactionImpl::rm_range_keys(const string &prefix,
       bat.Delete(db->default_cf, combine_strings(prefix, it->key()));
     }
     if (cnt == 0) {
+      dout(1) << __func__ << " p_iter == end(), resorting to DeleteRange" << dendl;
       bat.RollbackToSavePoint();
       bat.DeleteRange(db->default_cf,
 		      rocksdb::Slice(combine_strings(prefix, start)),
@@ -1770,6 +1774,7 @@ void RocksDBStore::RocksDBTransactionImpl::rm_range_keys(const string &prefix,
 	bat.Delete(cf, it->key());
       }
       if (cnt == 0) {
+        dout(1) << __func__ << " p_iter != end(), resorting to DeleteRange" << dendl;
 	bat.RollbackToSavePoint();
 	bat.DeleteRange(cf, rocksdb::Slice(start), rocksdb::Slice(end));
       } else {
@@ -1778,7 +1783,11 @@ void RocksDBStore::RocksDBTransactionImpl::rm_range_keys(const string &prefix,
       delete it;
     }
   }
+  dout(1) << __func__ << " end" << dendl;
 }
+
+#undef dout_context
+#define dout_context cct
 
 void RocksDBStore::RocksDBTransactionImpl::merge(
   const string &prefix,
