@@ -228,7 +228,12 @@ def _udevadm_info(device):
     return out
 
 
-def lsblk(device, columns=None, abspath=False):
+def lsblk(device='', columns=None, abspath=False):
+    return lsblk_all(device=device,
+                     columns=columns,
+                     abspath=abspath)
+
+def lsblk_all(device='', columns=None, abspath=False):
     """
     Create a dictionary of identifying values for a device using ``lsblk``.
     Each supported column is a key, in its *raw* format (all uppercase
@@ -291,31 +296,41 @@ def lsblk(device, columns=None, abspath=False):
     :param abspath: Set the flag for absolute paths on the report
     """
     default_columns = [
-        'NAME', 'KNAME', 'MAJ:MIN', 'FSTYPE', 'MOUNTPOINT', 'LABEL', 'UUID',
-        'RO', 'RM', 'MODEL', 'SIZE', 'STATE', 'OWNER', 'GROUP', 'MODE',
+        'NAME', 'KNAME', 'PKNAME', 'MAJ:MIN', 'FSTYPE', 'MOUNTPOINT', 'LABEL',
+        'UUID', 'RO', 'RM', 'MODEL', 'SIZE', 'STATE', 'OWNER', 'GROUP', 'MODE',
         'ALIGNMENT', 'PHY-SEC', 'LOG-SEC', 'ROTA', 'SCHED', 'TYPE', 'DISC-ALN',
         'DISC-GRAN', 'DISC-MAX', 'DISC-ZERO', 'PKNAME', 'PARTLABEL'
     ]
-    device = device.rstrip('/')
     columns = columns or default_columns
     # --nodeps -> Avoid adding children/parents to the device, only give information
     #             on the actual device we are querying for
     # -P       -> Produce pairs of COLUMN="value"
     # -p       -> Return full paths to devices, not just the names, when ``abspath`` is set
     # -o       -> Use the columns specified or default ones provided by this function
-    base_command = ['lsblk', '--nodeps', '-P']
+    base_command = ['lsblk', '-P']
     if abspath:
         base_command.append('-p')
     base_command.append('-o')
     base_command.append(','.join(columns))
-    base_command.append(device)
+
     out, err, rc = process.call(base_command)
 
     if rc != 0:
-        return {}
+        raise RuntimeError(f"Error: {err}")
 
-    return _lsblk_parser(' '.join(out))
+    result = []
 
+    for line in out:
+        result.append(_lsblk_parser(line))
+
+    if not device:
+        return result
+
+    for dev in result:
+        if dev['NAME'] == os.path.basename(device):
+            return dev
+
+    raise RuntimeError(f"{device} not found in lsblk output")
 
 def is_device(dev):
     """
@@ -731,7 +746,7 @@ def is_locked_raw_device(disk_path):
     return 0
 
 
-def get_block_devs_lsblk():
+def get_block_devs_lsblk(device=''):
     '''
     This returns a list of lists with 3 items per inner list.
     KNAME - reflects the kernel device name , for example /dev/sda or /dev/dm-0
@@ -741,14 +756,15 @@ def get_block_devs_lsblk():
 
     '''
     cmd = ['lsblk', '-plno', 'KNAME,NAME,TYPE']
+    if device:
+        cmd.extend(['--nodeps', device])
     stdout, stderr, rc = process.call(cmd)
     # lsblk returns 1 on failure
     if rc == 1:
         raise OSError('lsblk returned failure, stderr: {}'.format(stderr))
     return [re.split(r'\s+', line) for line in stdout]
 
-
-def get_devices(_sys_block_path='/sys/block'):
+def get_devices(_sys_block_path='/sys/block', device=''):
     """
     Captures all available block devices as reported by lsblk.
     Additional interesting metadata like sectors, size, vendor,
@@ -761,7 +777,7 @@ def get_devices(_sys_block_path='/sys/block'):
 
     device_facts = {}
 
-    block_devs = get_block_devs_lsblk()
+    block_devs = get_block_devs_lsblk(device=device)
 
     for block in block_devs:
         devname = os.path.basename(block[0])
