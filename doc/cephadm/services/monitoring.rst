@@ -178,11 +178,10 @@ in order to get the currently configured targets from Ceph. Internally, `ceph-mg
 provides a service discovery endpoint at `<https://<mgr-ip>:8765/sd/` which used
 by Prometheus to get the needed targets.
 
-To be able to customize the configuration of Prometheus, Grafana or the Alertmanager
-it is possible to store a Jinja2 template for each service that will be used for configuration
-generation instead. This template will be evaluated every time a service of that
-kind is deployed or reconfigured. That way, the custom configuration is
-preserved and automatically applied on future deployments of these services.
+The configuration of Prometheus, Grafana, or Alertmanager may be customized by storing
+a Jinja2 template for each service. This template will be evaluated every time a service
+of that kind is deployed or reconfigured. That way, the custom configuration is preserved
+and automatically applied on future deployments of these services.
 
 .. note::
 
