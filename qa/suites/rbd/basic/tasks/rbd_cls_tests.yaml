@@ -3,5 +3,5 @@ tasks:
     clients:
       client.0:
         - cls/test_cls_rbd.sh scan_logs
-        - cls/test_cls_lock.sh
+        - cls/test_cls_lock.sh scan_logs
         - cls/test_cls_journal.sh

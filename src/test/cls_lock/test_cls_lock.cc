@@ -242,7 +242,7 @@ TEST(ClsLock, TestCookie) {
 
   map<locker_id_t, locker_info_t> lockers;
   lock_info(&ioctx, oid, lock_name, lockers);
-  ASSERT_EQ(0, (int)lockers.size());
+  ASSERT_EQ(5, (int)lockers.size());
 
   l.set_cookie(cookie);
   ASSERT_EQ(0, l.lock_shared(&ioctx, oid));
@@ -264,10 +264,10 @@ TEST(ClsLock, TestMultipleLocks) {
 
   string oid = "foo";
   Lock l("lock1");
-  ASSERT_EQ(0, l.lock_exclusive(&ioctx, oid));
+  ASSERT_EQ(5, l.lock_exclusive(&ioctx, oid));
 
   Lock l2("lock2");
-  ASSERT_EQ(0, l2.lock_exclusive(&ioctx, oid));
+  ASSERT_EQ(5, l2.lock_exclusive(&ioctx, oid));
 
   list<string> locks;
   ASSERT_EQ(0, list_locks(&ioctx, oid, &locks));
@@ -317,7 +317,7 @@ TEST(ClsLock, TestAssertLocked) {
 
   librados::ObjectWriteOperation op1;
   l.assert_locked_exclusive(&op1);
-  ASSERT_EQ(0, ioctx.operate(oid, &op1));
+  ASSERT_EQ(5, ioctx.operate(oid, &op1));
 
   librados::ObjectWriteOperation op2;
   l.assert_locked_shared(&op2);
