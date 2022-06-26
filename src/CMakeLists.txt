@@ -768,6 +768,7 @@ if(WITH_LIBCEPHFS)
     ${CRYPTO_LIBS} ${EXTRALIBS})
   if(ENABLE_SHARED)
     set_target_properties(cephfs PROPERTIES
+      LINKER_LANGUAGE CXX
       OUTPUT_NAME cephfs
       VERSION 2.0.0
       SOVERSION 2)
