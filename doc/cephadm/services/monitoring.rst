@@ -71,10 +71,10 @@ steps below:
 
      ceph orch apply prometheus
 
-   or 
+   or
 
    .. prompt:: bash #
-     
+
      ceph orch apply prometheus --placement 'count:2'
 
 #. Deploy grafana:
@@ -171,12 +171,20 @@ configuration files for monitoring services.
 
 Internally, cephadm already uses `Jinja2
 <https://jinja.palletsprojects.com/en/2.11.x/>`_ templates to generate the
-configuration files for all monitoring components. Starting from version x.x.x, 
+configuration files for all monitoring components. Starting from version x.x.x,
 cephadm uses Prometheus http service discovery support `http_sd_config
 <https://prometheus.io/docs/prometheus/2.28/configuration/configuration/#http_sd_config>`
 in order to get the currently configured targets from Ceph. Internally, `ceph-mgr`
 provides a service discovery endpoint at `<https://<mgr-ip>:8765/sd/` which used
 by Prometheus to get the needed targets.
+
+Customers with external monitoring stack can use `ceph-mgr` service discovery endpoint
+to get scraping configuration. Root certificate of the server can be obtained by the
+following command:
+
+   .. prompt:: bash #
+
+     ceph orch sd dump cert
 
 The configuration of Prometheus, Grafana, or Alertmanager may be customized by storing
 a Jinja2 template for each service. This template will be evaluated every time a service

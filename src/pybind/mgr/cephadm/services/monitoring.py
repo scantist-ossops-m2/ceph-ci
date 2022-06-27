@@ -257,13 +257,6 @@ class PrometheusService(CephadmService):
     ) -> Tuple[Dict[str, Any], List[str]]:
 
         assert self.TYPE == daemon_spec.daemon_type
-        deps = []  # type: List[str]
-        port = cast(int, self.mgr.get_module_option_ex(
-            'prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
-        deps.append(str(port))
-        # add an explicit dependency on the active manager. This will force to
-        # re-deploy prometheus if the mgr has changed (due to a fail-over i.e).
-        deps.append(self.mgr.get_active_mgr().name())
 
         t = self.mgr.get('mgr_map').get('services', {}).get('prometheus', None)
         sd_port = self.mgr.service_discovery_port
@@ -278,10 +271,13 @@ class PrometheusService(CephadmService):
             else:
                 srv_end_point = f'https://{p_result.hostname}:{sd_port}/sd/prometheus/sd-config?'
 
-        mgr_prometheus_sd_url = f'{srv_end_point}service=mgr-prometheus'
-        node_exporter_sd_url = f'{srv_end_point}service=node-exporter'
-        alertmanager_sd_url = f'{srv_end_point}service=alertmanager'
-        haproxy_sd_url = f'{srv_end_point}service=haproxy'
+        node_exporter_cnt = len(self.mgr.cache.get_daemons_by_service('node-exporter'))
+        alertmgr_cnt = len(self.mgr.cache.get_daemons_by_service('alertmanager'))
+        haproxy_cnt = len(self.mgr.cache.get_daemons_by_type('ingress'))
+        node_exporter_sd_url = f'{srv_end_point}service=node-exporter' if node_exporter_cnt > 0 else None
+        alertmanager_sd_url = f'{srv_end_point}service=alertmanager' if alertmgr_cnt > 0 else None
+        haproxy_sd_url = f'{srv_end_point}service=haproxy' if haproxy_cnt > 0 else None
+        mgr_prometheus_sd_url = f'{srv_end_point}service=mgr-prometheus'  # always included
 
         # generate the prometheus configuration
         context = {
@@ -304,7 +300,26 @@ class PrometheusService(CephadmService):
                 alerts = f.read()
             r['files']['/etc/prometheus/alerting/ceph_alerts.yml'] = alerts
 
-        return r, sorted(deps)
+        return r, sorted(self.calculate_deps())
+
+    def calculate_deps(self) -> List[str]:
+        deps = []  # type: List[str]
+        port = cast(int, self.mgr.get_module_option_ex('prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
+        deps.append(str(port))
+        # add an explicit dependency on the active manager. This will force to
+        # re-deploy prometheus if the mgr has changed (due to a fail-over i.e).
+        deps.append(self.mgr.get_active_mgr().name())
+
+        node_exporter_cnt = len(self.mgr.cache.get_daemons_by_service('node-exporter'))
+        alertmgr_cnt = len(self.mgr.cache.get_daemons_by_service('alertmanager'))
+        haproxy_cnt = len(self.mgr.cache.get_daemons_by_type('ingress'))
+        if alertmgr_cnt > 0:
+            deps.append('alertmanager')
+        if haproxy_cnt > 0:
+            deps.append('ingress')
+        if node_exporter_cnt > 0:
+            deps.append('node-exporter')
+        return deps
 
     def get_active_daemon(self, daemon_descrs: List[DaemonDescription]) -> DaemonDescription:
         # TODO: if there are multiple daemons, who is the active one?
