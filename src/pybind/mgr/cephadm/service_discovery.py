@@ -53,15 +53,15 @@ class ServiceDiscovery():
 
     def configure_tls(self) -> None:
         try:
-            old_creds = self.mgr.get_store('service_discovery_endpoint_credentials')
-            if not old_creds:
+            old_cert = self.mgr.get_store('service_discovery/root/cert')
+            old_key = self.mgr.get_store('service_discovery/root/key')
+            if not old_key or not old_cert:
                 raise OrchestratorError('No old credentials for cephadm endpoint found')
-            old_creds_dict = json.loads(old_creds)
-            old_key = old_creds_dict['key']
-            old_cert = old_creds_dict['cert']
             self.ssl_certs.load_root_credentials(old_cert, old_key)
-        except (OrchestratorError, json.decoder.JSONDecodeError, KeyError, ValueError):
+        except (OrchestratorError, KeyError, ValueError):
             self.ssl_certs.generate_root_cert(self.mgr.get_mgr_ip())
+            self.mgr.set_store('service_discovery/root/cert', self.ssl_certs.get_root_cert())
+            self.mgr.set_store('service_discovery/root/key', self.ssl_certs.get_root_key())
 
         cert, key = self.ssl_certs.generate_cert(self.mgr.get_mgr_ip())
         self.key_file = tempfile.NamedTemporaryFile()
@@ -71,13 +71,6 @@ class ServiceDiscovery():
         self.cert_file.write(cert.encode('utf-8'))
         self.cert_file.flush()  # cert_tmp must not be gc'ed
         verify_tls_files(self.cert_file.name, self.key_file.name)
-
-        service_discovery_endpoint_creds = {
-            'cert': self.ssl_certs.get_root_cert(),
-            'key': self.ssl_certs.get_root_key()
-        }
-        self.mgr.set_store('service_discovery_endpoint_credentials',
-                           json.dumps(service_discovery_endpoint_creds))
 
     def configure(self) -> None:
         self.configure_tls()

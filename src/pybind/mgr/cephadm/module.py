@@ -2385,6 +2385,15 @@ Then run the following:
             # this way we force a redeploy after a mgr failover
             deps.append(self.get_active_mgr().name())
             deps.append(str(self.get_module_option_ex('prometheus', 'server_port', 9283)))
+            node_exporter_cnt = len(self.cache.get_daemons_by_service('node-exporter'))
+            alertmgr_cnt = len(self.cache.get_daemons_by_service('alertmanager'))
+            haproxy_cnt = len(self.cache.get_daemons_by_type('ingress'))
+            if alertmgr_cnt > 0:
+                deps.append('alertmanager')
+            if haproxy_cnt > 0:
+                deps.append('ingress')
+            if node_exporter_cnt > 0:
+                deps.append('node-exporter')
         else:
             need = {
                 'grafana': ['prometheus', 'loki'],
@@ -2538,6 +2547,10 @@ Then run the following:
         self.tuned_profiles.rm_setting(profile_name, setting)
         self._kick_serve_loop()
         return f'Removed setting {setting} from tuned profile {profile_name}'
+
+    def service_discovery_dump_cert(self) -> str:
+        root_cert = self.get_store('service_discovery/root/cert')
+        return root_cert if root_cert else 'No cert'
 
     def set_health_warning(self, name: str, summary: str, count: int, detail: List[str]) -> None:
         self.health_checks[name] = {
