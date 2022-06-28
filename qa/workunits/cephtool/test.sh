@@ -1025,11 +1025,17 @@ function test_mon_mds()
   ceph fs rm $FS_NAME --yes-i-really-mean-it
 
   set +e
+  ceph fs new $FS_NAME fs_metadata mds-ec-pool 2>$TMPFILE
+  check_response 'already used by filesystem' $? 22
+  ceph fs new $FS_NAME mds-ec-pool fs_data 2>$TMPFILE
+  check_response 'already used by filesystem' $? 22
+  ceph fs new $FS_NAME mds-ec-pool mds-ec-pool 2>$TMPFILE
+  check_response 'already used by filesystem' $? 22
   ceph fs new $FS_NAME fs_metadata mds-ec-pool --force 2>$TMPFILE
   check_response 'erasure-code' $? 22
-  ceph fs new $FS_NAME mds-ec-pool fs_data 2>$TMPFILE
+  ceph fs new $FS_NAME mds-ec-pool fs_data --force 2>$TMPFILE
   check_response 'erasure-code' $? 22
-  ceph fs new $FS_NAME mds-ec-pool mds-ec-pool 2>$TMPFILE
+  ceph fs new $FS_NAME mds-ec-pool mds-ec-pool --force 2>$TMPFILE
   check_response 'erasure-code' $? 22
   set -e
 
