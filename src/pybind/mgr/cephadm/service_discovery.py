@@ -1,6 +1,5 @@
 import cherrypy
 from cherrypy._cpserver import Server
-import json
 import logging
 import tempfile
 from typing import Dict, List, TYPE_CHECKING, cast, Collection
@@ -47,8 +46,10 @@ class ServiceDiscovery():
         d.connect(name='index', route='/', controller=root_server.index)
         d.connect(name='index', route='/sd', controller=root_server.index)
         d.connect(name='index', route='/sd/', controller=root_server.index)
-        d.connect(name='sd-config', route='/sd/prometheus/sd-config', controller=root_server.get_sd_config)
-        d.connect(name='rules', route='/sd/prometheus/rules', controller=root_server.get_prometheus_rules)
+        d.connect(name='sd-config', route='/sd/prometheus/sd-config',
+                  controller=root_server.get_sd_config)
+        d.connect(name='rules', route='/sd/prometheus/rules',
+                  controller=root_server.get_prometheus_rules)
         cherrypy.tree.mount(None, '/', config={'/': {'request.dispatch': d}})
 
     def configure_tls(self) -> None:

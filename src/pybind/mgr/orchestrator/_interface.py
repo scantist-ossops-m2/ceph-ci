@@ -426,7 +426,7 @@ class Orchestrator(object):
         """
         raise NotImplementedError()
 
-    def service_discovery_dump_cert() -> OrchResult:
+    def service_discovery_dump_cert(self) -> OrchResult:
         """
         Returns service discovery server root certificate
 

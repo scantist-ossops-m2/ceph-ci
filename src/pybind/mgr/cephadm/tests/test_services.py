@@ -301,13 +301,6 @@ class TestMonitoring:
                 rule_files:
                   - /etc/prometheus/alerting/*
 
-                alerting:
-                  alertmanagers:
-                    - scheme: http
-                      http_sd_configs:
-                        - url: https://[::1]:8765/sd/prometheus/sd-config?service=alertmanager
-                          tls_config:
-                            ca_file: root_cert.pem
 
                 scrape_configs:
                   - job_name: 'ceph'
@@ -323,11 +316,6 @@ class TestMonitoring:
                       tls_config:
                         ca_file: root_cert.pem
 
-                  - job_name: 'haproxy'
-                    http_sd_configs:
-                    - url: https://[::1]:8765/sd/prometheus/sd-config?service=haproxy
-                      tls_config:
-                        ca_file: root_cert.pem
                 """).lstrip()
 
                 _run_cephadm.assert_called_with(

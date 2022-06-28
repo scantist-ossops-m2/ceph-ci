@@ -65,12 +65,14 @@ class SSLCerts:
             except Exception:
                 have_ip = False
 
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096, backend=default_backend())
+        private_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=4096, backend=default_backend())
         public_key = private_key.public_key()
 
         builder = x509.CertificateBuilder()
         builder = builder.subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, addr), ]))
-        builder = builder.issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, u'cephadm-root'), ]))
+        builder = builder.issuer_name(
+            x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, u'cephadm-root'), ]))
         builder = builder.not_valid_before(datetime.now())
         builder = builder.not_valid_after(datetime.now() + timedelta(days=(365 * 10 + 3)))
         builder = builder.serial_number(x509.random_serial_number())
@@ -82,9 +84,11 @@ class SSLCerts:
                 ),
                 critical=False
             )
-        builder = builder.add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True,)
+        builder = builder.add_extension(x509.BasicConstraints(
+            ca=False, path_length=None), critical=True,)
 
-        cert = builder.sign(private_key=self.root_key, algorithm=hashes.SHA256(), backend=default_backend())
+        cert = builder.sign(private_key=self.root_key,
+                            algorithm=hashes.SHA256(), backend=default_backend())
         cert_str = cert.public_bytes(encoding=serialization.Encoding.PEM).decode('utf-8')
         key_str = private_key.private_bytes(encoding=serialization.Encoding.PEM,
                                             format=serialization.PrivateFormat.TraditionalOpenSSL,
