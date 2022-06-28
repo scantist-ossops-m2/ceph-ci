@@ -316,7 +316,8 @@ class PrometheusService(CephadmService):
 
     def calculate_deps(self) -> List[str]:
         deps = []  # type: List[str]
-        port = cast(int, self.mgr.get_module_option_ex('prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
+        port = cast(int, self.mgr.get_module_option_ex(
+            'prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
         deps.append(str(port))
         # add an explicit dependency on the active manager. This will force to
         # re-deploy prometheus if the mgr has changed (due to a fail-over i.e).
