@@ -505,6 +505,57 @@ a spec like
 
 which would cause each mon daemon to be deployed with `--cpus=2`.
 
+Custom Config Files
+===================
+
+Cephadm supports specifying miscellaneous config files for daemons.
+To do so, users must provide both the content of the config file and the
+location within the daemon's container in which they want it mounted. After
+applying a YAML spec with custom config files specified and having cephadm
+redeploy the daemons for which the config files are for, these files will
+be mounted within the daemon's container at the specified location.
+
+The format within the YAML for doing this is
+
+.. code-block:: yaml
+
+    service_type: grafana
+    service_name: grafana
+    custom_configs:
+      - mount_path: /etc/example.conf
+        content: |
+          setting1 = value1
+          setting2 = value2
+      - mount_path: /usr/share/grafana/example.cert
+        content: |
+          -----BEGIN PRIVATE KEY-----
+          V2VyIGRhcyBsaWVzdCBpc3QgZG9vZi4gTG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFt
+          ZXQsIGNvbnNldGV0dXIgc2FkaXBzY2luZyBlbGl0ciwgc2VkIGRpYW0gbm9udW15
+          IGVpcm1vZCB0ZW1wb3IgaW52aWR1bnQgdXQgbGFib3JlIGV0IGRvbG9yZSBtYWdu
+          YSBhbGlxdXlhbSBlcmF0LCBzZWQgZGlhbSB2b2x1cHR1YS4gQXQgdmVybyBlb3Mg
+          ZXQgYWNjdXNhbSBldCBqdXN0byBkdW8=
+          -----END PRIVATE KEY-----
+          -----BEGIN CERTIFICATE-----
+          V2VyIGRhcyBsaWVzdCBpc3QgZG9vZi4gTG9yZW0gaXBzdW0gZG9sb3Igc2l0IGFt
+          ZXQsIGNvbnNldGV0dXIgc2FkaXBzY2luZyBlbGl0ciwgc2VkIGRpYW0gbm9udW15
+          IGVpcm1vZCB0ZW1wb3IgaW52aWR1bnQgdXQgbGFib3JlIGV0IGRvbG9yZSBtYWdu
+          YSBhbGlxdXlhbSBlcmF0LCBzZWQgZGlhbSB2b2x1cHR1YS4gQXQgdmVybyBlb3Mg
+          ZXQgYWNjdXNhbSBldCBqdXN0byBkdW8=
+          -----END CERTIFICATE-----
+
+After which, to make these new config files actually get mounted within the
+containers for the daemons
+
+.. prompt:: bash
+
+  ceph orch redeploy <service-name>
+
+For example:
+
+.. prompt:: bash
+
+  ceph orch redeploy grafana
+
 .. _orch-rm:
 
 Removing a Service
