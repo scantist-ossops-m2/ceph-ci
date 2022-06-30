@@ -5737,9 +5737,16 @@ int Server::parse_quota_vxattr(string name, string value, quota_info_t *quota)
           return r;
       }
     } else if (name == "quota.max_bytes") {
+      /*
+       * The "quota.max_bytes" must be aligned to 4MB if greater than or
+       * equal to 4MB, otherwise must be aligned to 4KB.
+       */
       int64_t q = boost::lexical_cast<int64_t>(value);
-      if (q < 0)
+      if (q < 0 ||
+	  (!IS_ALIGNED(q, CEPH_4M_BLOCK_SIZE) &&
+           (q < CEPH_4M_BLOCK_SIZE && !IS_ALIGNED(q, CEPH_4K_BLOCK_SIZE)))) {
         return -CEPHFS_EINVAL;
+      }
       quota->max_bytes = q;
     } else if (name == "quota.max_files") {
       int64_t q = boost::lexical_cast<int64_t>(value);
