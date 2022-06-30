@@ -28,6 +28,13 @@
 #include "os/ObjectStore.h"
 #include "osd/OSDMap.h"
 
+template<> struct std::hash<snapid_t> {
+  size_t operator()(const snapid_t &r) const {
+    static rjhash<uint64_t> I;
+    return I(r.val);
+  }
+};
+
 class OSDriver : public MapCacher::StoreDriver<std::string, ceph::buffer::list> {
   ObjectStore *os;
   ObjectStore::CollectionHandle ch;
@@ -235,26 +242,25 @@ private:
 
   std::string to_object_key(const hobject_t &hoid);
 
-  int get_snaps(const hobject_t &oid, object_snaps *out);
-
   void set_snaps(
-    const hobject_t &oid,
-    const object_snaps &out,
-    MapCacher::Transaction<std::string, ceph::buffer::list> *t);
-
-  void clear_snaps(
-    const hobject_t &oid,
-    MapCacher::Transaction<std::string, ceph::buffer::list> *t);
+  const hobject_t         & oid,
+  const std::set<snapid_t>& snaps,
+  bool                      report_duplicate);
 
   // True if hoid belongs in this mapping based on mask_bits and match
   bool check(const hobject_t &hoid) const;
 
-  int _remove_oid(
-    const hobject_t &oid,    ///< [in] oid to remove
-    MapCacher::Transaction<std::string, ceph::buffer::list> *t ///< [out] transaction
-    );
+  int _remove_oid(const hobject_t &oid /*[in] oid to remove */);
+  // TBD - change the code to use unordered_set<snapid_t>
+  // TBD2: change all to flat_set (or even a vector)
+  std::unordered_map<hobject_t, std::set<snapid_t>  > obj_to_snaps;
+  std::unordered_map<snapid_t,  std::unordered_set<hobject_t> > snap_to_objs;
+  int remove_mapping_from_snapid_to_hobject(
+    const hobject_t& oid,
+    const snapid_t & snapid);
 
 public:
+  void print_snaps(const char *s);
   static std::string make_shard_prefix(shard_id_t shard) {
     if (shard == shard_id_t::NO_SHARD)
       return std::string();
@@ -277,7 +283,7 @@ public:
     int64_t pool,    ///< [in] pool
     shard_id_t shard ///< [in] shard
     )
-    : cct(cct), backend(driver), mask_bits(bits), match(match), pool(pool),
+    : cct(cct), backend(driver), obj_to_snaps(), snap_to_objs(), mask_bits(bits), match(match), pool(pool),
       shard(shard), shard_prefix(make_shard_prefix(shard)) {
     update_bits(mask_bits);
   }
