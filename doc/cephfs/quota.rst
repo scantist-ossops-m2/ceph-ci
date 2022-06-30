@@ -69,9 +69,12 @@ If the attributes appear on a directory inode that means a quota is
 configured there.  If they are not present then no quota is set on
 that directory (although one may still be configured on a parent directory).
 
+The value of ``ceph.quota.max_bytes`` must be aligned to 4MB if greater
+than or equal to 4MB, otherwise it must be aligned to 4KB.
+
 To set a quota::
 
-  setfattr -n ceph.quota.max_bytes -v 100000000 /some/dir     # 100 MB
+  setfattr -n ceph.quota.max_bytes -v 104857600 /some/dir     # 100 MB
   setfattr -n ceph.quota.max_files -v 10000 /some/dir         # 10,000 files
 
 To view quota settings::
