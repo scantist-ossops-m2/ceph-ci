@@ -420,6 +420,43 @@ tPlacementSpec(hostname='host2', network='', name='')])
 _service_spec_from_json_validate = True
 
 
+class CustomConfig:
+    def __init__(self, content: List[str], mount_path: str) -> None:
+        self.content: List[str] = content
+        self.mount_path: str = mount_path
+        self.filename: str = mount_path.split('/')[-1]
+
+    def to_json(self) -> Dict[str, Any]:
+        return {
+            'content': self.content,
+            'mount_path': self.mount_path,
+            'filename': self.filename
+        }
+
+    @classmethod
+    def from_json(cls, data: Dict[str, Any]) -> "CustomConfig":
+        for k in ['content', 'mount_path']:
+            if k not in data:
+                raise SpecValidationError(f'CustomConfig must have "{k}" field')
+        for k in data.copy().keys():
+            if k not in ['content', 'mount_path']:
+                data.pop(k, None)
+        return cls(**data)
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, CustomConfig):
+            if (
+                self.content == other.content
+                and self.mount_path == other.mount_path
+            ):
+                return True
+            return False
+        return NotImplemented
+
+    def __repr__(self) -> str:
+        return f'CustomConfig({self.filename} -> {self.mount_path})'
+
+
 @contextmanager
 def service_spec_allow_invalid_from_json() -> Iterator[None]:
     """
@@ -500,6 +537,7 @@ class ServiceSpec(object):
                  preview_only: bool = False,
                  networks: Optional[List[str]] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
 
         #: See :ref:`orchestrator-cli-placement-spec`.
@@ -539,6 +577,7 @@ class ServiceSpec(object):
             self.config = {k.replace(' ', '_'): v for k, v in config.items()}
 
         self.extra_container_args: Optional[List[str]] = extra_container_args
+        self.custom_configs: Optional[List[CustomConfig]] = custom_configs
 
     @classmethod
     @handle_type_error
@@ -626,6 +665,8 @@ class ServiceSpec(object):
         for k, v in json_spec.items():
             if k == 'placement':
                 v = PlacementSpec.from_json(v)
+            if k == 'custom_configs':
+                v = [CustomConfig.from_json(c) for c in v]
             if k == 'spec':
                 args.update(v)
                 continue
@@ -664,6 +705,8 @@ class ServiceSpec(object):
             ret['networks'] = self.networks
         if self.extra_container_args:
             ret['extra_container_args'] = self.extra_container_args
+        if self.custom_configs:
+            ret['custom_configs'] = [c.to_json() for c in self.custom_configs]
 
         c = {}
         for key, val in sorted(self.__dict__.items(), key=lambda tpl: tpl[0]):
@@ -740,12 +783,14 @@ class NFSServiceSpec(ServiceSpec):
                  networks: Optional[List[str]] = None,
                  port: Optional[int] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'nfs'
         super(NFSServiceSpec, self).__init__(
             'nfs', service_id=service_id,
             placement=placement, unmanaged=unmanaged, preview_only=preview_only,
-            config=config, networks=networks, extra_container_args=extra_container_args)
+            config=config, networks=networks, extra_container_args=extra_container_args,
+            custom_configs=custom_configs)
 
         self.port = port
 
@@ -803,6 +848,7 @@ class RGWSpec(ServiceSpec):
                  networks: Optional[List[str]] = None,
                  subcluster: Optional[str] = None,  # legacy, only for from_json on upgrade
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'rgw', service_type
 
@@ -814,7 +860,7 @@ class RGWSpec(ServiceSpec):
             'rgw', service_id=service_id,
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config, networks=networks,
-            extra_container_args=extra_container_args)
+            extra_container_args=extra_container_args, custom_configs=custom_configs)
 
         #: The RGW realm associated with this service. Needs to be manually created
         self.rgw_realm: Optional[str] = rgw_realm
@@ -872,13 +918,15 @@ class IscsiServiceSpec(ServiceSpec):
                  config: Optional[Dict[str, str]] = None,
                  networks: Optional[List[str]] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'iscsi'
         super(IscsiServiceSpec, self).__init__('iscsi', service_id=service_id,
                                                placement=placement, unmanaged=unmanaged,
                                                preview_only=preview_only,
                                                config=config, networks=networks,
-                                               extra_container_args=extra_container_args)
+                                               extra_container_args=extra_container_args,
+                                               custom_configs=custom_configs)
 
         #: RADOS pool where ceph-iscsi config data is stored.
         self.pool = pool
@@ -941,13 +989,15 @@ class IngressSpec(ServiceSpec):
                  unmanaged: bool = False,
                  ssl: bool = False,
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'ingress'
         super(IngressSpec, self).__init__(
             'ingress', service_id=service_id,
             placement=placement, config=config,
             networks=networks,
-            extra_container_args=extra_container_args
+            extra_container_args=extra_container_args,
+            custom_configs=custom_configs
         )
         self.backend_service = backend_service
         self.frontend_port = frontend_port
@@ -1070,6 +1120,7 @@ class MonitoringSpec(ServiceSpec):
                  preview_only: bool = False,
                  port: Optional[int] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type in ['grafana', 'node-exporter', 'prometheus', 'alertmanager',
                                 'loki', 'promtail']
@@ -1078,7 +1129,8 @@ class MonitoringSpec(ServiceSpec):
             service_type, service_id,
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config,
-            networks=networks, extra_container_args=extra_container_args)
+            networks=networks, extra_container_args=extra_container_args,
+            custom_configs=custom_configs)
 
         self.service_type = service_type
         self.port = port
@@ -1114,13 +1166,14 @@ class AlertManagerSpec(MonitoringSpec):
                  port: Optional[int] = None,
                  secure: bool = False,
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'alertmanager'
         super(AlertManagerSpec, self).__init__(
             'alertmanager', service_id=service_id,
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config, networks=networks, port=port,
-            extra_container_args=extra_container_args)
+            extra_container_args=extra_container_args, custom_configs=custom_configs)
 
         # Custom configuration.
         #
@@ -1165,13 +1218,14 @@ class GrafanaSpec(MonitoringSpec):
                  port: Optional[int] = None,
                  initial_admin_password: Optional[str] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'grafana'
         super(GrafanaSpec, self).__init__(
             'grafana', service_id=service_id,
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config, networks=networks, port=port,
-            extra_container_args=extra_container_args)
+            extra_container_args=extra_container_args, custom_configs=custom_configs)
 
         self.initial_admin_password = initial_admin_password
 
@@ -1219,6 +1273,7 @@ class SNMPGatewaySpec(ServiceSpec):
                  preview_only: bool = False,
                  port: Optional[int] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'snmp-gateway'
 
@@ -1227,7 +1282,8 @@ class SNMPGatewaySpec(ServiceSpec):
             placement=placement,
             unmanaged=unmanaged,
             preview_only=preview_only,
-            extra_container_args=extra_container_args)
+            extra_container_args=extra_container_args,
+            custom_configs=custom_configs)
 
         self.service_type = service_type
         self.snmp_version = snmp_version
@@ -1338,6 +1394,7 @@ class MDSSpec(ServiceSpec):
                  unmanaged: bool = False,
                  preview_only: bool = False,
                  extra_container_args: Optional[List[str]] = None,
+                 custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'mds'
         super(MDSSpec, self).__init__('mds', service_id=service_id,
@@ -1345,7 +1402,8 @@ class MDSSpec(ServiceSpec):
                                       config=config,
                                       unmanaged=unmanaged,
                                       preview_only=preview_only,
-                                      extra_container_args=extra_container_args)
+                                      extra_container_args=extra_container_args,
+                                      custom_configs=custom_configs)
 
     def validate(self) -> None:
         super(MDSSpec, self).validate()
