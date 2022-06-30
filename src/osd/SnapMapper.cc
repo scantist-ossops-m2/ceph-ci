@@ -685,8 +685,12 @@ int SnapMapper::convert_legacy(
       bufferlist bl(iter->value());
       auto bp = bl.cbegin();
       decode(m, bp);
+      string s;
+      s = iter->key().substr(SnapMapper::LEGACY_MAPPING_PREFIX.length());
+      s = SnapMapper::MAPPING_PREFIX + std::to_string(m.hoid.pool) + "_" + s;
+      dout(20) << __func__ << " convert " << iter->key() << " to " << s << dendl;
       to_set.emplace(
-	SnapMapper::get_prefix(m.hoid.pool, m.snap),
+	s,
 	bl);
       ++n;
       iter->next();
