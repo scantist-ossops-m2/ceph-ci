@@ -94,12 +94,12 @@ class AgentEndpoint:
                 sock.bind((self.server_addr, self.server_port))
                 sock.close()
                 self.host_data.socket_port = self.server_port
-                self.mgr.log.debug(f'Cephadm agent selected port {self.server_port}')
+                self.mgr.log.debug(f'Cephadm agent endpoint using {self.server_port}')
                 return
             except OSError:
                 self.server_port += 1
         self.mgr.log.error(
-            'Cephadm agent could not find free port in range 7150-7300 and failed to start')
+            'Cephadm agent endpoint could not find free port in range 7150-7300 and failed to start')
 
     def configure(self) -> None:
         self.configure_tls()

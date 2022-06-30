@@ -2503,7 +2503,7 @@ Then run the following:
     @handle_orch_error
     def service_discovery_dump_cert(self) -> str:
         root_cert = self.get_store('service_discovery/root/cert')
-        return root_cert if root_cert else 'No cert'
+        return root_cert if root_cert else 'No certificate found for service discovery'
 
     def set_health_warning(self, name: str, summary: str, count: int, detail: List[str]) -> None:
         self.health_checks[name] = {

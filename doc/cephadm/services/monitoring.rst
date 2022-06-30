@@ -197,8 +197,9 @@ configuration files for all monitoring components. Starting from version x.x.x,
 cephadm uses Prometheus http service discovery support `http_sd_config
 <https://prometheus.io/docs/prometheus/2.28/configuration/configuration/#http_sd_config>`
 in order to get the currently configured targets from Ceph. Internally, `ceph-mgr`
-provides a service discovery endpoint at `<https://<mgr-ip>:8765/sd/` which used
-by Prometheus to get the needed targets.
+provides a service discovery endpoint at `<https://<mgr-ip>:8765/sd/` (port is
+configurable through the variable `service_discovery_port`) which is used by
+Prometheus to get the needed targets.
 
 Customers with external monitoring stack can use `ceph-mgr` service discovery endpoint
 to get scraping configuration. Root certificate of the server can be obtained by the
