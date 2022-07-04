@@ -166,6 +166,16 @@ class Device(object):
 
     def _parse(self):
         lv = None
+        if not sys_info.devices:
+            sys_info.devices = disk.get_devices()
+        # check if we are a symlink
+        if os.path.islink(self.abspath):
+            temp_path = os.path.join(os.path.dirname(self.abspath),
+                                            os.readlink(self.abspath))
+            # check if we are not a device mapper
+            if "dm-" not in temp_path:
+                self.abspath = temp_path
+
         if not self.sys_api:
             # if no device was found check if we are a partition
             partname = self.abspath.split('/')[-1]
