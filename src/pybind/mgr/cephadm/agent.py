@@ -1,5 +1,3 @@
-import cherrypy
-from cherrypy._cpserver import Server
 import json
 import logging
 import socket
@@ -7,6 +5,12 @@ import ssl
 import tempfile
 import threading
 import time
+
+try:
+    import cherrypy
+    from cherrypy._cpserver import Server
+except ImportError:
+    cherrypy = None
 
 from mgr_util import verify_tls_files
 from orchestrator import DaemonDescriptionStatus, OrchestratorError
