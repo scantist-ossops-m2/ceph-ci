@@ -26,9 +26,9 @@ def cherrypy_filter(record: logging.LogRecord) -> int:
     return not any([m for m in blocked if m in msg])
 
 
-logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
-cherrypy.log.access_log.propagate = False
-
+if cherrypy:
+    logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
+    cherrypy.log.access_log.propagate = False
 
 class ServiceDiscovery():
     def __init__(self, mgr: "CephadmOrchestrator") -> None:
