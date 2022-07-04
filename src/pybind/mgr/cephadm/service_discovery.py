@@ -1,8 +1,12 @@
-import cherrypy
-from cherrypy._cpserver import Server
 import logging
 import tempfile
 from typing import Dict, List, TYPE_CHECKING, cast, Collection
+
+try:
+    import cherrypy
+    from cherrypy._cpserver import Server
+except ImportError:
+    cherrypy = None
 
 from orchestrator import OrchestratorError
 from mgr_module import ServiceInfoT
