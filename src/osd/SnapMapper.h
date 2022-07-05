@@ -260,6 +260,9 @@ private:
     const snapid_t & snapid);
 
 public:
+  const std::unordered_map<hobject_t, std::set<snapid_t>>&            get_obj_to_snaps() const { return obj_to_snaps; }
+  const std::unordered_map<snapid_t,  std::unordered_set<hobject_t>>& get_snap_to_objs() const { return snap_to_objs; }
+
   void print_snaps(const char *s);
   static std::string make_shard_prefix(shard_id_t shard) {
     if (shard == shard_id_t::NO_SHARD)

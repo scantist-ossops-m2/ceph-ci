@@ -15627,9 +15627,6 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
   }
 
   ldout(pg->cct, 10) << "AwaitAsyncWork: trimming snap " << snap_to_trim << dendl;
-  //ldout(pg->cct, 1) << "GBH::SNAPMAP::AwaitAsyncWork: trimming snap " << snap_to_trim << dendl;
-  //ldout(pg->cct, 1) << "GBH::SNAPMAP::AwaitAsyncWork: pg_id="<< pg->get_pgid() << ", shard=" << pg->pg_whoami <<  dendl;
-
   vector<hobject_t> to_trim;
   unsigned max = pg->cct->_conf->osd_pg_max_concurrent_snap_trims;
   // we need to look for at least 1 snaptrim, otherwise we'll misinterpret
@@ -15641,7 +15638,7 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
     max,
     &to_trim);
   if (r != 0 && r != -ENOENT) {
-    //ldout(pg->cct, 1) << "GBH::SNAPMAP::" << "ERR::get_next_objects_to_trim returned "  << cpp_strerror(r) << dendl;
+    ldout(pg->cct, 1) << "GBH::SNAPMAP::" << "ERR::get_next_objects_to_trim returned "  << cpp_strerror(r) << dendl;
     lderr(pg->cct) << "get_next_objects_to_trim returned "
 		   << cpp_strerror(r) << dendl;
     ceph_abort_msg("get_next_objects_to_trim returned an invalid code");
@@ -15685,6 +15682,7 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
   for (auto &&object: to_trim) {
     // Get next
     ldout(pg->cct, 10) << "AwaitAsyncWork react trimming " << object << dendl;
+    //ldout(pg->cct, 1) << "GBH::SNAPMAP::AwaitAsyncWork react trimming " << object << dendl;
     OpContextUPtr ctx;
     int error = pg->trim_object(in_flight.empty(), object, snap_to_trim, &ctx);
     if (error) {

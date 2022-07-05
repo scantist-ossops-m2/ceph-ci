@@ -4350,7 +4350,32 @@ int OSD::shutdown()
 
     utime_t  start_time_umount = ceph_clock_now();
     store->prepare_for_fast_shutdown();
+
     std::lock_guard lock(osd_lock);
+
+    //const std::unordered_map<hobject_t, std::set<snapid_t>>            get_obj_to_snaps() { retrun obj_to_snaps; }
+    //const std::unordered_map<snapid_t,  std::unordered_set<hobject_t>> get_snap_to_objs() { return snap_to_objs; }
+
+    // Store SnapMappers
+    {
+      vector<PGRef> pgs;
+      _get_pgs(&pgs);
+      for (auto pg : pgs) {
+	//pg->shutdown();
+	const SnapMapper& snap_mapper = pg->get_snap_mapper();
+	auto obj_to_snaps = snap_mapper.get_obj_to_snaps();
+	if (!obj_to_snaps.empty()) {
+	  //store->destage_obj_to_snaps(pg, obj_to_snaps);
+	}
+	auto snap_to_objs = snap_mapper.get_snap_to_objs();
+	if (!snap_to_objs.empty()) {
+	  //store->destage_snap_to_objs(pg, snap_to_objs);
+	}
+
+
+      }
+    }
+
     // TBD: assert in allocator that nothing is being add
     store->umount();
 
