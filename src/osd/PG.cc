@@ -2571,6 +2571,7 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     }
     int r = snap_mapper.remove_oid(oid.hobj, &_t);
     if (r != 0 && r != -ENOENT) {
+      dout(1) << "GBH::SNAPMAP::" << __func__ << "::Failed removing oid= " << oid.hobj << dendl;
       ceph_abort();
     }
     t.remove(coll, oid);
