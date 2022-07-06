@@ -295,7 +295,7 @@ void SnapMapper::add_oid(
   for (set<snapid_t>::iterator snap_itr = snaps.begin();
        snap_itr != snaps.end();
        ++snap_itr) {
-    dout(1) << "+++GBH::SNAPMAP::" << __func__ << "::(" << *snap_itr << ") -> (" << coid << ")" <<  dendl;
+    //dout(1) << "+++GBH::SNAPMAP::" << __func__ << "::(" << *snap_itr << ") -> (" << coid << ")" <<  dendl;
     snap_to_objs[*snap_itr].insert(coid);
   }
 
