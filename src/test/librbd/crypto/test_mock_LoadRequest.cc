@@ -67,10 +67,10 @@ struct TestMockCryptoLoadRequest : public TestMockFixture {
     mock_parent_image_ctx = new MockTestImageCtx(*ictx);
     mock_image_ctx->parent = mock_parent_image_ctx;
     mock_encryption_format = new MockEncryptionFormat();
+    std::vector<std::unique_ptr<MockEncryptionFormat>> formats;
+    formats.emplace_back(mock_encryption_format);
     mock_load_request = MockLoadRequest::create(
-          mock_image_ctx,
-          std::unique_ptr<MockEncryptionFormat>(mock_encryption_format),
-          on_finish);
+          mock_image_ctx, std::move(formats), on_finish);
   }
 
   void TearDown() override {
@@ -137,10 +137,10 @@ TEST_F(TestMockCryptoLoadRequest, Success) {
   delete mock_load_request;
   mock_image_ctx->parent = nullptr;
   mock_encryption_format = new MockEncryptionFormat();
+  std::vector<std::unique_ptr<MockEncryptionFormat>> formats;
+  formats.emplace_back(mock_encryption_format);
   mock_load_request = MockLoadRequest::create(
-        mock_image_ctx,
-        std::unique_ptr<MockEncryptionFormat>(mock_encryption_format),
-        on_finish);
+        mock_image_ctx, std::move(formats), on_finish);
   expect_test_journal_feature(mock_image_ctx);
   expect_encryption_load(mock_encryption_format, mock_image_ctx);
   mock_load_request->send();
@@ -181,6 +181,78 @@ TEST_F(TestMockCryptoLoadRequest, LoadClonedParentFail) {
   ASSERT_EQ(-EIO, finished_cond.wait());
   ASSERT_EQ(nullptr, mock_image_ctx->encryption_format.get());
   ASSERT_EQ(nullptr, mock_parent_image_ctx->encryption_format.get());
+}
+
+TEST_F(TestMockCryptoLoadRequest, LoadParentFail) {
+  delete mock_load_request;
+  mock_encryption_format = new MockEncryptionFormat();
+  auto mock_parent_encryption_format = new MockEncryptionFormat();
+  std::vector<std::unique_ptr<MockEncryptionFormat>> formats;
+  formats.emplace_back(mock_encryption_format);
+  formats.emplace_back(mock_parent_encryption_format);
+  mock_load_request = MockLoadRequest::create(
+        mock_image_ctx,
+        std::move(formats),
+        on_finish);
+  expect_test_journal_feature(mock_image_ctx);
+  expect_test_journal_feature(mock_parent_image_ctx);
+  expect_encryption_load(mock_encryption_format, mock_image_ctx);
+  mock_load_request->send();
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  expect_encryption_load(mock_parent_encryption_format, mock_parent_image_ctx);
+  load_context->complete(0);
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  load_context->complete(-EINVAL);
+  ASSERT_EQ(-EINVAL, finished_cond.wait());
+  ASSERT_EQ(nullptr, mock_image_ctx->encryption_format.get());
+  ASSERT_EQ(nullptr, mock_parent_image_ctx->encryption_format.get());
+}
+
+TEST_F(TestMockCryptoLoadRequest, EncryptedParent) {
+  delete mock_load_request;
+  mock_encryption_format = new MockEncryptionFormat();
+  auto mock_parent_encryption_format = new MockEncryptionFormat();
+  std::vector<std::unique_ptr<MockEncryptionFormat>> formats;
+  formats.emplace_back(mock_encryption_format);
+  formats.emplace_back(mock_parent_encryption_format);
+  mock_load_request = MockLoadRequest::create(
+        mock_image_ctx,
+        std::move(formats),
+        on_finish);
+  expect_test_journal_feature(mock_image_ctx);
+  expect_test_journal_feature(mock_parent_image_ctx);
+  expect_encryption_load(mock_encryption_format, mock_image_ctx);
+  mock_load_request->send();
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  expect_encryption_load(mock_parent_encryption_format, mock_parent_image_ctx);
+  load_context->complete(0);
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  load_context->complete(0);
+  ASSERT_EQ(0, finished_cond.wait());
+  ASSERT_EQ(mock_encryption_format, mock_image_ctx->encryption_format.get());
+  ASSERT_EQ(mock_parent_encryption_format,
+            mock_parent_image_ctx->encryption_format.get());
+}
+
+TEST_F(TestMockCryptoLoadRequest, TooManyFormats) {
+  delete mock_load_request;
+  mock_encryption_format = new MockEncryptionFormat();
+  auto mock_parent_encryption_format = new MockEncryptionFormat();
+  std::vector<std::unique_ptr<MockEncryptionFormat>> formats;
+  formats.emplace_back(mock_encryption_format);
+  formats.emplace_back(mock_parent_encryption_format);
+  mock_image_ctx->parent = nullptr;
+  mock_load_request = MockLoadRequest::create(
+        mock_image_ctx,
+        std::move(formats),
+        on_finish);
+  expect_test_journal_feature(mock_image_ctx);
+  expect_encryption_load(mock_encryption_format, mock_image_ctx);
+  mock_load_request->send();
+  ASSERT_EQ(ETIMEDOUT, finished_cond.wait_for(0));
+  load_context->complete(0);
+  ASSERT_EQ(-EINVAL, finished_cond.wait());
+  ASSERT_EQ(nullptr, mock_image_ctx->encryption_format.get());
 }
 
 } // namespace crypto
