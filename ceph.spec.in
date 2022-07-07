@@ -1615,6 +1615,8 @@ exit 0
 %{_bindir}/rados-sqlite
 %{_bindir}/radosgw-admin
 %{_bindir}/radosgw-admin-sqlite
+%{_bindir}/rgwam
+%{_bindir}/rgwam-sqlite
 %{_bindir}/rbd
 %{_bindir}/rbd-replay
 %{_bindir}/rbd-replay-many
