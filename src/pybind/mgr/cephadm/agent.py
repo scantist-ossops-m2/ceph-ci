@@ -37,6 +37,9 @@ def cherrypy_filter(record: logging.LogRecord) -> int:
 if cherrypy:
     logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
     cherrypy.log.access_log.propagate = False
+else:
+    class Server:
+        pass
 
 class AgentEndpoint:
     def __init__(self, mgr: "CephadmOrchestrator") -> None:
