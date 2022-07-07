@@ -4318,7 +4318,7 @@ WantedBy=ceph-{fsid}.target
                                'port': self.listener_port})
             data = data.encode('ascii')
 
-            url = f'https://{self.target_ip}:{self.target_port}/data'
+            url = f'https://{self.target_ip}:{self.target_port}/data/'
             try:
                 req = Request(url, data, {'Content-Type': 'application/json'})
                 send_time = time.monotonic()
