@@ -35,9 +35,13 @@ class RGWAMCLIMgr(RGWAMEnvMgr):
             args += [ '-k', common_args.ceph_keyring ]
 
         self.args_prefix = args
+        self.prog_suffix = common_args.prog_suffix or ''
+
+        if common_args.no_mon_config:
+            args += [ '--no-mon-config' ]
 
     def tool_exec(self, prog, args):
-        run_cmd = [ prog ] + self.args_prefix + args
+        run_cmd = [ prog + self.prog_suffix ] + self.args_prefix + args
 
         result = subprocess.run(run_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -167,6 +171,8 @@ class CommonArgs:
         self.conf_path = ns.conf_path
         self.ceph_name = ns.ceph_name
         self.ceph_keyring = ns.ceph_keyring
+        self.prog_suffix = ns.prog_suffix
+        self.no_mon_config = ns.no_mon_config
 
 class TopLevelCommand:
 
@@ -186,6 +192,9 @@ The commands are:
         parser.add_argument('-c', help='ceph conf path', dest='conf_path')
         parser.add_argument('-n', help='ceph user name', dest='ceph_name')
         parser.add_argument('-k', help='ceph keyring', dest='ceph_keyring')
+        parser.add_argument('--prog-suffix', help='append suffix to executed programs',
+                dest='prog_suffix')
+        parser.add_argument('--no-mon-config', action='store_true', dest='no_mon_config')
 
         removed_args = []
 
@@ -205,6 +214,7 @@ The commands are:
             exit(1)
         # use dispatch pattern to invoke method with same name
         args += removed_args
+
         return (getattr(self, ns.command), CommonArgs(ns), args)
 
     def realm(self, env, args):
