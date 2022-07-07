@@ -6,11 +6,8 @@ import tempfile
 import threading
 import time
 
-try:
-    import cherrypy
-    from cherrypy._cpserver import Server
-except ImportError:
-    cherrypy = None
+import cherrypy
+from cherrypy._cpserver import Server
 
 from mgr_util import verify_tls_files
 from orchestrator import DaemonDescriptionStatus, OrchestratorError
@@ -34,12 +31,8 @@ def cherrypy_filter(record: logging.LogRecord) -> int:
     msg = record.getMessage()
     return not any([m for m in blocked if m in msg])
 
-if cherrypy:
-    logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
-    cherrypy.log.access_log.propagate = False
-else:
-    class Server:
-        pass
+logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
+cherrypy.log.access_log.propagate = False
 
 class AgentEndpoint:
     def __init__(self, mgr: "CephadmOrchestrator") -> None:
