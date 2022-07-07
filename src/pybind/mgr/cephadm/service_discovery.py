@@ -2,11 +2,8 @@ import logging
 import tempfile
 from typing import Dict, List, TYPE_CHECKING, cast, Collection
 
-try:
-    import cherrypy
-    from cherrypy._cpserver import Server
-except ImportError:
-    cherrypy = None
+import cherrypy
+from cherrypy._cpserver import Server
 
 from orchestrator import OrchestratorError
 from mgr_module import ServiceInfoT
@@ -26,12 +23,8 @@ def cherrypy_filter(record: logging.LogRecord) -> int:
     return not any([m for m in blocked if m in msg])
 
 
-if cherrypy:
-    logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
-    cherrypy.log.access_log.propagate = False
-else:
-    class Server:
-        pass
+logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
+cherrypy.log.access_log.propagate = False
 
 class ServiceDiscovery():
     def __init__(self, mgr: "CephadmOrchestrator") -> None:
