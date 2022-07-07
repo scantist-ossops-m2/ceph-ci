@@ -8,6 +8,7 @@
 #include "librbd/Utils.h"
 #include "librbd/ImageCtx.h"
 #include "librbd/crypto/EncryptionFormat.h"
+#include "librbd/crypto/Types.h"
 #include "librbd/crypto/Utils.h"
 
 #define dout_subsys ceph_subsys_rbd
@@ -62,10 +63,12 @@ void LoadRequest<I>::send() {
 
 template <typename I>
 void LoadRequest<I>::load() {
+  m_detected_format_name = "";
   ldout(m_image_ctx->cct, 20) << "format_idx=" << m_format_idx << dendl;
   auto ctx = create_context_callback<
           LoadRequest<I>, &LoadRequest<I>::handle_load>(this);
-  m_formats[m_format_idx]->load(m_current_image_ctx, ctx);
+  m_formats[m_format_idx]->load(m_current_image_ctx, &m_detected_format_name,
+                                ctx);
 }
 
 template <typename I>
@@ -73,11 +76,25 @@ void LoadRequest<I>::handle_load(int r) {
   ldout(m_image_ctx->cct, 20) << "r=" << r << dendl;
 
   if (r < 0) {
+    if (m_is_current_format_cloned && m_detected_format_name == "unknown") {
+      // encryption format was not detected, assume plaintext
+      ldout(m_image_ctx->cct, 5) << "assuming plaintext for image "
+                                 << m_current_image_ctx->name << dendl;
+      m_formats.pop_back();
+      finish(0);
+      return;
+    }
+
     lderr(m_image_ctx->cct) << "failed to load encryption. image name: "
                             << m_current_image_ctx->name << dendl;
     finish(r);
     return;
   }
+
+  ldout(m_image_ctx->cct, 5) << "loaded format " << m_detected_format_name
+                             << (m_is_current_format_cloned ? " (cloned)" : "")
+                             << " for image " << m_current_image_ctx->name
+                             << dendl;
 
   m_format_idx++;
   m_current_image_ctx = m_current_image_ctx->parent;
