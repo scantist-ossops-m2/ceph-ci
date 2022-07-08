@@ -1,8 +1,9 @@
 try:
     import cherrypy
     from cherrypy._cpserver import Server
-except ImportError as e:
-    class Server:
+except ImportError:
+    # to avoid sphinx build crash
+    class Server:  # type: ignore
         pass
 
 import logging
@@ -29,6 +30,7 @@ def cherrypy_filter(record: logging.LogRecord) -> int:
 
 logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
 cherrypy.log.access_log.propagate = False
+
 
 class ServiceDiscovery():
     def __init__(self, mgr: "CephadmOrchestrator") -> None:
