@@ -1,9 +1,13 @@
+try:
+    import cherrypy
+    from cherrypy._cpserver import Server
+except ImportError as e:
+    class Server:
+        pass
+
 import logging
 import tempfile
 from typing import Dict, List, TYPE_CHECKING, cast, Collection
-
-import cherrypy
-from cherrypy._cpserver import Server
 
 from orchestrator import OrchestratorError
 from mgr_module import ServiceInfoT

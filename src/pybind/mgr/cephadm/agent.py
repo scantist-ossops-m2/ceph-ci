@@ -1,3 +1,11 @@
+
+try:
+    import cherrypy
+    from cherrypy._cpserver import Server
+except ImportError as e:
+    class Server:
+        pass
+
 import json
 import logging
 import socket
@@ -6,8 +14,6 @@ import tempfile
 import threading
 import time
 
-import cherrypy
-from cherrypy._cpserver import Server
 
 from mgr_util import verify_tls_files
 from orchestrator import DaemonDescriptionStatus, OrchestratorError
