@@ -1299,8 +1299,8 @@ void PgScrubber::apply_snap_mapper_fixes(
     }
 
     // now - insert the correct snap-set
-
-    m_pg->snap_mapper.add_oid(hoid, snaps, &t_drv);
+    std::vector<snapid_t> _snaps(snaps.begin(), snaps.end());
+    m_pg->snap_mapper.add_oid(hoid, _snaps, &t_drv);
   }
 
   // wait for repair to apply to avoid confusing other bits of the system.

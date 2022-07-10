@@ -1263,7 +1263,7 @@ int get_attrs(
 	       << std::endl;
 	OSDriver::OSTransaction _t(driver.get_transaction(t));
 	ceph_assert(!snaps.empty());
-	snap_mapper.add_oid(clone.hobj, snaps, &_t);
+	snap_mapper.add_oid(clone.hobj, p.second, &_t);
       }
     } else {
       cerr << "missing SS_ATTR on " << hoid << std::endl;

@@ -48,6 +48,7 @@
 #include "common/numa.h"
 #include "common/pretty_binary.h"
 #include "kv/KeyValueHistogram.h"
+#include "osd/SnapMapper.h"
 
 #ifdef HAVE_LIBZBD
 #include "ZonedAllocator.h"
@@ -18790,10 +18791,27 @@ void BlueStore::set_allocation_in_simple_bmap(SimpleBitmap* sbmap, uint64_t offs
 }
 
 //---------------------------------------------------------
+void BlueStore::process_snapset(hobject_t &hobj, SnapMapper* snap_map, const SnapSet &snapset)
+{
+  snapid_t keep_snapid = hobj.snap;
+  for (auto itr = snapset.clone_snaps.begin(); itr != snapset.clone_snaps.end(); ++itr) {
+    // turn hobj into a cobj
+    hobj.snap = itr->first;
+    const std::vector<snapid_t>& snaps = itr->second;
+    dout(1) << "GBH::SNAPMAP::" << __func__ << "::(" << hobj << ") -> (" << snaps << ")" << dendl;
+    snap_map->add_oid(hobj, snaps, nullptr);
+  }
+
+  // revert hobj to head object
+  hobj.snap = keep_snapid;
+}
+
+//---------------------------------------------------------
 // Process all physical extents from a given Onode (including all its shards)
 void BlueStore::read_allocation_from_single_onode(
   SimpleBitmap*        sbmap,
   BlueStore::OnodeRef& onode_ref,
+  SnapMapper         * snap_map,
   read_alloc_stats_t&  stats)
 {
   // create a map holding all physical-extents of this Onode to prevent duplication from being added twice and more
@@ -18859,6 +18877,25 @@ void BlueStore::read_allocation_from_single_onode(
     // store all counts higher than MAX_BLOBS_IN_ONODE in a single bucket at offset zero
     stats.blobs_in_onode[MAX_BLOBS_IN_ONODE]++;
   }
+
+  // TBD:: move ss_attr_name outside 
+  mempool::bluestore_cache_meta::string ss_attr_name(SS_ATTR);
+  hobject_t &hobj = onode_ref->oid.hobj;
+  // SnapSet is kept only in the head object
+  // skip head objects without SnapSet Attribute 
+  if (hobj.is_head() && onode_ref->onode.attrs.count(ss_attr_name) ) {
+    bufferlist attr;
+    //attr.append(onode_ref->onode.attrs[ss_attr_name]);
+    attr.push_back(onode_ref->onode.attrs[ss_attr_name]);
+    SnapSet snapset;
+    auto bp = attr.cbegin();
+    try {
+      decode(snapset, bp);
+      process_snapset(hobj, snap_map, snapset);
+    } catch (...) {
+      derr << "Error decoding snapset on : " << hobj << dendl;
+    }
+  }
 }
 
 //-------------------------------------------------------------------------
@@ -18871,7 +18908,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
     derr << "failed db->get_iterator(PREFIX_OBJ)" << dendl;
     return -1;
   }
-
+  SnapMapper         *curr_snap_map = nullptr;
   CollectionRef       collection_ref;
   spg_t               pgid;
   BlueStore::OnodeRef onode_ref;
@@ -18904,7 +18941,8 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
 	    ceph_assert(shard_id < onode_ref->extent_map.shards.size());
 	  }
 	} else {
-	  derr << "illegal shard-key::onode->key=" << pretty_binary_string(onode_ref->key) << " shard->key=" << pretty_binary_string(it->key()) << dendl;
+	  derr << "illegal shard-key::onode->key=" << pretty_binary_string(onode_ref->key)
+	       << " shard->key=" << pretty_binary_string(it->key()) << dendl;
 	  ceph_assert(it->key().find(onode_ref->key) == 0);
 	}
       } else {
@@ -18919,7 +18957,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
 	// make sure we got all shards of this object
 	if (shard_id == onode_ref->extent_map.shards.size()) {
 	  // We completed an Onode Object -> pass it to be processed
-	  read_allocation_from_single_onode(sbmap, onode_ref, stats);
+	  read_allocation_from_single_onode(sbmap, onode_ref, curr_snap_map, stats);
 	} else {
 	  derr << "Missing shards! shard_id=" << shard_id << ", shards.size()=" << onode_ref->extent_map.shards.size() << dendl;
 	  ceph_assert(shard_id == onode_ref->extent_map.shards.size());
@@ -18963,7 +19001,25 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
 	  continue;
 	}
 
-	collection_ref->cid.is_pg(&pgid);
+	bool is_pg = collection_ref->cid.is_pg(&pgid);
+	if (is_pg) {
+	  // we don't need driver and split bits for the SnapMapper here
+	  unsigned bogus_pg_num = -1;
+	  auto itr = snap_mappers.find(pgid);
+	  if (itr == snap_mappers.end()) {
+	    SnapMapper *sm = new SnapMapper(cct, nullptr /*driver*/, pgid.ps(),
+					    pgid.get_split_bits(bogus_pg_num),
+					    pgid.pool(), pgid.shard);
+	    snap_mappers[pgid] = sm;
+	    curr_snap_map = sm;
+	  }
+	  else {
+	    curr_snap_map = itr->second;
+	  }
+	}
+	else {
+	  curr_snap_map = nullptr;
+	}
       }
       onode_ref.reset(BlueStore::Onode::decode(collection_ref, oid, it->key(), it->value()));
     }
@@ -18974,7 +19030,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
     // make sure we got all shards of this object
     if (shard_id == onode_ref->extent_map.shards.size()) {
       // We completed an Onode Object -> pass it to be processed
-      read_allocation_from_single_onode(sbmap, onode_ref, stats);
+      read_allocation_from_single_onode(sbmap, onode_ref, curr_snap_map, stats);
     } else {
       derr << "Last Object is missing shards! shard_id=" << shard_id << ", shards.size()=" << onode_ref->extent_map.shards.size() << dendl;
       ceph_assert(shard_id == onode_ref->extent_map.shards.size());

@@ -491,7 +491,8 @@ public:
     }
     {
       PausyAsyncMap::Transaction t;
-      mapper->add_oid(obj, snaps, &t);
+      std::vector<snapid_t> snaps_vec(snaps.begin(), snaps.end());
+      mapper->add_oid(obj, snaps_vec, &t);
       driver->submit(&t);
     }
   }
@@ -540,15 +541,14 @@ public:
 	map<hobject_t, set<snapid_t>>::iterator j =
 	  hobject_to_snap.find(hoid);
 	ceph_assert(j->second.count(snap->first));
-	set<snapid_t> old_snaps(j->second);
 	j->second.erase(snap->first);
 
 	{
 	  PausyAsyncMap::Transaction t;
+	  vector<snapid_t> new_snaps(j->second.begin(), j->second.end());
 	  mapper->update_snaps(
 	    hoid,
-	    j->second,
-	    &old_snaps,
+	    new_snaps,
 	    &t);
 	  driver->submit(&t);
 	}
@@ -593,10 +593,11 @@ public:
       return;
     map<hobject_t, set<snapid_t>>::iterator obj =
       rand_choose(hobject_to_snap);
-    set<snapid_t> snaps;
+    vector<snapid_t> snaps;
     int r = mapper->get_snaps(obj->first, &snaps);
     ceph_assert(r == 0);
-    ASSERT_EQ(snaps, obj->second);
+    set<snapid_t> _snaps(snaps.begin(), snaps.end());
+    ASSERT_EQ(_snaps, obj->second);
   }
 };
 
