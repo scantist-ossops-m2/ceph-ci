@@ -404,12 +404,12 @@ void PrimaryLogPG::on_local_recover(
     dout(20) << " snapset " << recovery_info.ss << dendl;
     auto p = recovery_info.ss.clone_snaps.find(hoid.snap);
     if (p != recovery_info.ss.clone_snaps.end()) {
-      snaps.insert(p->second.begin(), p->second.end());
-      dout(20) << " snaps " << snaps << dendl;
+      //snaps.insert(p->second.begin(), p->second.end());
+      //dout(20) << " snaps " << snaps << dendl;
       //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling add_oid()::snaps=" << snaps << dendl;
       snap_mapper.add_oid(
 	recovery_info.soid,
-	snaps,
+	p->second,
 	&_t);
     } else {
       derr << __func__ << " " << hoid << " had no clone_snaps" << dendl;

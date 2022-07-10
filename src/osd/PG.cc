@@ -340,10 +340,11 @@ void PG::update_object_snap_mapping(
     derr << __func__ << ": remove_oid returned " << cpp_strerror(r) << dendl;
     ceph_abort();
   }
+  std::vector<snapid_t> _snaps(snaps.begin(), snaps.end());
   //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling add_oid()::snaps=" << snaps << dendl;
   snap_mapper.add_oid(
     soid,
-    snaps,
+    _snaps,
     &_t);
 }
 
@@ -1182,19 +1183,17 @@ void PG::update_snap_map(
 	  derr << __func__ << " decode snaps failure on " << *i << dendl;
 	  snaps.clear();
 	}
-	set<snapid_t> _snaps(snaps.begin(), snaps.end());
 
 	if (i->is_clone() || i->is_promote()) {
 	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::snap_mapper.add_oid(oid=" << i->soid << ", _snaps=" << _snaps <<")" << dendl;
 	  snap_mapper.add_oid(
 	    i->soid,
-	    _snaps,
+	    snaps,
 	    &_t);
 	} else if (i->is_modify()) {
 	  int r = snap_mapper.update_snaps(
 	    i->soid,
-	    _snaps,
-	    0,
+	    snaps,
 	    &_t);
 	  ceph_assert(r == 0);
 	} else {
