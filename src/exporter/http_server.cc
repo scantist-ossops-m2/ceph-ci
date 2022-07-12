@@ -47,7 +47,11 @@ private:
     http::async_read(socket_, buffer_, request_,
                      [self](beast::error_code ec, std::size_t bytes_transferred) {
                        boost::ignore_unused(bytes_transferred);
-                       if (!ec)
+                       if (ec) {
+                         std::cout << "failed to read request: " << ec.message() << std::endl;
+                         return;
+                       }
+                       else
                          self->process_request();
                      });
   }
@@ -111,6 +115,10 @@ private:
                       [self](beast::error_code ec, std::size_t) {
                         self->socket_.shutdown(tcp::socket::shutdown_send, ec);
                         self->deadline_.cancel();
+                        if (ec) {
+                          std::cout << "failed to write response: " << ec.message() << std::endl;
+                          return;
+                        }
                       });
   }
 
