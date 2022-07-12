@@ -277,6 +277,7 @@ class PrometheusService(CephadmService):
         mgr_map = self.mgr.get('mgr_map')
         port = cast(int, self.mgr.get_module_option_ex(
             'prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
+        exporter_port = 9926
         deps.append(str(port))
         t = mgr_map.get('services', {}).get('prometheus', None)
         if t:
@@ -288,6 +289,7 @@ class PrometheusService(CephadmService):
                 mgr_scrape_list.append(f"[{p_result.hostname}]:{port}")
             else:
                 mgr_scrape_list.append(f"{p_result.hostname}:{port}")
+
         # scan all mgrs to generate deps and to get standbys too.
         # assume that they are all on the same port as the active mgr.
         for dd in self.mgr.cache.get_daemons_by_service('mgr'):
@@ -313,6 +315,14 @@ class PrometheusService(CephadmService):
                 'hostname': dd.hostname,
                 'url': build_url(host=addr, port=port).lstrip('/')
             })
+
+        # scrape ceph exporters
+        ceph_exporter_nodes = []
+        for dd in self.mgr.cache.get_daemons_by_service('ceph-exporter'):
+            assert dd.hostname is not None
+            deps.append(dd.name())
+            addr = self._inventory_get_fqdn(dd.hostname)
+            ceph_exporter_nodes.append(build_url(host=addr, port=exporter_port).lstrip('/'))
 
         # scrape alert managers
         alertmgr_targets = []
@@ -343,6 +353,7 @@ class PrometheusService(CephadmService):
             'mgr_scrape_list': mgr_scrape_list,
             'haproxy_targets': haproxy_targets,
             'nodes': nodes,
+            'ceph_exporter_nodes': ceph_exporter_nodes
         }
         r = {
             'files': {
