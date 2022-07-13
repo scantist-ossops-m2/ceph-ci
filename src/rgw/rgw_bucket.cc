@@ -2395,6 +2395,7 @@ RGWBucketCtl::RGWBucketCtl(RGWSI_Zone *zone_svc,
   svc.bucket = bucket_svc;
   svc.bucket_sync = bucket_sync_svc;
   svc.bi = bi_svc;
+  svc.user = user_svc;
 }
 
 void RGWBucketCtl::init(RGWUserCtl *user_ctl,
