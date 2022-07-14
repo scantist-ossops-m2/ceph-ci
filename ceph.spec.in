@@ -1254,6 +1254,7 @@ BuildArch:      noarch
 %if 0%{?suse_version}
 Group:          System/Monitoring
 %endif
+Requires:       net-snmp
 %description mib
 This package provides a Ceph MIB for SNMP traps.
 
