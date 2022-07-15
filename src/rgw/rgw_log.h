@@ -15,6 +15,64 @@
 class RGWRados;
 class RGWOp;
 
+struct delete_multi_obj_entry {
+  string key;
+  string version_id;
+  bool error;
+  uint32_t http_status;
+  string error_message;
+  bool delete_marker;
+  string marker_version_id;
+
+  void encode(bufferlist &bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(key, bl);
+    encode(version_id, bl);
+    encode(error, bl);
+    encode(http_status, bl);
+    encode(error_message, bl);
+    encode(delete_marker, bl);
+    encode(marker_version_id, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator &p) {
+    DECODE_START_LEGACY_COMPAT_LEN(1, 1, 1, p);
+    decode(key, p);
+    decode(version_id, p);
+    decode(error, p);
+    decode(http_status, p);
+    decode(error_message, p);
+    decode(delete_marker, p);
+    decode(marker_version_id, p);
+    DECODE_FINISH(p);
+  }
+};
+WRITE_CLASS_ENCODER(delete_multi_obj_entry)
+
+struct delete_multi_obj_op_meta {
+  uint32_t num_ok;
+  uint32_t num_err;
+  std::vector<delete_multi_obj_entry> objects;
+
+  void encode(bufferlist &bl) const {
+    ENCODE_START(1, 1, bl);
+    encode(num_ok, bl);
+    encode(num_err, bl);
+    encode(objects, bl);
+    ENCODE_FINISH(bl);
+  }
+
+  void decode(bufferlist::const_iterator &p) {
+    DECODE_START_LEGACY_COMPAT_LEN(1, 1, 1, p);
+    decode(num_ok, p);
+    decode(num_err, p);
+    decode(objects, p);
+    DECODE_FINISH(p);
+  }
+};
+WRITE_CLASS_ENCODER(delete_multi_obj_op_meta)
+
 struct rgw_log_entry {
 
   using headers_map = boost::container::flat_map<std::string, std::string>;
@@ -45,9 +103,10 @@ struct rgw_log_entry {
   std::string access_key_id;
   std::string subuser;
   bool temp_url {false};
+  delete_multi_obj_op_meta delete_multi_obj_meta;
 
   void encode(bufferlist &bl) const {
-    ENCODE_START(13, 5, bl);
+    ENCODE_START(14, 5, bl);
     encode(object_owner.id, bl);
     encode(bucket_owner.id, bl);
     encode(bucket, bl);
@@ -76,10 +135,11 @@ struct rgw_log_entry {
     encode(access_key_id, bl);
     encode(subuser, bl);
     encode(temp_url, bl);
+    encode(delete_multi_obj_meta, bl);
     ENCODE_FINISH(bl);
   }
   void decode(bufferlist::const_iterator &p) {
-    DECODE_START_LEGACY_COMPAT_LEN(13, 5, 5, p);
+    DECODE_START_LEGACY_COMPAT_LEN(14, 5, 5, p);
     decode(object_owner.id, p);
     if (struct_v > 3)
       decode(bucket_owner.id, p);
@@ -138,6 +198,9 @@ struct rgw_log_entry {
       decode(access_key_id, p);
       decode(subuser, p);
       decode(temp_url, p);
+    }
+    if (struct_v >= 14) {
+      decode(delete_multi_obj_meta, p);
     }
     DECODE_FINISH(p);
   }
