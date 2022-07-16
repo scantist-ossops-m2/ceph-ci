@@ -21,7 +21,7 @@ from cephadm.autotune import MemoryAutotuner
 from cephadm.utils import forall_hosts, cephadmNoImage, is_repo_digest, \
     CephadmNoImage, CEPH_TYPES, ContainerInspectInfo
 from mgr_module import MonCommandFailed
-from mgr_util import format_bytes
+from mgr_util import format_bytes, verify_tls, get_cert_issuer_info, ServerConfigException
 
 from . import utils
 
@@ -92,6 +92,8 @@ class CephadmServe:
 
                     self._check_daemons()
 
+                    self._check_certificates()
+
                     self._purge_deleted_services()
 
                     self._check_for_moved_osds()
@@ -110,6 +112,35 @@ class CephadmServe:
             self._serve_sleep()
             self.log.debug("serve loop wake")
         self.log.debug("serve exit")
+
+    def _check_certificates(self) -> None:
+        cert = self.mgr.get_store('grafana_crt')
+        key = self.mgr.get_store('grafana_key')
+        if not (cert and key):
+            self.mgr.remove_health_warning('GRAFANA_CERT_ERROR')
+            return
+
+        (org, cn) = (None, None)
+        try:
+            (org, cn) = get_cert_issuer_info(cert)
+            verify_tls(cert, key)
+            self.mgr.remove_health_warning('GRAFANA_CERT_ERROR')
+        except ServerConfigException as e:
+            err_msg = """
+            Detected invalid grafana certificates. Set mgr/cephadm/grafana_crt
+            and mgr/cephadm/grafana_key to valid certificates or reset their value
+            to an empty string in case you want cephadm to generate self-signed Grafana
+            certificates.
+
+            Once done, run the following command to reconfig the daemon:
+
+               > ceph orch daemon reconfig <grafana-daemon>
+
+            """
+            self.log.error(f'Invalid grafana certificate: {e}')
+            self.mgr.set_health_warning('GRAFANA_CERT_ERROR',
+                                        f'Invalid grafana certificate: {e}',
+                                        1, [err_msg])
 
     def _serve_sleep(self) -> None:
         sleep_interval = max(
