@@ -18,6 +18,9 @@ from cpython.pycapsule cimport *
 from libc cimport errno
 from libc.stdint cimport *
 from libc.stdlib cimport malloc, realloc, free
+
+DEF BUILD_DOC = False
+
 IF BUILD_DOC:
     include "mock_rados.pxi"
 ELSE:
