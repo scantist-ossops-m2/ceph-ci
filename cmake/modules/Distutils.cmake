@@ -148,8 +148,8 @@ function(distutils_install_cython_module name)
            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/setup.py
            build ${maybe_verbose} --build-base ${CYTHON_MODULE_DIR}
            --build-platlib ${CYTHON_MODULE_DIR}/lib.3
-           build_ext --cython-c-in-temp --build-temp ${CMAKE_CURRENT_BINARY_DIR} --cython-include-dirs ${PROJECT_SOURCE_DIR}/src/pybind/rados
-           install \${options} --skip-build --single-version-externally-managed --record /dev/null
+           build_ext --compile_time_env BUILD_DOC=False --cython-c-in-temp --build-temp ${CMAKE_CURRENT_BINARY_DIR} --cython-include-dirs ${PROJECT_SOURCE_DIR}/src/pybind/rados
+           install \${options} --single-version-externally-managed --record /dev/null
            egg_info --egg-base ${CMAKE_CURRENT_BINARY_DIR}
            ${maybe_verbose}
        WORKING_DIRECTORY \"${CMAKE_CURRENT_SOURCE_DIR}\"
