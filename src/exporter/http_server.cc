@@ -1,4 +1,5 @@
 #include "http_server.h"
+#include "common/debug.h"
 #include "common/hostname.h"
 #include "global/global_init.h"
 #include "global/global_context.h"
@@ -16,6 +17,9 @@
 #include <map>
 #include <memory>
 #include <string>
+
+#define dout_context g_ceph_context
+#define dout_subsys ceph_subsys_ceph_exporter
 
 namespace beast = boost::beast;   // from <boost/beast.hpp>
 namespace http = beast::http;     // from <boost/beast/http.hpp>
@@ -47,8 +51,13 @@ private:
     http::async_read(socket_, buffer_, request_,
                      [self](beast::error_code ec, std::size_t bytes_transferred) {
                        boost::ignore_unused(bytes_transferred);
-                       if (!ec)
+                       if (ec) {
+                         dout(1) << "ERROR: " << ec.message() << dendl;
+                         return;
+                       }
+                       else {
                          self->process_request();
+                       }
                      });
   }
 
@@ -111,6 +120,10 @@ private:
                       [self](beast::error_code ec, std::size_t) {
                         self->socket_.shutdown(tcp::socket::shutdown_send, ec);
                         self->deadline_.cancel();
+                        if (ec) {
+                          dout(1) << "ERROR: " << ec.message() << dendl;
+                          return;
+                        }
                       });
   }
 
