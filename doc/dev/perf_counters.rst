@@ -200,3 +200,50 @@ The actual dump is similar to the schema, except that average values are grouped
    }
  }
 
+Labeled Perf Counters
+---------------------
+
+A Ceph daemon has the ability to emit a set perf counter instances with varying labels. These counters are intended for visualizing specific metrics in 3rd party tools like the Prometheus and Grafana.
+
+For example, the below counters show put and get byte statistics for different users on different buckets::
+
+  {
+    "Bucket:bkt1:User:user1:": {
+        "put_b": 1048576,
+        "put_initial_lat": {
+            "avgcount": 1,
+            "sum": 0.013000200,
+            "avgtime": 0.013000200
+        }
+    },
+    "Bucket:bkt2:User:user1:": {
+        "put_b": 1048576,
+        "put_initial_lat": {
+            "avgcount": 1,
+            "sum": 0.016000246,
+            "avgtime": 0.016000246
+        }
+    },
+    "Bucket:bkt1:User:user2:": {
+        "get_b": 1048576,
+        "get_initial_lat": {
+            "avgcount": 1,
+            "sum": 0.003000046,
+            "avgtime": 0.003000046
+        },
+        "put_b": 1048576,
+        "put_initial_lat": {
+            "avgcount": 1,
+            "sum": 0.014000215,
+            "avgtime": 0.014000215
+        }
+    }
+  }
+
+A daemon's perf counters cache is stored in memory. Since the number of labeled perf counter instances can grow very quickly, eviction can be configured and is recommended to be turned on. 
+
+Eviction in the perf counters cache is set with the global config variable ``labeled_perfcounters_cache_eviction``.
+
+There is also a global config variable to set the number of labled perf counter instances that are stored in the cache before eviction. See the config variable ``labeled_perfcounters_cache_size``. The least recently accessed counters are evicted first.
+
+Labeled perf counters can be accessed with ``ceph {daemon id} labeledperf dump`` and their schema can be viewed with ``ceph {daemon id} labeledperf schema``.

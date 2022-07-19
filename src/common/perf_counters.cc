@@ -14,6 +14,7 @@
  */
 
 #include "common/perf_counters.h"
+#include "common/perf_counters_key.h"
 #include "common/dout.h"
 #include "common/valgrind.h"
 #include "include/common_fwd.h"
@@ -129,6 +130,7 @@ void PerfCountersCollectionImpl::dump_formatted_generic(
     Formatter *f,
     bool schema,
     bool histograms,
+    bool dump_labeled,
     const std::string &logger,
     const std::string &counter) const
 {
@@ -138,7 +140,12 @@ void PerfCountersCollectionImpl::dump_formatted_generic(
        l != m_loggers.end(); ++l) {
     // Optionally filter on logger name, pass through counter filter
     if (logger.empty() || (*l)->get_name() == logger) {
-      (*l)->dump_formatted_generic(f, schema, histograms, counter);
+      // only dump labeled instances when dump_labeled is set OR
+      // only dump non-labeled instances when dump_labeled is NOT set
+      if((dump_labeled && (*l)->is_instance_labeled()) ||
+        (!dump_labeled && !((*l)->is_instance_labeled()))) {
+        (*l)->dump_formatted_generic(f, schema, histograms, dump_labeled, counter);
+      }
     }
   }
   f->close_section();
@@ -175,6 +182,10 @@ void PerfCounters::inc(int idx, uint64_t amt)
   } else {
     data.u64 += amt;
   }
+
+  if(m_is_labeled) {
+    data.accessed = true;
+  }
 }
 
 void PerfCounters::dec(int idx, uint64_t amt)
@@ -191,6 +202,9 @@ void PerfCounters::dec(int idx, uint64_t amt)
   if (!(data.type & PERFCOUNTER_U64))
     return;
   data.u64 -= amt;
+  if(m_is_labeled) {
+    data.accessed = true;
+  }
 }
 
 void PerfCounters::set(int idx, uint64_t amt)
@@ -214,6 +228,9 @@ void PerfCounters::set(int idx, uint64_t amt)
     data.avgcount2++;
   } else {
     data.u64 = amt;
+  }
+  if(m_is_labeled) {
+    data.accessed = true;
   }
 }
 
@@ -251,6 +268,9 @@ void PerfCounters::tinc(int idx, utime_t amt)
   } else {
     data.u64 += amt.to_nsec();
   }
+  if(m_is_labeled) {
+    data.accessed = true;
+  }
 }
 
 void PerfCounters::tinc(int idx, ceph::timespan amt)
@@ -272,6 +292,9 @@ void PerfCounters::tinc(int idx, ceph::timespan amt)
   } else {
     data.u64 += amt.count();
   }
+  if(m_is_labeled) {
+    data.accessed = true;
+  }
 }
 
 void PerfCounters::tset(int idx, utime_t amt)
@@ -289,6 +312,9 @@ void PerfCounters::tset(int idx, utime_t amt)
   data.u64 = amt.to_nsec();
   if (data.type & PERFCOUNTER_LONGRUNAVG)
     ceph_abort();
+  if(m_is_labeled) {
+    data.accessed = true;
+  }
 }
 
 utime_t PerfCounters::tget(int idx) const
@@ -354,9 +380,26 @@ void PerfCounters::reset()
 }
 
 void PerfCounters::dump_formatted_generic(Formatter *f, bool schema,
-    bool histograms, const std::string &counter) const
+    bool histograms, bool dump_labeled, const std::string &counter) const
 {
-  f->open_object_section(m_name.c_str());
+  if(dump_labeled) {
+    std::string_view perf_counter_name = ceph::perf_counters::key_name(m_name);
+    f->open_object_section(perf_counter_name);
+
+    f->open_object_section("labels");
+    for (auto label : ceph::perf_counters::key_labels(m_name)) {
+      // don't dump labels with empty label names or values
+      if(label.first == "" || label.second == "") {
+        continue;
+      } else {
+        f->dump_string(label.first, label.second);
+      }
+    }
+    // close labels
+    f->close_section();
+  } else {
+    f->open_object_section(m_name.c_str());
+  }
   
   for (perf_counter_data_vec_t::const_iterator d = m_data.begin();
        d != m_data.end(); ++d) {
@@ -371,6 +414,10 @@ void PerfCounters::dump_formatted_generic(Formatter *f, bool schema,
       continue;
     }
 
+    if (!d->accessed && dump_labeled) {
+      continue;
+    }
+
     if (schema) {
       f->open_object_section(d->name);
       // we probably should not have exposed this raw field (with bit
@@ -379,29 +426,29 @@ void PerfCounters::dump_formatted_generic(Formatter *f, bool schema,
       f->dump_int("type", d->type);
 
       if (d->type & PERFCOUNTER_COUNTER) {
-	f->dump_string("metric_type", "counter");
+        f->dump_string("metric_type", "counter");
       } else {
-	f->dump_string("metric_type", "gauge");
+        f->dump_string("metric_type", "gauge");
       }
 
       if (d->type & PERFCOUNTER_LONGRUNAVG) {
-	if (d->type & PERFCOUNTER_TIME) {
-	  f->dump_string("value_type", "real-integer-pair");
-	} else {
-	  f->dump_string("value_type", "integer-integer-pair");
-	}
+        if (d->type & PERFCOUNTER_TIME) {
+          f->dump_string("value_type", "real-integer-pair");
+        } else {
+          f->dump_string("value_type", "integer-integer-pair");
+        }
       } else if (d->type & PERFCOUNTER_HISTOGRAM) {
-	if (d->type & PERFCOUNTER_TIME) {
-	  f->dump_string("value_type", "real-2d-histogram");
-	} else {
-	  f->dump_string("value_type", "integer-2d-histogram");
-	}
+        if (d->type & PERFCOUNTER_TIME) {
+          f->dump_string("value_type", "real-2d-histogram");
+        } else {
+          f->dump_string("value_type", "integer-2d-histogram");
+        }
       } else {
-	if (d->type & PERFCOUNTER_TIME) {
-	  f->dump_string("value_type", "real");
-	} else {
-	  f->dump_string("value_type", "integer");
-	}
+        if (d->type & PERFCOUNTER_TIME) {
+          f->dump_string("value_type", "real");
+        } else {
+          f->dump_string("value_type", "integer");
+        }
       }
 
       f->dump_string("description", d->description ? d->description : "");
@@ -413,23 +460,23 @@ void PerfCounters::dump_formatted_generic(Formatter *f, bool schema,
       f->dump_int("priority", get_adjusted_priority(d->prio));
       
       if (d->unit == UNIT_NONE) {
-	f->dump_string("units", "none"); 
+        f->dump_string("units", "none"); 
       } else if (d->unit == UNIT_BYTES) {
-	f->dump_string("units", "bytes");
+        f->dump_string("units", "bytes");
       }
       f->close_section();
     } else {
       if (d->type & PERFCOUNTER_LONGRUNAVG) {
-	f->open_object_section(d->name);
-	pair<uint64_t,uint64_t> a = d->read_avg();
-	if (d->type & PERFCOUNTER_U64) {
-	  f->dump_unsigned("avgcount", a.second);
-	  f->dump_unsigned("sum", a.first);
-	} else if (d->type & PERFCOUNTER_TIME) {
-	  f->dump_unsigned("avgcount", a.second);
-	  f->dump_format_unquoted("sum", "%" PRId64 ".%09" PRId64,
-				  a.first / 1000000000ull,
-				  a.first % 1000000000ull);
+        f->open_object_section(d->name);
+        pair<uint64_t,uint64_t> a = d->read_avg();
+        if (d->type & PERFCOUNTER_U64) {
+          f->dump_unsigned("avgcount", a.second);
+          f->dump_unsigned("sum", a.first);
+        } else if (d->type & PERFCOUNTER_TIME) {
+          f->dump_unsigned("avgcount", a.second);
+          f->dump_format_unquoted("sum", "%" PRId64 ".%09" PRId64,
+                                  a.first / 1000000000ull,
+                                  a.first % 1000000000ull);
           uint64_t count = a.second;
           uint64_t sum_ns = a.first;
           if (count) {
@@ -440,10 +487,10 @@ void PerfCounters::dump_formatted_generic(Formatter *f, bool schema,
           } else {
             f->dump_format_unquoted("avgtime", "%" PRId64 ".%09" PRId64, 0, 0);
           }
-	} else {
-	  ceph_abort();
-	}
-	f->close_section();
+        } else {
+          ceph_abort();
+        }
+        f->close_section();
       } else if (d->type & PERFCOUNTER_HISTOGRAM) {
         ceph_assert(d->type == (PERFCOUNTER_HISTOGRAM | PERFCOUNTER_COUNTER | PERFCOUNTER_U64));
         ceph_assert(d->histogram);
@@ -451,16 +498,16 @@ void PerfCounters::dump_formatted_generic(Formatter *f, bool schema,
         d->histogram->dump_formatted(f);
         f->close_section();
       } else {
-	uint64_t v = d->u64;
-	if (d->type & PERFCOUNTER_U64) {
-	  f->dump_unsigned(d->name, v);
-	} else if (d->type & PERFCOUNTER_TIME) {
-	  f->dump_format_unquoted(d->name, "%" PRId64 ".%09" PRId64,
-				  v / 1000000000ull,
-				  v % 1000000000ull);
-	} else {
-	  ceph_abort();
-	}
+        uint64_t v = d->u64;
+        if (d->type & PERFCOUNTER_U64) {
+          f->dump_unsigned(d->name, v);
+        } else if (d->type & PERFCOUNTER_TIME) {
+          f->dump_format_unquoted(d->name, "%" PRId64 ".%09" PRId64,
+                                  v / 1000000000ull,
+                                  v % 1000000000ull);
+        } else {
+          ceph_abort();
+        }
       }
     }
   }
@@ -473,11 +520,12 @@ const std::string &PerfCounters::get_name() const
 }
 
 PerfCounters::PerfCounters(CephContext *cct, const std::string &name,
-	   int lower_bound, int upper_bound)
+	   int lower_bound, int upper_bound, bool is_labeled)
   : m_cct(cct),
     m_lower_bound(lower_bound),
     m_upper_bound(upper_bound),
-    m_name(name)
+    m_name(name),
+    m_is_labeled(is_labeled)
 #if !defined(WITH_SEASTAR) || defined(WITH_ALIEN)
     ,
     m_lock_name(std::string("PerfCounters::") + name.c_str()),
@@ -488,8 +536,8 @@ PerfCounters::PerfCounters(CephContext *cct, const std::string &name,
 }
 
 PerfCountersBuilder::PerfCountersBuilder(CephContext *cct, const std::string &name,
-                  int first, int last)
-  : m_perf_counters(new PerfCounters(cct, name, first, last))
+                  int first, int last, bool is_labeled)
+  : m_perf_counters(new PerfCounters(cct, name, first, last, is_labeled))
 {
 }
 
