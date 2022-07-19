@@ -2371,13 +2371,8 @@ Then run the following:
             deps = [self.get_mgr_ip()]
         else:
             need = {
-<<<<<<< HEAD
-                'prometheus': ['mgr', 'alertmanager', 'node-exporter', 'ingress'],
+                'prometheus': ['mgr', 'alertmanager', 'node-exporter', 'ingress', 'ceph-exporter'],
                 'grafana': ['prometheus', 'loki'],
-=======
-                'prometheus': ['mgr', 'alertmanager', 'ceph-exporter', 'node-exporter', 'ingress'],
-                'grafana': ['prometheus'],
->>>>>>> 6a1386126c0 (exporter: cephadm tox fixes)
                 'alertmanager': ['mgr', 'alertmanager', 'snmp-gateway'],
                 'promtail': ['loki'],
             }
