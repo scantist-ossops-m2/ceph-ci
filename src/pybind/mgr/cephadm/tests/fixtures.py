@@ -98,7 +98,6 @@ def with_cephadm_module(module_options=None, store=None):
             mock.patch("cephadm.agent.CephadmAgentHelpers._request_agent_acks"), \
             mock.patch("cephadm.agent.CephadmAgentHelpers._apply_agent", return_value=False), \
             mock.patch("cephadm.agent.CephadmAgentHelpers._agent_down", return_value=False), \
-            mock.patch('cephadm.agent.CherryPyThread.run'), \
             mock.patch('cephadm.offline_watcher.OfflineHostWatcher.run'), \
             mock.patch('cephadm.tuned_profiles.TunedProfileUtils._remove_stray_tuned_profiles'),\
             mock.patch('cephadm.offline_watcher.OfflineHostWatcher.run'):
