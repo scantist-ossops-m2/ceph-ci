@@ -47,7 +47,8 @@ from . import utils
 from . import ssh
 from .migrations import Migrations
 from .services.cephadmservice import MonService, MgrService, MdsService, RgwService, \
-    RbdMirrorService, CrashService, CephadmService, CephfsMirrorService, CephadmAgent
+    RbdMirrorService, CrashService, CephadmService, CephfsMirrorService, CephadmAgent, \
+    CephExporterService
 from .services.ingress import IngressService
 from .services.container import CustomContainerService
 from .services.iscsi import IscsiService
@@ -96,9 +97,9 @@ os._exit = os_exit_noop   # type: ignore
 
 
 # Default container images -----------------------------------------------------
-DEFAULT_IMAGE = 'quay.io/ceph/ceph'
-DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.33.4'
-DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v1.3.1'
+DEFAULT_IMAGE = 'docker.io/rhcsdashboard/ceph-exporter'
+DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.18.1'
+DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v0.18.1'
 DEFAULT_LOKI_IMAGE = 'docker.io/grafana/loki:2.4.0'
 DEFAULT_PROMTAIL_IMAGE = 'docker.io/grafana/promtail:2.4.0'
 DEFAULT_ALERT_MANAGER_IMAGE = 'quay.io/prometheus/alertmanager:v0.23.0'
@@ -560,8 +561,8 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             RgwService, RbdMirrorService, GrafanaService, AlertmanagerService,
             PrometheusService, NodeExporterService, LokiService, PromtailService, CrashService, IscsiService,
             IngressService, CustomContainerService, CephfsMirrorService,
-            CephadmAgent, SNMPGatewayService, ElasticSearchService, JaegerQueryService, JaegerAgentService,
-            JaegerCollectorService
+            CephadmAgent, CephExporterService, SNMPGatewayService, ElasticSearchService,
+            JaegerQueryService, JaegerAgentService, JaegerCollectorService
         ]
 
         # https://github.com/python/mypy/issues/8993
@@ -713,7 +714,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         Generate a unique random service name
         """
         suffix = daemon_type not in [
-            'mon', 'crash',
+            'mon', 'crash', 'ceph-exporter',
             'prometheus', 'node-exporter', 'grafana', 'alertmanager',
             'container', 'agent', 'snmp-gateway', 'loki', 'promtail',
             'elasticsearch', 'jaeger-collector', 'jaeger-agent', 'jaeger-query'
@@ -2370,7 +2371,7 @@ Then run the following:
             deps = [self.get_mgr_ip()]
         else:
             need = {
-                'prometheus': ['mgr', 'alertmanager', 'node-exporter', 'ingress'],
+                'prometheus': ['mgr', 'alertmanager', 'node-exporter', 'ingress', 'ceph-exporter'],
                 'grafana': ['prometheus', 'loki'],
                 'alertmanager': ['mgr', 'alertmanager', 'snmp-gateway'],
                 'promtail': ['loki'],
@@ -2594,6 +2595,7 @@ Then run the following:
                 'alertmanager': PlacementSpec(count=1),
                 'prometheus': PlacementSpec(count=1),
                 'node-exporter': PlacementSpec(host_pattern='*'),
+                'ceph-exporter': PlacementSpec(host_pattern='*'),
                 'loki': PlacementSpec(count=1),
                 'promtail': PlacementSpec(host_pattern='*'),
                 'crash': PlacementSpec(host_pattern='*'),
@@ -2705,6 +2707,10 @@ Then run the following:
 
     @handle_orch_error
     def apply_node_exporter(self, spec: ServiceSpec) -> str:
+        return self._apply(spec)
+
+    @handle_orch_error
+    def apply_ceph_exporter(self, spec: ServiceSpec) -> str:
         return self._apply(spec)
 
     @handle_orch_error
