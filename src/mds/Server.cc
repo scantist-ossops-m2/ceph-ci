@@ -578,6 +578,39 @@ void Server::handle_client_session(const cref_t<MClientSession> &m)
   if (logger)
     logger->inc(l_mdss_handle_client_session);
 
+  auto& addr = session->info.inst.addr;
+  session->set_client_metadata(client_metadata_t(m->metadata, m->supported_features, m->metric_spec));
+  auto& client_metadata = session->info.client_metadata;
+
+  auto log_session_status = [this, m, session](std::string_view status, std::string_view err) {
+    auto now = ceph_clock_now();
+    auto throttle_elapsed = m->get_recv_complete_stamp() - m->get_throttle_stamp();
+    auto elapsed = now - m->get_recv_stamp();
+    CachedStackStringStream css;
+    *css << "New client session:" 
+      << " addr=\"" <<  session->info.inst.addr << "\""
+        << ",elapsed=" << elapsed
+        << ",throttled=" << throttle_elapsed
+        << ",status=\"" << status << "\"";
+    if (!err.empty()) {
+      *css << ",error=\"" << err << "\"";
+    }
+    const auto& metadata = session->info.client_metadata;
+    if (auto it = metadata.find("root"); it != metadata.end()) {
+      *css << ",root=\"" << it->second << "\"";
+    }
+    dout(2) << css->strv() << dendl;
+  };
+
+  auto send_reject_message = [this, &session, &log_session_status](std::string_view err_str, unsigned flags=0) {
+	  auto m = make_message<MClientSession>(CEPH_SESSION_REJECT, 0, flags);
+	  if (session->info.has_feature(CEPHFS_FEATURE_MIMIC)) {
+      m->metadata["error_string"] = err_str;
+    }
+	  mds->send_message_client(m, session);
+    log_session_status("REJECTED", err_str);
+  };
+
   uint64_t sseq = 0;
   switch (m->get_op()) {
   case CEPH_SESSION_REQUEST_OPEN:
@@ -613,38 +646,6 @@ void Server::handle_client_session(const cref_t<MClientSession> &m)
     }
 
     {
-      auto& addr = session->info.inst.addr;
-      session->set_client_metadata(client_metadata_t(m->metadata, m->supported_features, m->metric_spec));
-      auto& client_metadata = session->info.client_metadata;
-
-      auto log_session_status = [this, m, session](std::string_view status, std::string_view err) {
-        auto now = ceph_clock_now();
-        auto throttle_elapsed = m->get_recv_complete_stamp() - m->get_throttle_stamp();
-        auto elapsed = now - m->get_recv_stamp();
-        CachedStackStringStream css;
-        *css << "New client session:"
-             << " addr=\"" <<  session->info.inst.addr << "\""
-             << ",elapsed=" << elapsed
-             << ",throttled=" << throttle_elapsed
-             << ",status=\"" << status << "\"";
-        if (!err.empty()) {
-          *css << ",error=\"" << err << "\"";
-        }
-        const auto& metadata = session->info.client_metadata;
-        if (auto it = metadata.find("root"); it != metadata.end()) {
-          *css << ",root=\"" << it->second << "\"";
-        }
-        dout(2) << css->strv() << dendl;
-      };
-
-      auto send_reject_message = [this, &session, &log_session_status](std::string_view err_str, unsigned flags=0) {
-	auto m = make_message<MClientSession>(CEPH_SESSION_REJECT, 0, flags);
-	if (session->info.has_feature(CEPHFS_FEATURE_MIMIC))
-	  m->metadata["error_string"] = err_str;
-	mds->send_message_client(m, session);
-        log_session_status("REJECTED", err_str);
-      };
-
       bool blocklisted = mds->objecter->with_osdmap(
 	  [&addr](const OSDMap &osd_map) -> bool {
 	    return osd_map.is_blocklisted(addr);
@@ -799,7 +800,10 @@ void Server::handle_client_session(const cref_t<MClientSession> &m)
     break;
 
   default:
-    ceph_abort();
+    send_reject_message(to_string(m->get_type()) + " is not allowed");
+    derr << "Server received unknown message " << m->get_type() << ", closing session and blocklisting the client " << session->get_client() << dendl;
+    CachedStackStringStream css;
+    mds->evict_client(session->get_client().v, false, true, *css, nullptr);
   }
 }
 
