@@ -46,6 +46,8 @@
 * RGW: The beast frontend's HTTP access log line uses a new debug_rgw_access
   configurable. This has the same defaults as debug_rgw, but can now be controlled
   independently.
+* The 'AT_NO_ATTR_SYNC' macro is deprecated, please use the standard 'AT_STATX_DONT_SYNC'
+  macro. The 'AT_NO_ATTR_SYNC' macro will be removed in the future.
 
 >=17.2.1
 
