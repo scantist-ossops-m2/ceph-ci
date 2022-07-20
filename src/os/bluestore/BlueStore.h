@@ -2135,7 +2135,7 @@ public:
   };
 
   bool has_null_fm();
-  int  store_snap_maps  (const std::unordered_map<spg_t, const class SnapMapper*>& snap_mappers);
+  int  store_snap_maps  (const std::unordered_map<spg_t, const SnapMapper*>& snap_mappers);
   int  restore_snap_maps();
 
   // --------------------------------------------------------
@@ -2153,7 +2153,7 @@ private:
   Allocator *alloc = nullptr;   ///< allocator consumed by BlueStore
   bluefs_shared_alloc_context_t shared_alloc; ///< consumed by BlueFS (may be == alloc)
 
-  std::unordered_map<spg_t, class SnapMapper*> snap_mappers;
+  std::unordered_map<spg_t, SnapMapper*> snap_mappers;
   uuid_d fsid;
   int path_fd = -1;  ///< open handle to $path
   int fsid_fd = -1;  ///< open handle (locked) to $path/fsid
@@ -3762,8 +3762,8 @@ private:
   int  read_allocation_from_drive_on_startup();
   int  reconstruct_allocations(SimpleBitmap *smbmp, read_alloc_stats_t &stats);
   int  read_allocation_from_onodes(SimpleBitmap *smbmp, read_alloc_stats_t& stats);
-  void read_allocation_from_single_onode(SimpleBitmap *smbmp, BlueStore::OnodeRef& onode_ref, class SnapMapper*, read_alloc_stats_t&  stats);
-  void process_snapset(hobject_t &hobj, class SnapMapper* snap_map, const SnapSet &snapset);
+  void read_allocation_from_single_onode(SimpleBitmap *smbmp, BlueStore::OnodeRef& onode_ref, SnapMapper*, read_alloc_stats_t&  stats);
+  void process_snapset(hobject_t &hobj, SnapMapper* snap_map, const SnapSet &snapset);
   void set_allocation_in_simple_bmap(SimpleBitmap* sbmap, uint64_t offset, uint64_t length);
   int  commit_to_null_manager();
   int  commit_to_real_manager();

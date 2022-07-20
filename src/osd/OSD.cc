@@ -4772,7 +4772,7 @@ void OSD::recursive_remove_collection(CephContext* cct,
 
   ObjectStore::CollectionHandle ch = store->open_collection(tmp);
   ObjectStore::Transaction t;
-  SnapMapper mapper(cct, &driver, 0, 0, 0, pgid.shard);
+  SnapMapper mapper(pgid, cct, &driver, 0, 0, 0, pgid.shard);
 
   ghobject_t next;
   int max = cct->_conf->osd_target_transaction_size;

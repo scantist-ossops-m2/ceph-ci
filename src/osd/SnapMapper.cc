@@ -229,7 +229,10 @@ int SnapMapper::remove_mapping_from_snapid_to_hobject(
     hobject_set.erase(coid);
     // if was the last element in the set -> remove the mapping
     if (hobject_set.empty()) {
-      dout(10) << "---GBH::SNAPMAP::" << __func__ << "::removed the last obj from snap " << snapid << dendl;
+      utime_t start    = snap_trim_time[snapid];
+      utime_t duration = ceph_clock_now() - start;
+      dout(1) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid << "::snap_id=" << snapid << " duration=" << duration << "(sec)" << dendl;
+      dout(1) << "---GBH::SNAPMAP::" << __func__ << "::removed the last obj from snap " << snapid << dendl;
       snap_to_objs.erase(snapid);
       // should we return -ENOENT here ???
     }
@@ -249,7 +252,7 @@ int SnapMapper::update_snaps(
   MapCacher::Transaction<std::string, bufferlist> *t)
 {
   dout(20) << __func__ << " " << coid << " " << new_snaps << dendl;
-  //dout(1) << "GBH::SNAPMAP::" << __func__ << "(" << coid << ") new_snaps = " << new_snaps << dendl;
+  dout(10) << "GBH::SNAPMAP::" << __func__ << "(" << coid << ") new_snaps = " << new_snaps << dendl;
   ceph_assert(check(coid));
   if (new_snaps.empty())
     return _remove_oid(coid);
@@ -267,7 +270,7 @@ int SnapMapper::update_snaps(
   // (probably snaps are in the process of being removed)
   for (auto snap_itr = old_snaps.begin(); snap_itr != old_snaps.end(); ++snap_itr) {
     if (std::find(new_snaps.begin(), new_snaps.end(), *snap_itr) == new_snaps.end()) {
-      //dout(1) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
+      dout(10) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
       remove_mapping_from_snapid_to_hobject(coid, *snap_itr);
       if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
 	dout(20) << __func__ << " rm " << to_raw_key(make_pair(*snap_itr, coid)) << dendl;
@@ -310,17 +313,26 @@ int SnapMapper::get_next_objects_to_trim(
 {
   ceph_assert(out);
   ceph_assert(out->empty());
-  //dout(1) << "***GBH::SNAPMAP::" << __func__ << "::snap_id=" << snap << ", max=" << max << dendl;
+  dout(10) << "***GBH::SNAPMAP::" << __func__ << "::snap_id=" << snap << ", max=" << max << dendl;
 
   // if max would be 0, we return ENOENT and the caller would mistakenly
   // trim the snaptrim queue
   ceph_assert(max > 0);
-
+  
   auto itr = snap_to_objs.find(snap);
   if (itr != snap_to_objs.end()) {
+
+    auto itr_time = snap_trim_time.find(snap);
+    if (unlikely(itr_time == snap_trim_time.end())) {
+      utime_t start = ceph_clock_now();
+      snap_trim_time[snap] = start;
+      dout(1) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid <<"::snap_id=" << snap << " start time=" << start
+	      << ", count=" << itr->second.size() << dendl;
+    }
+
     std::unordered_set<hobject_t> & obj_set_ref = itr->second;
     for (const hobject_t& coid : obj_set_ref) {
-      //dout(1) << "GBH::SNAPMAP::" << __func__ << "::" << snap << "-->" << coid << dendl;
+      dout(10) << "GBH::SNAPMAP::" << __func__ << "::" << snap << "-->" << coid << dendl;
       ceph_assert(check(coid));
       out->push_back(coid);
       if (out->size() == max) {
@@ -356,7 +368,7 @@ int SnapMapper::remove_oid(
 int SnapMapper::_remove_oid(const hobject_t &coid)
 {
   dout(20) << __func__ << " " << coid << dendl;
-  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::" << coid  << dendl;
+  dout(10) << "GBH::SNAPMAP::" << __func__ << "::" << coid  << dendl;
   ceph_assert(check(coid));
   std::unique_ptr<std::vector<snapid_t>> snaps_vec;
   auto obj_itr = obj_to_snaps.find(coid);
@@ -387,7 +399,7 @@ int SnapMapper::_remove_oid(const hobject_t &coid)
   // iterate over snap-set attached to this coid
   for (auto snap_itr = snaps_vec->begin(); snap_itr != snaps_vec->end(); ++snap_itr) {
     // remove the coid from the coid_set of objects modified since snap creation
-    //dout(1) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
+    dout(10) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
     remove_mapping_from_snapid_to_hobject(coid, *snap_itr);
 
     if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {

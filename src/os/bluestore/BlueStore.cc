@@ -18662,7 +18662,7 @@ int BlueStore::__restore_snap_maps(const std::vector<snap_listing_entry_t> &sdir
     // allocate snap_mapper if we don't have one for this pgid already
     if (itr == snap_mappers.end()) {
       unsigned bogus_pg_num = 1;
-      SnapMapper *sm = new SnapMapper(cct, nullptr /*driver*/, pgid.ps(), bogus_pg_num, pgid.pool(), pgid.shard);
+      SnapMapper *sm = new SnapMapper(pgid, cct, nullptr /*driver*/, pgid.ps(), bogus_pg_num, pgid.pool(), pgid.shard);
       snap_mappers[pgid] = sm;
       curr_snap_map = sm;
       // obj_to_snaps entry is the first entry for every pgid
@@ -19466,7 +19466,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
 	  unsigned bogus_pg_num = 1;
 	  auto itr = snap_mappers.find(pgid);
 	  if (itr == snap_mappers.end()) {
-	    SnapMapper *sm = new SnapMapper(cct, nullptr /*driver*/, pgid.ps(),
+	    SnapMapper *sm = new SnapMapper(pgid, cct, nullptr /*driver*/, pgid.ps(),
 					    pgid.get_split_bits(bogus_pg_num),
 					    pgid.pool(), pgid.shard);
 	    snap_mappers[pgid] = sm;

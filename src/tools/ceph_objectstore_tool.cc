@@ -1880,7 +1880,7 @@ int ObjectStoreTool::do_import(ObjectStore *store, OSDSuperblock& sb,
     store,
     coll_t(),
     OSD::make_snapmapper_oid());
-  SnapMapper mapper(g_ceph_context, &driver, 0, 0, 0, pgid.shard);
+  SnapMapper mapper(pgid, g_ceph_context, &driver, 0, 0, 0, pgid.shard);
 
   cout << "Importing pgid " << pgid;
   cout << std::endl;
@@ -2160,7 +2160,7 @@ int do_remove_object(ObjectStore *store, coll_t coll,
     store,
     coll_t(),
     OSD::make_snapmapper_oid());
-  SnapMapper mapper(g_ceph_context, &driver, 0, 0, 0, pg.shard);
+  SnapMapper mapper(pg, g_ceph_context, &driver, 0, 0, 0, pg.shard);
   struct stat st;
 
   int r = store->stat(ch, ghobj, &st);

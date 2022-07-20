@@ -109,6 +109,7 @@ public:
 class SnapMapper {
   friend class MapperVerifier;
 public:
+  spg_t        pgid;
   CephContext* cct;
   struct object_snaps {
     hobject_t oid;
@@ -255,6 +256,7 @@ private:
   // TBD2: change all to flat_set (or even a vector)
   std::unordered_map<hobject_t, std::vector<snapid_t>  >        obj_to_snaps;
   std::unordered_map<snapid_t,  std::unordered_set<hobject_t> > snap_to_objs;
+  std::unordered_map<snapid_t, utime_t> snap_trim_time;
   int remove_mapping_from_snapid_to_hobject(
     const hobject_t& oid,
     const snapid_t & snapid);
@@ -281,6 +283,7 @@ public:
   const shard_id_t shard;
   const std::string shard_prefix;
   SnapMapper(
+    spg_t        pgid,
     CephContext* cct,
     MapCacher::StoreDriver<std::string, ceph::buffer::list> *driver,
     uint32_t match,  ///< [in] pgid
@@ -288,7 +291,7 @@ public:
     int64_t pool,    ///< [in] pool
     shard_id_t shard ///< [in] shard
     )
-    : cct(cct), backend(driver), obj_to_snaps(), snap_to_objs(), mask_bits(bits), match(match), pool(pool),
+    : pgid(pgid), cct(cct), backend(driver), obj_to_snaps(), snap_to_objs(), mask_bits(bits), match(match), pool(pool),
       shard(shard), shard_prefix(make_shard_prefix(shard)) {
     update_bits(mask_bits);
   }
