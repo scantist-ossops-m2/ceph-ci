@@ -202,7 +202,6 @@ void SnapMapper::set_snaps(
 
 void SnapMapper::print_snaps(const char *s)
 {
-  return;
   for (auto itr = snap_to_objs.begin(); itr != snap_to_objs.end(); ++itr) {
     dout(1) << "PRN::GBH::SNAPMAP:: called from: [" << s << "] snap_id=" << itr->first << dendl;
     for (const hobject_t& coid : itr->second) {
@@ -210,6 +209,12 @@ void SnapMapper::print_snaps(const char *s)
       ceph_assert(check(coid));
     }
     dout(1) << "=========================================" << dendl;
+  }
+
+  for (auto itr = obj_to_snaps.begin(); itr != obj_to_snaps.end(); ++itr) {
+    const hobject_t & coid = itr->first;
+    const std::vector<snapid_t>& snaps_vec = itr->second;
+    dout(1) << "PRN::GBH::SNAPMAP:: [" << coid << "] " << snaps_vec << dendl;
   }
 }
 

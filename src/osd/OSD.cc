@@ -4281,10 +4281,38 @@ PerfCounters* OSD::create_recoverystate_perf()
   return recoverystate_perf;
 }
 
+void OSD::store_snap_maps()
+{
+  //dout(1) << "OSD::store_snap_maps::entered" << dendl;
+  std::unordered_map<spg_t, const SnapMapper*> snap_mappers;
+  vector<PGRef> pgs;
+  _get_pgs(&pgs);
+  //dout(1) << "OSD::store_snap_maps:: pgs.size()=" << pgs.size() << dendl;
+  for (auto pg : pgs) {
+    //pg->shutdown();
+    const spg_t&      pgid        = pg->get_pgid();
+    const SnapMapper& snap_mapper = pg->get_snap_mapper();
+
+    snap_mappers[pgid] = &snap_mapper;
+    auto obj_to_snaps = snap_mapper.get_obj_to_snaps_const();
+    if (!obj_to_snaps.empty()) {
+      //store->destage_obj_to_snaps(pg, obj_to_snaps);
+    }
+
+    auto snap_to_objs = snap_mapper.get_snap_to_objs_const();
+    if (!snap_to_objs.empty()) {
+      dout(1) << "OSD::store_snap_maps::spg_name=" << pgid << ", snap_to_objs.size() =" << snap_to_objs.size() << dendl;
+      //store->destage_snap_to_objs(pg, snap_to_objs);
+    }
+
+  }
+  store->store_snap_maps(snap_mappers);
+}
+
 int OSD::shutdown()
 {
   // vstart overwrites osd_fast_shutdown value in the conf file -> force the value here!
-  //cct->_conf->osd_fast_shutdown = true;
+  cct->_conf->osd_fast_shutdown = true;
 
   dout(0) << "Fast Shutdown: - cct->_conf->osd_fast_shutdown = "
 	  << cct->_conf->osd_fast_shutdown
@@ -4352,30 +4380,7 @@ int OSD::shutdown()
     store->prepare_for_fast_shutdown();
 
     std::lock_guard lock(osd_lock);
-
-    //const std::unordered_map<hobject_t, std::set<snapid_t>>            get_obj_to_snaps() { retrun obj_to_snaps; }
-    //const std::unordered_map<snapid_t,  std::unordered_set<hobject_t>> get_snap_to_objs() { return snap_to_objs; }
-
-    // Store SnapMappers
-    {
-      vector<PGRef> pgs;
-      _get_pgs(&pgs);
-      for (auto pg : pgs) {
-	//pg->shutdown();
-	const SnapMapper& snap_mapper = pg->get_snap_mapper();
-	auto obj_to_snaps = snap_mapper.get_obj_to_snaps();
-	if (!obj_to_snaps.empty()) {
-	  //store->destage_obj_to_snaps(pg, obj_to_snaps);
-	}
-	auto snap_to_objs = snap_mapper.get_snap_to_objs();
-	if (!snap_to_objs.empty()) {
-	  //store->destage_snap_to_objs(pg, snap_to_objs);
-	}
-
-
-      }
-    }
-
+    store_snap_maps();
     // TBD: assert in allocator that nothing is being add
     store->umount();
 
@@ -4402,6 +4407,14 @@ int OSD::shutdown()
   // from racing with on_shutdown and potentially entering the pg after.
   op_shardedwq.drain();
 
+  // TBD::
+  // We need to wait store_snap_maps() after PG->shutdown()
+  // but that will clear snap_maps
+  // Need to copy them outside the PG and don't destroy them!!!
+
+  dout(1) << "calling OSD::store_snap_maps()" << dendl;
+  store_snap_maps();
+  
   // Shutdown PGs
   {
     vector<PGRef> pgs;
@@ -4535,6 +4548,8 @@ int OSD::shutdown()
   service.shutdown();
 
   std::lock_guard lock(osd_lock);
+
+  //store_snap_maps();
   store->umount();
   store.reset();
   dout(10) << "Store synced" << dendl;

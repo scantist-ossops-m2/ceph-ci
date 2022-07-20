@@ -6693,7 +6693,8 @@ void BlueStore::_close_db_leave_bluefs()
 
 void BlueStore::_close_db()
 {
-  dout(10) << __func__ << ":read_only=" << db_was_opened_read_only << " fm=" << fm << " destage_alloc_file=" << need_to_destage_allocation_file << dendl;
+  dout(10) << __func__ << ":read_only=" << db_was_opened_read_only << " fm=" << fm
+	   << " destage_alloc_file=" << need_to_destage_allocation_file << dendl;
   _close_db_leave_bluefs();
 
   if (need_to_destage_allocation_file) {
@@ -18435,6 +18436,463 @@ static uint32_t flush_extent_buffer_with_crc(BlueFS::FileWriter *p_handle, const
   return crc;
 }
 
+//==========================================================================
+struct snap_listing_header_t {
+  uint32_t entries_count;	// 0x00
+  uint32_t bytes_size;		// 0x04
+  uint32_t crc32;		// 0x08
+  uint32_t pad32;		// 0x0C
+  utime_t  timestamp;		// 0x10
+
+  snap_listing_header_t() {
+    memset((char*)this, 0, sizeof(snap_listing_header_t));
+  }
+
+  snap_listing_header_t(uint32_t entries_count, uint32_t bytes_size, uint32_t crc32, utime_t timestamp) {
+    this->entries_count = entries_count;
+    this->bytes_size    = bytes_size;
+    this->crc32         = crc32;
+    this->pad32         = 0;
+    this->timestamp     = timestamp;
+  }
+
+  friend std::ostream& operator<<(std::ostream& out, const snap_listing_header_t& header) {
+    out << "  entries_count = " << header.entries_count;
+    out << ", bytes_size    = " << header.bytes_size;
+    out << ", crc32         = " << header.crc32;
+    if (header.pad32) {
+      out << ", pad32         = " << header.pad32;
+    }
+    out << ", timestamp     = " << header.timestamp;
+    return out;
+  }
+
+  DENC(snap_listing_header_t, v, p) {
+    denc(v.entries_count, p);
+    denc(v.bytes_size, p);
+    denc(v.crc32, p);
+    denc(v.pad32, p);
+    denc(v.timestamp.tv.tv_sec, p);
+    denc(v.timestamp.tv.tv_nsec, p);
+  }
+};
+WRITE_CLASS_DENC(snap_listing_header_t)
+
+struct snap_listing_entry_t {
+  snapid_t snapid;		// 0x00
+  uint32_t file_size;		// 0x08
+  uint32_t obj_count;		// 0x0C
+  uint32_t crc32;		// 0x10
+  uint32_t pad32;		// 0x14
+  spg_t    pgid;		// 0x18
+
+  snap_listing_entry_t() {
+    memset((char*)this, 0, sizeof(snap_listing_entry_t));
+  }
+
+  snap_listing_entry_t(snapid_t snapid, uint32_t file_size, uint32_t obj_count, uint32_t crc32, const spg_t& pgid) {
+    this->snapid    = snapid;
+    this->file_size = file_size;
+    this->obj_count = obj_count;
+    this->crc32     = crc32;
+    this->pad32     = 0;
+    this->pgid      = pgid;
+  }
+
+  friend std::ostream& operator<<(std::ostream& out, const snap_listing_entry_t& entry) {
+    out << "  snapid    = " << entry.snapid;
+    out << ", file_size = " << entry.file_size ;
+    out << ", obj_count = " << entry.obj_count ;
+    out << ", crc32     = " << entry.crc32;
+    out << ", pgid      = " << entry.pgid;
+    if (entry.pad32) {
+      out << "pad32     = " << entry.pad32;
+    }
+    return out;
+  }
+
+  DENC(snap_listing_entry_t, v, p) {
+    denc(v.snapid,    p);
+    denc(v.file_size, p);
+    denc(v.obj_count, p);
+    denc(v.crc32,     p);
+    denc(v.pad32,     p);
+    // TBD: can we encode/decode spg_t in a single call???
+    denc(v.pgid.pgid.m_pool, p);
+    denc(v.pgid.pgid.m_seed, p);
+    denc(v.pgid.shard.id,    p);
+  }
+};
+WRITE_CLASS_DENC(snap_listing_entry_t)
+
+static const std::string snap_maps_dir     = "SNAP_MAPS_DIR";
+static const std::string snap_maps_listing = "SNAP_MAPS_LISTING";
+
+//-----------------------------------------------------------------------------------
+static size_t calc_snap_listing_header_size()
+{
+  utime_t               timestamp = ceph_clock_now();
+  uint32_t              crc32 = -1;
+  uint32_t              count = 0;
+  uint32_t              size  = 0;
+  snap_listing_header_t header(count, size, crc32, timestamp);
+  bufferlist            header_bl;
+  encode(header, header_bl);
+  return header_bl.length();
+}
+
+//-----------------------------------------------------------------------------------
+int BlueStore::restore_snap_map_listing_file(std::vector<snap_listing_entry_t> &sdir)
+{
+  dout(1) << "snap_maps_dir =" << snap_maps_dir << ", snap_maps_listing=" << snap_maps_listing << dendl;
+  BlueFS::FileReader *p_temp_handle = nullptr;
+  int ret = bluefs->open_for_read(snap_maps_dir, snap_maps_listing, &p_temp_handle, false);
+  if (ret != 0) {
+    derr << "Failed open_for_read with error-code " << ret << dendl;
+    return -1;
+  }
+  unique_ptr<BlueFS::FileReader> p_handle(p_temp_handle);
+  uint64_t file_size = p_handle->file->fnode.size;
+  uint64_t allocated = p_handle->file->fnode.get_allocated();
+  dout(1) << "file_size=" << file_size << ", allocated=" << allocated << dendl;
+
+  snap_listing_header_t  header;
+
+  // first read the header
+  size_t                 offset = 0;
+  int                    header_size = calc_snap_listing_header_size();
+  {
+    bufferlist header_bl,temp_bl;
+    int        read_bytes = bluefs->read(p_handle.get(), offset, header_size, &temp_bl, nullptr);
+    if (read_bytes != header_size) {
+      derr << "Failed bluefs->read() for header::read_bytes=" << read_bytes << ", req_bytes=" << header_size << dendl;
+      return -1;
+    }
+
+    offset += read_bytes;
+
+    header_bl.claim_append(temp_bl);
+    auto p = header_bl.cbegin();
+    decode(header, p);
+  }
+  dout(1) << "files_count=" << header.entries_count << ", bytes_size=" << header.bytes_size << ", crc32=" << header.crc32 << dendl;
+
+  // then read data
+  {
+    bufferlist entries_bl;
+    int        read_bytes = bluefs->read(p_handle.get(), offset, header.bytes_size, &entries_bl, nullptr);
+    if (read_bytes != (int)header.bytes_size) {
+      derr << "Failed bluefs->read() for data::read_bytes=" << read_bytes << ", req_bytes=" << header.bytes_size << dendl;
+      return -1;
+    }
+    offset += read_bytes;
+    auto p = entries_bl.cbegin();
+
+    uint32_t   crc32 = -1;
+    snap_listing_entry_t entry;
+    for (unsigned i = 0; i < header.entries_count; i++) {
+      decode(entry, p);
+      sdir.emplace_back(entry);
+    }
+    crc32 = entries_bl.crc32c(crc32);
+    dout(1) << "crc32=" << header.crc32 << dendl;
+    ceph_assert(crc32 == header.crc32);
+  }
+  return 0;
+}
+
+//-----------------------------------------------------------------------------------
+int BlueStore::restore_obj_to_snaps(std::unordered_map<hobject_t, std::vector<snapid_t>>& obj_to_snaps,
+				    const snap_listing_entry_t& entry)
+{
+  ceph_assert((int)entry.snapid == -1);
+  const spg_t& pgid   = entry.pgid;
+
+  char spg_buff[spg_t::calc_name_buf_size + 6]; // add six bytes for the '::OBJS' trailer
+  spg_buff[sizeof(spg_buff) - 1] = '\0';
+  const std::string objs_file(pgid.calc_name(spg_buff + sizeof(spg_buff) - 1, "SJBO::"));
+  dout(1) << "open file " << objs_file << dendl;
+  BlueFS::FileReader *p_temp_handle = nullptr;
+  int ret = bluefs->open_for_read(snap_maps_dir, objs_file, &p_temp_handle, false);
+  if (ret != 0) {
+    derr << "::File " << objs_file << " failed open_for_read with error-code " << ret << dendl;
+    return -1;
+  }
+  unique_ptr<BlueFS::FileReader> p_handle(p_temp_handle);
+  dout(1) << "file_size=" << p_handle->file->fnode.size << ", expected_file_size=" << entry.file_size << dendl;
+  bufferlist bl, temp_bl;
+
+  dout(1) << "bluefs->read(" << objs_file << ", " << entry.file_size << ")" << dendl;
+  int        read_bytes = bluefs->read(p_handle.get(), 0, entry.file_size, &temp_bl, nullptr);
+  if (read_bytes != (int)entry.file_size) {
+    derr << "Failed bluefs->read() for entery::read_bytes=" << read_bytes << ", req_bytes=" << entry.file_size << dendl;
+    return -1;
+  }
+  bl.claim_append(temp_bl);
+  auto p = bl.cbegin();
+  uint16_t  size;
+  hobject_t coid;
+  for (unsigned i = 0; i < entry.obj_count; i++) {
+    decode(coid, p);
+    decode(size, p);
+    dout(1) << "++(" << i << ") coid=" << coid << ", size=" << size << dendl;
+    std::vector<snapid_t> snap_vec(size);
+    for (unsigned j = 0; j < size; j++) {
+      decode(snap_vec[j], p);
+    }
+    obj_to_snaps[coid] = snap_vec;
+  }
+
+  return 0;
+}
+
+//-----------------------------------------------------------------------------------
+int BlueStore::__restore_snap_maps(const std::vector<snap_listing_entry_t> &sdir)
+{
+  char spg_buff[spg_t::calc_name_buf_size + 2]; // add two bytes for the '::' delimiter
+  spg_buff[sizeof(spg_buff) - 1] = '\0';
+  SnapMapper *curr_snap_map = nullptr;
+  unsigned i = 0;
+  for (const snap_listing_entry_t& entry : sdir) {
+    dout(1) << "||[" << i++ << "]=" << entry << dendl;
+    const spg_t& pgid   = entry.pgid;
+    snapid_t     snapid = entry.snapid;
+
+    auto itr = snap_mappers.find(pgid);
+    // allocate snap_mapper if we don't have one for this pgid already
+    if (itr == snap_mappers.end()) {
+      unsigned bogus_pg_num = 1;
+      SnapMapper *sm = new SnapMapper(cct, nullptr /*driver*/, pgid.ps(), bogus_pg_num, pgid.pool(), pgid.shard);
+      snap_mappers[pgid] = sm;
+      curr_snap_map = sm;
+      // obj_to_snaps entry is the first entry for every pgid
+      restore_obj_to_snaps(sm->get_obj_to_snaps(), entry);
+      continue;
+    }
+    else {
+      if (curr_snap_map != nullptr && (curr_snap_map != itr->second) ) {
+	// we completed processing all snaps for the prev pgid
+	curr_snap_map->print_snaps(__func__);
+      }
+
+      curr_snap_map = itr->second;
+    }
+    std::unordered_map<snapid_t, std::unordered_set<hobject_t>>& snap_to_objs = curr_snap_map->get_snap_to_objs();
+    const std::string spg_name(pgid.calc_name(spg_buff + sizeof(spg_buff) - 1, "::"));
+    const std::string snap_maps_file(spg_name + std::to_string(snapid.val));
+    dout(1) << "open file " << snap_maps_file << dendl;
+    BlueFS::FileReader *p_temp_handle = nullptr;
+    int ret = bluefs->open_for_read(snap_maps_dir, snap_maps_file, &p_temp_handle, false);
+    if (ret != 0) {
+      derr << "::File " << snap_maps_file << " failed open_for_read with error-code " << ret << dendl;
+      return -1;
+    }
+    unique_ptr<BlueFS::FileReader> p_handle(p_temp_handle);
+    dout(1) << "file_size=" << p_handle->file->fnode.size << ", expected_file_size=" << entry.file_size << dendl;
+    bufferlist bl, temp_bl;
+    hobject_t  coid;
+    dout(1) << "bluefs->read(" << snap_maps_file << ", " << entry.file_size << ")" << dendl;
+    int        read_bytes = bluefs->read(p_handle.get(), 0, entry.file_size, &temp_bl, nullptr);
+    if (read_bytes != (int)entry.file_size) {
+      derr << "Failed bluefs->read() for entery::read_bytes=" << read_bytes << ", req_bytes=" << entry.file_size << dendl;
+      return -1;
+    }
+    bl.claim_append(temp_bl);
+    auto p = bl.cbegin();
+
+    for (unsigned i = 0; i < entry.obj_count; i++) {
+      decode(coid, p);
+      dout(1) << "++(" << i << ")snapid=" << snapid << ", coid=" << coid << dendl;
+      snap_to_objs[snapid].insert(coid);
+    }
+  }
+
+  if (curr_snap_map != nullptr) {
+    curr_snap_map->print_snaps(__func__);
+  }
+
+  return 0;
+}
+
+//-----------------------------------------------------------------------------------
+int BlueStore::restore_snap_maps()
+{
+  int ret = _open_db_and_around(true, false);
+  if (ret < 0) {
+    return ret;
+  }
+
+  ret = _open_collections();
+  if (ret < 0) {
+    _close_db_and_around();
+    return ret;
+  }
+
+  utime_t            start = ceph_clock_now();
+  auto shutdown_cache = make_scope_guard([&] {
+    utime_t duration = ceph_clock_now() - start;
+    dout(1) << "Restore Snap Mpas was completed in " << duration << dendl;
+    _shutdown_cache();
+    _close_db_and_around();
+  });
+
+  std::vector<snap_listing_entry_t> sdir;
+  ret = restore_snap_map_listing_file(sdir);
+  if (ret != 0) {
+    derr << "failed restore_snap_map_listing_file() with error code=" << ret << dendl;
+    return ret;
+  }
+
+  return __restore_snap_maps(sdir);
+}
+
+//-----------------------------------------------------------------------------------
+int BlueStore::store_snap_map_listing_file(const std::vector<snap_listing_entry_t> &sdir)
+{
+  dout(1) << "store_snap_map_listing_file entered" << dendl;
+  // reuse previous file-allocation if exists
+  int ret = bluefs->stat(snap_maps_dir, snap_maps_listing, nullptr, nullptr);
+  bool overwrite_file = (ret == 0);
+  BlueFS::FileWriter *p_handle = nullptr;
+  ret = bluefs->open_for_write(snap_maps_dir, snap_maps_listing, &p_handle, overwrite_file);
+  if (ret != 0) {
+    derr <<  __func__ << "::File " << snap_maps_listing
+	 << " failed open_for_write with error-code " << ret << dendl;
+    return -1;
+  }
+
+  uint32_t   crc32 = -1;
+  bufferlist entries_bl;
+  for (const snap_listing_entry_t& entry : sdir) {
+    encode(entry, entries_bl);
+  }
+  crc32 = entries_bl.crc32c(crc32);
+
+  snap_listing_header_t  header(sdir.size(), entries_bl.length(), crc32, ceph_clock_now());
+  bufferlist             header_bl;
+  encode(header, header_bl);
+
+  p_handle->append(header_bl);
+  p_handle->append(entries_bl);
+  p_handle->append(header_bl);
+
+  dout(1) << "files_count=" << header.entries_count << ", bytes_size=" << header.bytes_size << ", crc32=" << header.crc32 << dendl;
+
+  bluefs->fsync(p_handle);
+  dout(5) <<"p_handle->pos=" << p_handle->pos << dendl;
+  bluefs->close_writer(p_handle);
+  return 0;
+}
+
+//-----------------------------------------------------------------------------------
+int BlueStore::store_obj_to_snaps(const std::unordered_map<hobject_t, std::vector<snapid_t>>& obj_to_snaps,
+				  std::vector<snap_listing_entry_t> &sdir,
+				  const spg_t& pgid,
+				  const std::string& spg_name)
+{
+  const std::string objs_maps_file(spg_name + "OBJS");
+  dout(1) << "objs_maps_file=" << objs_maps_file << dendl;
+  // reuse previous file-allocation if exists
+  int ret = bluefs->stat(snap_maps_dir, objs_maps_file, nullptr, nullptr);
+  bool overwrite_file = (ret == 0);
+  BlueFS::FileWriter *p_handle = nullptr;
+  ret = bluefs->open_for_write(snap_maps_dir, objs_maps_file, &p_handle, overwrite_file);
+  if (ret != 0) {
+    derr <<  __func__ << "::File " << objs_maps_file
+	 << " failed open_for_write with error-code " << ret << dendl;
+    return -1;
+  }
+
+  unsigned count = 0;
+  for (auto itr = obj_to_snaps.begin(); itr != obj_to_snaps.end(); ++itr) {
+    const hobject_t & coid = itr->first;
+    const std::vector<snapid_t>& snaps_vec = itr->second;
+    bufferlist bl;
+    encode(coid, bl);
+    encode((uint16_t)snaps_vec.size(), bl);
+    for (const snapid_t& snapid : snaps_vec) {
+      encode(snapid, bl);
+    }
+    p_handle->append(bl);
+    count++;
+  }
+
+  bluefs->fsync(p_handle);
+  uint64_t file_size = p_handle->pos;
+  bluefs->close_writer(p_handle);
+  // TBD: get file crc32 and store it in the directory file
+  uint32_t crc32 = -1;
+  sdir.emplace_back(-1, file_size, count, crc32, pgid);
+  dout(1) << "file_size=" << file_size << ", entries_count=" << count << dendl;
+
+  return 0;
+}
+
+//-----------------------------------------------------------------------------------
+int BlueStore::store_snap_maps(const std::unordered_map<spg_t, const class SnapMapper*>& snap_mappers)
+{
+  dout(1) << "store_snap_maps entered" << dendl;
+  // create dir if doesn't exist already
+  if (!bluefs->dir_exists(snap_maps_dir) ) {
+    int ret = bluefs->mkdir(snap_maps_dir);
+    if (ret != 0) {
+      derr << "Failed mkdir with error-code " << ret << dendl;
+      return -1;
+    }
+  }
+  std::vector<snap_listing_entry_t> sdir;
+  char spg_buff[spg_t::calc_name_buf_size + 2]; // add two bytes for the '::' delimiter
+  spg_buff[sizeof(spg_buff) - 1] = '\0';
+
+  for (auto pg_itr = snap_mappers.begin(); pg_itr != snap_mappers.end(); ++pg_itr) {
+    const spg_t&      pgid = pg_itr->first;
+    const SnapMapper* sm   = pg_itr->second;
+    const std::string spg_name(pgid.calc_name(spg_buff + sizeof(spg_buff) - 1, "::"));
+
+    const std::unordered_map<hobject_t, std::vector<snapid_t>>&  obj_to_snaps = sm->get_obj_to_snaps_const();
+    if (!obj_to_snaps.empty()) {
+      store_obj_to_snaps(obj_to_snaps, sdir, pgid, spg_name);
+    }
+    const std::unordered_map<snapid_t, std::unordered_set<hobject_t>>& snap_to_objs = sm->get_snap_to_objs_const();
+    //dout(1) << "spg_name=" << spg_name << ", snap_to_objs.size()=" << snap_to_objs.size() << dendl;
+    for (auto itr = snap_to_objs.begin(); itr != snap_to_objs.end(); ++itr) {
+      snapid_t snap_id = itr->first;
+      const std::unordered_set<hobject_t> & obj_set = itr->second;
+
+      const std::string snap_maps_file(spg_name + std::to_string(snap_id.val));
+      dout(1) << "snap_maps_file=" << snap_maps_file << dendl;
+      // reuse previous file-allocation if exists
+      int ret = bluefs->stat(snap_maps_dir, snap_maps_file, nullptr, nullptr);
+      bool overwrite_file = (ret == 0);
+      BlueFS::FileWriter *p_handle = nullptr;
+      ret = bluefs->open_for_write(snap_maps_dir, snap_maps_file, &p_handle, overwrite_file);
+      if (ret != 0) {
+	derr <<  __func__ << "::File " << snap_maps_file
+	     << " failed open_for_write with error-code " << ret << dendl;
+	return -1;
+      }
+
+      unsigned count = 0;
+      for (const hobject_t& coid : obj_set) {
+	bufferlist bl;
+	encode(coid, bl);
+	p_handle->append(bl);
+	count++;
+      }
+      bluefs->fsync(p_handle);
+      uint64_t file_size = p_handle->pos;
+      bluefs->close_writer(p_handle);
+      // TBD: get file crc32 and store it in the directory file
+      uint32_t crc32 = -1;
+      sdir.emplace_back(snap_id, file_size, count, crc32, pgid);
+      dout(1) << "snap_id=" << snap_id << ", file_size=" << file_size << ", entries_count=" << count << dendl;
+    }
+  }
+
+  dout(1) << "store_snap_maps done" << dendl;
+  return store_snap_map_listing_file(sdir);
+}
+
 const unsigned MAX_EXTENTS_IN_BUFFER = 4 * 1024; // 4K extents = 64KB of data
 // write the allocator to a flat bluefs file - 4K extents at a time
 //-----------------------------------------------------------------------------------
@@ -18443,6 +18901,7 @@ int BlueStore::store_allocator(Allocator* src_allocator)
   // when storing allocations to file we must be sure there is no background compactions
   // the easiest way to achieve it is to make sure db is closed
   ceph_assert(db == nullptr);
+
   utime_t  start_time = ceph_clock_now();
   int ret = 0;
 
@@ -18878,11 +19337,11 @@ void BlueStore::read_allocation_from_single_onode(
     stats.blobs_in_onode[MAX_BLOBS_IN_ONODE]++;
   }
 
-  // TBD:: move ss_attr_name outside 
+  // TBD:: move ss_attr_name outside
   mempool::bluestore_cache_meta::string ss_attr_name(SS_ATTR);
   hobject_t &hobj = onode_ref->oid.hobj;
   // SnapSet is kept only in the head object
-  // skip head objects without SnapSet Attribute 
+  // skip head objects without SnapSet Attribute
   if (hobj.is_head() && onode_ref->onode.attrs.count(ss_attr_name) ) {
     bufferlist attr;
     //attr.append(onode_ref->onode.attrs[ss_attr_name]);
@@ -19004,7 +19463,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
 	bool is_pg = collection_ref->cid.is_pg(&pgid);
 	if (is_pg) {
 	  // we don't need driver and split bits for the SnapMapper here
-	  unsigned bogus_pg_num = -1;
+	  unsigned bogus_pg_num = 1;
 	  auto itr = snap_mappers.find(pgid);
 	  if (itr == snap_mappers.end()) {
 	    SnapMapper *sm = new SnapMapper(cct, nullptr /*driver*/, pgid.ps(),

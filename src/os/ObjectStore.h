@@ -49,7 +49,7 @@ namespace ceph {
 
 class Logger;
 class ContextQueue;
-
+class SnapMapper;
 static inline void encode(const std::map<std::string,ceph::buffer::ptr> *attrset, ceph::buffer::list &bl) {
   using ceph::encode;
   encode(*attrset, bl);
@@ -290,6 +290,7 @@ public:
   virtual bool allows_journal() = 0; //< allows a journal
   virtual void prepare_for_fast_shutdown() {}
   virtual bool has_null_manager() { return false; }
+  virtual int  store_snap_maps(const std::unordered_map<spg_t, const class SnapMapper*>& snap_mappers) {return 0;}
   // return store min allocation size, if applicable
   virtual uint64_t get_min_alloc_size() const {
     return 0;

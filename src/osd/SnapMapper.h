@@ -260,8 +260,10 @@ private:
     const snapid_t & snapid);
 
 public:
-  const std::unordered_map<hobject_t, std::vector<snapid_t>>&         get_obj_to_snaps() const { return obj_to_snaps; }
-  const std::unordered_map<snapid_t,  std::unordered_set<hobject_t>>& get_snap_to_objs() const { return snap_to_objs; }
+  const std::unordered_map<hobject_t, std::vector<snapid_t>>&         get_obj_to_snaps_const() const { return obj_to_snaps; }
+  std::unordered_map<hobject_t, std::vector<snapid_t>>&               get_obj_to_snaps() { return obj_to_snaps; }
+  const std::unordered_map<snapid_t,  std::unordered_set<hobject_t>>& get_snap_to_objs_const() const { return snap_to_objs; }
+  std::unordered_map<snapid_t,  std::unordered_set<hobject_t>>&       get_snap_to_objs() { return snap_to_objs; }
 
   void print_snaps(const char *s);
   static std::string make_shard_prefix(shard_id_t shard) {
@@ -312,33 +314,33 @@ public:
     const hobject_t             &oid,       ///< [in] oid to update
     const std::vector<snapid_t> &new_snaps, ///< [in] new snap std::set
     MapCacher::Transaction<std::string, ceph::buffer::list> *t ///< [out] transaction
-    ); ///@ return error, 0 on success
+		   ); ///@ return error, 0 on success
 
   /// Add mapping for oid, must not already be mapped
-    void add_oid(
+  void add_oid(
     const hobject_t &oid,       ///< [in] oid to add
     const std::vector<snapid_t>& new_snaps, ///< [in] snaps
     MapCacher::Transaction<std::string, ceph::buffer::list> *t ///< [out] transaction
-    );
+	       );
 
   /// Returns first object with snap as a snap
   int get_next_objects_to_trim(
     snapid_t snap,              ///< [in] snap to check
     unsigned max,               ///< [in] max to get
     std::vector<hobject_t> *out      ///< [out] next objects to trim (must be empty)
-    );  ///< @return error, -ENOENT if no more objects
+			       );  ///< @return error, -ENOENT if no more objects
 
   /// Remove mapping for oid
   int remove_oid(
     const hobject_t &oid,    ///< [in] oid to remove
     MapCacher::Transaction<std::string, ceph::buffer::list> *t ///< [out] transaction
-    ); ///< @return error, -ENOENT if the object is not mapped
+		 ); ///< @return error, -ENOENT if the object is not mapped
 
   /// Get snaps for oid
   int get_snaps(
     const hobject_t       &oid,  ///< [in] oid to get snaps for
     std::vector<snapid_t> *snaps ///< [out] snaps
-    ); ///< @return error, -ENOENT if oid is not recorded
+		); ///< @return error, -ENOENT if oid is not recorded
 };
 WRITE_CLASS_ENCODER(SnapMapper::object_snaps)
 WRITE_CLASS_ENCODER(SnapMapper::Mapping)
