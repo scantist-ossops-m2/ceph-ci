@@ -317,6 +317,7 @@ int main(int argc, char **argv)
         "qfsck, "
         "allocmap, "
         "restore_cfb, "
+        "snapmap, "
         "repair, "
         "quick-fix, "
         "bluefs-export, "
@@ -428,6 +429,12 @@ int main(int argc, char **argv)
   }
 
   if (action == "fsck" || action == "repair" || action == "quick-fix" || action == "allocmap" || action == "qfsck" || action == "restore_cfb") {
+    if (path.empty()) {
+      cerr << "must specify bluestore path" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+  if (action == "snapmap") {
     if (path.empty()) {
       cerr << "must specify bluestore path" << std::endl;
       exit(EXIT_FAILURE);
@@ -581,7 +588,7 @@ int main(int argc, char **argv)
     }
 #endif
   }
-  else if( action == "qfsck" ) {
+  else if (action == "qfsck") {
 #ifndef CEPH_BLUESTORE_TOOL_RESTORE_ALLOCATION
     cerr << action << " bluestore.qfsck is not supported!!! " << std::endl;
     exit(EXIT_FAILURE);
@@ -597,6 +604,18 @@ int main(int argc, char **argv)
       cout << action << " success" << std::endl;
     }
 #endif
+  }
+  else if (action == "snapmap") {
+    cout << action << " bluestore.snapmap" << std::endl;
+    validate_path(cct.get(), path, false);
+    BlueStore bluestore(cct.get(), path);
+    int r = bluestore.restore_snap_maps();
+    if (r < 0) {
+      cerr << action << " failed: " << cpp_strerror(r) << std::endl;
+      exit(EXIT_FAILURE);
+    } else {
+      cout << action << " success" << std::endl;
+    }
   }
   else if (action == "fsck" ||
       action == "repair" ||
