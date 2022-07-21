@@ -28,6 +28,7 @@
 #include <accctrl.h>
 #include <aclapi.h>
 #include <ntstatus.h>
+#include <bcrypt.h>  // for typedef of NTSTATUS
 
 #include "common/ceph_argparse.h"
 #include "common/config.h"

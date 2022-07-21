@@ -19,6 +19,7 @@
 #include "include/int_types.h"
 #include <ntdef.h>
 #include <ntstatus.h>
+#include <bcrypt.h>  // for typedef of NTSTATUS
 
 #include "include/compat.h"
 #include "include/int_types.h"

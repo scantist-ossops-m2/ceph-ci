@@ -13,7 +13,6 @@
 #define CEPH_DOKAN_IO_DEFAULT_TIMEOUT 60 * 5 // Seconds
 #define CEPH_DOKAN_DEFAULT_THREAD_COUNT 10
 
-typedef DWORD NTSTATUS;
 // Avoid conflicting COM types, exposed when using C++.
 #define _OLE2_H_
 
