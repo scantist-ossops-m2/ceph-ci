@@ -2259,9 +2259,9 @@ void Monitor::win_election(epoch_t epoch, const set<int>& active, uint64_t featu
     // the current quorum).
     map<int,Metadata> m = metadata;
     for (unsigned rank = 0; rank < monmap->size(); ++rank) {
-      if (m.count(rank) == 0 &&
-	  mon_metadata.count(rank)) {
-	m[rank] = mon_metadata[rank];
+      if (m.count(rank) == 0 && mon_metadata.count(rank) &&
+          monmap->removed_ranks.count(rank) == 0) {
+	        m[rank] = mon_metadata[rank];
       }
     }
 
@@ -3779,6 +3779,16 @@ void Monitor::handle_command(MonOpRequestRef op)
     rs = "";
     r = 0;
   } else if (prefix == "mon metadata") {
+    if (!is_leader() && !is_peon()) {
+      dout(10) << " waiting for quorum" << dendl;
+      waitfor_quorum.push_back(new C_RetryMessage(this, op));
+      return;
+    }
+    if (!is_leader()) {
+      dout(10) << " forwared to leader" << dendl;
+      forward_request_leader(op);
+      return;
+    }
     if (!f)
       f.reset(Formatter::create("json-pretty"));
 
@@ -5425,6 +5435,18 @@ int Monitor::get_mon_metadata(int mon, Formatter *f, ostream& err)
   if (!mon_metadata.count(mon)) {
     err << "mon." << mon << " not found";
     return -EINVAL;
+  }
+  // Do not allow other services to grab the
+  // metadata if is not yet updated.
+  if (mon_metadata.size() > monmap->ranks.size()) {
+    for (auto i = monmap->removed_ranks.rbegin();
+    i != monmap->removed_ranks.rend(); ++i) {
+      int rank = *i;
+      if (rank == mon) {
+        err << "mon." << mon << " is not yet removed from metadata";
+        return -EINVAL;
+      }
+    }
   }
   const Metadata& m = mon_metadata[mon];
   for (Metadata::const_iterator p = m.begin(); p != m.end(); ++p) {
