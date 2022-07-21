@@ -69,9 +69,9 @@ class TestDevice(object):
 
     @patch("ceph_volume.util.disk.has_bluestore_label", lambda x: False)
     def test_vgs_is_not_empty(self, fake_call, device_info, monkeypatch):
-        vg = api.VolumeGroup(vg_name='foo/bar', vg_free_count=6,
+        vg = api.VolumeGroup(pv_name='/dev/nvme0n1', vg_name='foo/bar', vg_free_count=6,
                              vg_extent_size=1073741824)
-        monkeypatch.setattr(api, 'get_device_vgs', lambda x: [vg])
+        monkeypatch.setattr(api, 'get_all_devices_vgs', lambda : [vg])
         lsblk = {"TYPE": "disk", "NAME": "nvme0n1"}
         device_info(lsblk=lsblk)
         disk = device.Device("/dev/nvme0n1")
@@ -328,9 +328,9 @@ class TestDevice(object):
 
     @patch("ceph_volume.util.disk.has_bluestore_label", lambda x: False)
     def test_existing_vg_available(self, fake_call, monkeypatch, device_info):
-        vg = api.VolumeGroup(vg_name='foo/bar', vg_free_count=1536,
+        vg = api.VolumeGroup(pv_name='/dev/nvme0n1', vg_name='foo/bar', vg_free_count=1536,
                              vg_extent_size=4194304)
-        monkeypatch.setattr(api, 'get_device_vgs', lambda x: [vg])
+        monkeypatch.setattr(api, 'get_all_devices_vgs', lambda : [vg])
         lsblk = {"TYPE": "disk", "NAME": "nvme0n1"}
         data = {"/dev/nvme0n1": {"size": "6442450944"}}
         device_info(devices=data, lsblk=lsblk)
@@ -341,9 +341,9 @@ class TestDevice(object):
 
     @patch("ceph_volume.util.disk.has_bluestore_label", lambda x: False)
     def test_existing_vg_too_small(self, fake_call, monkeypatch, device_info):
-        vg = api.VolumeGroup(vg_name='foo/bar', vg_free_count=4,
+        vg = api.VolumeGroup(pv_name='/dev/nvme0n1', vg_name='foo/bar', vg_free_count=4,
                              vg_extent_size=1073741824)
-        monkeypatch.setattr(api, 'get_device_vgs', lambda x: [vg])
+        monkeypatch.setattr(api, 'get_all_devices_vgs', lambda : [vg])
         lsblk = {"TYPE": "disk", "NAME": "nvme0n1"}
         data = {"/dev/nvme0n1": {"size": "6442450944"}}
         device_info(devices=data, lsblk=lsblk)
@@ -354,11 +354,11 @@ class TestDevice(object):
 
     @patch("ceph_volume.util.disk.has_bluestore_label", lambda x: False)
     def test_multiple_existing_vgs(self, fake_call, monkeypatch, device_info):
-        vg1 = api.VolumeGroup(vg_name='foo/bar', vg_free_count=1000,
+        vg1 = api.VolumeGroup(pv_name='/dev/nvme0n1', vg_name='foo/bar', vg_free_count=1000,
                              vg_extent_size=4194304)
-        vg2 = api.VolumeGroup(vg_name='foo/bar', vg_free_count=536,
+        vg2 = api.VolumeGroup(pv_name='/dev/nvme0n1', vg_name='foo/bar', vg_free_count=536,
                              vg_extent_size=4194304)
-        monkeypatch.setattr(api, 'get_device_vgs', lambda x: [vg1, vg2])
+        monkeypatch.setattr(api, 'get_all_devices_vgs', lambda : [vg1, vg2])
         lsblk = {"TYPE": "disk", "NAME": "nvme0n1"}
         data = {"/dev/nvme0n1": {"size": "6442450944"}}
         device_info(devices=data, lsblk=lsblk)
