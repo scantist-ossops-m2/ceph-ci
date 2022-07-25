@@ -9807,9 +9807,13 @@ void OSD::maybe_override_max_osd_capacity_for_qos()
 
     // Persist iops to the MON store
     ret = mon_cmd_set_config(max_capacity_iops_config, std::to_string(iops));
-    if (ret < 0) {
+    if (ret != 0) {
+      derr << __func__ << " Failed to set config key "
+           << max_capacity_iops_config
+           << " err: " << cpp_strerror(ret) << dendl;
       // Fallback to setting the config within the in-memory "values" map.
-      cct->_conf.set_val(max_capacity_iops_config, std::to_string(iops));
+      cct->_conf.set_val_default(
+        max_capacity_iops_config, std::to_string(iops));
     }
 
     // Override the max osd capacity for all shards
@@ -9878,20 +9882,24 @@ int OSD::mon_cmd_set_config(const std::string &key, const std::string &val)
       "\"value\": \"" + val + "\""
     "}";
 
+  int r = 0;
   vector<std::string> vcmd{cmd};
+  const bool wait_ack = cct->_conf.get_val<bool>("osd_mon_cmd_wait_ack");
+  if (!wait_ack) {
+    monc->start_mon_command(vcmd, {}, nullptr, nullptr, nullptr);
+    // Set the config within the in-memory "values" map.
+    dout(10) << __func__ << " Set " << key << " = " << val << dendl;
+    cct->_conf.set_val_default(key, val);
+    return r;
+  }
+
   bufferlist inbl;
   std::string outs;
   C_SaferCond cond;
   monc->start_mon_command(vcmd, inbl, nullptr, &outs, &cond);
-  int r = cond.wait();
-  if (r < 0) {
-    derr << __func__ << " Failed to set config key " << key
-         << " err: " << cpp_strerror(r)
-         << " errstr: " << outs << dendl;
-    return r;
-  }
+  r = cond.wait();
 
-  return 0;
+  return r;
 }
 
 bool OSD::unsupported_objstore_for_qos()

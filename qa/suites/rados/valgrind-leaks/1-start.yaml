@@ -16,6 +16,7 @@ overrides:
         osd heartbeat grace: 40
         osd max object name len: 460
         osd max object namespace len: 64
+        osd mon cmd wait ack: false
       mon:
         mon osd crush smoke test: false
       osd:
