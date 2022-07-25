@@ -82,5 +82,9 @@ describe('Hosts page', () => {
       const hostname = Cypress._.sample(this.hosts).name;
       hosts.maintenance(hostname, true);
     });
+
+    it('should show the exact count of the repeating daemons', () => {
+      cy.get('badge-background-primary').contains('mgr: 1');
+    });
   });
 });
