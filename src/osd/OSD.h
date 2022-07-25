@@ -2028,7 +2028,9 @@ private:
                          int64_t onum,
                          double *elapsed,
                          std::ostream& ss);
-  int mon_cmd_set_config(const std::string &key, const std::string &val);
+  void mon_cmd_set_config(const std::string &key,
+                          const std::string &val,
+                          bool update_shard);
   bool unsupported_objstore_for_qos();
 
   void scrub_purged_snaps();
