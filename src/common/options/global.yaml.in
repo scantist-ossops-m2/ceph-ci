@@ -2884,6 +2884,12 @@ options:
   level: advanced
   default: 2
   with_legacy: true
+- name: osd_mon_cmd_timeout
+  type: secs
+  level: advanced
+  desc: The Time (in seconds) for an OSD to wait for the monitor to respond to
+        a command issued to it before timing out.
+  default: 0
 # (second) how often to send beacon message to monitor
 - name: osd_beacon_report_interval
   type: int

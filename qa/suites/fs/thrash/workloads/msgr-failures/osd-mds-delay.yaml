@@ -7,6 +7,7 @@ overrides:
         ms inject delay probability: .005
         ms inject delay max: 1
         mon client directed command retry: 5
+        osd mon cmd timeout: 5
       mds:
         ms inject socket failures: 2500
         ms inject delay type: client mds osd
