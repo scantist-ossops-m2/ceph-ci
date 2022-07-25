@@ -9807,9 +9807,13 @@ void OSD::maybe_override_max_osd_capacity_for_qos()
 
     // Persist iops to the MON store
     ret = mon_cmd_set_config(max_capacity_iops_config, std::to_string(iops));
-    if (ret < 0) {
+    if (ret != 0) {
+      derr << __func__ << " Failed to set config key "
+           << max_capacity_iops_config
+           << " err: " << cpp_strerror(ret) << dendl;
       // Fallback to setting the config within the in-memory "values" map.
-      cct->_conf.set_val(max_capacity_iops_config, std::to_string(iops));
+      cct->_conf.set_val_default(
+        max_capacity_iops_config, std::to_string(iops));
     }
 
     // Override the max osd capacity for all shards
@@ -9883,15 +9887,22 @@ int OSD::mon_cmd_set_config(const std::string &key, const std::string &val)
   std::string outs;
   C_SaferCond cond;
   monc->start_mon_command(vcmd, inbl, nullptr, &outs, &cond);
-  int r = cond.wait();
-  if (r < 0) {
-    derr << __func__ << " Failed to set config key " << key
-         << " err: " << cpp_strerror(r)
-         << " errstr: " << outs << dendl;
-    return r;
+
+  int r = 0;
+  const auto timeout =
+    cct->_conf.get_val<std::chrono::seconds>("osd_mon_cmd_timeout");
+  if (timeout.count() > 0) {
+    r = cond.wait_for(timeout);
+  } else {
+    r = cond.wait();
   }
 
-  return 0;
+  // If we timed-out, complete the context
+  if (r == ETIMEDOUT) {
+    cond.complete(r);
+  }
+
+  return r;
 }
 
 bool OSD::unsupported_objstore_for_qos()
