@@ -411,7 +411,7 @@ class Device(object):
         if self.sys_api.get("partitions"):
             for part in self.sys_api.get("partitions").keys():
                 for dev in details:
-                    if dev['NAME'] == part:
+                    if part.startswith(dev['NAME']):
                         return is_member(dev)
         else:
             return is_member(self.disk_api)
