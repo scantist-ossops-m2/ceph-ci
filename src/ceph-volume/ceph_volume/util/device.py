@@ -3,7 +3,7 @@
 import logging
 import os
 from functools import total_ordering
-from ceph_volume import sys_info, process
+from ceph_volume import sys_info
 from ceph_volume.api import lvm
 from ceph_volume.util import disk, system
 from ceph_volume.util.lsmdisk import LSMDisk
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 report_template = """
-{dev:<25} {size:<12} {rot!s:<7} {available!s:<9} {model}"""
+{dev:<25} {size:<12} {device_nodes:<15} {rot!s:<7} {available!s:<9} {model}"""
 
 
 def encryption_status(abspath):
@@ -56,6 +56,8 @@ class Devices(object):
                 rot='rotates',
                 model='Model name',
                 available='available',
+                device_nodes='Device nodes',
+
             )]
         for device in sorted(self.devices):
             output.append(device.report())
@@ -103,6 +105,8 @@ class Device(object):
         self.abspath = path
         if not sys_info.devices:
             sys_info.devices = disk.get_devices()
+        if sys_info.devices.get(self.path, {}):
+            self.device_nodes = sys_info.devices[self.path]['device_nodes']
         self.sys_api = sys_info.devices.get(self.abspath, {})
         self.partitions = self._get_partitions()
         self.lv_api = None
@@ -219,11 +223,7 @@ class Device(object):
                 valid_types.append('loop')
             if device_type in valid_types:
                 self._set_lvm_membership()
-            out, err, rc = process.call([
-                'ceph-bluestore-tool', 'show-label',
-                '--dev', self.path], verbose_on_failure=False)
-            if rc:
-                self.ceph_device = True
+            self.ceph_device = disk.has_bluestore_label(self.path)
 
         self.ceph_disk = CephDiskDevice(self)
 
@@ -272,6 +272,7 @@ class Device(object):
             rot=self.rotational,
             available=self.available,
             model=self.model,
+            device_nodes=self.device_nodes
         )
 
     def json_report(self):
@@ -324,13 +325,12 @@ class Device(object):
             # can each host a PV and VG. I think the vg_name property is
             # actually unused (not 100% sure) and can simply be removed
             vgs = None
+            if not self.all_devices_vgs:
+                self.all_devices_vgs = lvm.get_all_devices_vgs()
             for path in device_to_check:
-                if self.all_devices_vgs:
-                    for dev_vg in self.all_devices_vgs:
-                        if dev_vg.pv_name == path:
-                            vgs = [dev_vg]
-                else:
-                    vgs = lvm.get_device_vgs(path)
+                for dev_vg in self.all_devices_vgs:
+                    if dev_vg.pv_name == path:
+                        vgs = [dev_vg]
                 if vgs:
                     self.vgs.extend(vgs)
                     self.vg_name = vgs[0]
@@ -413,11 +413,14 @@ class Device(object):
         # If we come from Devices(), self.lsblk_all is set already.
         # Otherwise, we have to grab the data.
         details = self.lsblk_all or disk.lsblk_all()
+        _is_member = False
         if self.sys_api.get("partitions"):
             for part in self.sys_api.get("partitions").keys():
                 for dev in details:
-                    if dev['NAME'] == part:
-                        return is_member(dev)
+                    if part.startswith(dev['NAME']):
+                        if is_member(dev):
+                            _is_member = True
+                return _is_member
         else:
             return is_member(self.disk_api)
         raise RuntimeError(f"Couln't check if device {self.path} is a ceph-disk member.")
