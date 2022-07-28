@@ -63,6 +63,7 @@ def mock_device():
     dev.path = '/dev/foo'
     dev.vg_name = 'vg_foo'
     dev.lv_name = 'lv_foo'
+    dev.symlink = None
     dev.vgs = [lvm.VolumeGroup(vg_name=dev.vg_name, lv_name=dev.lv_name)]
     dev.available_lvm = True
     dev.vg_size = [21474836480]
@@ -237,7 +238,11 @@ def lsblk_ceph_disk_member(monkeypatch, request, ceph_partlabel, ceph_parttype):
                                       'NAME': 'sda',
                                       'PARTLABEL': ceph_partlabel,
                                       'PARTTYPE': ceph_parttype})
-
+    monkeypatch.setattr("ceph_volume.util.device.disk.lsblk_all",
+                        lambda: [{'TYPE': 'disk',
+                                  'NAME': 'sda',
+                                  'PARTLABEL': ceph_partlabel,
+                                  'PARTTYPE': ceph_parttype}])
 
 @pytest.fixture
 def blkid_ceph_disk_member(monkeypatch, request, ceph_partlabel, ceph_parttype):
@@ -258,6 +263,10 @@ def device_info_not_ceph_disk_member(monkeypatch, request):
                         lambda path: {'TYPE': 'disk',
                                       'NAME': 'sda',
                                       'PARTLABEL': request.param[0]})
+    monkeypatch.setattr("ceph_volume.util.device.disk.lsblk_all",
+                        lambda: [{'TYPE': 'disk',
+                                  'NAME': 'sda',
+                                  'PARTLABEL': request.param[0]}])
     monkeypatch.setattr("ceph_volume.util.device.disk.blkid",
                         lambda path: {'TYPE': 'disk',
                                       'PARTLABEL': request.param[1]})
