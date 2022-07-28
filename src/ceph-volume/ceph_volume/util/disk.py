@@ -134,10 +134,10 @@ def remove_partition(device):
 
     :param device: A ``Device()`` object
     """
-    udev_info = udevadm_property(device.abspath)
+    udev_info = udevadm_property(device.path)
     partition_number = udev_info.get('ID_PART_ENTRY_NUMBER')
     if not partition_number:
-        raise RuntimeError('Unable to detect the partition number for device: %s' % device.abspath)
+        raise RuntimeError('Unable to detect the partition number for device: %s' % device.path)
 
     process.run(
         ['parted', device.parent_device, '--script', '--', 'rm', partition_number]
@@ -774,6 +774,8 @@ def get_block_devs_sysfs(_sys_block_path='/sys/block', _sys_dev_block_path='/sys
     dev_names = os.listdir(_sys_block_path)
     for dev in dev_names:
         name = kname = os.path.join("/dev", dev)
+        if not os.path.exists(name):
+            continue
         type_ = 'disk'
         if get_file_contents(os.path.join(_sys_block_path, dev, 'removable')) == "1":
             continue
