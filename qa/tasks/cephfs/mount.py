@@ -1391,6 +1391,9 @@ class CephFSMount(object):
         except CommandFailedError as e:
             if e.exitstatus == 1 and "No such attribute" in p.stderr.getvalue():
                 return None
+            elif e.exitstatus == 1 and "Operation not supported" in p.stderr.getvalue():
+                log.info("Getvxattr not support yet")
+                return None
             else:
                 raise
 
