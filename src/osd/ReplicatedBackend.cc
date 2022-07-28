@@ -307,13 +307,14 @@ public:
 };
 
 void generate_transaction(
+  CephContext *cct,
   PGTransactionUPtr &pgt,
   const coll_t &coll,
   vector<pg_log_entry_t> &log_entries,
   ObjectStore::Transaction *t,
   set<hobject_t> *added,
   set<hobject_t> *removed,
-  const ceph_release_t require_osd_release = ceph_release_t::unknown )
+  const ceph_release_t require_osd_release = ceph_release_t::unknown)
 {
   ceph_assert(t);
   ceph_assert(added);
@@ -323,8 +324,20 @@ void generate_transaction(
     le.mark_unrollbackable();
     auto oiter = pgt->op_map.find(le.soid);
     if (oiter != pgt->op_map.end() && oiter->second.updated_snaps) {
+#if 0
       bufferlist bl(oiter->second.updated_snaps->second.size() * 8 + 8);
       encode(oiter->second.updated_snaps->second, bl);
+#else
+      size_t bl_size = (oiter->second.updated_snaps->second.size() * 8 + 8);
+      bl_size += (oiter->second.updated_snaps->first.size() * 8 + 8);
+      bufferlist bl(bl_size);
+      //lgeneric_derr(cct) << __func__ << "::GBH::new_snaps=" << oiter->second.updated_snaps->second << dendl;
+      encode(oiter->second.updated_snaps->second, bl);
+      if (oiter->second.updated_snaps->first.size()) {
+	//lgeneric_derr(cct) << __func__ << "::GBH::old_snaps=" << oiter->second.updated_snaps->first  << dendl;
+	encode(oiter->second.updated_snaps->first, bl);
+      }
+#endif
       le.snaps.swap(bl);
       le.snaps.reassign_to_mempool(mempool::mempool_osd_pglog);
     }
@@ -483,6 +496,7 @@ void ReplicatedBackend::submit_transaction(
   PGTransactionUPtr t(std::move(_t));
   set<hobject_t> added, removed;
   generate_transaction(
+    cct,
     t,
     coll,
     log_entries,

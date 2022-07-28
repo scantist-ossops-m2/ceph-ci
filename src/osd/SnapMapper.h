@@ -243,17 +243,11 @@ private:
 
   std::string to_object_key(const hobject_t &hoid);
 
-  void set_snaps(
-    const hobject_t            & oid,
-    const std::vector<snapid_t>& snaps,
-    bool                         report_duplicate);
-
   // True if hoid belongs in this mapping based on mask_bits and match
   bool check(const hobject_t &hoid) const;
 
-  int _remove_oid(const hobject_t &oid /*[in] oid to remove */);
-  // TBD - change the code to use unordered_set<snapid_t>
-  // TBD2: change all to flat_set (or even a vector)
+  int _remove_oid(const hobject_t &oid, const std::vector<snapid_t> &old_snaps);
+
   std::unordered_map<hobject_t, std::vector<snapid_t>  >        obj_to_snaps;
   std::unordered_map<snapid_t,  std::unordered_set<hobject_t> > snap_to_objs;
   std::unordered_map<snapid_t, utime_t> snap_trim_time;
@@ -315,7 +309,8 @@ public:
   /// Update snaps for oid, empty new_snaps removes the mapping
   int update_snaps(
     const hobject_t             &oid,       ///< [in] oid to update
-    const std::vector<snapid_t> &new_snaps, ///< [in] new snap std::set
+    const std::vector<snapid_t> &new_snaps, ///< [in] new snap vector
+    const std::vector<snapid_t> &old_snaps, ///< [in] old snap vector
     MapCacher::Transaction<std::string, ceph::buffer::list> *t ///< [out] transaction
 		   ); ///@ return error, 0 on success
 
@@ -340,7 +335,7 @@ public:
 		 ); ///< @return error, -ENOENT if the object is not mapped
 
   /// Get snaps for oid
-  int get_snaps(
+  int get_snaps_from_snapmapper(
     const hobject_t       &oid,  ///< [in] oid to get snaps for
     std::vector<snapid_t> *snaps ///< [out] snaps
 		); ///< @return error, -ENOENT if oid is not recorded
