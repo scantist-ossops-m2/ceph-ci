@@ -173,8 +173,20 @@ void ECTransaction::generate_transactions(
       if (entry &&
 	  entry->is_modify() &&
 	  op.updated_snaps) {
+#if 0
 	bufferlist bl(op.updated_snaps->second.size() * 8 + 8);
 	encode(op.updated_snaps->second, bl);
+#else
+	size_t bl_size = (op.updated_snaps->second.size() * 8 + 8);
+	bl_size += (op.updated_snaps->first.size() * 8 + 8);
+	bufferlist bl(bl_size);
+	ldpp_dout(dpp, 1) << __func__ << "::GBH::new_snaps=" << op.updated_snaps->second << dendl;
+	encode(op.updated_snaps->second, bl);
+	if (op.updated_snaps->first.size()) {
+	  ldpp_dout(dpp, 1) << __func__ << "::GBH::old_snaps=" << op.updated_snaps->first  << dendl;
+	  encode(op.updated_snaps->first, bl);
+	}
+#endif
 	entry->snaps.swap(bl);
 	entry->snaps.reassign_to_mempool(mempool::mempool_osd_pglog);
       }

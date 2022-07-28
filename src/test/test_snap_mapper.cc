@@ -516,6 +516,7 @@ public:
 	map<hobject_t, set<snapid_t>>::iterator j =
 	  hobject_to_snap.find(hoid);
 	ceph_assert(j->second.count(snap->first));
+	vector<snapid_t> old_snaps(j->second.begin(), j->second.end());
 	j->second.erase(snap->first);
 
 	{
@@ -524,6 +525,7 @@ public:
 	  mapper->update_snaps(
 	    hoid,
 	    new_snaps,
+	    old_snaps,
 	    &t);
 	  driver->submit(&t);
 	}
@@ -569,7 +571,7 @@ public:
     map<hobject_t, set<snapid_t>>::iterator obj =
       rand_choose(hobject_to_snap);
     vector<snapid_t> snaps;
-    int r = mapper->get_snaps(obj->first, &snaps);
+    int r = mapper->get_snaps_from_snapmapper(obj->first, &snaps);
     ceph_assert(r == 0);
     set<snapid_t> _snaps(snaps.begin(), snaps.end());
     ASSERT_EQ(_snaps, obj->second);
