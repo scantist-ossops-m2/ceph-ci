@@ -1175,26 +1175,36 @@ void PG::update_snap_map(
         ceph_assert(r == 0 || r == -ENOENT);
       } else if (i->is_update()) {
 	ceph_assert(i->snaps.length() > 0);
-	vector<snapid_t> snaps;
+	vector<snapid_t> new_snaps;
 	bufferlist snapbl = i->snaps;
 	auto p = snapbl.cbegin();
 	try {
-	  decode(snaps, p);
+	  decode(new_snaps, p);
 	} catch (...) {
-	  derr << __func__ << " decode snaps failure on " << *i << dendl;
-	  snaps.clear();
+	  derr << __func__ << " ::new_snaps:: decode snaps failure on " << *i << dendl;
+	  return;
 	}
 
 	if (i->is_clone() || i->is_promote()) {
-	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::snap_mapper.add_oid(oid=" << i->soid << ", _snaps=" << _snaps <<")" << dendl;
+	  //ldout(cct, 1) << "GBH::SNAPMAP::" << __func__ << "::snap_mapper.add_oid(" << i->soid << ", " << new_snaps << ")" << dendl;
 	  snap_mapper.add_oid(
 	    i->soid,
-	    snaps,
+	    new_snaps,
 	    &_t);
 	} else if (i->is_modify()) {
+	  vector<snapid_t> old_snaps;
+	  try {
+	    decode(old_snaps, p);
+	  } catch (...) {
+	    derr << __func__ << " ::old_snaps:: decode snaps failure on " << *i << dendl;
+	    return;
+	  }
+	  //ldout(cct, 1) << "GBH::SNAPMAP::" << __func__ << "::new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
+	  //ldout(cct, 1) << "GBH::SNAPMAP::" << __func__ << "::snap_mapper.update_snaps(" << i->soid << ", " << new_snaps << ")" << dendl;
 	  int r = snap_mapper.update_snaps(
 	    i->soid,
-	    snaps,
+	    new_snaps,
+	    old_snaps,
 	    &_t);
 	  ceph_assert(r == 0);
 	} else {

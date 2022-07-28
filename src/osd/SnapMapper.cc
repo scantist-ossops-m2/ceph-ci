@@ -171,35 +171,6 @@ bool SnapMapper::check(const hobject_t &hoid) const
   return false;
 }
 
-void SnapMapper::set_snaps(
-  const hobject_t            & coid,
-  const std::vector<snapid_t>& snaps,
-  bool                         report_duplicate)
-{
-  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::coid=" << coid << ",  snaps=" << snaps << dendl;
-
-  // TBD: this code should be optimized ..
-
-  // Need to replace existing snap-set if different from new @snaps set
-  {
-    if (obj_to_snaps.count(coid) != 0) {
-      if (unlikely(report_duplicate)) {
-	derr << __func__ << " found existing snaps mapped on " << coid
-	     << ", removing" << dendl;
-	ceph_assert(!cct->_conf->osd_debug_verify_snaps);
-      }
-      obj_to_snaps.erase(coid);
-    }
-  }
-
-  obj_to_snaps[coid] = snaps;
-
-  dout(20) << __func__ << " " << coid << " " << snaps << dendl;
-  if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
-    dout(20) << __func__ << " set " << to_object_key(coid) << dendl;
-  }
-}
-
 void SnapMapper::print_snaps(const char *s)
 {
   for (auto itr = snap_to_objs.begin(); itr != snap_to_objs.end(); ++itr) {
@@ -210,12 +181,6 @@ void SnapMapper::print_snaps(const char *s)
     }
     dout(1) << "=========================================" << dendl;
   }
-
-  for (auto itr = obj_to_snaps.begin(); itr != obj_to_snaps.end(); ++itr) {
-    const hobject_t & coid = itr->first;
-    const std::vector<snapid_t>& snaps_vec = itr->second;
-    dout(1) << "PRN::GBH::SNAPMAP:: [" << coid << "] " << snaps_vec << dendl;
-  }
 }
 
 int SnapMapper::remove_mapping_from_snapid_to_hobject(
@@ -225,14 +190,14 @@ int SnapMapper::remove_mapping_from_snapid_to_hobject(
   // remove the coid from the coid_set of objects modified since snap creation
   auto itr = snap_to_objs.find(snapid);
   if (itr != snap_to_objs.end()) {
-    std::unordered_set<hobject_t> & hobject_set = itr->second;
+    auto & hobject_set = itr->second;
     hobject_set.erase(coid);
     // if was the last element in the set -> remove the mapping
     if (hobject_set.empty()) {
       utime_t start    = snap_trim_time[snapid];
       utime_t duration = ceph_clock_now() - start;
-      dout(1) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid << "::snap_id=" << snapid << " duration=" << duration << "(sec)" << dendl;
       dout(1) << "---GBH::SNAPMAP::" << __func__ << "::removed the last obj from snap " << snapid << dendl;
+      dout(1) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid << "::snap_id=" << snapid << " duration=" << duration << "(sec)" << dendl;
       snap_to_objs.erase(snapid);
       // should we return -ENOENT here ???
     }
@@ -249,22 +214,14 @@ int SnapMapper::remove_mapping_from_snapid_to_hobject(
 int SnapMapper::update_snaps(
   const hobject_t        &coid,
   const vector<snapid_t> &new_snaps,
+  const vector<snapid_t> &old_snaps,
   MapCacher::Transaction<std::string, bufferlist> *t)
 {
   dout(20) << __func__ << " " << coid << " " << new_snaps << dendl;
   dout(10) << "GBH::SNAPMAP::" << __func__ << "(" << coid << ") new_snaps = " << new_snaps << dendl;
   ceph_assert(check(coid));
   if (new_snaps.empty())
-    return _remove_oid(coid);
-
-  std::vector<snapid_t> old_snaps;
-  int r = get_snaps(coid, &old_snaps);
-  // Tolerate missing keys but not disk errors
-  if (r < 0 && r != -ENOENT)
-    return r;
-
-  // replace the snapset mapped to this @coid with the new snapset
-  set_snaps(coid, new_snaps, false);
+    return _remove_oid(coid, old_snaps);
 
   // remove the @coid from all coid_sets of snaps it no longer belongs to
   // (probably snaps are in the process of being removed)
@@ -290,8 +247,6 @@ void SnapMapper::add_oid(
   //dout(1) << "GBH::SNAPMAP::" << __func__ << "::(" << coid << ") -> (" << snaps << ")" << dendl;
   ceph_assert(!snaps.empty());
   ceph_assert(check(coid));
-
-  set_snaps(coid, snaps, true);
 
   // add the coid to the coid_set of all snaps affected by it
   for (auto snap_itr = snaps.begin(); snap_itr != snaps.end(); ++snap_itr) {
@@ -330,7 +285,7 @@ int SnapMapper::get_next_objects_to_trim(
 	      << ", count=" << itr->second.size() << dendl;
     }
 
-    std::unordered_set<hobject_t> & obj_set_ref = itr->second;
+    auto & obj_set_ref = itr->second;
     for (const hobject_t& coid : obj_set_ref) {
       dout(10) << "GBH::SNAPMAP::" << __func__ << "::" << snap << "-->" << coid << dendl;
       ceph_assert(check(coid));
@@ -356,48 +311,36 @@ int SnapMapper::get_next_objects_to_trim(
   }
 }
 
+
+
+/*
+  Used by the following modules:
+  OSD.cc:
+  pg_scrubber.h
+  pg_scrubber.cc:
+  PG.cc
+  test_snap_mapper.cc
+  ceph_objectstore_tool.cc:
+*/
 int SnapMapper::remove_oid(
   const hobject_t &coid,
   MapCacher::Transaction<std::string, bufferlist> *t)
 {
   dout(20) << __func__ << " " << coid << dendl;
   ceph_assert(check(coid));
-  return _remove_oid(coid);
+
+  //return _remove_oid(coid);
+  return -1;
 }
 
-int SnapMapper::_remove_oid(const hobject_t &coid)
+int SnapMapper::_remove_oid(const hobject_t &coid, const std::vector<snapid_t> &old_snaps)
 {
   dout(20) << __func__ << " " << coid << dendl;
-  dout(10) << "GBH::SNAPMAP::" << __func__ << "::" << coid  << dendl;
+  dout(10) << "GBH::SNAPMAP::" << __func__ << "::" << coid << "::<" << old_snaps << ">" << dendl;
   ceph_assert(check(coid));
-  std::unique_ptr<std::vector<snapid_t>> snaps_vec;
-  auto obj_itr = obj_to_snaps.find(coid);
-  if ((obj_itr != obj_to_snaps.end()) && (!obj_itr->second.empty())) {
-    snaps_vec = std::make_unique<std::vector<snapid_t>>(obj_itr->second);
-    obj_to_snaps.erase(coid);
-    if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
-      dout(20) << __func__ << " rm " << to_object_key(coid) << dendl;
-    }
-  }
-  else if (obj_itr == obj_to_snaps.end() ) {
-    //int err = -EINVAL;
-    int err = -ENOENT;
-
-    dout(20) << __func__ << " " << coid << " got err " << err << dendl;
-    dout(10) << "GBH::SNAPMAP::" << __func__ << ":: " << coid << " doesn't have a mapping!!" << dendl;
-    return err;
-  }
-  else {
-    // should never happen in theory.
-    // the original code was leaving the empty entry
-    // should we maybe remove the entry anyway ???
-    dout(20) << __func__ << " " << coid << " got.empty()" << dendl;
-    dout(10) << "GBH::SNAPMAP::" << __func__ << ":: " << coid << " has an empty mapping!!" << dendl;
-    return -ENOENT;
-  }
 
   // iterate over snap-set attached to this coid
-  for (auto snap_itr = snaps_vec->begin(); snap_itr != snaps_vec->end(); ++snap_itr) {
+  for (auto snap_itr = old_snaps.begin(); snap_itr != old_snaps.end(); ++snap_itr) {
     // remove the coid from the coid_set of objects modified since snap creation
     dout(10) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
     remove_mapping_from_snapid_to_hobject(coid, *snap_itr);
@@ -410,10 +353,13 @@ int SnapMapper::_remove_oid(const hobject_t &coid)
   return 0;
 }
 
-int SnapMapper::get_snaps(
+// only used by pg_scrubber.h and test_snap_mapper.cc
+// need to move them to access RocksDB::ONode instead
+int SnapMapper::get_snaps_from_snapmapper(
   const hobject_t       &coid,
   std::vector<snapid_t> *snaps)
 {
+#if 0
   ceph_assert(check(coid));
   auto itr = obj_to_snaps.find(coid);
   if (itr != obj_to_snaps.end()) {
@@ -432,6 +378,9 @@ int SnapMapper::get_snaps(
     dout(10) << "GBH::SNAPMAP::" << __func__ << ":: " << coid << " doesn't have a mapping (-EINVAL)" << dendl;
     return err;
   }
+#else
+  ceph_assert(0);
+#endif
 }
 
 // -- purged snaps --

@@ -555,7 +555,7 @@ class PgScrubber : public ScrubPgIF,
 		std::set<snapid_t>* snaps_set) const final
   {
     std::vector<snapid_t> snaps_vec;
-    int ret = m_pg->snap_mapper.get_snaps(hoid, &snaps_vec);
+    int ret = m_pg->snap_mapper.get_snaps_from_snapmapper(hoid, &snaps_vec);
     *snaps_set = std::set<snapid_t>(snaps_vec.begin(), snaps_vec.end());
     return ret;
   }

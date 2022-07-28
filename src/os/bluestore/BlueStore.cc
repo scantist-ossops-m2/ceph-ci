@@ -18677,7 +18677,7 @@ int BlueStore::__restore_snap_maps(const std::vector<snap_listing_entry_t> &sdir
 
       curr_snap_map = itr->second;
     }
-    std::unordered_map<snapid_t, std::unordered_set<hobject_t>>& snap_to_objs = curr_snap_map->get_snap_to_objs();
+    auto& snap_to_objs = curr_snap_map->get_snap_to_objs();
     const std::string spg_name(pgid.calc_name(spg_buff + sizeof(spg_buff) - 1, "::"));
     const std::string snap_maps_file(spg_name + std::to_string(snapid.val));
     dout(1) << "open file " << snap_maps_file << dendl;
@@ -18853,11 +18853,11 @@ int BlueStore::store_snap_maps(const std::unordered_map<spg_t, const class SnapM
     if (!obj_to_snaps.empty()) {
       store_obj_to_snaps(obj_to_snaps, sdir, pgid, spg_name);
     }
-    const std::unordered_map<snapid_t, std::unordered_set<hobject_t>>& snap_to_objs = sm->get_snap_to_objs_const();
+    const auto& snap_to_objs = sm->get_snap_to_objs_const();
     //dout(1) << "spg_name=" << spg_name << ", snap_to_objs.size()=" << snap_to_objs.size() << dendl;
     for (auto itr = snap_to_objs.begin(); itr != snap_to_objs.end(); ++itr) {
       snapid_t snap_id = itr->first;
-      const std::unordered_set<hobject_t> & obj_set = itr->second;
+      const auto & obj_set = itr->second;
 
       const std::string snap_maps_file(spg_name + std::to_string(snap_id.val));
       dout(1) << "snap_maps_file=" << snap_maps_file << dendl;
