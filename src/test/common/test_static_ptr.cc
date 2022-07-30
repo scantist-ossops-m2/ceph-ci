@@ -12,11 +12,20 @@
  *
  */
 
-#include "common/static_ptr.h"
+#include <compare>
 #include <gtest/gtest.h>
+#include "common/static_ptr.h"
 
 using ceph::static_ptr;
 using ceph::make_static;
+
+#ifdef __cpp_lib_three_way_comparison
+#define SKIP_IF_3_WAY_COMPARISION_NOT_AVAILABLE()			\
+  GTEST_SKIP() << "three way comparison not available. test skipped."	\
+#else
+#define SKIP_IF_3_WAY_COMPARISION_NOT_AVAILABLE() \
+  do {} while (0)
+#endif
 
 class base {
 public:
@@ -50,6 +59,7 @@ public:
 };
 
 TEST(StaticPtr, EmptyCreation) {
+  SKIP_IF_3_WAY_COMPARISION_NOT_AVAILABLE();
   static_ptr<base, sizeof(grandchild)> p;
   EXPECT_FALSE(p);
   EXPECT_EQ(p, nullptr);
@@ -58,6 +68,7 @@ TEST(StaticPtr, EmptyCreation) {
 }
 
 TEST(StaticPtr, CreationCall) {
+  SKIP_IF_3_WAY_COMPARISION_NOT_AVAILABLE();
   {
     static_ptr<base, sizeof(grandchild)> p(std::in_place_type_t<sibling1>{});
     EXPECT_TRUE(p);
@@ -81,6 +92,7 @@ TEST(StaticPtr, CreationCall) {
 }
 
 TEST(StaticPtr, CreateReset) {
+  SKIP_IF_3_WAY_COMPARISION_NOT_AVAILABLE();
   {
     static_ptr<base, sizeof(grandchild)> p(std::in_place_type_t<sibling1>{});
     EXPECT_EQ((p.get())->func(), 0);
