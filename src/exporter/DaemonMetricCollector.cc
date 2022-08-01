@@ -118,10 +118,12 @@ void DaemonMetricCollector::dump_asok_metrics() {
     json_object dump = boost::json::parse(perf_dump_response).as_object();
     json_object schema = boost::json::parse(perf_schema_response).as_object();
     for (auto &perf : schema) {
-      std::string perf_group = perf.key().to_string();
+      auto sv = perf.key();
+      std::string perf_group = {sv.begin(), sv.end()};
       json_object perf_group_object = perf.value().as_object();
       for (auto &perf_counter : perf_group_object) {
-        std::string perf_name = perf_counter.key().to_string();
+        auto sv1 = perf_counter.key();
+        std::string perf_name = {sv1.begin(), sv1.end()};
         json_object perf_info = perf_counter.value().as_object();
         auto prio_limit = g_conf().get_val<int64_t>("exporter_prio_limit");
         if (perf_info["priority"].as_int64() <
