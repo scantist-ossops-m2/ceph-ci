@@ -319,12 +319,21 @@ class PrometheusService(CephadmService):
         haproxy_sd_url = f'{srv_end_point}service=haproxy' if haproxy_cnt > 0 else None
         mgr_prometheus_sd_url = f'{srv_end_point}service=mgr-prometheus'  # always included
 
+         # scrape ceph exporters
+        ceph_exporter_nodes = []
+        for dd in self.mgr.cache.get_daemons_by_service('ceph-exporter'):
+            assert dd.hostname is not None
+            addr = self._inventory_get_fqdn(dd.hostname)
+            exporter_port = dd.ports[0] if dd.ports else 9926
+            ceph_exporter_nodes.append(build_url(host=addr, port=exporter_port).lstrip('/'))
+
         # generate the prometheus configuration
         context = {
             'mgr_prometheus_sd_url': mgr_prometheus_sd_url,
             'node_exporter_sd_url': node_exporter_sd_url,
             'alertmanager_sd_url': alertmanager_sd_url,
             'haproxy_sd_url': haproxy_sd_url,
+            'ceph_exporter_nodes': ceph_exporter_nodes
         }
 
         r: Dict[str, Any] = {
@@ -368,7 +377,7 @@ class PrometheusService(CephadmService):
         # add an explicit dependency on the active manager. This will force to
         # re-deploy prometheus if the mgr has changed (due to a fail-over i.e).
         deps.append(self.mgr.get_active_mgr().name())
-        deps += [s for s in ['node-exporter', 'alertmanager', 'ingress']
+        deps += [s for s in ['node-exporter', 'alertmanager', 'ingress', 'ceph-exporter']
                  if self.mgr.cache.get_daemons_by_service(s)]
         return deps
 

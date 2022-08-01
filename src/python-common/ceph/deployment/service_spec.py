@@ -166,10 +166,10 @@ class PlacementSpec(object):
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, PlacementSpec):
             return self.label == other.label \
-                   and self.hosts == other.hosts \
-                   and self.count == other.count \
-                   and self.host_pattern == other.host_pattern \
-                   and self.count_per_host == other.count_per_host
+                and self.hosts == other.hosts \
+                and self.count == other.count \
+                and self.host_pattern == other.host_pattern \
+                and self.count_per_host == other.count_per_host
         return NotImplemented
 
     def set_hosts(self, hosts: Union[List[str], List[HostPlacementSpec]]) -> None:
@@ -497,7 +497,7 @@ class ServiceSpec(object):
     start the services.
     """
     KNOWN_SERVICE_TYPES = 'alertmanager crash grafana iscsi loki promtail mds mgr mon nfs ' \
-                          'node-exporter osd prometheus rbd-mirror rgw agent ' \
+                          'node-exporter osd prometheus rbd-mirror rgw agent ceph-exporter ' \
                           'container ingress cephfs-mirror snmp-gateway jaeger-tracing ' \
                           'elasticsearch jaeger-agent jaeger-collector jaeger-query'.split()
     REQUIRES_SERVICE_ID = 'iscsi mds nfs rgw container ingress '.split()
@@ -520,6 +520,7 @@ class ServiceSpec(object):
             'container': CustomContainerSpec,
             'grafana': GrafanaSpec,
             'node-exporter': MonitoringSpec,
+            'ceph-exporter': CephExporterSpec,
             'prometheus': PrometheusSpec,
             'loki': MonitoringSpec,
             'promtail': MonitoringSpec,
@@ -751,7 +752,7 @@ class ServiceSpec(object):
                 raise SpecValidationError('Cannot add Service: id required')
             if self.service_type not in self.REQUIRES_SERVICE_ID and self.service_id:
                 raise SpecValidationError(
-                        f'Service of type \'{self.service_type}\' should not contain a service id')
+                    f'Service of type \'{self.service_type}\' should not contain a service id')
 
         if self.service_id:
             if not re.match('^[a-zA-Z0-9_.-]+$', str(self.service_id)):
@@ -913,10 +914,10 @@ class RGWSpec(ServiceSpec):
 
         if self.rgw_realm and not self.rgw_zone:
             raise SpecValidationError(
-                    'Cannot add RGW: Realm specified but no zone specified')
+                'Cannot add RGW: Realm specified but no zone specified')
         if self.rgw_zone and not self.rgw_realm:
             raise SpecValidationError(
-                    'Cannot add RGW: Zone specified but no realm specified')
+                'Cannot add RGW: Zone specified but no realm specified')
 
 
 yaml.add_representer(RGWSpec, ServiceSpec.yaml_representer)
@@ -1581,3 +1582,36 @@ class TunedProfileSpec():
         # for making deep copies so you can edit the settings in one without affecting the other
         # mostly for testing purposes
         return TunedProfileSpec(self.profile_name, self.placement, self.settings.copy())
+
+
+class CephExporterSpec(ServiceSpec):
+    def __init__(self,
+                 service_type: str = 'ceph-exporter',
+                 sock_dir: Optional[str] = None,
+                 addrs: str = '',
+                 port: Optional[int] = None,
+                 prio_limit: Optional[int] = 10,
+                 stats_period: Optional[int] = 5,
+                 placement: Optional[PlacementSpec] = None,
+                 unmanaged: bool = False,
+                 preview_only: bool = False,
+                 extra_container_args: Optional[List[str]] = None,
+                 ):
+        assert service_type == 'ceph-exporter'
+
+        super(CephExporterSpec, self).__init__(
+            service_type,
+            placement=placement,
+            unmanaged=unmanaged,
+            preview_only=preview_only,
+            extra_container_args=extra_container_args)
+
+        self.service_type = service_type
+        self.sock_dir = sock_dir
+        self.addrs = addrs
+        self.port = port
+        self.prio_limit = prio_limit
+        self.stats_period = stats_period
+
+
+yaml.add_representer(CephExporterSpec, ServiceSpec.yaml_representer)

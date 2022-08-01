@@ -392,6 +392,7 @@ class TestMonitoring:
 
         with with_host(cephadm_module, 'test'):
             with with_service(cephadm_module, MonitoringSpec('node-exporter')) as _, \
+                    with_service(cephadm_module, ServiceSpec('ceph-exporter')) as _, \
                     with_service(cephadm_module, MonitoringSpec('prometheus')) as _:
 
                 y = dedent("""
@@ -416,6 +417,11 @@ class TestMonitoring:
                     - url: https://[::1]:8765/sd/prometheus/sd-config?service=node-exporter
                       tls_config:
                         ca_file: root_cert.pem
+
+                  - job_name: 'ceph-exporter'
+                    static_configs:
+                    - targets:
+                      - '[1::4]:9926'
 
                 """).lstrip()
 
