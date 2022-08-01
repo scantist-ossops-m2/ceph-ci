@@ -38,3 +38,12 @@ scrape_configs:
       tls_config:
         ca_file: root_cert.pem
 {% endif %}
+
+{% if ceph_exporter_nodes %}
+  - job_name: 'ceph-exporter'
+    static_configs:
+    - targets:
+{% for node in ceph_exporter_nodes %}
+      - '{{ node }}'
+{% endfor %}
+{% endif %}

@@ -375,6 +375,11 @@ class TestMonitoring:
                       tls_config:
                         ca_file: root_cert.pem
 
+                  - job_name: 'ceph-exporter'
+                    static_configs:
+                    - targets:
+                      - '[1::4]:9926'
+
                 """).lstrip()
 
                 _run_cephadm.assert_called_with(
@@ -515,7 +520,7 @@ class TestMonitoring:
                           cert_file = /etc/grafana/certs/cert_file
                           cert_key = /etc/grafana/certs/cert_key
                           http_port = 3000
-                          http_addr = 
+                          http_addr =
                         [snapshots]
                           external_enabled = false
                         [security]
