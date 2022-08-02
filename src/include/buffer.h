@@ -47,6 +47,7 @@
 #include <string_view>
 #endif // __cplusplus >= 201703L
 
+#include <memory>
 #include <exception>
 #include <type_traits>
 
