@@ -153,7 +153,7 @@ void http_server_thread_entrypoint() {
   try {
     std::string exporter_addr = g_conf().get_val<std::string>("exporter_addr");
     auto const address = net::ip::make_address(exporter_addr);
-    unsigned short port = g_conf().get_val<int64_t>("exporter_port");
+    unsigned short port = g_conf().get_val<int64_t>("exporter_http_port");
 
     net::io_context ioc{1};
 

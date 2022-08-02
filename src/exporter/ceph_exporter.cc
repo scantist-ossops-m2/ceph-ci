@@ -47,7 +47,7 @@ int main(int argc, char **argv) {
     } else if (ceph_argparse_witharg(args, i, &val, "--addrs", (char *)NULL)) {
       cct->_conf.set_val("exporter_addr", val);
     } else if (ceph_argparse_witharg(args, i, &val, "--port", (char *)NULL)) {
-      cct->_conf.set_val("exporter_port", val);
+      cct->_conf.set_val("exporter_http_port", val);
     } else if (ceph_argparse_witharg(args, i, &val, "--prio-limit", (char *)NULL)) {
       cct->_conf.set_val("exporter_prio_limit", val);
     } else if (ceph_argparse_witharg(args, i, &val, "--stats-period", (char *)NULL)) {
