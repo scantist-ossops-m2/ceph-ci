@@ -1590,7 +1590,7 @@ class CephExporterSpec(ServiceSpec):
                  sock_dir: Optional[str] = None,
                  addrs: str = '',
                  port: Optional[int] = None,
-                 prio_limit: Optional[int] = 10,
+                 prio_limit: Optional[int] = 5,
                  stats_period: Optional[int] = 5,
                  placement: Optional[PlacementSpec] = None,
                  unmanaged: bool = False,
