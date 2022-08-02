@@ -118,14 +118,15 @@ void DaemonMetricCollector::dump_asok_metrics() {
     json_object dump = boost::json::parse(perf_dump_response).as_object();
     json_object schema = boost::json::parse(perf_schema_response).as_object();
     for (auto &perf : schema) {
-      auto sv = perf.key();
-      std::string perf_group = {sv.begin(), sv.end()};
+      // auto sv = perf.key();
+      std::string perf_group = perf.key().to_string();
       json_object perf_group_object = perf.value().as_object();
       for (auto &perf_counter : perf_group_object) {
-        auto sv1 = perf_counter.key();
-        std::string perf_name = {sv1.begin(), sv1.end()};
+        // auto sv1 = perf_counter.key();
+        std::string perf_name = perf_counter.key().to_string();
         json_object perf_info = perf_counter.value().as_object();
         auto prio_limit = g_conf().get_val<int64_t>("exporter_prio_limit");
+        std::cout << prio_limit << std::endl;
         if (perf_info["priority"].as_int64() <
             prio_limit) {
           continue;
@@ -139,6 +140,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
         name = labels_and_name.second;
 
         json_value perf_values = dump[perf_group].as_object()[perf_name];
+        std::cout << name << std::endl;
         dump_asok_metric(perf_info, perf_values, name, labels);
       }
     }
@@ -319,6 +321,7 @@ void DaemonMetricCollector::update_sockets() {
       if (clients.find(daemon_name) == clients.end() &&
           !(daemon_name.find("mgr") != std::string::npos) &&
           !(daemon_name.find("ceph-exporter") != std::string::npos)) {
+        std::cout << daemon_name << entry.path().string() << std::endl;
         AdminSocketClient sock(entry.path().string());
         clients.insert({daemon_name, std::move(sock)});
       }
