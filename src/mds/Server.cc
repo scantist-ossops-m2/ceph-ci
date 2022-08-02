@@ -7108,6 +7108,12 @@ void Server::handle_client_link(MDRequestRef& mdr)
   if (target_pin != dir->inode &&
       target_realm->get_subvolume_ino() !=
       dir->inode->find_snaprealm()->get_subvolume_ino()) {
+    if (target_pin->get_parent_inode()->is_stray()) {
+      target_pin->add_waiter(CInode::WAIT_UNLINK,
+                             new C_MDS_RetryRequest(mdcache, mdr));
+      mdlog->flush();
+      return;
+    }
     dout(7) << "target is in different subvolume, failing..." << dendl;
     respond_to_request(mdr, -CEPHFS_EXDEV);
     return;
@@ -8014,6 +8020,10 @@ void Server::_unlink_local_finish(MDRequestRef& mdr,
   
   // removing a new dn?
   dn->get_dir()->try_remove_unlinked_dn(dn);
+
+  MDSContext::vec finished;
+  strayin->take_waiting(CInode::WAIT_UNLINK, finished);
+  mds->queue_waiters(finished);
 
   // clean up ?
   // respond_to_request() drops locks. So stray reintegration can race with us.
