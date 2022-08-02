@@ -1,5 +1,6 @@
 tasks:
 - s3tests:
     client.0:
-      force-branch: ceph-quincy
+      force-branch: wip-quincy-sse-s3
+      git_remote: http://github.com/cbodley/
       rgw_server: client.0
