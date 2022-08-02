@@ -135,7 +135,10 @@ function(do_build_boost root_dir version)
     list(APPEND b2 binary-format=elf)
   endif()
   if(WITH_BOOST_VALGRIND)
+    message(STATUS "BUILDING Boost Libraries, WITH_BOOST_VALGRIND is set to ON")
     list(APPEND b2 valgrind=on)
+  else()
+    message(STATUS "BUILDING Boost Libraries, WITH_BOOST_VALGRIND is set to OFF")
   endif()
   set(build_command
     ${b2} headers stage
