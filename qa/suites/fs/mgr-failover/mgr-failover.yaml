@@ -1,0 +1,103 @@
+overrides:
+  ceph:
+    log-ignorelist:
+      - failed to encode map
+  conf:
+    mon:
+      mon warn on legacy crush tunables: false
+roles:
+  - - mon.a
+    - mgr.x
+    - mgr.z
+    - mds.a
+    - osd.0
+    - osd.1
+    - client.0
+    - mon.b
+    - mgr.y
+    - osd.2
+    - osd.3
+    - mds.b
+    - client.1
+run-snap-schedule:
+  - exec:
+      mon.a:
+        - "ceph mgr module enable snap_schedule"
+        - "sleep 2"
+        - "ceph config set mgr mgr/snap_schedule/allow_m_granularity True"
+        - "sleep 2"
+        - "ceph fs snap-schedule add /client.0/snap_schedule_test_dir 1M"
+        - "sleep 660"
+        - "ceph fs snap-schedule deactivate /client.0/snap_schedule_test_dir 1M"
+run-cephfs-mirroring:
+  - exec:
+      mon.a:
+        - "ceph mgr module enable mirroring"
+        - sleep 5
+        - "ceph fs volume create backup"
+        - sleep 5
+        - "ceph fs snapshot mirror enable cephfs"
+        - sleep 5
+        - "ceph fs snapshot mirror peer_bootstrap create backup client.backup_remote remote-site > bootstrap.txt"
+        - sleep 5
+        - "ceph fs snapshot mirror peer_bootstrap import cephfs $(cat bootstrap.txt | jq .token)"
+        - "rm bootstrap.txt"
+        - sleep 5
+        - "ceph fs snapshot mirror add cephfs /client.0/snap_schedule_test_dir"
+        - sleep 600
+  - exec:
+      client.1:
+        - "mkdir -p $TESTDIR/mnt.1"
+        # - "mount -t ceph client.backup@.backup=/ $TESTDIR/mnt.1"
+        - "ceph-fuse --id 1 --client_fs backup $TESTDIR/mnt.1"
+run-mgr-failover:
+  - exec:
+      mon.a:
+        - "sleep 300"
+        - "ceph mgr fail mon.a"
+        - "sleep 300"
+tasks:
+  - install:
+      branch: wip-mchangir-mgr-failover-testing-for-tracker-56489
+  - ceph:
+  - ceph-fuse:
+      client.0:
+        mounted: true
+  - exec:
+      mon.a:
+        - "sudo ceph auth get-or-create client.backup mon 'profile cephfs-mirror' mds 'allow r' osd 'allow rw tag cephfs metadata=*, allow r tag cephfs data=*' mgr 'allow r'"
+        - sleep 5
+  - cephfs-mirror:
+      client: client.backup
+  - sequential:
+      - exec:
+          client.0:
+            - "mkdir -p $TESTDIR/mnt.0/client.0/snap_schedule_test_dir"
+      - parallel:
+          - run-snap-schedule
+          - run-cephfs-mirroring
+          - run-mgr-failover
+      - exec:
+          client.0:
+            # expect at least 10 snaps after snap-schedule has completed
+            - "let -i count=$(ls $TESTDIR/mnt.0/client.0/snap_schedule_test_dir/.snap | wc -l); [ $count -ge 10 ] && true || false"
+            - "find $TESTDIR/mnt.0/client.0/snap_schedule_test_dir/.snap -maxdepth 1 -mindepth 1 -type d -exec rmdir {} ';'"
+            - "rmdir $TESTDIR/mnt.0/client.0/snap_schedule_test_dir"
+          client.1:
+            # expect at least 10 snaps after mirroring has completed
+            - "let -i count=$(ls $TESTDIR/mnt.1/client.1/snap_schedule_test_dir/.snap | wc -l); [ $count -ge 10 ] && true || false"
+            - "find $TESTDIR/mnt.1/client.0/snap_schedule_test_dir/.snap -maxdepth 1 -mindepth 1 -type d -exec rmdir {} ';'"
+            - "rmdir -rf $TESTDIR/mnt.1"
+  - workunit:
+      cleanup: true
+      clients:
+        client.0:
+          - true.sh
+        client.1:
+          - true.sh
+  - ceph-fuse:
+      client.0:
+        mounted: false
+      client.1:
+        mounted: false
+  - ceph.stop:
