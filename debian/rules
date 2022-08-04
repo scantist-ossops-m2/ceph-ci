@@ -48,6 +48,11 @@ endif
 ifneq (,$(filter with_system_libs,$(DEB_BUILD_OPTIONS)))
   extraopts += -DWITH_SYSTEM_BOOST=ON
   extraopts += -DWITH_SYSTEM_PMDK=ON
+else ifeq (Ubuntu,$(DEB_VENDOR))
+  ifneq (,$(filter $(DEB_DISTRIBUTION), jammy kinetic))
+    substvars += -Vdist:Depends="libpmem-dev, libpmemobj-dev (>= 1.8)"
+    extraopts += -DWITH_SYSTEM_PMDK=ON
+  endif
 endif
 
 # for python3-${pkg} packages
@@ -60,6 +65,9 @@ py3_packages := cephfs-shell cephfs-top cephadm
 
 %:
 	dh $@ --buildsystem=cmake --with javahelper,python3,systemd --parallel
+
+override_dh_gencontrol:
+	dh_gencontrol -- $(substvars)
 
 override_dh_auto_configure:
 	env | sort

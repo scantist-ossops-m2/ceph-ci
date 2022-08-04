@@ -116,6 +116,7 @@ Build-Depends: automake,
                xmlstarlet <pkg.ceph.check>,
                nasm [amd64],
                zlib1g-dev,
+               ${dist:Depends}
 Standards-Version: 4.4.0
 
 Package: ceph
