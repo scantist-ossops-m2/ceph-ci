@@ -172,11 +172,13 @@ namespace ceph {
       get_str_list(plugins, plugins_list);
 
       auto registry = cct->get_plugin_registry();
-      std::lock_guard l(registry->lock);
-      for (auto& plg : plugins_list) {
-	int rc = registry->load("extblkdev", std::string("ebd_") + plg);
-	if (rc)
-	  return rc;
+      {
+	std::lock_guard l(registry->lock);
+	for (auto& plg : plugins_list) {
+	  int rc = registry->load("extblkdev", std::string("ebd_") + plg);
+	  if (rc)
+	    return rc;
+	}
       }
 #ifdef __linux__
       return limit_caps(cct);
