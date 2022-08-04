@@ -57,6 +57,7 @@ namespace ceph {
 	return -errno;
       }
       auto registry = cct->get_plugin_registry();
+      std::lock_guard l(registry->lock);
       // did we preload any extblkdev type plugins?
       auto ptype = registry->plugins.find("extblkdev");
       if (ptype != registry->plugins.end()) {
@@ -193,6 +194,7 @@ namespace ceph {
       int rc = -ENOENT;
       std::string plg_name;
       auto registry = cct->get_plugin_registry();
+      std::lock_guard l(registry->lock);
       auto ptype = registry->plugins.find("extblkdev");
       if (ptype == registry->plugins.end()) {
 	return -ENOENT;
