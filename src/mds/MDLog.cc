@@ -973,6 +973,9 @@ void MDLog::_recovery_thread(MDSContext *completion)
     jp.front = default_log_ino;
     int write_result = jp.save(mds->objecter);
     // Nothing graceful we can do for this
+    if (write_result < 0) {
+      sleep(10);
+    }
     ceph_assert(write_result >= 0);
   } else if (read_result == -CEPHFS_EBLOCKLISTED) {
     derr << "Blocklisted during JournalPointer read!  Respawning..." << dendl;
