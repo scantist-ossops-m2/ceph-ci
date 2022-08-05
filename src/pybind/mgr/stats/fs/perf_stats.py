@@ -23,11 +23,11 @@ QUERY_RAW_COUNTERS = "query_raw_counters"
 QUERY_RAW_COUNTERS_GLOBAL = "query_raw_counters_global"
 
 MDS_RANK_ALL = (-1,)
-CLIENT_ID_ALL = "\d*"
+CLIENT_ID_ALL = r"\d*"
 CLIENT_IP_ALL = ".*"
 
 MDS_PERF_QUERY_REGEX_MATCH_ALL_RANKS = '^(.*)$'
-MDS_PERF_QUERY_REGEX_MATCH_CLIENTS = '^(client.{0}\s+{1}):.*'
+MDS_PERF_QUERY_REGEX_MATCH_CLIENTS = r'^(client.{0}\s+{1}):.*'
 MDS_PERF_QUERY_COUNTERS_MAP = OrderedDict({'cap_hit': 0,
                                            'read_latency': 1,
                                            'write_latency': 2,
@@ -477,26 +477,30 @@ class FSPerfStats(object):
         result["counters"] = MDS_PERF_QUERY_COUNTERS
 
         # fill in client metadata
-        raw_perfs = user_query.setdefault(QUERY_RAW_COUNTERS_GLOBAL, {})
+        raw_perfs_global = user_query.setdefault(QUERY_RAW_COUNTERS_GLOBAL, {})
+        raw_perfs = user_query.setdefault(QUERY_RAW_COUNTERS, {})
         with self.meta_lock:
+            raw_counters_clients = []
+            for val in raw_perfs.values():
+                raw_counters_clients.extend(list(val[1]))
             result_meta = result.setdefault("client_metadata", {})
-            for client_id in raw_perfs.keys():
-                if client_id in self.client_metadata["metadata"]:
+            for client_id in raw_perfs_global.keys():
+                if client_id in self.client_metadata["metadata"] and client_id in raw_counters_clients:
                     client_meta = result_meta.setdefault(client_id, {})
                     client_meta.update(self.client_metadata["metadata"][client_id])
 
             # start populating global perf metrics w/ client metadata
             metrics = result.setdefault("global_metrics", {})
-            for client_id, counters in raw_perfs.items():
-                global_client_metrics = metrics.setdefault(client_id, [])
-                del global_client_metrics[:]
-                global_client_metrics.extend(counters)
+            for client_id, counters in raw_perfs_global.items():
+                if client_id in raw_counters_clients:
+                    global_client_metrics = metrics.setdefault(client_id, [])
+                    del global_client_metrics[:]
+                    global_client_metrics.extend(counters)
 
             # and, now per-mds metrics keyed by mds rank along with delayed ranks
-            raw_perfs = user_query.setdefault(QUERY_RAW_COUNTERS, {})
             metrics = result.setdefault("metrics", {})
 
-            metrics["delayed_ranks"] = [rank for rank,counters in raw_perfs.items() if counters[0]]
+            metrics["delayed_ranks"] = [rank for rank, counters in raw_perfs.items() if counters[0]]
             for rank, counters in raw_perfs.items():
                 mds_key = "mds.{}".format(rank)
                 mds_metrics = metrics.setdefault(mds_key, {})
