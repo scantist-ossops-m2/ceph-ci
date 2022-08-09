@@ -18843,6 +18843,7 @@ int BlueStore::__restore_allocator(Allocator* allocator, uint64_t *num, uint64_t
 //-----------------------------------------------------------------------------------
 int BlueStore::restore_allocator(Allocator* dest_allocator, uint64_t *num, uint64_t *bytes)
 {
+  return -1; // fail to restore for testing
   utime_t    start = ceph_clock_now();
   auto temp_allocator = unique_ptr<Allocator>(create_bitmap_allocator(bdev->get_size()));
   int ret = __restore_allocator(temp_allocator.get(), num, bytes);
@@ -19200,6 +19201,27 @@ int BlueStore::reconstruct_allocations(SimpleBitmap *sbmap, read_alloc_stats_t &
     return ret;
   }
 
+  {
+    SimpleBitmap sbmap_r(cct, div_round_up(bdev->get_size(), min_alloc_size));
+    auto super_length = std::max<uint64_t>(min_alloc_size, SUPER_RESERVED);
+    set_allocation_in_simple_bmap(&sbmap_r, 0, super_length);
+    read_alloc_stats_t stats_r;
+    int ret_r = read_allocation_from_onodes_rocksdb_only(&sbmap_r, stats_r);
+    ceph_assert(ret_r == 0);
+
+    // check if sbmap and sbmap_r are the same
+    uint64_t offset = 0;
+    extent_t ext    = sbmap->get_next_clr_extent(offset);
+    extent_t ext_r = sbmap_r.get_next_clr_extent(offset);
+    while (ext.length != 0) {
+      ceph_assert(ext_r.offset == ext.offset);
+      ceph_assert(ext_r.length == ext.length);
+      offset = ext.offset + ext.length;
+      ext = sbmap->get_next_clr_extent(offset);
+      ext_r = sbmap_r.get_next_clr_extent(offset);
+    }
+    ceph_assert(ext_r.length == 0);
+  }
   return 0;
 }
 
