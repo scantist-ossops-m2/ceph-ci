@@ -19103,6 +19103,88 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
   return 0;
 }
 
+class ExtentDecoderAllocations : public BlueStore::ExtentMap::ExtentDecoder {
+  BlueStore* bs;
+  SimpleBitmap *sbmap;
+  BlueStore::Extent an_extent;
+  std::function<void(uint64_t, uint32_t)> mark_allocation;
+protected:
+  void consume_blobid(BlueStore::Extent* le, bool spanning, uint64_t blobid) override {
+  };
+  void consume_blob(BlueStore::Extent* le,
+		    uint64_t extent_no,
+		    uint64_t sbid,
+		    BlueStore::BlobRef b) override {
+    auto &blob = b->get_blob();
+    for (auto& pe : blob.get_extents()) {
+      if (pe.offset == bluestore_pextent_t::INVALID_OFFSET) {
+	continue;
+      }
+      bs->set_allocation_in_simple_bmap(sbmap, pe.offset, pe.length);
+    }
+  };
+  void consume_spanning_blob(uint64_t sbid, BlueStore::BlobRef b) override {
+  };
+  BlueStore::Extent* get_next_extent() override {
+    return &an_extent;
+  };
+  void add_extent(BlueStore::Extent* e) override {
+  };
+public:
+  ExtentDecoderAllocations(BlueStore* bs, SimpleBitmap *sbmap)
+    : bs(bs), sbmap(sbmap) {
+  }
+};
+
+//-------------------------------------------------------------------------
+int BlueStore::read_allocation_from_onodes_rocksdb_only(SimpleBitmap *sbmap, read_alloc_stats_t& stats)
+{
+  dout(0) << __func__ << dendl;
+  utime_t            start = ceph_clock_now();
+
+  auto it = db->get_iterator(PREFIX_OBJ, KeyValueDB::ITERATOR_NOCACHE);
+  if (!it) {
+    // TBD - find a better error code
+    derr << "failed db->get_iterator(PREFIX_OBJ)" << dendl;
+    return -EIO;
+  }
+
+  uint64_t kv_count       = 0;
+  uint64_t count_interval = 1'000'000;
+
+  ExtentDecoderAllocations adecoder(this, sbmap);
+  // iterate over all ONodes stored in RocksDB
+  for (it->lower_bound(string()); it->valid(); it->next(), kv_count++) {
+    // trace an even after every million processed objects (typically every 5-10 seconds)
+    if (kv_count && (kv_count % count_interval == 0) ) {
+      dout(5) << __func__ << " processed objects count = " << kv_count << dendl;
+    }
+
+    auto key = it->key();
+    dout(20) << __func__ << " decode onode " << pretty_binary_string(key) << dendl;
+    ghobject_t oid;
+    if (!is_extent_shard_key(key)) {
+       ghobject_t oid;
+       bluestore_onode_t onode;
+       auto v = it->value();
+       auto p = v.front().begin_deep();
+       onode.decode(p);
+       adecoder.decode_spanning_blobs(p, nullptr);
+       if (onode.extent_map_shards.empty()) {
+	 bufferlist inline_bl;
+	 denc(inline_bl, p);
+	 adecoder.decode_some(inline_bl, nullptr);
+       }
+    } else {
+      adecoder.decode_some(it->value(), nullptr);
+    }
+  }
+
+  utime_t duration = ceph_clock_now() - start;
+  dout(0) << __func__ << " finished duration=" << duration << dendl;
+  return 0;
+}
+
 //---------------------------------------------------------
 int BlueStore::reconstruct_allocations(SimpleBitmap *sbmap, read_alloc_stats_t &stats)
 {
