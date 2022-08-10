@@ -2647,10 +2647,8 @@ def get_daemon_args(ctx, fsid, daemon_type, daemon_id):
                 r += ['--cluster.peer={}'.format(peer)]
             # some alertmanager, by default, look elsewhere for a config
             r += ['--config.file=/etc/alertmanager/alertmanager.yml']
-        if daemon_type == 'loki':
-            r += ['--config.file=/etc/loki/loki.yml']
         if daemon_type == 'promtail':
-            r += ['--config.file=/etc/promtail/promtail.yml']
+            r += ['--config.expand-env']
         if daemon_type == 'node-exporter':
             r += ['--path.procfs=/host/proc',
                   '--path.sysfs=/host/sys',
@@ -2971,6 +2969,7 @@ def get_container_mounts(ctx, fsid, daemon_type, daemon_id,
             mounts[os.path.join(data_dir, 'etc/promtail')] = '/etc/promtail:Z'
             mounts[log_dir] = '/var/log/ceph:z'
             mounts[os.path.join(data_dir, 'data')] = '/promtail:Z'
+            mounts['/var/log/journal'] = '/var/log/journal:ro'
         elif daemon_type == 'node-exporter':
             mounts['/proc'] = '/host/proc:ro'
             mounts['/sys'] = '/host/sys:ro'
