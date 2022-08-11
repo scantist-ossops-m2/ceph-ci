@@ -2,6 +2,7 @@ import os
 import errno
 import logging
 import sys
+import re
 
 if sys.version_info >= (3, 2):
     import configparser
@@ -86,7 +87,8 @@ class MetadataManager(object):
 
         fd = None
         try:
-            fd = self.fs.open(self.config_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, self.mode)
+            tmp_config_path = self.config_path + b'.tmp'
+            fd = self.fs.open(tmp_config_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, self.mode)
             wrote = 0
             while True:
                 data = conf_data.read()
@@ -94,7 +96,9 @@ class MetadataManager(object):
                     break
                 wrote += self.fs.write(fd, data.encode('utf-8'), -1)
             self.fs.fsync(fd, 0)
-            log.info("wrote {0} bytes to config {1}".format(wrote, self.config_path))
+            log.info(f"wrote {wrote} bytes to config {tmp_config_path}")
+            self.fs.rename(tmp_config_path, self.config_path)
+            log.info(f"Renamed {tmp_config_path} to config {self.config_path}")
         except cephfs.Error as e:
             raise MetadataMgrException(-e.args[0], e.args[1])
         finally:
@@ -175,3 +179,16 @@ class MetadataManager(object):
         if not self.config.has_section(section):
             raise MetadataMgrException(-errno.ENOENT, "section '{0}' does not exist".format(section))
         return item in [v[1] for v in self.config.items(section)]
+
+    def has_snap_metadata_section(self):
+        sections = self.config.sections()
+        r = re.compile('SNAP_METADATA_.*')
+        for section in sections:
+            if r.match(section):
+                return True
+        return False
+
+    def list_snaps_with_metadata(self):
+        sections = self.config.sections()
+        r = re.compile('SNAP_METADATA_.*')
+        return [section[len("SNAP_METADATA_"):] for section in sections if r.match(section)]
