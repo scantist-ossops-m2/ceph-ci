@@ -1,5 +1,9 @@
 os_type: centos
 os_version: "8.stream"
+tasks:
+- ceph:
+    log-ignorelist:
+    - \(POOL_APP_NOT_ENABLED\)
 overrides:
   selinux:
     whitelist:

@@ -3345,10 +3345,9 @@ void PGMap::get_health_checks(
       if (pstat == nullptr) {
         continue;
       }
-      const object_stat_sum_t& sum = pstat->stats.sum;
       // application metadata is not encoded until luminous is minimum
       // required release
-      if (sum.num_objects > 0 && pool.application_metadata.empty() &&
+      if (pool.application_metadata.empty() &&
           !pool.is_tier()) {
         stringstream ss;
         ss << "application not enabled on pool '" << pool_name << "'";

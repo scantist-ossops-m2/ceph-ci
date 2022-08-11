@@ -10,3 +10,7 @@ overrides:
     conf:
       osd:
         osd shutdown pgref assert: true
+tasks:
+- ceph:
+    log-ignorelist:
+    - \(POOL_APP_NOT_ENABLED\)
