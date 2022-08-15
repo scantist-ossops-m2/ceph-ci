@@ -4608,6 +4608,38 @@ void PrimaryLogPG::do_backfill_remove(OpRequestRef op)
   ceph_assert(r == 0);
 }
 
+int PrimaryLogPG::get_snaps(const hobject_t& coid, std::vector<snapid_t>* snaps_vec)
+{
+  if (coid.is_head()) {
+    osd->clog->error() << __func__ << ": Head-Objects got no snaps_set (must call with a coid)";
+    return -ENOENT;
+  }
+
+  ObjectContextRef obc = get_object_context(coid, false, NULL);
+  if (!obc || !obc->ssc || !obc->ssc->exists) {
+    osd->clog->error() << __func__ << ": coid<" << coid << "> " << (obc ? "(no obc->ssc or !exists)" : "(no obc)");
+    return -ENOENT;
+  }
+
+  SnapSet& snapset = obc->ssc->snapset;
+  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::coid=" << coid << "::snapset=" << snapset << dendl;
+  //object_info_t &coi = obc->obs.oi;
+  auto citer = snapset.clone_snaps.find(coid.snap);
+  if (citer == snapset.clone_snaps.end()) {
+    osd->clog->error() << "No clone_snaps in snapset " << snapset
+		       << " for object " << coid << "\n";
+    return -ENOENT;
+  }
+
+  if (citer->second.empty()) {
+    osd->clog->error() << "No object info snaps for object " << coid;
+    return -ENOENT;
+  }
+
+  *snaps_vec = citer->second; // std::set<snapid_t>(citer->second.begin(), citer->second.end());
+  return 0;
+}
+
 int PrimaryLogPG::trim_object(
   bool first, const hobject_t &coid, snapid_t snap_to_trim,
   PrimaryLogPG::OpContextUPtr *ctxp)

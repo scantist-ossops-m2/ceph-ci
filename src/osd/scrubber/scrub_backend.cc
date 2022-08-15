@@ -168,8 +168,7 @@ void ScrubBackend::decode_received_map(pg_shard_t from,
 std::vector<snap_mapper_fix_t> ScrubBackend::replica_clean_meta(
   ScrubMap& repl_map,
   bool max_reached,
-  const hobject_t& start,
-  SnapMapperAccessor& snaps_getter)
+  const hobject_t& start)
 {
   dout(15) << __func__ << ": REPL META # " << m_cleaned_meta_map.objects.size()
            << " objects" << dendl;
@@ -177,7 +176,7 @@ std::vector<snap_mapper_fix_t> ScrubBackend::replica_clean_meta(
   m_cleaned_meta_map.clear_from(start);  // RRR how can this be required?
   m_cleaned_meta_map.insert(repl_map);
   auto for_meta_scrub = clean_meta_map(m_cleaned_meta_map, max_reached);
-  return scan_snaps(for_meta_scrub, snaps_getter);
+  return scan_snaps(for_meta_scrub);
 }
 
 
@@ -187,9 +186,7 @@ std::vector<snap_mapper_fix_t> ScrubBackend::replica_clean_meta(
 //
 // /////////////////////////////////////////////////////////////////////////////
 
-objs_fix_list_t ScrubBackend::scrub_compare_maps(
-  bool max_reached,
-  SnapMapperAccessor& snaps_getter)
+objs_fix_list_t ScrubBackend::scrub_compare_maps(bool max_reached)
 {
   dout(10) << __func__ << " has maps, analyzing" << dendl;
   ceph_assert(m_scrubber.is_primary());
@@ -211,7 +208,7 @@ objs_fix_list_t ScrubBackend::scrub_compare_maps(
   scrub_snapshot_metadata(for_meta_scrub);
 
   return objs_fix_list_t{std::move(this_chunk->m_inconsistent_objs),
-                         scan_snaps(for_meta_scrub, snaps_getter)};
+                         scan_snaps(for_meta_scrub)};
 }
 
 void ScrubBackend::omap_checks()
@@ -1741,9 +1738,7 @@ void ScrubBackend::log_missing(int missing,
 
 // ////////////////////////////////////////////////////////////////////////////////
 
-std::vector<snap_mapper_fix_t> ScrubBackend::scan_snaps(
-  ScrubMap& smap,
-  SnapMapperAccessor& snaps_getter)
+std::vector<snap_mapper_fix_t> ScrubBackend::scan_snaps(ScrubMap& smap)
 {
   std::vector<snap_mapper_fix_t> out_orders;
   hobject_t head;
@@ -1788,48 +1783,11 @@ std::vector<snap_mapper_fix_t> ScrubBackend::scan_snaps(
              << dendl;
         continue;
       }
-
-      auto maybe_fix_order = scan_object_snaps(hoid, snapset, snaps_getter);
-      if (maybe_fix_order) {
-        out_orders.push_back(std::move(*maybe_fix_order));
-      }
     }
   }
 
   dout(15) << __func__ << " " << out_orders.size() << " fix orders" << dendl;
   return out_orders;
-}
-
-std::optional<snap_mapper_fix_t> ScrubBackend::scan_object_snaps(
-  const hobject_t& hoid,
-  const SnapSet& snapset,
-  SnapMapperAccessor& snaps_getter)
-{
-  // check and if necessary fix snap_mapper
-
-  auto p = snapset.clone_snaps.find(hoid.snap);
-  if (p == snapset.clone_snaps.end()) {
-    derr << __func__ << " no clone_snaps for " << hoid << " in " << snapset
-         << dendl;
-    return std::nullopt;
-  }
-  set<snapid_t> obj_snaps{p->second.begin(), p->second.end()};
-
-  set<snapid_t> cur_snaps;
-  int r = snaps_getter.get_snaps(hoid, &cur_snaps);
-  if (r != 0 && r != -ENOENT) {
-    derr << __func__ << ": get_snaps returned " << cpp_strerror(r) << dendl;
-    ceph_abort();
-  }
-  if (r == -ENOENT || cur_snaps != obj_snaps) {
-
-    // add this object to the list of snapsets that needs fixing. Note
-    // that we also collect the existing (bogus) list, for logging purposes
-    snap_mapper_op_t fixing_op =
-      (r == -ENOENT ? snap_mapper_op_t::add : snap_mapper_op_t::update);
-    return snap_mapper_fix_t{fixing_op, hoid, obj_snaps, cur_snaps};
-  }
-  return std::nullopt;
 }
 
 /*
