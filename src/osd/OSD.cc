@@ -4283,29 +4283,23 @@ PerfCounters* OSD::create_recoverystate_perf()
 
 void OSD::store_snap_maps()
 {
-  //dout(1) << "OSD::store_snap_maps::entered" << dendl;
-  std::unordered_map<spg_t, const SnapMapper*> snap_mappers;
+  std::unordered_map<spg_t, SnapMapper*> snap_mappers;
   vector<PGRef> pgs;
   _get_pgs(&pgs);
-  //dout(1) << "OSD::store_snap_maps:: pgs.size()=" << pgs.size() << dendl;
   for (auto pg : pgs) {
     //pg->shutdown();
-    const spg_t&      pgid        = pg->get_pgid();
-    const SnapMapper& snap_mapper = pg->get_snap_mapper();
-
+    const spg_t&      pgid  = pg->get_pgid();
+    SnapMapper& snap_mapper = pg->get_snap_mapper();
     snap_mappers[pgid] = &snap_mapper;
-    auto obj_to_snaps = snap_mapper.get_obj_to_snaps_const();
-    if (!obj_to_snaps.empty()) {
-      //store->destage_obj_to_snaps(pg, obj_to_snaps);
-    }
-
     auto snap_to_objs = snap_mapper.get_snap_to_objs_const();
     if (!snap_to_objs.empty()) {
-      dout(1) << "OSD::store_snap_maps::spg_name=" << pgid << ", snap_to_objs.size() =" << snap_to_objs.size() << dendl;
-      //store->destage_snap_to_objs(pg, snap_to_objs);
+      //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->store_snap_maps(" << pgid << ")" << dendl;
+      //snap_mapper.print_snaps(__func__);
+      //dout(1) << "OSD::store_snap_maps::spg_name=" << pgid << ", snap_to_objs.size() =" << snap_to_objs.size() << dendl;
     }
 
   }
+  dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->store_snap_maps()" << dendl;
   store->store_snap_maps(snap_mappers);
 }
 
@@ -4379,6 +4373,7 @@ int OSD::shutdown()
     utime_t  start_time_umount = ceph_clock_now();
     store->prepare_for_fast_shutdown();
 
+    dout(1) << "GBH::SNAPMAP::fast_shutdown::" <<__func__ << "::calling store->store_snap_maps()" << dendl;
     std::lock_guard lock(osd_lock);
     store_snap_maps();
     // TBD: assert in allocator that nothing is being add
@@ -4770,9 +4765,13 @@ void OSD::recursive_remove_collection(CephContext* cct,
     coll_t(),
     make_snapmapper_oid());
 
+  lgeneric_derr(cct) << "GBH::SNAPMAP::" <<__func__ << "::calling store->remove_snap_mapper(" << pgid << ")" << dendl;
+  // PGs are offline so we don't have any active SnapMapper
+  // Simply remove the SnapMapper files associated with this pgid
+  store->remove_snap_mapper(pgid);
+
   ObjectStore::CollectionHandle ch = store->open_collection(tmp);
   ObjectStore::Transaction t;
-  SnapMapper mapper(pgid, cct, &driver, 0, 0, 0, pgid.shard);
 
   ghobject_t next;
   int max = cct->_conf->osd_target_transaction_size;
@@ -4787,9 +4786,6 @@ void OSD::recursive_remove_collection(CephContext* cct,
       break;
     for (auto& p: objects) {
       OSDriver::OSTransaction _t(driver.get_transaction(&t));
-      int r = mapper.remove_oid(p.hobj, &_t);
-      if (r != 0 && r != -ENOENT)
-        ceph_abort();
       t.remove(tmp, p);
     }
     int r = store->queue_transaction(ch, std::move(t));
@@ -5044,8 +5040,12 @@ void OSD::load_pgs()
     }
 
     // there can be no waiters here, so we don't call _wake_pg_slot
-
     pg->lock();
+    // TBD: do we really need the lock here?
+    // maybe should call before taking the lock as we are going to disk??
+    //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->restore_snap_mapper(" << pgid << ")" << dendl;
+    store->restore_snap_mapper(pg->get_snap_mapper(), pgid);
+    //pg->get_snap_mapper().print_snaps(__func__);
     pg->ch = store->open_collection(pg->coll);
 
     // read pg state, log

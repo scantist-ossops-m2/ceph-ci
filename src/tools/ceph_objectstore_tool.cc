@@ -2129,13 +2129,15 @@ enum rmtype {
 };
 
 int remove_object(coll_t coll, ghobject_t &ghobj,
-  SnapMapper &mapper,
-  MapCacher::Transaction<std::string, bufferlist> *_t,
-  ObjectStore::Transaction *t,
-  enum rmtype type)
+		  const std::vector<snapid_t>& snaps,
+		  SnapMapper &mapper,
+		  MapCacher::Transaction<std::string, bufferlist> *_t,
+		  ObjectStore::Transaction *t,
+		  enum rmtype type)
 {
-  if (type == BOTH || type == SNAPMAP) {
-    int r = mapper.remove_oid(ghobj.hobj, _t);
+  if ( (type == BOTH || type == SNAPMAP) && !ghobj.hobj.is_head() ) {
+    //cerr << __func__ << "::GBH::remove_oid()::hobj=" << ghobj.hobj << std::endl;
+    int r = mapper.remove_oid_from_all_snaps(ghobj.hobj, snaps, _t);
     if (r < 0 && r != -ENOENT) {
       cerr << "remove_oid returned " << cpp_strerror(r) << std::endl;
       return r;
@@ -2178,7 +2180,7 @@ int do_remove_object(ObjectStore *store, coll_t coll,
       if (!(force && !all))
         return r;
     }
-//    cout << "snapset " << ss << std::endl;
+
     if (!ss.clone_snaps.empty() && !all) {
       if (force) {
         cout << "WARNING: only removing "
@@ -2201,7 +2203,8 @@ int do_remove_object(ObjectStore *store, coll_t coll,
     snapobj.hobj.snap = p.first;
     cout << "remove clone " << snapobj << std::endl;
     if (!dry_run) {
-      r = remove_object(coll, snapobj, mapper, &_t, &t, type);
+      const std::vector<snapid_t>& snaps = p.second;
+      r = remove_object(coll, snapobj, snaps, mapper, &_t, &t, type);
       if (r < 0)
         return r;
     }
@@ -2210,7 +2213,9 @@ int do_remove_object(ObjectStore *store, coll_t coll,
   cout << "remove " << ghobj << std::endl;
 
   if (!dry_run) {
-    r = remove_object(coll, ghobj, mapper, &_t, &t, type);
+    // head object -> we don;t have any snaps
+    const std::vector<snapid_t> snaps;
+    r = remove_object(coll, ghobj, snaps, mapper, &_t, &t, type);
     if (r < 0)
       return r;
   }

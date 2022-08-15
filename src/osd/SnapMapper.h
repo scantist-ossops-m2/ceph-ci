@@ -247,8 +247,9 @@ private:
   bool check(const hobject_t &hoid) const;
 
   int _remove_oid(const hobject_t &oid, const std::vector<snapid_t> &old_snaps);
+  uint32_t count_objects();
 
-  std::unordered_map<hobject_t, std::vector<snapid_t>  >        obj_to_snaps;
+  bool     is_disabled = false;
   std::unordered_map<snapid_t,  std::unordered_set<hobject_t> > snap_to_objs;
   std::unordered_map<snapid_t, utime_t> snap_trim_time;
   int remove_mapping_from_snapid_to_hobject(
@@ -256,12 +257,10 @@ private:
     const snapid_t & snapid);
 
 public:
-  const std::unordered_map<hobject_t, std::vector<snapid_t>>&         get_obj_to_snaps_const() const { return obj_to_snaps; }
-  std::unordered_map<hobject_t, std::vector<snapid_t>>&               get_obj_to_snaps() { return obj_to_snaps; }
   const std::unordered_map<snapid_t,  std::unordered_set<hobject_t>>& get_snap_to_objs_const() const { return snap_to_objs; }
-  std::unordered_map<snapid_t,  std::unordered_set<hobject_t>>&       get_snap_to_objs() { return snap_to_objs; }
+        std::unordered_map<snapid_t,  std::unordered_set<hobject_t>>& get_snap_to_objs() { return snap_to_objs; }
 
-  void print_snaps(const char *s);
+  void print_snaps(const char *s) const;
   static std::string make_shard_prefix(shard_id_t shard) {
     if (shard == shard_id_t::NO_SHARD)
       return std::string();
@@ -285,9 +284,10 @@ public:
     int64_t pool,    ///< [in] pool
     shard_id_t shard ///< [in] shard
     )
-    : pgid(pgid), cct(cct), backend(driver), obj_to_snaps(), snap_to_objs(), mask_bits(bits), match(match), pool(pool),
+    : pgid(pgid), cct(cct), backend(driver), snap_to_objs(), mask_bits(bits), match(match), pool(pool),
       shard(shard), shard_prefix(make_shard_prefix(shard)) {
     update_bits(mask_bits);
+    is_disabled = false;
   }
 
   std::set<std::string> prefixes;
@@ -328,17 +328,18 @@ public:
     std::vector<hobject_t> *out      ///< [out] next objects to trim (must be empty)
 			       );  ///< @return error, -ENOENT if no more objects
 
-  /// Remove mapping for oid
-  int remove_oid(
-    const hobject_t &oid,    ///< [in] oid to remove
-    MapCacher::Transaction<std::string, ceph::buffer::list> *t ///< [out] transaction
-		 ); ///< @return error, -ENOENT if the object is not mapped
+  // clear all data stored by this mapper (done before collection removal)
+  int reset();
 
-  /// Get snaps for oid
-  int get_snaps_from_snapmapper(
-    const hobject_t       &oid,  ///< [in] oid to get snaps for
-    std::vector<snapid_t> *snaps ///< [out] snaps
-		); ///< @return error, -ENOENT if oid is not recorded
+  /// Remove mapping for oid
+  ///< @return error, -ENOENT if the object is not mapped
+  int remove_oid_from_all_snaps(
+    const hobject_t &oid,                   ///< [in] oid to remove
+    const std::vector<snapid_t> &old_snaps, ///< [in] old snap vector
+    MapCacher::Transaction<std::string, ceph::buffer::list> *t ///< [out] transaction
+			    ) {
+    return _remove_oid(oid, old_snaps);
+  }    
 };
 WRITE_CLASS_ENCODER(SnapMapper::object_snaps)
 WRITE_CLASS_ENCODER(SnapMapper::Mapping)

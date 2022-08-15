@@ -273,7 +273,6 @@ ostream& operator<<(ostream& out, const scrub_flags_t& sf);
  */
 class PgScrubber : public ScrubPgIF,
                    public ScrubMachineListener,
-                   public SnapMapperAccessor,
                    public ScrubBeListener {
  public:
   explicit PgScrubber(PG* pg);
@@ -549,16 +548,6 @@ class PgScrubber : public ScrubPgIF,
 
   utime_t scrub_begin_stamp;
   std::ostream& gen_prefix(std::ostream& out) const final;
-
-  //  fetching the snap-set for a given object (used by the scrub-backend)
-  int get_snaps(const hobject_t& hoid,
-		std::set<snapid_t>* snaps_set) const final
-  {
-    std::vector<snapid_t> snaps_vec;
-    int ret = m_pg->snap_mapper.get_snaps_from_snapmapper(hoid, &snaps_vec);
-    *snaps_set = std::set<snapid_t>(snaps_vec.begin(), snaps_vec.end());
-    return ret;
-  }
 
   void log_cluster_warning(const std::string& warning) const final;
 

@@ -2135,8 +2135,11 @@ public:
   };
 
   bool has_null_fm();
-  int  store_snap_maps  (const std::unordered_map<spg_t, const SnapMapper*>& snap_mappers);
-  int  restore_snap_maps();
+
+  //int  restore_snap_maps();
+  virtual int  store_snap_maps  (const std::unordered_map<spg_t, SnapMapper*>& snap_mappers);
+  virtual int  remove_snap_mapper(spg_t pgid);
+  virtual int  restore_snap_mapper(SnapMapper & sm, spg_t pgid);
 
   // --------------------------------------------------------
   // members
@@ -2153,7 +2156,6 @@ private:
   Allocator *alloc = nullptr;   ///< allocator consumed by BlueStore
   bluefs_shared_alloc_context_t shared_alloc; ///< consumed by BlueFS (may be == alloc)
 
-  std::unordered_map<spg_t, SnapMapper*> snap_mappers;
   uuid_d fsid;
   int path_fd = -1;  ///< open handle to $path
   int fsid_fd = -1;  ///< open handle (locked) to $path/fsid
@@ -3747,15 +3749,15 @@ private:
 
   int  copy_allocator(Allocator* src_alloc, Allocator *dest_alloc, uint64_t* p_num_entries);
   int  store_allocator(Allocator* allocator);
-  int  restore_obj_to_snaps(std::unordered_map<hobject_t, std::vector<snapid_t>>& obj_to_snaps,
-			    const snap_listing_entry_t& entry);
-  int  __restore_snap_maps(const std::vector<snap_listing_entry_t> &sdir);
-  int  store_obj_to_snaps(const std::unordered_map<hobject_t, std::vector<snapid_t>>& obj_to_snaps,
-			  std::vector<snap_listing_entry_t> &sdir,
-			  const spg_t& pgid,
-			  const std::string& spg_name);
+  //int  __restore_snap_maps(const std::vector<snap_listing_entry_t> &sdir);
   int  restore_snap_map_listing_file(std::vector<snap_listing_entry_t> &sdir);
   int  store_snap_map_listing_file(const std::vector<snap_listing_entry_t> &sdir);
+  int  restore_from_snap_maps_file(std::unordered_map<snapid_t, std::unordered_set<hobject_t>> &snap_to_objs,
+				   const std::string & snap_maps_file,
+				   snapid_t snapid,
+				   uint32_t file_size,
+				   uint32_t obj_count );
+
   int  invalidate_allocation_file_on_bluefs();
   int  __restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
   int  restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
@@ -3773,6 +3775,7 @@ private:
   Allocator* clone_allocator_without_bluefs(Allocator *src_allocator);
   Allocator* initialize_allocator_from_freelist(FreelistManager *real_fm);
   void copy_allocator_content_to_fm(Allocator *allocator, FreelistManager *real_fm);
+  int  __remove_snap_maps(const std::vector<snap_listing_entry_t> &sdir, spg_t pgid);
 
 
   void _fsck_check_object_omap(FSCKDepth depth,

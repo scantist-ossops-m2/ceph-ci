@@ -186,7 +186,7 @@ public:
     return m_planned_scrub;
   }
 
-  const SnapMapper& get_snap_mapper() { return snap_mapper;}
+  SnapMapper& get_snap_mapper() { return snap_mapper;}
   /// scrubbing state for both Primary & replicas
   bool is_scrub_active() const { return m_scrubber->is_scrub_active(); }
 
