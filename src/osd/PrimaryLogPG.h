@@ -492,7 +492,7 @@ public:
       recovery_state.update_hset(*hset_history);
     }
     if (transaction_applied) {
-	update_snap_map(logv, t);
+      update_snap_map(logv, t);
     }
     auto last = logv.rbegin();
     if (is_primary() && last != logv.rend()) {
@@ -1507,6 +1507,8 @@ public:
   void do_backfill_remove(OpRequestRef op);
 
   void handle_backoff(OpRequestRef& op);
+
+  int get_snaps(const hobject_t& coid, std::vector<snapid_t>* snaps_vec);
 
   int trim_object(bool first, const hobject_t &coid, snapid_t snap_to_trim,
 		  OpContextUPtr *ctxp);

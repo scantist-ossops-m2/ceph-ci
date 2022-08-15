@@ -314,16 +314,22 @@ void PG::remove_snap_mapped_object(
   clear_object_snap_mapping(&t, soid);
 }
 
+#include "PrimaryLogPG.h"
 void PG::clear_object_snap_mapping(
   ObjectStore::Transaction *t, const hobject_t &soid)
 {
   OSDriver::OSTransaction _t(osdriver.get_transaction(t));
   if (soid.snap < CEPH_MAXSNAP) {
-    int r = snap_mapper.remove_oid(
+    PrimaryLogPG *plPG = dynamic_cast<PrimaryLogPG*>(this);
+    std::vector<snapid_t>old_snaps;
+    int ret = plPG->get_snaps(soid, &old_snaps);
+    //dout(1) << "GBH::SNAPMAP::" << __func__ << "::coid=" << soid << dendl;
+    ret = snap_mapper.remove_oid_from_all_snaps(
       soid,
+      old_snaps,
       &_t);
-    if (!(r == 0 || r == -ENOENT)) {
-      derr << __func__ << ": remove_oid returned " << cpp_strerror(r) << dendl;
+    if (!(ret == 0 || ret == -ENOENT)) {
+      derr << __func__ << ": remove_oid returned " << cpp_strerror(ret) << dendl;
       ceph_abort();
     }
   }
@@ -334,14 +340,17 @@ void PG::update_object_snap_mapping(
 {
   OSDriver::OSTransaction _t(osdriver.get_transaction(t));
   ceph_assert(soid.snap < CEPH_MAXSNAP);
-  int r = snap_mapper.remove_oid(
+  std::vector<snapid_t> _snaps(snaps.begin(), snaps.end());
+  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::coid=" << soid << dendl;
+  int r = snap_mapper.remove_oid_from_all_snaps(
     soid,
+    _snaps,
     &_t);
   if (!(r == 0 || r == -ENOENT)) {
     derr << __func__ << ": remove_oid returned " << cpp_strerror(r) << dendl;
     ceph_abort();
   }
-  std::vector<snapid_t> _snaps(snaps.begin(), snaps.end());
+
   //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling add_oid()::snaps=" << snaps << dendl;
   snap_mapper.add_oid(
     soid,
@@ -1161,19 +1170,38 @@ void PG::update_snap_map(
   const vector<pg_log_entry_t> &log_entries,
   ObjectStore::Transaction &t)
 {
+  //dout(1) << "GBH::SNAPMAP::" << __func__ << dendl;
   for (auto i = log_entries.cbegin(); i != log_entries.cend(); ++i) {
     OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
+    //dout(1) << "GBH::SNAPMAP::" << __func__ << "::i->soid.snap=" << i->soid.snap << dendl;
     if (i->soid.snap < CEPH_MAXSNAP) {
       if (i->is_delete()) {
-	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::snap_mapper.remove_oid(oid=" << i->soid << ")" << dendl;
-	int r = snap_mapper.remove_oid(
+	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.remove_oid(oid=" << i->soid << ")" << dendl;
+	std::vector<snapid_t> new_snaps, old_snaps;
+	bufferlist snapbl = i->snaps;
+	auto p = snapbl.cbegin();
+	try {
+	  decode(new_snaps, p);
+	  decode(old_snaps, p);
+	} catch (...) {
+	  derr << __func__ << " ::new_snaps:: decode snaps failure on " << *i << dendl;
+	  return;
+	}
+	// This path is only used when we remove the last snap
+	// new_snap must be empty and old_snaps should probaly only hold {i->soid.snap}
+	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
+	
+	int ret = snap_mapper.remove_oid_from_all_snaps(
 	  i->soid,
+	  old_snaps,
 	  &_t);
-	if (r)
-	  derr << __func__ << " remove_oid " << i->soid << " failed with " << r << dendl;
+
+	if (ret)
+	  derr << __func__ << " remove_oid " << i->soid << " failed with " << ret << dendl;
         // On removal tolerate missing key corruption
-        ceph_assert(r == 0 || r == -ENOENT);
+        ceph_assert(ret == 0 || ret == -ENOENT);
       } else if (i->is_update()) {
+	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::*** is_update *** oid=" << i->soid << ")" << dendl;
 	ceph_assert(i->snaps.length() > 0);
 	vector<snapid_t> new_snaps;
 	bufferlist snapbl = i->snaps;
@@ -1186,12 +1214,13 @@ void PG::update_snap_map(
 	}
 
 	if (i->is_clone() || i->is_promote()) {
-	  //ldout(cct, 1) << "GBH::SNAPMAP::" << __func__ << "::snap_mapper.add_oid(" << i->soid << ", " << new_snaps << ")" << dendl;
+	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.add_oid(" << i->soid << ", " << new_snaps << ")" << dendl;
 	  snap_mapper.add_oid(
 	    i->soid,
 	    new_snaps,
 	    &_t);
 	} else if (i->is_modify()) {
+	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.update_snaps(" << i->soid << ")" << dendl;
 	  vector<snapid_t> old_snaps;
 	  try {
 	    decode(old_snaps, p);
@@ -1199,8 +1228,8 @@ void PG::update_snap_map(
 	    derr << __func__ << " ::old_snaps:: decode snaps failure on " << *i << dendl;
 	    return;
 	  }
-	  //ldout(cct, 1) << "GBH::SNAPMAP::" << __func__ << "::new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
-	  //ldout(cct, 1) << "GBH::SNAPMAP::" << __func__ << "::snap_mapper.update_snaps(" << i->soid << ", " << new_snaps << ")" << dendl;
+	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
+	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.update_snaps(" << i->soid << ", " << new_snaps << ")" << dendl;
 	  int r = snap_mapper.update_snaps(
 	    i->soid,
 	    new_snaps,
@@ -1211,6 +1240,9 @@ void PG::update_snap_map(
 	  ceph_assert(i->is_clean());
 	}
       }
+    }
+    else {
+      //dout(1) << "GBH::SNAPMAP::" << __func__ << "::(i->soid.snap >= CEPH_MAXSNAP)" << dendl;
     }
   }
 }
@@ -2711,6 +2743,13 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     }
   }
 
+  // clear in-memory tables if exist and remove on disk-maps
+  // can be called multiple times (only first call will be applied)
+  if (snap_mapper.reset() == 0) {
+    dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->remove_snap_mapper(" << pg_id << ")" << dendl;
+    osd->store->remove_snap_mapper(pg_id);
+  }
+
   OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
   int64_t num = 0;
   for (auto& oid : olist) {
@@ -2720,11 +2759,6 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     if (oid.is_pgmeta()) {
       osd->clog->warn() << info.pgid << " found stray pgmeta-like " << oid
 			<< " during PG removal";
-    }
-    int r = snap_mapper.remove_oid(oid.hobj, &_t);
-    if (r != 0 && r != -ENOENT) {
-      dout(1) << "GBH::SNAPMAP::" << __func__ << "::Failed removing oid= " << oid.hobj << dendl;
-      ceph_abort();
     }
     t.remove(coll, oid);
     ++num;

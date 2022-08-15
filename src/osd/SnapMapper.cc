@@ -187,17 +187,19 @@ int SnapMapper::remove_mapping_from_snapid_to_hobject(
   const hobject_t &coid,
   const snapid_t  &snapid)
 {
+  dout(20) << "GBH::SNAPMAP::" << __func__ << "::snapid=" << snapid << dendl ;
   // remove the coid from the coid_set of objects modified since snap creation
   auto itr = snap_to_objs.find(snapid);
   if (itr != snap_to_objs.end()) {
-    auto & hobject_set = itr->second;
-    hobject_set.erase(coid);
+    auto & obj_set = itr->second;
+    ceph_assert(obj_set.erase(coid) == 1);
+    //dout(1) << "+++GBH::SNAPMAP::" << __func__ << "::snapid=" << snapid << ", coid=" << coid << dendl ;
     // if was the last element in the set -> remove the mapping
-    if (hobject_set.empty()) {
+    if (obj_set.empty()) {
       utime_t start    = snap_trim_time[snapid];
       utime_t duration = ceph_clock_now() - start;
-      dout(1) << "---GBH::SNAPMAP::" << __func__ << "::removed the last obj from snap " << snapid << dendl;
-      dout(1) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid << "::snap_id=" << snapid << " duration=" << duration << "(sec)" << dendl;
+      dout(10) << "---GBH::SNAPMAP::" << __func__ << "::removed the last obj from snap " << snapid << dendl;
+      dout(10) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid << "::snap_id=" << snapid << " duration=" << duration << "(sec)" << dendl;
       snap_to_objs.erase(snapid);
       // should we return -ENOENT here ???
     }
@@ -217,8 +219,7 @@ int SnapMapper::update_snaps(
   const vector<snapid_t> &old_snaps,
   MapCacher::Transaction<std::string, bufferlist> *t)
 {
-  dout(20) << __func__ << " " << coid << " " << new_snaps << dendl;
-  dout(10) << "GBH::SNAPMAP::" << __func__ << "(" << coid << ") new_snaps = " << new_snaps << dendl;
+  dout(20) << "GBH::SNAPMAP::" << __func__ << "(" << coid << ") new_snaps = " << new_snaps << ", old_snaps = " << old_snaps << dendl;
   ceph_assert(check(coid));
   if (new_snaps.empty())
     return _remove_oid(coid, old_snaps);
@@ -227,7 +228,7 @@ int SnapMapper::update_snaps(
   // (probably snaps are in the process of being removed)
   for (auto snap_itr = old_snaps.begin(); snap_itr != old_snaps.end(); ++snap_itr) {
     if (std::find(new_snaps.begin(), new_snaps.end(), *snap_itr) == new_snaps.end()) {
-      dout(10) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
+      //dout(1) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
       remove_mapping_from_snapid_to_hobject(coid, *snap_itr);
       if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
 	dout(20) << __func__ << " rm " << to_raw_key(make_pair(*snap_itr, coid)) << dendl;
@@ -243,8 +244,7 @@ void SnapMapper::add_oid(
   const std::vector<snapid_t>& snaps,
   MapCacher::Transaction<std::string, ceph::buffer::list> *t )
 {
-  dout(20) << __func__ << " " << coid << " " << snaps << dendl;
-  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::(" << coid << ") -> (" << snaps << ")" << dendl;
+  dout(20) << "GBH::SNAPMAP::" << __func__ << "::(" << coid << ") -> (" << snaps << ")" << dendl;
   ceph_assert(!snaps.empty());
   ceph_assert(check(coid));
 
@@ -261,6 +261,16 @@ void SnapMapper::add_oid(
   }
 }
 
+uint32_t SnapMapper::count_objects()
+{
+  uint32_t count = 0;
+  for (auto itr = snap_to_objs.begin(); itr != snap_to_objs.end(); ++itr) {
+    count += itr->second.size();
+  }
+
+  return count;
+}
+
 int SnapMapper::get_next_objects_to_trim(
   snapid_t           snap,
   unsigned           max,
@@ -268,30 +278,27 @@ int SnapMapper::get_next_objects_to_trim(
 {
   ceph_assert(out);
   ceph_assert(out->empty());
+  ceph_assert(max > 0);
   dout(10) << "***GBH::SNAPMAP::" << __func__ << "::snap_id=" << snap << ", max=" << max << dendl;
 
-  // if max would be 0, we return ENOENT and the caller would mistakenly
-  // trim the snaptrim queue
-  ceph_assert(max > 0);
-  
   auto itr = snap_to_objs.find(snap);
   if (itr != snap_to_objs.end()) {
-
-    auto itr_time = snap_trim_time.find(snap);
+    auto & obj_set  = itr->second;
+    auto const & itr_time = snap_trim_time.find(snap);
     if (unlikely(itr_time == snap_trim_time.end())) {
-      utime_t start = ceph_clock_now();
-      snap_trim_time[snap] = start;
-      dout(1) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid <<"::snap_id=" << snap << " start time=" << start
-	      << ", count=" << itr->second.size() << dendl;
+      uint32_t global_count = count_objects();
+      snap_trim_time[snap] = ceph_clock_now();
+      dout(1) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid <<"::snap_id=" << snap
+	      << ", count=" << itr->second.size() << ", global_count=" << global_count << dendl;
     }
 
-    auto & obj_set_ref = itr->second;
-    for (const hobject_t& coid : obj_set_ref) {
-      dout(10) << "GBH::SNAPMAP::" << __func__ << "::" << snap << "-->" << coid << dendl;
+    for (auto itr = obj_set.begin(); itr != obj_set.end(); ++itr) {
+      const hobject_t & coid = *itr;
+      //dout(1) << "GBH::SNAPMAP::" << __func__ << "::" << snap << "-->" << coid << dendl;
       ceph_assert(check(coid));
       out->push_back(coid);
       if (out->size() == max) {
-	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::got max objects!!" << dendl;
+	dout(10) << "GBH::SNAPMAP::" << __func__ << "::got max objects!!" << dendl;
 	return 0;
       }
     }
@@ -311,38 +318,30 @@ int SnapMapper::get_next_objects_to_trim(
   }
 }
 
-
-
-/*
-  Used by the following modules:
-  OSD.cc:
-  pg_scrubber.h
-  pg_scrubber.cc:
-  PG.cc
-  test_snap_mapper.cc
-  ceph_objectstore_tool.cc:
-*/
-int SnapMapper::remove_oid(
-  const hobject_t &coid,
-  MapCacher::Transaction<std::string, bufferlist> *t)
+int SnapMapper::reset()
 {
-  dout(20) << __func__ << " " << coid << dendl;
-  ceph_assert(check(coid));
-
-  //return _remove_oid(coid);
-  return -1;
+  dout(1) << "GBH::SNAPMAP::" << __func__ << dendl;
+  if (!is_disabled) {
+    dout(1) << "GBH::SNAPMAP::" << __func__ << "::clearing all objects!!" << dendl;
+    snap_to_objs.clear();
+    is_disabled = true;
+    return 0;
+  }
+  else {
+    dout(1) << "GBH::SNAPMAP::" << __func__ << "::Mapper is already disabled " << dendl;
+    return -1;
+  }
 }
 
 int SnapMapper::_remove_oid(const hobject_t &coid, const std::vector<snapid_t> &old_snaps)
 {
-  dout(20) << __func__ << " " << coid << dendl;
-  dout(10) << "GBH::SNAPMAP::" << __func__ << "::" << coid << "::<" << old_snaps << ">" << dendl;
+  dout(20) << "GBH::SNAPMAP::" << __func__ << "::" << coid << "::<" << old_snaps << ">" << dendl;
   ceph_assert(check(coid));
 
   // iterate over snap-set attached to this coid
   for (auto snap_itr = old_snaps.begin(); snap_itr != old_snaps.end(); ++snap_itr) {
     // remove the coid from the coid_set of objects modified since snap creation
-    dout(10) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
+    //dout(1) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
     remove_mapping_from_snapid_to_hobject(coid, *snap_itr);
 
     if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
@@ -351,36 +350,6 @@ int SnapMapper::_remove_oid(const hobject_t &coid, const std::vector<snapid_t> &
   }
 
   return 0;
-}
-
-// only used by pg_scrubber.h and test_snap_mapper.cc
-// need to move them to access RocksDB::ONode instead
-int SnapMapper::get_snaps_from_snapmapper(
-  const hobject_t       &coid,
-  std::vector<snapid_t> *snaps)
-{
-#if 0
-  ceph_assert(check(coid));
-  auto itr = obj_to_snaps.find(coid);
-  if (itr != obj_to_snaps.end()) {
-    if (!itr->second.empty()) {
-      *snaps = itr->second;
-      return 0;
-    }
-    else {
-      dout(20) << __func__ << " " << coid << " got.empty()" << dendl;
-      dout(10) << "GBH::SNAPMAP::" << __func__ << ":: " << coid << " has an empty mapping (-ENOENT)" << dendl;
-      return -ENOENT;
-    }
-  } else {
-    int err = -EINVAL;
-    dout(20) << __func__ << " " << coid << " got err " << err << dendl;
-    dout(10) << "GBH::SNAPMAP::" << __func__ << ":: " << coid << " doesn't have a mapping (-EINVAL)" << dendl;
-    return err;
-  }
-#else
-  ceph_assert(0);
-#endif
 }
 
 // -- purged snaps --

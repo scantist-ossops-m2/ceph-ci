@@ -4294,11 +4294,6 @@ void OSD::store_snap_maps()
     const SnapMapper& snap_mapper = pg->get_snap_mapper();
 
     snap_mappers[pgid] = &snap_mapper;
-    auto obj_to_snaps = snap_mapper.get_obj_to_snaps_const();
-    if (!obj_to_snaps.empty()) {
-      //store->destage_obj_to_snaps(pg, obj_to_snaps);
-    }
-
     auto snap_to_objs = snap_mapper.get_snap_to_objs_const();
     if (!snap_to_objs.empty()) {
       dout(1) << "OSD::store_snap_maps::spg_name=" << pgid << ", snap_to_objs.size() =" << snap_to_objs.size() << dendl;
@@ -4770,9 +4765,13 @@ void OSD::recursive_remove_collection(CephContext* cct,
     coll_t(),
     make_snapmapper_oid());
 
+  lgeneric_derr(cct) << "GBH::SNAPMAP::" <<__func__ << "::calling store->remove_snap_mapper(" << pgid << ")" << dendl;
+  // PGs are offline so we don't have any active SnapMapper
+  // Simply remove the SnapMapper files associated with this pgid
+  store->remove_snap_mapper(pgid);
+
   ObjectStore::CollectionHandle ch = store->open_collection(tmp);
   ObjectStore::Transaction t;
-  SnapMapper mapper(pgid, cct, &driver, 0, 0, 0, pgid.shard);
 
   ghobject_t next;
   int max = cct->_conf->osd_target_transaction_size;
@@ -4787,9 +4786,6 @@ void OSD::recursive_remove_collection(CephContext* cct,
       break;
     for (auto& p: objects) {
       OSDriver::OSTransaction _t(driver.get_transaction(&t));
-      int r = mapper.remove_oid(p.hobj, &_t);
-      if (r != 0 && r != -ENOENT)
-        ceph_abort();
       t.remove(tmp, p);
     }
     int r = store->queue_transaction(ch, std::move(t));

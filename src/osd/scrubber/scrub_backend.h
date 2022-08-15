@@ -111,12 +111,6 @@ struct ScrubBeListener {
  * - a list of fix-orders (either insert or replace operations) are returned
  */
 
-struct SnapMapperAccessor {
-  virtual int get_snaps(const hobject_t& hoid,
-                        std::set<snapid_t>* snaps_set) const = 0;
-  virtual ~SnapMapperAccessor() = default;
-};
-
 enum class snap_mapper_op_t {
   add,
   update,
@@ -355,8 +349,7 @@ class ScrubBackend {
   std::vector<snap_mapper_fix_t> replica_clean_meta(
     ScrubMap& smap,
     bool max_reached,
-    const hobject_t& start,
-    SnapMapperAccessor& snaps_getter);
+    const hobject_t& start);
 
   /**
    * decode the arriving MOSDRepScrubMap message, placing the replica's
@@ -366,8 +359,7 @@ class ScrubBackend {
    */
   void decode_received_map(pg_shard_t from, const MOSDRepScrubMap& msg);
 
-  objs_fix_list_t scrub_compare_maps(bool max_reached,
-                                     SnapMapperAccessor& snaps_getter);
+  objs_fix_list_t scrub_compare_maps(bool max_reached);
 
   int scrub_process_inconsistent();
 
@@ -531,18 +523,7 @@ class ScrubBackend {
   /**
    * returns a list of snaps "fix orders"
    */
-  std::vector<snap_mapper_fix_t> scan_snaps(
-    ScrubMap& smap,
-    SnapMapperAccessor& snaps_getter);
-
-  /**
-   * an aux used by scan_snaps(), possibly returning a fix-order
-   * for a specific hobject.
-   */
-  std::optional<snap_mapper_fix_t> scan_object_snaps(
-    const hobject_t& hoid,
-    const SnapSet& snapset,
-    SnapMapperAccessor& snaps_getter);
+  std::vector<snap_mapper_fix_t> scan_snaps(ScrubMap& smap);
 
   // accessing the PG backend for this translation service
   uint64_t logical_to_ondisk_size(uint64_t logical_size) const;
