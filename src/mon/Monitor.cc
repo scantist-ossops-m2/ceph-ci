@@ -466,7 +466,7 @@ int Monitor::do_admin_command(
     if (cmd_getval(cmdmap, "value", val)) {
       cmd_vec.push_back(val);
     }
-    ceph_heap_profiler_handle_command(cmd_vec, out);
+    ceph_heap_profiler_handle_command(cmd_vec, err);
   } else if (command == "compact") {
     dout(1) << "triggering manual compaction" << dendl;
     auto start = ceph::coarse_mono_clock::now();
