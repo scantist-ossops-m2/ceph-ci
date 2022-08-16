@@ -21,7 +21,8 @@ class CephadmNoImage(Enum):
 
 # ceph daemon types that use the ceph container image.
 # NOTE: order important here as these are used for upgrade order
-CEPH_TYPES = ['mgr', 'mon', 'crash', 'osd', 'mds', 'rgw', 'rbd-mirror', 'cephfs-mirror', 'ceph-exporter']
+CEPH_TYPES = ['mgr', 'mon', 'crash', 'osd', 'mds', 'rgw',
+              'rbd-mirror', 'cephfs-mirror', 'ceph-exporter']
 GATEWAY_TYPES = ['iscsi', 'nfs']
 MONITORING_STACK_TYPES = ['node-exporter', 'prometheus',
                           'alertmanager', 'grafana', 'loki', 'promtail']
