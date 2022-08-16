@@ -39,6 +39,7 @@ class Watch : public seastar::enable_shared_from_this<Watch> {
 
   watch_info_t winfo;
   entity_name_t entity_name;
+  Ref<PG> pg;
 
   seastar::timer<seastar::lowres_clock> timeout_timer;
 
@@ -46,7 +47,6 @@ class Watch : public seastar::enable_shared_from_this<Watch> {
   seastar::future<> send_notify_msg(NotifyRef);
   seastar::future<> send_disconnect_msg();
   void discard_state();
-  void do_watch_timeout(Ref<PG> pg);
 
   friend Notify;
   friend class WatchTimeoutRequest;
@@ -60,10 +60,11 @@ public:
     : obc(std::move(obc)),
       winfo(winfo),
       entity_name(entity_name),
-      timeout_timer([this, pg=std::move(pg)] {
-        assert(pg);
-        return do_watch_timeout(pg);
+      pg(std::move(pg)),
+      timeout_timer([this] {
+        return do_watch_timeout();
       }) {
+    assert(this->pg);
   }
   ~Watch();
 
@@ -92,10 +93,21 @@ public:
   uint64_t get_watcher_gid() const {
     return entity_name.num();
   }
-  uint64_t get_cookie() const {
+  auto get_pg() const {
+    // bo bopy
+    return pg;
+  }
+  auto& get_entity() const {
+    return entity_name;
+  }
+  auto& get_cookie() const {
     return winfo.cookie;
   }
+  auto& get_peer_addr() const {
+    return winfo.addr;
+  }
   void cancel_notify(const uint64_t notify_id);
+  void do_watch_timeout();
 };
 
 using WatchRef = seastar::shared_ptr<Watch>;

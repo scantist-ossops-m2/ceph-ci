@@ -36,6 +36,7 @@
 #include "crimson/osd/osd_operations/peering_event.h"
 #include "crimson/osd/pg_recovery.h"
 #include "crimson/osd/replicated_recovery_backend.h"
+#include "crimson/osd/watch.h"
 
 using std::ostream;
 using std::set;
@@ -128,6 +129,28 @@ PG::PG(
 }
 
 PG::~PG() {}
+
+void PG::check_blocklisted_watchers()
+{
+  logger().debug("{}", __func__);
+  shard_services.for_each_obc([this] (ObjectContextRef obc) {
+    assert(obc);
+    for (const auto& [key, watch] : obc->watchers) {
+      if (watch->get_pg() != this) {
+        logger().debug("watch: skipping {} cookie {} as it belongs to other pg",
+                       watch->get_entity(), watch->get_cookie());
+        continue;
+      }
+      const auto& ea = watch->get_peer_addr();
+      logger().debug("watch: Found {} cookie {}. Checking entity_add_t {}",
+                     watch->get_entity(), watch->get_cookie(), ea);
+      if (get_osdmap()->is_blocklisted(ea)) {
+        logger().info("watch: Found blocklisted watcher for {}", ea);
+        watch->do_watch_timeout();
+      }
+    }
+  });
+}
 
 bool PG::try_flush_or_schedule_async() {
   logger().debug("PG::try_flush_or_schedule_async: flush ...");
