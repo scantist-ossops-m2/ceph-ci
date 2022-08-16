@@ -4272,21 +4272,19 @@ PerfCounters* OSD::create_recoverystate_perf()
 
 void OSD::store_snap_maps()
 {
-  //dout(1) << "OSD::store_snap_maps::entered" << dendl;
-  std::unordered_map<spg_t, const SnapMapper*> snap_mappers;
+  std::unordered_map<spg_t, SnapMapper*> snap_mappers;
   vector<PGRef> pgs;
   _get_pgs(&pgs);
-  //dout(1) << "OSD::store_snap_maps:: pgs.size()=" << pgs.size() << dendl;
   for (auto pg : pgs) {
     //pg->shutdown();
-    const spg_t&      pgid        = pg->get_pgid();
-    const SnapMapper& snap_mapper = pg->get_snap_mapper();
-
+    const spg_t&      pgid  = pg->get_pgid();
+    SnapMapper& snap_mapper = pg->get_snap_mapper();
     snap_mappers[pgid] = &snap_mapper;
     auto snap_to_objs = snap_mapper.get_snap_to_objs_const();
     if (!snap_to_objs.empty()) {
-      dout(1) << "OSD::store_snap_maps::spg_name=" << pgid << ", snap_to_objs.size() =" << snap_to_objs.size() << dendl;
-      //store->destage_snap_to_objs(pg, snap_to_objs);
+      //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->store_snap_maps(" << pgid << ")" << dendl;
+      //snap_mapper.print_snaps(__func__);
+      //dout(1) << "OSD::store_snap_maps::spg_name=" << pgid << ", snap_to_objs.size() =" << snap_to_objs.size() << dendl;
     }
 
   }
@@ -5034,8 +5032,12 @@ void OSD::load_pgs()
     }
 
     // there can be no waiters here, so we don't call _wake_pg_slot
-
     pg->lock();
+    // TBD: do we really need the lock here?
+    // maybe should call before taking the lock as we are going to disk??
+    //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->restore_snap_mapper(" << pgid << ")" << dendl;
+    store->restore_snap_mapper(pg->get_snap_mapper(), pgid);
+    //pg->get_snap_mapper().print_snaps(__func__);
     pg->ch = store->open_collection(pg->coll);
 
     // read pg state, log

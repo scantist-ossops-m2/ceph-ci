@@ -609,6 +609,7 @@ int main(int argc, char **argv)
     cout << action << " bluestore.snapmap" << std::endl;
     validate_path(cct.get(), path, false);
     BlueStore bluestore(cct.get(), path);
+#if 0
     int r = bluestore.restore_snap_maps();
     if (r < 0) {
       cerr << action << " failed: " << cpp_strerror(r) << std::endl;
@@ -616,6 +617,7 @@ int main(int argc, char **argv)
     } else {
       cout << action << " success" << std::endl;
     }
+#endif
   }
   else if (action == "fsck" ||
       action == "repair" ||

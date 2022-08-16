@@ -172,7 +172,7 @@ bool SnapMapper::check(const hobject_t &hoid) const
   return false;
 }
 
-void SnapMapper::print_snaps(const char *s)
+void SnapMapper::print_snaps(const char *s) const
 {
   for (auto itr = snap_to_objs.begin(); itr != snap_to_objs.end(); ++itr) {
     dout(1) << "PRN::GBH::SNAPMAP:: called from: [" << s << "] snap_id=" << itr->first << dendl;
