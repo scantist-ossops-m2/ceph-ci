@@ -319,7 +319,7 @@ class PrometheusService(CephadmService):
         haproxy_sd_url = f'{srv_end_point}service=haproxy' if haproxy_cnt > 0 else None
         mgr_prometheus_sd_url = f'{srv_end_point}service=mgr-prometheus'  # always included
 
-         # scrape ceph exporters
+        # scrape ceph exporters
         ceph_exporter_nodes = []
         for dd in self.mgr.cache.get_daemons_by_service('ceph-exporter'):
             assert dd.hostname is not None
