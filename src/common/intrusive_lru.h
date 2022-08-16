@@ -166,6 +166,14 @@ public:
     evict();
   }
 
+  template <class F>
+  void for_each(F&& f) {
+    for (auto& v : lru_set) {
+      access(v);
+      f(TRef{static_cast<T*>(&v)});
+    }
+  }
+
   friend void intrusive_ptr_add_ref<>(intrusive_lru_base<Config> *);
   friend void intrusive_ptr_release<>(intrusive_lru_base<Config> *);
 };

@@ -381,6 +381,8 @@ public:
     maybe_get_cached_obc, maybe_get_cached_obc, local_state.obc_registry)
   FORWARD(
     get_cached_obc, get_cached_obc, local_state.obc_registry)
+  FORWARD(
+    for_each_obc, for_each, local_state.obc_registry)
 
   FORWARD(
     local_request_reservation, request_reservation, core_state.local_reserver)
