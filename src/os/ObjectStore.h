@@ -290,8 +290,10 @@ public:
   virtual bool allows_journal() = 0; //< allows a journal
   virtual void prepare_for_fast_shutdown() {}
   virtual bool has_null_manager() { return false; }
-  virtual int  store_snap_maps(const std::unordered_map<spg_t, const class SnapMapper*>& snap_mappers) {return 0;}
+  virtual int  store_snap_maps(const std::unordered_map<spg_t, class SnapMapper*>& snap_mappers) {return 0;}
   virtual int  remove_snap_mapper(spg_t pgid) {return 0;}
+  virtual int  restore_snap_mapper(SnapMapper & sm, spg_t pgid) { return 0;}
+
   // return store min allocation size, if applicable
   virtual uint64_t get_min_alloc_size() const {
     return 0;
