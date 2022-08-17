@@ -632,7 +632,7 @@ endif()
 
 set(Boost_USE_MULTITHREADED ON)
 
-CMAKE_DEPENDENT_OPTION(WITH_BOOST_VALGRIND "Boost support for valgrind" OFF
+CMAKE_DEPENDENT_OPTION(WITH_BOOST_VALGRIND "Boost support for valgrind" ON
   "NOT WITH_SYSTEM_BOOST" OFF)
 # require minimally the bundled version
 if(WITH_SYSTEM_BOOST)
