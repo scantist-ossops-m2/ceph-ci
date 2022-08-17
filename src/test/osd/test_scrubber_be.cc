@@ -105,7 +105,7 @@ class TestPg : public PgScrubBeListener {
 // ///////////////////////////////////////////////////////////////////////////
 
 // and the scrubber
-class TestScrubber : public ScrubBeListener, public SnapMapperAccessor {
+class TestScrubber : public ScrubBeListener {
  public:
   ~TestScrubber() = default;
 
@@ -141,7 +141,7 @@ class TestScrubber : public ScrubBeListener, public SnapMapperAccessor {
   }
 
   int get_snaps(const hobject_t& hoid,
-		std::set<snapid_t>* snaps_set) const final;
+		std::set<snapid_t>* snaps_set) const;
 
   void set_snaps(const hobject_t& hoid, const std::vector<snapid_t>& snaps)
   {
@@ -548,7 +548,7 @@ TEST_F(TestTScrubberBe_data_1, smaps_creation_1)
   // for test data 'minimal_snaps_configuration':
   // scrub_compare_maps() should not emmit any error, nor
   // return any snap-mapper fix
-  auto [incons, fix_list] = sbe->scrub_compare_maps(true, *test_scrubber);
+  auto [incons, fix_list] = sbe->scrub_compare_maps(true);
 
   EXPECT_EQ(fix_list.size(), 0);  // snap-mapper fix should be empty
 
@@ -578,7 +578,8 @@ TEST_F(TestTScrubberBe_data_1, snapmapper_1)
   bogus_30[hobj_ms1_snp30_inpool] = {0x333, 0x666};
 
   test_scrubber->set_snaps(bogus_30);
-  auto [incons, fix_list] = sbe->scrub_compare_maps(true, *test_scrubber);
+  //auto [incons, fix_list] = sbe->scrub_compare_maps(true, *test_scrubber);
+  auto [incons, fix_list] = sbe->scrub_compare_maps(true);
 
   EXPECT_EQ(fix_list.size(), 1);
 
@@ -630,7 +631,7 @@ TEST_F(TestTScrubberBe_data_2, smaps_clone_size)
   ASSERT_TRUE(sbe);
   EXPECT_EQ(sbe->get_omap_stats().omap_bytes, 0);
   logger.set_expected_err_count(1);
-  auto [incons, fix_list] = sbe->scrub_compare_maps(true, *test_scrubber);
+  auto [incons, fix_list] = sbe->scrub_compare_maps(true);
 
   EXPECT_EQ(fix_list.size(), 0);  // snap-mapper fix should be empty
 

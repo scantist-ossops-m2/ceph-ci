@@ -4388,14 +4388,6 @@ int OSD::shutdown()
   // stop sending work to pgs.  this just prevents any new work in _process
   // from racing with on_shutdown and potentially entering the pg after.
   op_shardedwq.drain();
-
-  // TBD::
-  // We need to wait store_snap_maps() after PG->shutdown()
-  // but that will clear snap_maps
-  // Need to copy them outside the PG and don't destroy them!!!
-
-  dout(1) << "calling OSD::store_snap_maps()" << dendl;
-  store_snap_maps();
   
   // Shutdown PGs
   {
@@ -4477,6 +4469,10 @@ int OSD::shutdown()
 #ifdef PG_DEBUG_REFS
   service.dump_live_pgids();
 #endif
+
+  dout(1) << "calling OSD::store_snap_maps()" << dendl;
+  store_snap_maps();
+
   while (true) {
     vector<PGRef> pgs;
     _get_pgs(&pgs, true);
@@ -5033,11 +5029,6 @@ void OSD::load_pgs()
 
     // there can be no waiters here, so we don't call _wake_pg_slot
     pg->lock();
-    // TBD: do we really need the lock here?
-    // maybe should call before taking the lock as we are going to disk??
-    //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->restore_snap_mapper(" << pgid << ")" << dendl;
-    store->restore_snap_mapper(pg->get_snap_mapper(), pgid);
-    //pg->get_snap_mapper().print_snaps(__func__);
     pg->ch = store->open_collection(pg->coll);
 
     // read pg state, log
@@ -5050,6 +5041,11 @@ void OSD::load_pgs()
       recursive_remove_collection(cct, store.get(), pgid, *it);
       continue;
     }
+
+    //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->restore_snap_mapper(" << pgid << ")" << dendl;
+    store->restore_snap_mapper(pg->get_snap_mapper(), pgid);
+    //pg->get_snap_mapper().print_snaps(__func__);
+
     {
       uint32_t shard_index = pgid.hash_to_shard(shards.size());
       assert(NULL != shards[shard_index]);
