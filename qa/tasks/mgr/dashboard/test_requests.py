@@ -15,9 +15,7 @@ class RequestsTest(DashboardTestCase):
         })
 
     def test_force_no_gzip(self):
-        self._get('/api/summary', params=dict(
-            headers={'Accept-Encoding': 'identity'}
-        ))
+        self._get('/api/summary', headers={'Accept-Encoding': 'identity'})
         self.assertNotIn('Content-Encoding', self._resp.headers)
         self.assertHeaders({
             'Content-Type': 'application/json'
