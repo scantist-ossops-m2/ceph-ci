@@ -189,6 +189,13 @@ public:
       _issued = caps;
       // don't add bits
       _pending &= caps;
+
+      // if the revoking is not totally finished, add the new
+      // revoking caps back, or in clean_revoke_from() we may
+      // miss removing itself from revoking_caps list later.
+      if (was_revoking && revoking()) {
+        _revokes.emplace_back(_pending, last_sent, last_issue);
+      }
     } else {
       // can i forget any revocations?
       while (!_revokes.empty() && _revokes.front().seq < seq)
