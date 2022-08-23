@@ -1523,6 +1523,11 @@ int FileSystemCommandHandler::_check_pool(
     return -ENOENT;
   }
 
+  if (pool->has_snaps()) {
+    *ss << "pool(" << pool_id << ") already has snaps; can't attach to fs";
+    return -EOPNOTSUPP;
+  }
+
   const string& pool_name = osd_map.get_pool_name(pool_id);
   auto app_map = pool->application_metadata;
 
