@@ -2539,6 +2539,23 @@ Then run the following:
     def apply_tuned_profiles(self, specs: List[TunedProfileSpec]) -> str:
         outs = []
         for spec in specs:
+
+            # ensure all the configured sysctl options are valid
+            if spec.settings is not None:
+                candidate_hosts = spec.placement.filter_matching_hostspecs(self.inventory.all_specs())
+                invalid_options: Dict[str, List[str]] = {}
+                for host in candidate_hosts:
+                    host_sysctl_options = self.cache.get_facts(host).get('sysctl_options', {})
+                    if not host_sysctl_options:
+                        continue
+                    invalid_options[host] = []
+                    for option in spec.settings:
+                        if option not in host_sysctl_options:
+                            invalid_options[host].append(option)
+                if any(e != [] for e in invalid_options.values()):
+                    raise OrchestratorError(
+                        f'Cannot set sysctl option(s) on host(s): {invalid_options}')
+            # done, let's save the specs
             self.tuned_profiles.add_profile(spec)
             outs.append(f'Saved tuned profile {spec.profile_name}')
         self._kick_serve_loop()
