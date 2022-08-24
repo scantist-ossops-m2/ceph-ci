@@ -51,6 +51,7 @@ Aio::OpFunc aio_abstract(Op&& op, jspan_context* trace_ctx = nullptr) {
       constexpr bool read = std::is_same_v<std::decay_t<Op>, librados::ObjectReadOperation>;
       auto s = new (&r.user_data) state(aio, r);
       if constexpr (read) {
+        (void)trace_ctx; // suppress unused trace_ctx warning. until we will support the read op trace
         r.result = r.obj.aio_operate(s->c, &op, &r.data);
       } else {
         r.result = r.obj.aio_operate(s->c, &op, trace_ctx);
