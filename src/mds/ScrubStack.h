@@ -22,6 +22,7 @@
 #include "ScrubHeader.h"
 
 #include "common/LogClient.h"
+#include "common/Cond.h"
 #include "include/elist.h"
 #include "messages/MMDSScrub.h"
 #include "messages/MMDSScrubStats.h"
@@ -101,6 +102,8 @@ public:
 
   void dispatch(const cref_t<Message> &m);
 
+  void clear_uninline_status(const std::string& tag);
+
   MDCache *mdcache;
 
 protected:
@@ -134,6 +137,7 @@ protected:
     unsigned epoch_acked = 0;
     std::set<std::string> scrubbing_tags;
     bool aborting = false;
+    std::unordered_map<std::string, std::unordered_map<int, std::vector<_inodeno_t>>> uninline_failed_meta_info;
   };
   std::vector<scrub_stat_t> mds_scrub_stats;
 
@@ -152,6 +156,9 @@ private:
   friend std::ostream &operator<<(std::ostream &os, const State &state);
 
   friend class C_InodeValidated;
+  friend class C_IO_DataUninlined;
+  friend class C_MDC_DataUninlinedSubmitted;
+  friend class MDCache;
 
   int _enqueue(MDSCacheObject *obj, ScrubHeaderRef& header, bool top);
   /**
@@ -265,6 +272,7 @@ private:
 
   void handle_scrub(const cref_t<MMDSScrub> &m);
   void handle_scrub_stats(const cref_t<MMDSScrubStats> &m);
+  void uninline_data(CInode *in, Context *fin);
 
   State state = STATE_IDLE;
   bool clear_stack = false;

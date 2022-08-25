@@ -114,6 +114,10 @@ enum {
   l_mdss_ireq_fragstats,
   l_mdss_ireq_inodestats,
 
+  l_mdc_uninline_started,
+  l_mdc_uninline_succeeded,
+  l_mdc_uninline_write_failed,
+
   l_mdc_last,
 };
 
@@ -958,6 +962,14 @@ class MDCache {
   void repair_dirfrag_stats(CDir *dir);
   void rdlock_dirfrags_stats(CInode *diri, MDSInternalContext *fin);
 
+  void uninline_data_work(MDRequestRef mdr);
+
+  void clear_uninline_counters() {
+    logger->set(l_mdc_uninline_started, 0);
+    logger->set(l_mdc_uninline_succeeded, 0);
+    logger->set(l_mdc_uninline_write_failed, 0);
+  }
+
   // my leader
   MDSRank *mds;
 
@@ -1274,6 +1286,8 @@ class MDCache {
   friend class C_MDC_FragmentCommit;
   friend class C_MDC_FragmentRollback;
   friend class C_IO_MDC_FragmentPurgeOld;
+  friend class C_IO_DataUninlined;
+  friend class C_MDC_DataUninlinedSubmitted;
 
   // -- subtrees --
   static const unsigned int SUBTREES_COUNT_THRESHOLD = 5;
