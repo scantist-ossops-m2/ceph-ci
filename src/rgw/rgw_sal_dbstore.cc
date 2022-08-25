@@ -2029,6 +2029,7 @@ extern "C" {
       if (!db) {
         delete dbsm;
         delete store; store = nullptr;
+        return store;
       }
 
       store->setDBStoreManager(dbsm);

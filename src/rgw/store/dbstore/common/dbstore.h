@@ -1109,7 +1109,20 @@ class ListBucketObjectsOp: virtual public DBOp {
       ObjID, TailInstance, HeadPlacementRuleName, HeadPlacementRuleStorageClass, \
       TailPlacementRuleName, TailPlacementStorageClass, \
       ManifestPartObjs, ManifestPartRules, Omap, IsMultipart, MPPartsList, HeadData from '{}' \
-      where BucketName = {} and ObjName >= {} and ObjName LIKE {} ORDER BY ObjName ASC, VersionNum DESC LIMIT {}";
+      where BucketName = {} and ObjName > {} and ObjName LIKE {} ORDER BY ObjName ASC, VersionNum DESC LIMIT {}";
+
+    static constexpr std::string_view UnorderedQuery =
+      "SELECT  \
+      ObjName, ObjInstance, ObjNS, BucketName, ACLs, IndexVer, Tag, \
+      Flags, VersionedEpoch, ObjCategory, Etag, Owner, OwnerDisplayName, \
+      StorageClass, Appendable, ContentType, IndexHashSource, ObjSize, \
+      AccountedSize, Mtime, Epoch, ObjTag, TailTag, WriteTag, FakeTag, \
+      ShadowObj, HasData, IsVersioned, VersionNum, PGVer, ZoneShortID, \
+      ObjVersion, ObjVersionTag, ObjAttrs, HeadSize, MaxHeadSize, \
+      ObjID, TailInstance, HeadPlacementRuleName, HeadPlacementRuleStorageClass, \
+      TailPlacementRuleName, TailPlacementStorageClass, \
+      ManifestPartObjs, ManifestPartRules, Omap, IsMultipart, MPPartsList, HeadData from '{}' \
+      where BucketName = {} and ObjName >= {} and ObjName LIKE {} LIMIT {}";
   public:
     virtual ~ListBucketObjectsOp() {}
 

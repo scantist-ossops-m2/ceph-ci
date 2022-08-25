@@ -796,10 +796,10 @@ int DB::Bucket::List::list_objects(const DoutPrefixProvider *dpp, int64_t max,
 
     if (count >= max) {
       *is_truncated = true;
-      next_marker.name = entry.key.name;
-      next_marker.instance = entry.key.instance;
       break;
     }
+    next_marker.name = entry.key.name;
+    next_marker.instance = entry.key.instance;
 
     if (!params.delim.empty()) {
     const std::string& objname = entry.key.name;
