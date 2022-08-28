@@ -212,6 +212,7 @@ int main(int argc, const char **argv)
       ret = EXIT_FAILURE;
       goto out;
     }
+    bl.invalidate_crc();
     std::cout << "we overwrote our object " << object_name
               << " with contents\n" << bl.c_str() << std::endl;
   }
@@ -268,6 +269,7 @@ int main(int argc, const char **argv)
       ret = EXIT_FAILURE;
       goto out;
     }
+    bl.invalidate_crc();
     std::cout << "we overwrote our object " << object_name
               << " following an xattr test with contents\n" << bl.c_str()
               << std::endl;
