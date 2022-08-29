@@ -1,3 +1,4 @@
+import ipaddress
 import hashlib
 import logging
 import random
@@ -362,6 +363,11 @@ class HostAssignment(object):
     def find_ip_on_host(self, hostname: str, subnets: List[str]) -> Optional[str]:
         for subnet in subnets:
             ips: List[str] = []
+            # following is to allow loopback interfaces for both ipv4 and ipv6
+            if ipaddress.ip_address('127.0.0.1') in ipaddress.ip_network(subnet):
+                ips.append('127.0.0.1')
+            elif ipaddress.ip_address('::1') in ipaddress.ip_network(subnet):
+                ips.append('::1')
             for iface, iface_ips in self.networks.get(hostname, {}).get(subnet, {}).items():
                 ips.extend(iface_ips)
             if ips:
