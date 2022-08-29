@@ -189,6 +189,13 @@ public:
       _issued = caps;
       // don't add bits
       _pending &= caps;
+
+      // if the revoking is not totally finished, add the new
+      // revoking caps back, or in clean_revoke_from() we may
+      // miss removing itself from revoking_caps list later.
+      if (was_revoking && revoking()) {
+        _revokes.emplace_back(_pending, last_sent, last_issue);
+      }
     } else {
       // can i forget any revocations?
       while (!_revokes.empty() && _revokes.front().seq < seq)
@@ -209,24 +216,6 @@ public:
       maybe_clear_notable();
     }
     return was_revoking & ~_issued; // return revoked
-  }
-  // we may get a release racing with revocations, which means our revokes will be ignored
-  // by the client.  clean them out of our _revokes history so we don't wait on them.
-  void clean_revoke_from(ceph_seq_t li) {
-    bool changed = false;
-    while (!_revokes.empty() && _revokes.front().last_issue <= li) {
-      _revokes.pop_front();
-      changed = true;
-    }
-    if (changed) {
-      bool was_revoking = (_issued & ~_pending);
-      calc_issued();
-      if (was_revoking && _issued == _pending) {
-	item_revoking_caps.remove_myself();
-	item_client_revoking_caps.remove_myself();
-	maybe_clear_notable();
-      }
-    }
   }
   ceph_seq_t get_mseq() const { return mseq; }
   void inc_mseq() { mseq++; }
