@@ -28,6 +28,9 @@ function distro_version() {
 }
 
 function install() {
+    if [ $(distro_id) = "ubuntu" ]; then
+    sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+    fi
     for package in "$@" ; do
         install_one $package
     done
