@@ -28,6 +28,10 @@ function distro_version() {
 }
 
 function install() {
+    if [ $(distro_id) = "ubuntu" ]; then
+    sudo apt-get purge -y gcc
+    sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+    fi
     for package in "$@" ; do
         install_one $package
     done
