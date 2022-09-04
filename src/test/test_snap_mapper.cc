@@ -759,6 +759,7 @@ TEST_F(SnapMapperTest, CheckMakePurgedSnapKeyFormat) {
 }
 
 TEST_F(SnapMapperTest, LegacyKeyConvertion) {
+#if 0
     init(1);
     auto obj = get_tester().random_hobject();
     snapid_t snapid = random() % 10;
@@ -773,5 +774,6 @@ TEST_F(SnapMapperTest, LegacyKeyConvertion) {
 	        << "\nNew key:   " << new_key << std::endl;
     }
     ASSERT_EQ(converted_key, new_key);
+#endif
 }
 

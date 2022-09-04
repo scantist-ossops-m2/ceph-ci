@@ -4299,6 +4299,7 @@ void OSD::store_snap_maps()
     }
 
   }
+  dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->store_snap_maps()" << dendl;
   store->store_snap_maps(snap_mappers);
 }
 
@@ -4372,6 +4373,7 @@ int OSD::shutdown()
     utime_t  start_time_umount = ceph_clock_now();
     store->prepare_for_fast_shutdown();
 
+    dout(1) << "GBH::SNAPMAP::fast_shutdown::" <<__func__ << "::calling store->store_snap_maps()" << dendl;
     std::lock_guard lock(osd_lock);
     store_snap_maps();
     // TBD: assert in allocator that nothing is being add
