@@ -65,23 +65,22 @@ seastar::future<> InternalClientRequest::start()
           return enter_stage<interruptor>(
             pp().recover_missing
           ).then_interruptible([this] {
-            return do_recover_missing(pg, get_target_oid());
-          }).then_interruptible([this] {
+            osd_ops = create_osd_ops();
+            [[maybe_unused]] const int ret = op_info.set_from_op(
+              std::as_const(osd_ops), pg->get_pgid().pgid, *pg->get_osdmap());
+            assert(ret == 0);
+            return do_recover_missing(pg, get_target_oid(), op_info);
+          }).safe_then_interruptible([this] {
             return enter_stage<interruptor>(
               pp().get_obc
             ).then_interruptible([this] () -> PG::load_obc_iertr::future<> {
               logger().debug("{}: getting obc lock", *this);
-              return seastar::do_with(create_osd_ops(),
-                [this](auto& osd_ops) mutable {
                 logger().debug("InternalClientRequest: got {} OSDOps to execute",
                                std::size(osd_ops));
-                [[maybe_unused]] const int ret = op_info.set_from_op(
-                  std::as_const(osd_ops), pg->get_pgid().pgid, *pg->get_osdmap());
-                assert(ret == 0);
                 return pg->with_locked_obc(get_target_oid(), op_info,
-                  [&osd_ops, this](auto obc) {
+                  [this](auto obc) {
                   return enter_stage<interruptor>(pp().process).then_interruptible(
-                    [obc=std::move(obc), &osd_ops, this] {
+                    [obc=std::move(obc), this] {
                     return pg->do_osd_ops(
                       std::move(obc),
                       osd_ops,
@@ -105,13 +104,13 @@ seastar::future<> InternalClientRequest::start()
                     );
                   });
                 });
-              });
             }).handle_error_interruptible(PG::load_obc_ertr::all_same_way([] {
               return seastar::now();
             })).then_interruptible([] {
               return seastar::stop_iteration::yes;
             });
-          });
+          }, crimson::ct_error::eagain::handle([this]() mutable {
+          }));
         });
       }, [this](std::exception_ptr eptr) {
         if (should_abort_request(*this, std::move(eptr))) {

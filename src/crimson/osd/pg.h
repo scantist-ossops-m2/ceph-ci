@@ -321,9 +321,7 @@ public:
     // Not needed yet (will be needed for IO unblocking)
     return nullptr;
   }
-  void on_activate_committed() final {
-    // Not needed yet (will be needed for IO unblocking)
-  }
+  void on_activate_committed() final;
   void on_active_exit() final {
     // Not needed yet
   }

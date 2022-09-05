@@ -12,11 +12,15 @@ namespace {
 
 namespace crimson::osd {
 
-typename InterruptibleOperation::template interruptible_future<>
+typename InterruptibleOperation::template interruptible_errorated_future<kickback_recovery_ertr>
 CommonClientRequest::do_recover_missing(
-  Ref<PG>& pg, const hobject_t& soid)
+  Ref<PG>& pg, const hobject_t& soid, const OpInfo& op_info)
 {
   eversion_t ver;
+  if (!pg->is_primary()) {
+    return crimson::ct_error::eagain::make();
+  }
+
   logger().debug("{} check for recovery, {}", __func__, soid);
   if (!pg->is_unreadable_object(soid, &ver) &&
       !pg->is_degraded_or_backfilling_object(soid)) {
