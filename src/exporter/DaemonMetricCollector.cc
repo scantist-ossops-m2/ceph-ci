@@ -97,6 +97,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
         std::unique_ptr<UnorderedMetricsBuilder>(new UnorderedMetricsBuilder());
   }
   for (auto &[daemon_name, sock_client] : clients) {
+    dout(10) << "Entering client loop..." << dendl;
     bool ok;
     sock_client.ping(&ok);
     if (!ok) {
@@ -145,6 +146,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
         if (perf_info["priority"].as_int64() < prio_limit) {
           continue;
         }
+        dout(10) << "values of perf name & prio: " << perf_name << prio_limit << dendl;
         std::string name = "ceph_" + perf_group + "_" + perf_name;
         std::replace_if(name.begin(), name.end(), is_hyphen, '_');
 
