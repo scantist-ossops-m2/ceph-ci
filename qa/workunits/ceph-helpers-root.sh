@@ -35,6 +35,8 @@ function install() {
     for package in "$@" ; do
         install_one $package
     done
+    sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 11
+    sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 11
 }
 
 function install_one() {
