@@ -892,7 +892,7 @@ class WriteOp : public TestOp {
 public:
   const std::string oid;
   ContDesc cont;
-  std::set<librados::AioCompletion *> waiting;
+  std::list<librados::AioCompletion *> waiting;
   librados::AioCompletion *rcompletion = nullptr;
   // numbers of async ops submitted
   uint64_t waiting_on = 0;
@@ -981,7 +981,7 @@ public:
 						 new TestOp::CallbackInfo(tid++));
       librados::AioCompletion *completion =
 	context->rados.aio_create_completion((void*) cb_arg, &write_callback);
-      waiting.insert(completion);
+      waiting.push_back(completion);
       librados::ObjectWriteOperation op;
       if (do_append) {
 	op.append(to_write);
@@ -1003,7 +1003,7 @@ public:
 	new TestOp::CallbackInfo(tid++));
     librados::AioCompletion *completion = context->rados.aio_create_completion(
       (void*) cb_arg, &write_callback);
-    waiting.insert(completion);
+    waiting.push_back(completion);
     waiting_on++;
     write_op.setxattr("_header", contbl);
     if (!do_append) {
@@ -1109,7 +1109,7 @@ class WriteSameOp : public TestOp {
 public:
   std::string oid;
   ContDesc cont;
-  std::set<librados::AioCompletion *> waiting;
+  std::list<librados::AioCompletion *> waiting;
   librados::AioCompletion *rcompletion;
   uint64_t waiting_on;
   uint64_t last_acked_tid;
@@ -1169,7 +1169,7 @@ public:
       librados::AioCompletion *completion =
 	context->rados.aio_create_completion((void*) cb_arg,
 					     &write_callback);
-      waiting.insert(completion);
+      waiting.push_back(completion);
       librados::ObjectWriteOperation op;
       /* no writesame multiplication factor for now */
       op.writesame(offset, to_write.length(), to_write);
@@ -1187,7 +1187,7 @@ public:
 	new TestOp::CallbackInfo(tid++));
     librados::AioCompletion *completion = context->rados.aio_create_completion(
       (void*) cb_arg, &write_callback);
-    waiting.insert(completion);
+    waiting.push_back(completion);
     waiting_on++;
     write_op.setxattr("_header", contbl);
     write_op.truncate(cont_gen->get_length(cont));
