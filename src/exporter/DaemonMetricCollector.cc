@@ -93,15 +93,18 @@ void DaemonMetricCollector::dump_asok_metrics() {
     builder = std::unique_ptr<UnorderedMetricsBuilder>(new UnorderedMetricsBuilder());
   }
   for (auto &[daemon_name, sock_client] : clients) {
+    dout(10) << "Entering client loop..." << dendl;
     bool ok;
     sock_client.ping(&ok);
     if (!ok) {
+      dout(10) << "ping failed..." << dendl;
       continue;
     }
     std::string perf_dump_response = asok_request(sock_client, "perf dump", daemon_name);
     if (perf_dump_response.size() == 0) {
       continue;
     }
+    dout(10) << "perf dump " << daemon_name << ": " << perf_dump_response << dendl;
     std::string perf_schema_response = asok_request(sock_client, "perf schema", daemon_name);
     if (perf_schema_response.size() == 0) {
       continue;
@@ -118,18 +121,20 @@ void DaemonMetricCollector::dump_asok_metrics() {
     json_object dump = boost::json::parse(perf_dump_response).as_object();
     json_object schema = boost::json::parse(perf_schema_response).as_object();
     for (auto &perf : schema) {
-      auto sv = perf.key();
-      std::string perf_group = {sv.begin(), sv.end()};
+      // auto sv = perf.key();
+      std::string perf_group = {perf.key().begin(), perf.key().end()};
       json_object perf_group_object = perf.value().as_object();
       for (auto &perf_counter : perf_group_object) {
-        auto sv1 = perf_counter.key();
-        std::string perf_name = {sv1.begin(), sv1.end()};
+        // auto sv1 = ;
+        dout(10) << "entering perf object..." << dendl;
+        std::string perf_name = {perf_counter.key().begin(), perf_counter.key().end()};
         json_object perf_info = perf_counter.value().as_object();
         auto prio_limit = g_conf().get_val<int64_t>("exporter_prio_limit");
         if (perf_info["priority"].as_int64() <
             prio_limit) {
           continue;
         }
+        dout(10) << "values of perf name & prio: " << perf_name << prio_limit << dendl;
         std::string name = "ceph_" + perf_group + "_" + perf_name;
         std::replace_if(name.begin(), name.end(), is_hyphen, '_');
 
@@ -155,6 +160,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
 
   const std::lock_guard<std::mutex> lock(metrics_mutex);
   get_process_metrics(daemon_pids);
+  dout(10) << "metrics dump: " << builder->dump() << dendl;
   metrics = builder->dump();
 }
 
