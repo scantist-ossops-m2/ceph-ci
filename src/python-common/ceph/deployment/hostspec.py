@@ -128,8 +128,12 @@ class HostSpec(object):
         return self.hostname
 
     def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, HostSpec):
+            return NotImplemented
         # Let's omit `status` for the moment, as it is still the very same host.
+        if not isinstance(other, HostSpec):
+            return NotImplemented
         return self.hostname == other.hostname and \
-               self.addr == other.addr and \
-               sorted(self.labels) == sorted(other.labels) and \
-               self.location == other.location
+            self.addr == other.addr and \
+            sorted(self.labels) == sorted(other.labels) and \
+            self.location == other.location
