@@ -1243,14 +1243,14 @@ void PeeringState::proc_lease_ack(int from, const pg_lease_ack_t& a)
 	  was_min = true;
 	}
 	acting_readable_until_ub[i] = a.readable_until_ub;
-	break;
       }
+      break;
     }
   }
   if (was_min) {
     auto old_ru = readable_until;
     recalc_readable_until();
-    if (now < old_ru) {
+    if (now >= old_ru) {
       pl->recheck_readable();
     }
   }
