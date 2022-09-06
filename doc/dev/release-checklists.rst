@@ -17,7 +17,7 @@ Versions and tags
 
 - [x] Update CMakeLists.txt VERSION (right at the top to X.0.0)
 - [x] Update src/ceph_release with the new release name, number, and type ('dev')
-- [x] Initial tag vX.0.0 (so that we can distinguish from (and sort
+- [ ] Initial tag vX.0.0 (so that we can distinguish from (and sort
   after) the backported (X-1).2.Z versions.
 
 
@@ -59,14 +59,15 @@ Compatsets
 - [x] mon/Monitor.cc (include in `get_supported_features()`)
 - [x] mon/Monitor.cc (`apply_monmap_to_compatset_features()`)
 - [x] mon/Monitor.cc (`calc_quorum_requirements()`)
+- [x] test/cli/monmaptool/feature-set-unset-list.t (`supported`, `persistent`)
 
 Mon
 ---
 
 - [x] qa/standalone/mon/misc adjust `TEST_mon_features` (add X cases and adjust `--mon-debug-no-require-X`)
 - [x] mon/MgrMonitor.cc adjust `always_on_modules`
-- [x] common/options.cc define `mon_debug_no_require_X`
-- [x] common/options.cc remove `mon_debug_no_require_X-2`
+- [x] common/options/global.yaml.in define `mon_debug_no_require_X`
+- [x] common/options/global.yaml.in remove `mon_debug_no_require_X-2`
 - [x] mon/OSDMonitor.cc `create_initial`: adjust new `require_osd_release`, and add associated `mon_debug_no_require_X`
 - [x] mon/OSDMonitor.cc `preprocess_boot`: adjust "disallow boot of " condition to disallow X if `require_osd_release` < X-2.
 - [x] mon/OSDMonitor.cc: adjust "osd require-osd-release" to (1) allow setting X, and (2) check that all mons *and* OSDs have X
@@ -86,11 +87,10 @@ Code cleanup
 QA suite
 --------
 
-- [ ] create qa/suites/upgrade/(X-1)-x
+- [x] create qa/suites/upgrade/(X-1)-x
 - [x] remove qa/suites/upgrade/(X-3)-x-*
-- [x] remove qa/suites/rados/upgrade/(X-3)-x-singleton symlink
 - [x] create qa/releases/X.yaml
-- [ ] create qa/suites/rados/cephadm/thrash-old-clients/1-install/(X-1).yaml
+- [x] create qa/suites/rados/thrash-old-clients/1-install/(X-1).yaml
 
 
 
