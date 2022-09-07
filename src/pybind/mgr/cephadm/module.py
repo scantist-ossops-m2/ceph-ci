@@ -554,9 +554,11 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         # ensure the host lists are in sync
         for h in self.inventory.keys():
             if h not in self.cache.daemons:
+                self.log.error(f'ADMK Prime Empty mgr failover {h}')
                 self.cache.prime_empty_host(h)
         for h in self.cache.get_hosts():
             if h not in self.inventory:
+                self.log.error(f'ADMK Remove Empty mgr failover {h}')
                 self.cache.rm_host(h)
 
         # in-memory only.
@@ -597,8 +599,11 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         self.offline_watcher = OfflineHostWatcher(self)
         self.offline_watcher.start()
 
+        self.log.error(f'ADMK started - client_files: {self.cache.last_client_files}')
+
     def shutdown(self) -> None:
         self.log.debug('shutdown')
+        self.log.error(f'ADMK shutdown - client_files: {self.cache.last_client_files}')
         self._worker_pool.close()
         self._worker_pool.join()
         self.http_server.shutdown()
@@ -1474,6 +1479,7 @@ Then run the following:
             })
 
         if spec.hostname not in self.inventory:
+            self.log.error(f'ADMK Prime Empty add host {spec.hostname}')
             self.cache.prime_empty_host(spec.hostname)
         self.inventory.add_host(spec)
         self.offline_hosts_remove(spec.hostname)
@@ -1568,6 +1574,7 @@ Then run the following:
             run_cmd(cmd_args)
 
         self.inventory.rm_host(host)
+        self.log.error(f'ADMK Remove host explicit - {host}')
         self.cache.rm_host(host)
         self.ssh.reset_con(host)
         self.event.set()  # refresh stray health check
