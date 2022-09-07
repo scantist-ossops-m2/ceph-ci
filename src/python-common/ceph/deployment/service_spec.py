@@ -1272,6 +1272,7 @@ class PrometheusSpec(MonitoringSpec):
                  networks: Optional[List[str]] = None,
                  port: Optional[int] = None,
                  retention_time: Optional[str] = None,
+                 retention_size: Optional[str] = None,
                  extra_container_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
@@ -1283,6 +1284,7 @@ class PrometheusSpec(MonitoringSpec):
             extra_container_args=extra_container_args, custom_configs=custom_configs)
 
         self.retention_time = retention_time
+        self.retention_size = retention_size
 
 
 yaml.add_representer(PrometheusSpec, ServiceSpec.yaml_representer)
