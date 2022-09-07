@@ -190,6 +190,7 @@ class CephadmServe:
 
         if self.mgr.manage_etc_ceph_ceph_conf or self.mgr.keys.keys:
             client_files = self._calc_client_files()
+            self.log.error(f'ADMK - all client files {client_files}')
         else:
             client_files = {}
 
@@ -1069,6 +1070,11 @@ class CephadmServe:
         if host in self.mgr.offline_hosts:
             return
         old_files = self.mgr.cache.get_host_client_files(host).copy()
+        self.log.error('ADMK AAAAAAAAAAAAAAAAAAAAAAA')
+        self.log.error(f'ADMK - host: {host}')
+        self.log.error(f'ADMK - old files: {old_files}')
+        self.log.error(f'ADMK - client_files: {client_files.get(host, {})}')
+        self.log.error('ADMK BBBBBBBBBBBBBBBBBBBBBBB')
         for path, m in client_files.get(host, {}).items():
             mode, uid, gid, content, digest = m
             if path in old_files:
@@ -1076,14 +1082,14 @@ class CephadmServe:
                 del old_files[path]
                 if match:
                     continue
-            self.log.info(f'Updating {host}:{path}')
+            self.log.error(f'ADMK Updating {host}:{path}')
             self.mgr.ssh.write_remote_file(host, path, content, mode, uid, gid)
             self.mgr.cache.update_client_file(host, path, digest, mode, uid, gid)
             updated_files = True
         for path in old_files.keys():
             if path == '/etc/ceph/ceph.conf':
                 continue
-            self.log.info(f'Removing {host}:{path}')
+            self.log.error(f'ADMK Removing {host}:{path}')
             cmd = ['rm', '-f', path]
             self.mgr.ssh.check_execute_command(host, cmd)
             updated_files = True
