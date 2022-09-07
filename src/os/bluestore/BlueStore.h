@@ -52,6 +52,7 @@
 #include "bluestore_types.h"
 #include "BlueFS.h"
 #include "common/EventTrace.h"
+#include "common/admin_socket.h"
 
 #ifdef WITH_BLKIN
 #include "common/zipkin_trace.h"
@@ -947,7 +948,7 @@ public:
       unsigned decode_some(const ceph::buffer::list& bl, Collection* c);
       void decode_spanning_blobs(bptr_c_it_t& p, Collection* c);
     };
-
+    class ExtentDecoderPrinter;
     class ExtentDecoderFull : public ExtentDecoder {
       ExtentMap& extent_map;
       std::vector<BlobRef> blobs;
@@ -2373,6 +2374,10 @@ private:
 
   bool per_pool_stat_collection = true;
 
+  class SocketHook;
+  friend class SocketHook;
+  AdminSocketHook* asok_hook = nullptr;
+
   struct MempoolThread : public Thread {
   public:
     BlueStore *store;
@@ -2628,6 +2633,7 @@ private:
   void _set_finisher_num();
   void _set_per_pool_omap();
   void _update_osd_memory_options();
+  int print_onode(const std::string& key, std::string* out);
 
   int _open_bdev(bool create);
   // Verifies if disk space is enough for reserved + min bluefs

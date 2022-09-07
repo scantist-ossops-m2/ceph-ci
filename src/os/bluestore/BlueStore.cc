@@ -51,6 +51,7 @@
 #include "common/numa.h"
 #include "common/pretty_binary.h"
 #include "kv/KeyValueHistogram.h"
+#include "BlueAdmin.h"
 
 #ifdef HAVE_LIBZBD
 #include "ZonedAllocator.h"
@@ -435,7 +436,7 @@ static int _get_key_object(const char *p, ghobject_t *oid)
 }
 
 template<typename S>
-static int get_key_object(const S& key, ghobject_t *oid)
+int get_key_object(const S& key, ghobject_t *oid)
 {
   if (key.length() < ENCODED_KEY_PREFIX_LEN)
     return -1;
@@ -444,6 +445,7 @@ static int get_key_object(const S& key, ghobject_t *oid)
   const char *p = key.c_str();
   return _get_key_object(p, oid);
 }
+template int get_key_object(const std::string& key, ghobject_t *oid);
 
 template<typename S>
 static void _get_object_key(const ghobject_t& oid, S *key)
@@ -485,7 +487,7 @@ static void _get_object_key(const ghobject_t& oid, S *key)
 }
 
 template<typename S>
-static void get_object_key(CephContext *cct, const ghobject_t& oid, S *key)
+void get_object_key(CephContext *cct, const ghobject_t& oid, S *key)
 {
   key->clear();
   _get_object_key(oid, key);
@@ -503,12 +505,13 @@ static void get_object_key(CephContext *cct, const ghobject_t& oid, S *key)
     }
   }
 }
+template void get_object_key(CephContext *cct, const ghobject_t& oid, std::string *key);
 
 // extent shard keys are the onode key, plus a u32, plus 'x'.  the trailing
 // char lets us quickly test whether it is a shard key without decoding any
 // of the prefix bytes.
 template<typename S>
-static void get_extent_shard_key(const S& onode_key, uint32_t offset,
+void get_extent_shard_key(const S& onode_key, uint32_t offset,
 				 string *key)
 {
   key->clear();
@@ -517,6 +520,9 @@ static void get_extent_shard_key(const S& onode_key, uint32_t offset,
   _key_encode_u32(offset, key);
   key->push_back(EXTENT_SHARD_KEY_SUFFIX);
 }
+
+template
+void get_extent_shard_key(const string& onode_key, uint32_t offset, string *key);
 
 static void rewrite_extent_shard_key(uint32_t offset, string *key)
 {
@@ -2104,6 +2110,7 @@ BlueStore::SharedBlob::~SharedBlob()
 void BlueStore::SharedBlob::put()
 {
   if (--nref == 0) {
+    if (coll) // can't do dout without cct
     dout(20) << __func__ << " " << this
 	     << " removing self from set " << get_parent()
 	     << dendl;
@@ -4667,10 +4674,13 @@ BlueStore::BlueStore(CephContext *cct,
   _init_logger();
   cct->_conf.add_observer(this);
   set_cache_shards(1);
+  asok_hook = new SocketHook(*this);
 }
 
 BlueStore::~BlueStore()
 {
+  delete asok_hook;
+  asok_hook = nullptr;
   cct->_conf.remove_observer(this);
   _shutdown_logger();
   ceph_assert(!mounted);
