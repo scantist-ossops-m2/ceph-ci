@@ -112,6 +112,7 @@ SqrubQueue interfaces (main functions):
 #include <memory>
 #include <optional>
 #include <vector>
+#include <queue>
 
 #include "common/RefCountedObj.h"
 #include "common/ceph_atomic.h"
@@ -126,6 +127,114 @@ class PG;
 namespace Scrub {
 
 using namespace ::std::literals;
+
+/// tracking the last forward motion of the active scrub
+
+// RRR we are mostly interested in the Primary's wellbeing. Must
+// make sure we are not "forgotten" - either as a result of us missing
+// an interval (a bug that should probably cause a crash), or as a result
+// of a Primary issue.
+
+/*
+  RRR there seem to be a few invariants maintained by this structure. Consider
+ 'classifying' it.
+
+  Invariants:
+   - the timeout, as a max(local,primary)+delta;
+
+
+*/
+struct ScrubbingReplica {
+  using tpoint_t = std::chrono::time_point<std::chrono::system_clock>;
+
+  enum class rep_tracket_state_t {
+    inactive,
+    wait_for_primary_request, ///< waiting for a chunk request
+    t_o_on_primary_request,
+    wait_for_rep_reply,        ///< waiting for our scrub data to be sent to the Primary
+    t_o_on_reply,
+    relinquished              ///< the scrubber got a resource-release request
+  };
+
+  ScrubbingReplica(const spg_t& pgid, const spg_t& prim_pgid)
+      : m_pgid(pgid)
+      , m_primary(prim_pgid)
+  {
+    auto now_is = std::chrono::system_clock::now();
+    m_created_at = now_is;
+    m_last_p_update = now_is;
+    m_last_local_update = now_is;
+    m_state = rep_tracket_state_t::wait_for_primary_request;
+    recompute_timeout();
+  }
+
+  tpoint_t m_timeout_at; //{tpoint_t::max};  //< calculated from the following two values // RRR init to forever
+  rep_tracket_state_t m_state{rep_tracket_state_t::inactive};
+  spg_t m_pgid;
+  spg_t m_primary;
+  tpoint_t m_last_p_update;	 //< last time we have received a chunk request
+  tpoint_t m_last_local_update;	 //< we moved fwd with the scrub
+  tpoint_t m_created_at;	 //< for easy identification in the logs
+
+  epoch_t m_interval;
+
+  bool m_pg_owned{true};  //< cleared by the scrubber when it releases the
+			  //registration
+
+  bool m_reported{false};  //< set by the OSD after a t.o was handled.
+
+  auto operator<=>(const ScrubbingReplica& rh) const
+  {
+    return m_timeout_at <=> rh.m_timeout_at;
+  }
+
+  void recompute_timeout();
+
+  // RRR consider explicit prevention of copy/move. But note RTO cases.
+};
+
+using ReplicaTrackRef = std::shared_ptr<ScrubbingReplica>;
+using RepTrackerHandle = std::optional<ReplicaTrackRef>;
+
+/*
+  We'll think about the best container for these objects later.
+  For now - we'll use an std::map.
+  Note that our requirements are:
+  - stable references to the objects (as we regularly update the times);
+  - fast insertions and removals;
+  - fast scans for outdated entries.
+
+*/
+
+// opaque handle to a scrubbing replica tracking data
+// struct ScrubbingReplicaHandle {
+//   ReplicaTrackRef m_replica;
+// 
+//   // RRR todo remove this pointer. Not needed.
+//   ceph::mutex* m_lock{nullptr}; // the same for all replicas registered
+// };
+
+class ScrubbingReplicas {
+ public:
+  RepTrackerHandle register_replica(
+    const spg_t& pgid,
+    const spg_t& primary_pgid);
+
+  void pg_relinquished(RepTrackerHandle& hdl);
+
+  void update_local_times(const RepTrackerHandle& hdl);
+
+  void update_primary_times(const RepTrackerHandle& hdl);
+
+  // the interface used by the OSD. Note: clears entries that
+  // were terminated correctly by the scrubbers
+  RepTrackerHandle get_timedout();
+
+ private:
+  ceph::mutex m_lock_replicas = ceph::make_mutex("Scrub::track_replicas");;
+  std::map<spg_t, ReplicaTrackRef> m_replicas;
+};
+
 
 // possible outcome when trying to select a PG and scrub it
 enum class schedule_result_t {
@@ -520,6 +629,10 @@ protected: // used by the unit-tests
    * unit-tests will override this function to return a mock time
    */
   virtual utime_t time_now() const { return ceph_clock_now(); }
+
+// 'public' just for now:
+public: // tracking active scrubbers
+  Scrub::ScrubbingReplicas m_tracked_replicas;
 };
 
 template <>
