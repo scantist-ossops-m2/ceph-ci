@@ -20,7 +20,7 @@ CURRENT_PATH=`pwd`
 # for rocksdb
 case $(distro_id) in
 	ubuntu|debian|devuan|softiron)
-		install git g++ libsnappy-dev zlib1g-dev libbz2-dev libradospp-dev cmake
+		install git gcc-11 g++-11 libsnappy-dev zlib1g-dev libbz2-dev libradospp-dev cmake
 		;;
 	centos|fedora|rhel)
         case $(distro_id) in
