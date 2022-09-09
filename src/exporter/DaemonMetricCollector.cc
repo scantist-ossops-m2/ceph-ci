@@ -85,7 +85,7 @@ bool is_hyphen(char ch) { return ch == '-'; }
 void DaemonMetricCollector::dump_asok_metrics() {
   BlockTimer timer(__FILE__, __FUNCTION__);
 
-  std::vector<std::pair<std::string, int>> daemon_pids;
+  // std::vector<std::pair<std::string, int>> daemon_pids;
 
   int failures = 0;
   bool sort = g_conf().get_val<bool>("exporter_sort_metrics");
@@ -135,8 +135,10 @@ void DaemonMetricCollector::dump_asok_metrics() {
     }
     json_object dump = boost::json::parse(perf_dump_response).as_object();
     json_object schema = boost::json::parse(perf_schema_response).as_object();
+    dout(10) << "schema: " << schema << dendl;
     for (auto &perf : schema) {
       std::string perf_group = {perf.key().begin(), perf.key().end()};
+      dout(10) << "perf groupp: " << perf_group << dendl;
       json_object perf_group_object = perf.value().as_object();
       for (auto &perf_counter : perf_group_object) {
         std::string perf_name = {perf_counter.key().begin(),
@@ -146,7 +148,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
         if (perf_info["priority"].as_int64() < prio_limit) {
           continue;
         }
-        dout(10) << "values of perf name & prio: " << perf_name << prio_limit << dendl;
+        dout(10) << "perf name & prio: " << perf_name << prio_limit << dendl;
         std::string name = "ceph_" + perf_group + "_" + perf_name;
         std::replace_if(name.begin(), name.end(), is_hyphen, '_');
 
