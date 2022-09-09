@@ -828,6 +828,13 @@ void ScrubStack::handle_scrub(const cref_t<MMDSScrub> &m)
   case MMDSScrub::OP_QUEUEDIR:
     {
       CInode *diri = mdcache->get_inode(m->get_ino());
+      if (!diri) {
+	dout(20) << __func__ << " cache miss! loading inode " << m->get_ino()
+		 << " now" << dendl;
+	mdcache->open_ino(m->get_ino(), (int64_t)-1,
+			  new C_MDS_RetryMessage(mdcache->mds, m), false);
+	return;
+      }
       ceph_assert(diri);
 
       std::vector<CDir*> dfs;
