@@ -7799,6 +7799,8 @@ int Client::_do_setattr(Inode *in, struct ceph_statx *stx, int mask,
   bool kill_sguid = false;
   int inode_drop = 0;
   size_t auxsize = 0;
+  filepath path;
+  MetaRequest *req;
 
   if (aux)
     auxsize = aux->size();
@@ -7845,6 +7847,11 @@ int Client::_do_setattr(Inode *in, struct ceph_statx *stx, int mask,
      * infrastructure...
      */
     mask |= CEPH_SETATTR_CTIME;
+  }
+
+  int res = mds_check_access(in, perms, MAY_WRITE);
+  if (res) {
+    goto out;
   }
 
   if (!mask) {
@@ -8089,9 +8096,7 @@ int Client::_do_setattr(Inode *in, struct ceph_statx *stx, int mask,
     return 0;
   }
 
-  MetaRequest *req = new MetaRequest(CEPH_MDS_OP_SETATTR);
-
-  filepath path;
+  req = new MetaRequest(CEPH_MDS_OP_SETATTR);
 
   in->make_nosnap_relative_path(path);
   req->set_filepath(path);
@@ -8107,7 +8112,9 @@ int Client::_do_setattr(Inode *in, struct ceph_statx *stx, int mask,
   req->head.args.setattr.mask = mask;
   req->regetattr_mask = mask;
 
-  int res = make_request(req, perms, inp);
+  res = make_request(req, perms, inp);
+
+out:
   ldout(cct, 10) << "_setattr result=" << res << dendl;
   return res;
 }
