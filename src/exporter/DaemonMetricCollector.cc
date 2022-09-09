@@ -104,7 +104,6 @@ void DaemonMetricCollector::dump_asok_metrics() {
     if (perf_dump_response.size() == 0) {
       continue;
     }
-    dout(10) << "perf dump " << daemon_name << ": " << perf_dump_response << dendl;
     std::string perf_schema_response = asok_request(sock_client, "perf schema", daemon_name);
     if (perf_schema_response.size() == 0) {
       continue;
@@ -122,7 +121,9 @@ void DaemonMetricCollector::dump_asok_metrics() {
     json_object schema = boost::json::parse(perf_schema_response).as_object();
     for (auto &perf : schema) {
       // auto sv = perf.key();
+      dout(10) << "perf key: " << std::string(perf.key()) << dendl;
       std::string perf_group = {perf.key().begin(), perf.key().end()};
+      dout(10) << "perf groupp: " << perf_group << dendl;
       json_object perf_group_object = perf.value().as_object();
       for (auto &perf_counter : perf_group_object) {
         // auto sv1 = ;
@@ -134,7 +135,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
             prio_limit) {
           continue;
         }
-        dout(10) << "values of perf name & prio: " << perf_name << prio_limit << dendl;
+        dout(10) << "perf name & prio: " << perf_name << prio_limit << dendl;
         std::string name = "ceph_" + perf_group + "_" + perf_name;
         std::replace_if(name.begin(), name.end(), is_hyphen, '_');
 
