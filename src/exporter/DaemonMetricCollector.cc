@@ -84,7 +84,7 @@ bool is_hyphen(char ch) { return ch == '-'; }
 void DaemonMetricCollector::dump_asok_metrics() {
   BlockTimer timer(__FILE__, __FUNCTION__);
 
-  std::vector<std::pair<std::string, int>> daemon_pids;
+  // std::vector<std::pair<std::string, int>> daemon_pids;
 
   bool sort = g_conf().get_val<bool>("exporter_sort_metrics");
   if (sort) {
@@ -102,27 +102,38 @@ void DaemonMetricCollector::dump_asok_metrics() {
     }
     std::string perf_dump_response = asok_request(sock_client, "perf dump", daemon_name);
     if (perf_dump_response.size() == 0) {
+      dout(10) << "perf dump: " << perf_dump_response << dendl;
       continue;
     }
-    dout(10) << "perf dump " << daemon_name << ": " << perf_dump_response << dendl;
     std::string perf_schema_response = asok_request(sock_client, "perf schema", daemon_name);
     if (perf_schema_response.size() == 0) {
+      dout(10) << "perf schema: " << perf_schema_response << dendl;
       continue;
     }
     std::string config_show = asok_request(sock_client, "config show", daemon_name);
-    json_object pid_file_json = boost::json::parse(config_show).as_object();
-    std::string pid_path =
-      boost_string_to_std(pid_file_json["pid_file"].as_string());
-    std::string pid_str = read_file_to_string(pid_path);
-    if (!pid_path.size()) {
+    if (config_show.size() == 0) {
+      dout(10) << "config show: " << config_show << dendl;
       continue;
     }
-    daemon_pids.push_back({daemon_name, std::stoi(pid_str)});
+    // json_object pid_file_json = boost::json::parse(config_show).as_object();
+    // std::string pid_path =
+    //   boost_string_to_std(pid_file_json["pid_file"].as_string());
+    // std::string pid_str = read_file_to_string(pid_path);
+    // if (!pid_path.size()) {
+    //   dout(10) << "pid path size: " << pid_path.size() << pid_str << dendl;
+    //   // continue;
+    // }
+    // // daemon_pids.push_back({daemon_name, std::stoi(pid_str)});
+    // dout(10) << "daemon pids: " << daemon_pids << dendl;
     json_object dump = boost::json::parse(perf_dump_response).as_object();
     json_object schema = boost::json::parse(perf_schema_response).as_object();
+    dout(10) << "schema: " << schema << dendl;
     for (auto &perf : schema) {
+      dout(10) << "welcome schema: " << dendl;
       // auto sv = perf.key();
+      dout(10) << "perf key: " << std::string(perf.key()) << dendl;
       std::string perf_group = {perf.key().begin(), perf.key().end()};
+      dout(10) << "perf groupp: " << perf_group << dendl;
       json_object perf_group_object = perf.value().as_object();
       for (auto &perf_counter : perf_group_object) {
         // auto sv1 = ;
@@ -134,7 +145,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
             prio_limit) {
           continue;
         }
-        dout(10) << "values of perf name & prio: " << perf_name << prio_limit << dendl;
+        dout(10) << "perf name & prio: " << perf_name << prio_limit << dendl;
         std::string name = "ceph_" + perf_group + "_" + perf_name;
         std::replace_if(name.begin(), name.end(), is_hyphen, '_');
 
@@ -159,7 +170,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
              "gauge", scrap_labels);
 
   const std::lock_guard<std::mutex> lock(metrics_mutex);
-  get_process_metrics(daemon_pids);
+  // get_process_metrics(daemon_pids);
   dout(10) << "metrics dump: " << builder->dump() << dendl;
   metrics = builder->dump();
 }
