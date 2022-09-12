@@ -54,9 +54,9 @@ seastar::future<epoch_t> OSDMapGate<OSDMapGateTypeV>::wait_for_map(
 
 template <OSDMapGateType OSDMapGateTypeV>
 void OSDMapGate<OSDMapGateTypeV>::got_map(epoch_t epoch) {
-  if (epoch <= current) {
+  if ((current > 0) && (epoch <= current)) {
     logger().warn("got_map({}) <= current({}), ignoring", epoch, current);
-    return;
+    ceph_abort("oops!");
   }
   assert(epoch == current + 1);
   current = epoch;
