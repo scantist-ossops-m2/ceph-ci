@@ -391,9 +391,13 @@ public:
   FORWARD(
     local_cancel_reservation, cancel_reservation, core_state.local_reserver)
   FORWARD(
+    local_dump_reservations, dump, core_state.local_reserver)
+  FORWARD(
     remote_request_reservation, request_reservation, core_state.remote_reserver)
   FORWARD(
     remote_cancel_reservation, cancel_reservation, core_state.remote_reserver)
+  FORWARD(
+    remote_dump_reservations, dump, core_state.remote_reserver)
 };
 
 }
