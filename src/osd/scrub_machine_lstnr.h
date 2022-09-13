@@ -89,6 +89,8 @@ struct ScrubMachineListener {
 
   virtual void on_digest_updates() = 0;
 
+  virtual void scrub_begin() = 0;
+
   /**
    * Prepare a MOSDRepScrubMap message carrying the requested scrub map
    * @param was_preempted - were we preempted?

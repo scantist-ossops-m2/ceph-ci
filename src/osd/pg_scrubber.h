@@ -373,6 +373,8 @@ class PgScrubber : public ScrubPgIF, public ScrubMachineListener {
 
   void on_digest_updates() final;
 
+  void scrub_begin() final;
+
   ScrubMachineListener::MsgAndEpoch
   prep_replica_map_msg(Scrub::PreemptionNoted was_preempted) final;
 
