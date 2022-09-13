@@ -217,16 +217,22 @@ class HostAssignment(object):
             to_add: List[DaemonPlacement],
             to_remove: List[orchestrator.DaemonDescription],
     ) -> Tuple[List[DaemonPlacement], List[DaemonPlacement], List[orchestrator.DaemonDescription]]:
+        logger.error(f'ADMK - scheduler pphd to_add: {to_add}')
+        logger.error(f'ADMK - scheduler pphd slots: {slots}')
+        logger.error(f'ADMK - scheduler pphd to_remove: {to_remove}')
         if self.per_host_daemon_type:
             host_slots = [
                 DaemonPlacement(daemon_type=self.per_host_daemon_type,
                                 hostname=hostname)
                 for hostname in set([s.hostname for s in slots])
             ]
+            logger.error(f'ADMK - scheduler pphd host_slots: {host_slots}')
             existing = [
                 d for d in self.daemons if d.daemon_type == self.per_host_daemon_type
             ]
+            logger.error(f'ADMK - scheduler pphd existing: {existing}')
             slots += host_slots
+            logger.error(f'ADMK - scheduler pphd slots: {slots}')
             for dd in existing:
                 found = False
                 for p in host_slots:
@@ -241,6 +247,9 @@ class HostAssignment(object):
         to_remove = [d for d in to_remove if d.hostname not in [
             h.hostname for h in self.unreachable_hosts]]
 
+        logger.error(f'ADMK - scheduler post pphd to_add: {to_add}')
+        logger.error(f'ADMK - scheduler post pphd slots: {slots}')
+        logger.error(f'ADMK - scheduler post pphd to_remove: {to_remove}')
         return slots, to_add, to_remove
 
     def place(self):
@@ -260,6 +269,12 @@ class HostAssignment(object):
 
         # get candidate hosts based on [hosts, label, host_pattern]
         candidates = self.get_candidates()  # type: List[DaemonPlacement]
+        logger.error(f'ADMK - scheduler hosts = {self.hosts}')
+        logger.error(f'ADMK - scheduler unreachable = {self.unreachable_hosts}')
+        logger.error(f'ADMK - scheduler draining = {self.draining_hosts}')
+        logger.error(f'ADMK - scheduler networks = {self.networks}')
+        logger.error(f'ADMK - scheduler daemons = {self.daemons}')
+        logger.error(f'ADMK - scheduler candidates = {candidates}')
         if self.primary_daemon_type in RESCHEDULE_FROM_OFFLINE_HOSTS_TYPES:
             # remove unreachable hosts that are not in maintenance so daemons
             # on these hosts will be rescheduled
@@ -304,6 +319,7 @@ class HostAssignment(object):
         to_remove: List[orchestrator.DaemonDescription] = []
         ranks: List[int] = list(range(len(candidates)))
         others: List[DaemonPlacement] = candidates.copy()
+        logger.error(f'ADMK - scheduler others init: {others}')
         for dd in daemons:
             found = False
             for p in others:
@@ -332,16 +348,20 @@ class HostAssignment(object):
 
         # build to_add
         if not count:
+            logger.error('ADMK - scheduler NOT COUNT')
             to_add = [dd for dd in others if dd.hostname not in [
                 h.hostname for h in self.unreachable_hosts]]
+            logger.error(f'ADMK - scheduler NOT COUNT to_add: {to_add}')
         else:
+            logger.error('ADMK - schduler YES COUNT')
             # The number of new slots that need to be selected in order to fulfill count
             need = count - len(existing)
-
+            logger.error(f'ADMK - schduler YES COUNT need={need}')
             # we don't need any additional placements
             if need <= 0:
                 to_remove.extend(existing[count:])
                 del existing_slots[count:]
+                logger.error(f'ADMK - schduler YES COUNT <= 0, existing_slots pre return: {existing_slots}')
                 return self.place_per_host_daemons(existing_slots, [], to_remove)
 
             for dp in others:
@@ -352,11 +372,16 @@ class HostAssignment(object):
                     need -= 1  # this is last use of need in this function so it can work as a counter
 
         if self.rank_map is not None:
+            logger.error('ADMK - rank map true')
             # assign unused ranks (and rank_generations) to to_add
             assert len(ranks) >= len(to_add)
             for i in range(len(to_add)):
                 to_add[i] = to_add[i].assign_rank_generation(ranks[i], self.rank_map)
+            logger.error(f'ADMK - post rank map to_add: {to_add}')
 
+        logger.error(f'ADMK - scheduler final to_add: {to_add}')
+        logger.error(f'ADMK - scheduler final existing_slots: {existing_slots}')
+        logger.error(f'ADMK - scheduler final to_remove: {to_remove}')
         logger.debug('Combine hosts with existing daemons %s + new hosts %s' % (existing, to_add))
         return self.place_per_host_daemons(existing_slots + to_add, to_add, to_remove)
 

@@ -386,14 +386,18 @@ class ClientKeyringStore():
     def load(self) -> None:
         c = self.mgr.get_store('client_keyrings') or b'{}'
         j = json.loads(c)
+        logger.error(f'load keys.keys {j}')
         for e, d in j.items():
             self.keys[e] = ClientKeyringSpec.from_json(d)
+        logger.error('load keys.keys done')
 
     def save(self) -> None:
         data = {
             k: v.to_json() for k, v in self.keys.items()
         }
+        logger.error(f'save keys.keys {data}')
         self.mgr.set_store('client_keyrings', json.dumps(data))
+        logger.error('save keys.keys done')
 
     def update(self, ks: ClientKeyringSpec) -> None:
         self.keys[ks.entity] = ks

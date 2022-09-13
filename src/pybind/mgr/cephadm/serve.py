@@ -188,10 +188,13 @@ class CephadmServe:
         bad_hosts = []
         failures = []
 
+        self.log.error(f'ADMK - early manage: {self.mgr.manage_etc_ceph_ceph_conf}')
+        self.log.error(f'ADMK - early keys.keys {self.mgr.keys.keys}')
         if self.mgr.manage_etc_ceph_ceph_conf or self.mgr.keys.keys:
             client_files = self._calc_client_files()
             self.log.error(f'ADMK - all client files {client_files}')
         else:
+            self.log.error('ADMK - no calcing client files')
             client_files = {}
 
         agents_down: List[str] = []
@@ -1006,9 +1009,12 @@ class CephadmServe:
         config_digest = ''.join('%02x' % c for c in hashlib.sha256(config).digest())
         cluster_cfg_dir = f'/var/lib/ceph/{self.mgr._cluster_fsid}/config'
 
+        self.log.error(f'ADMK manage_etc_ceph_ceph_conf: {self.mgr.manage_etc_ceph_ceph_conf}')
+        self.log.error(f'ADMK keys.keys.values: {self.mgr.keys.keys.values()}')
         if self.mgr.manage_etc_ceph_ceph_conf:
             try:
                 pspec = PlacementSpec.from_string(self.mgr.manage_etc_ceph_ceph_conf_hosts)
+                self.log.error(f'ADMK manage etc pspec: {pspec}')
                 ha = HostAssignment(
                     spec=ServiceSpec('mon', placement=pspec),
                     hosts=self.mgr.cache.get_schedulable_hosts(),
@@ -1018,6 +1024,7 @@ class CephadmServe:
                     networks=self.mgr.cache.networks,
                 )
                 all_slots, _, _ = ha.place()
+                self.log.error(f'ADMK manage etc all_slots: {all_slots}')
                 for host in {s.hostname for s in all_slots}:
                     if host not in client_files:
                         client_files[host] = {}
@@ -1030,6 +1037,7 @@ class CephadmServe:
 
         # client keyrings
         for ks in self.mgr.keys.keys.values():
+            self.log.error(f'ADMK ks: {ks}')
             try:
                 ret, keyring, err = self.mgr.mon_command({
                     'prefix': 'auth get',
@@ -1040,6 +1048,7 @@ class CephadmServe:
                     continue
                 digest = ''.join('%02x' % c for c in hashlib.sha256(
                     keyring.encode('utf-8')).digest())
+                self.log.error(f'ADMK keys.keys placement spec: {ks.placement}')
                 ha = HostAssignment(
                     spec=ServiceSpec('mon', placement=ks.placement),
                     hosts=self.mgr.cache.get_schedulable_hosts(),
@@ -1049,6 +1058,7 @@ class CephadmServe:
                     networks=self.mgr.cache.networks,
                 )
                 all_slots, _, _ = ha.place()
+                self.log.error(f'ADMK keys.keys all_slots: {all_slots}')
                 for host in {s.hostname for s in all_slots}:
                     if host not in client_files:
                         client_files[host] = {}
