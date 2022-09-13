@@ -1,11 +1,11 @@
 
-CXX?=g++
-CXX_FLAGS?=-std=c++11 -Wno-unused-parameter -Wall -Wextra -Werror -g
+CXX?=g++-11
+CXX_FLAGS?=-std=c++20 -Wno-unused-parameter -Wall -Wextra -Werror -g
 CXX_LIBS?=-lrados -lradosstriper
 CXX_INC?=$(LOCAL_LIBRADOS_INC)
 CXX_CC=$(CXX) $(CXX_FLAGS) $(CXX_INC) $(LOCAL_LIBRADOS)
 
-CC?=gcc
+CC?=gcc-11
 CC_FLAGS=-Wno-unused-parameter -Wall -Wextra -Werror -g
 CC_INC=$(LOCAL_LIBRADOS_INC)
 CC_LIBS?=-lrados
