@@ -625,20 +625,20 @@ std::map<pg_t, pg_stat_t> CoreState::get_pg_stats() const
   return ret;
 }
 
-seastar::future<> CoreState::broadcast_map_to_pgs(
+seastar::future<> CoreState::broadcast_maps_to_pgs(
   PGShardManager &shard_manager,
   ShardServices &shard_services,
-  epoch_t epoch)
+  epoch_t first,
+  epoch_t last)
 {
   auto &pgs = pg_map.get_pgs();
   return seastar::parallel_for_each(
     pgs.begin(), pgs.end(),
     [=, &shard_manager, &shard_services](auto& pg) {
       return shard_services.start_operation<PGAdvanceMap>(
-	shard_manager, pg.second, pg.second->get_osdmap_epoch(), epoch,
-	PeeringCtx{}, false).second;
-    }).then([epoch, this] {
-      osdmap_gate.got_map(epoch);
+	shard_manager, pg.second, first, last, PeeringCtx{}, false).second;
+    }).then([last, this] {
+      osdmap_gate.got_map(last);
       return seastar::make_ready_future();
     });
 }

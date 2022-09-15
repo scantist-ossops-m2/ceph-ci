@@ -937,10 +937,10 @@ seastar::future<> OSD::committed_osd_maps(version_t first,
 	return seastar::now();
       }
     }
-    return check_osdmap_features().then([this] {
-      // yay!
-      return pg_shard_manager.broadcast_map_to_pgs(osdmap->get_epoch());
-    });
+    return check_osdmap_features();
+  }).then([first, last, this] {
+    // yay!
+    return pg_shard_manager.broadcast_maps_to_pgs(first, last);
   }).then([m, this] {
     if (pg_shard_manager.is_active()) {
       logger().info("osd.{}: now active", whoami);
