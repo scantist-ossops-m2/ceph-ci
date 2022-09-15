@@ -1127,6 +1127,36 @@ class Filesystem(MDSCluster):
 
         return result
 
+    def wait_for_death(self, rank=0, timeout=None, status=None):
+        """
+        Wait until rank fails and cluster is healthy.
+        :return: status
+        """
+
+        if timeout is None:
+            timeout = DAEMON_WAIT_TIMEOUT
+
+        if status is None:
+            status = self.status()
+
+        rinfo = self.get_rank(rank=rank, status=status)
+        elapsed = 0
+        while True:
+            info = self.get_rank(rank=rank, status=status)
+            if rinfo['gid'] != info['gid']:
+                log.info(f"mds.{rinfo['name']}:{rinfo['gid']} failed")
+                break
+            time.sleep(1)
+            elapsed += 1
+
+            if elapsed > timeout:
+                log.debug("status = {0}".format(status))
+                raise RuntimeError("Timed out waiting for rank to fail")
+
+            status = self.status()
+        return self.wait_for_daemons(timeout=timeout-elapsed, status=status)
+
+
     def wait_for_daemons(self, timeout=None, skip_max_mds_check=False, status=None):
         """
         Wait until all daemons are healthy
