@@ -269,11 +269,10 @@ class CoreState : public md_config_obs_t, public OSDMapService {
     spg_t pgid);
   seastar::future<> stop_pgs();
   std::map<pg_t, pg_stat_t> get_pg_stats() const;
-  seastar::future<> broadcast_maps_to_pgs(
+  seastar::future<> broadcast_map_to_pgs(
     PGShardManager &shard_manager,
     ShardServices &shard_services,
-    epoch_t first,
-    epoch_t last);
+    epoch_t epoch);
 
   template <typename F>
   void for_each_pg(F &&f) const {

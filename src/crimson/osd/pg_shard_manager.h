@@ -87,9 +87,9 @@ public:
   FORWARD_CONST(for_each_pg, for_each_pg, core_state)
   auto get_num_pgs() const { return core_state.pg_map.get_pgs().size(); }
 
-  auto broadcast_maps_to_pgs(epoch_t first, epoch_t last) {
-    return core_state.broadcast_maps_to_pgs(
-      *this, shard_services, first, last);
+  auto broadcast_map_to_pgs(epoch_t epoch) {
+    return core_state.broadcast_map_to_pgs(
+      *this, shard_services, epoch);
   }
 
   template <typename F>
