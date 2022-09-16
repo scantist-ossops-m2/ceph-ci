@@ -158,10 +158,12 @@ public:
   };
 
   class Token {
+    friend TokenEnvelope;
+  private:
+    mutable time_t expires;
   public:
     Token() : expires(0) { }
     string id;
-    time_t expires;
     time_t issued;
     Project tenant_v2;
     void decode_json(JSONObj *obj);
@@ -205,6 +207,7 @@ public:
   TokenEnvelope() = default;
 
   time_t get_expires() const { return token.expires; }
+  void set_expires(time_t e) const { token.expires = e; }
   time_t get_issued() const { return token.issued; }
   const std::string& get_domain_id() const {return project.domain.id;};
   const std::string& get_domain_name() const {return project.domain.name;};
@@ -283,7 +286,7 @@ public:
   void invalidate(const std::string& token_id);
   bool going_down() const;
 private:
-  void add_locked(const std::string& token_id, const TokenEnvelope& token);
+  void add_locked(const std::string& token_id, const TokenEnvelope& token, bool picky = false);
   bool find_locked(const std::string& token_id, TokenEnvelope& token);
 
 };
