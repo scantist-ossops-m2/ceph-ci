@@ -361,8 +361,7 @@ struct ceph_osd_request_head {
       encode(retry_attempt, payload);
       encode(features, payload);
     } else {
-      // latest v8 encoding with hobject_t hash separate from pgid, no
-      // reassert version
+      // latest v9 opentelemetry trace
       header.version = HEAD_VERSION;
 
       encode(pgid, payload);
