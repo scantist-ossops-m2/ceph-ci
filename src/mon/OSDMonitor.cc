@@ -5344,7 +5344,7 @@ static void dump_cpu_list(Formatter *f, const char *name,
 void OSDMonitor::dump_info(Formatter *f)
 {
   f->open_object_section("osdmap");
-  osdmap.dump(f);
+  osdmap.dump(f, cct);
   f->close_section();
 
   f->open_array_section("osd_metadata");
@@ -5503,11 +5503,11 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       stringstream ds;
       if (f) {
 	f->open_object_section("osdmap");
-	p->dump(f.get());
+	p->dump(f.get(), cct);
 	f->close_section();
 	f->flush(ds);
       } else {
-	p->print(ds);
+	p->print(cct, ds);
       }
       rdata.append(ds);
       if (!f)
@@ -6054,26 +6054,20 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
     cmd_getval(cmdmap, "detail", detail);
     if (!f && detail == "detail") {
       ostringstream ss;
-      osdmap.print_pools(ss);
+      osdmap.print_pools(cct, ss);
       rdata.append(ss.str());
     } else {
       if (f)
 	f->open_array_section("pools");
-      for (map<int64_t,pg_pool_t>::const_iterator it = osdmap.get_pools().begin();
-	   it != osdmap.get_pools().end();
-	   ++it) {
+      for (auto &[pid, pdata] : osdmap.get_pools()) {
 	if (f) {
 	  if (detail == "detail") {
-	    f->open_object_section("pool");
-	    f->dump_int("pool_id", it->first);
-	    f->dump_string("pool_name", osdmap.get_pool_name(it->first));
-	    it->second.dump(f.get());
-	    f->close_section();
+	    osdmap.dump_pool(cct, pid, pdata, f.get());
 	  } else {
-	    f->dump_string("pool_name", osdmap.get_pool_name(it->first));
+	    f->dump_string("pool_name", osdmap.get_pool_name(pid));
 	  }
 	} else {
-	  rdata.append(osdmap.get_pool_name(it->first) + "\n");
+	  rdata.append(osdmap.get_pool_name(pid) + "\n");
 	}
       }
       if (f) {
@@ -10274,7 +10268,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
      set<int> osds;
      newcrush.get_devices_by_class(device_class, &osds);
      for (auto& p: osds) {
-       err = newcrush.remove_device_class(g_ceph_context, p, &ss);
+       err = newcrush.remove_device_class(cct, p, &ss);
        if (err < 0) {
          // ss has reason for failure
          goto reply;
@@ -12021,7 +12015,8 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       new_pg_temp.begin(), new_pg_temp.end());
     ss << "set " << pgid << " pg_temp mapping to " << new_pg_temp;
     goto update;
-  } else if (prefix == "osd primary-temp") {
+  } else if (prefix == "osd primary-temp" ||
+             prefix == "osd rm-primary-temp") {
     string pgidstr;
     if (!cmd_getval(cmdmap, "pgid", pgidstr)) {
       ss << "unable to parse 'pgid' value '"
@@ -12042,16 +12037,24 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     }
 
     int64_t osd;
-    if (!cmd_getval(cmdmap, "id", osd)) {
-      ss << "unable to parse 'id' value '"
-         << cmd_vartype_stringify(cmdmap.at("id")) << "'";
-      err = -EINVAL;
-      goto reply;
+    if (prefix == "osd primary-temp") {
+      if (!cmd_getval(cmdmap, "id", osd)) {
+        ss << "unable to parse 'id' value '"
+           << cmd_vartype_stringify(cmdmap.at("id")) << "'";
+        err = -EINVAL;
+        goto reply;
+      }
+      if (!osdmap.exists(osd)) {
+        ss << "osd." << osd << " does not exist";
+        err = -ENOENT;
+        goto reply;
+      }
     }
-    if (osd != -1 && !osdmap.exists(osd)) {
-      ss << "osd." << osd << " does not exist";
-      err = -ENOENT;
-      goto reply;
+    else if (prefix == "osd rm-primary-temp") {
+      osd = -1;
+    }
+    else {
+      ceph_assert(0 == "Unreachable!");
     }
 
     if (osdmap.require_min_compat_client != ceph_release_t::unknown &&
