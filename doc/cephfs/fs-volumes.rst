@@ -82,32 +82,11 @@ List volumes using::
 
 Fetch the information of a CephFS volume using::
 
-    $ ceph fs volume info vol_name
-    {
-        "mon_addrs": [
-            "192.168.1.7:40977"
-        ],
-        "pending_subvolume_deletions": 0,
-        "pools": {
-            "data": [
-                {
-                    "avail": 106288709632,
-                    "name": "cephfs.vol_name.data",
-                    "used": 4096
-                }
-            ],
-            "metadata": [
-                {
-                    "avail": 106288709632,
-                    "name": "cephfs.vol_name.meta",
-                    "used": 155648
-                }
-            ]
-        },
-        "used_size": 0
-    }
+    $ ceph fs volume info vol_name [--human_readable]
 
-The output format is json and contains fields as follows.
+The ``--human_readable`` flag shows used and available pool capacities in KB/MB/GB.
+
+The output format is JSON and contains fields as follows:
 
 * pools: Attributes of data and metadata pools
         * avail: The amount of free space available in bytes
@@ -116,6 +95,33 @@ The output format is json and contains fields as follows.
 * mon_addrs: List of monitor addresses
 * used_size: Current used size of the CephFS volume in bytes
 * pending_subvolume_deletions: Number of subvolumes pending deletion
+
+Sample output of volume info command::
+
+  $ ceph fs volume info vol_name
+  {
+      "mon_addrs": [
+          "192.168.1.7:40977"
+      ],
+      "pending_subvolume_deletions": 0,
+      "pools": {
+          "data": [
+              {
+                  "avail": 106288709632,
+                  "name": "cephfs.vol_name.data",
+                  "used": 4096
+              }
+          ],
+          "metadata": [
+              {
+                  "avail": 106288709632,
+                  "name": "cephfs.vol_name.meta",
+                  "used": 155648
+              }
+          ]
+      },
+      "used_size": 0
+  }
 
 FS Subvolume groups
 -------------------
@@ -150,6 +156,47 @@ List subvolume groups using::
 
 .. note:: Subvolume group snapshot feature is no longer supported in mainline CephFS (existing group
           snapshots can still be listed and deleted)
+
+Fetch the metadata of a subvolume group using::
+
+    $ ceph fs subvolumegroup info <vol_name> <group_name>
+
+The output format is json and contains fields as follows.
+
+* atime: access time of subvolume group path in the format "YYYY-MM-DD HH:MM:SS"
+* mtime: modification time of subvolume group path in the format "YYYY-MM-DD HH:MM:SS"
+* ctime: change time of subvolume group path in the format "YYYY-MM-DD HH:MM:SS"
+* uid: uid of subvolume group path
+* gid: gid of subvolume group path
+* mode: mode of subvolume group path
+* mon_addrs: list of monitor addresses
+* bytes_pcent: quota used in percentage if quota is set, else displays "undefined"
+* bytes_quota: quota size in bytes if quota is set, else displays "infinite"
+* bytes_used: current used size of the subvolume group in bytes
+* created_at: time of creation of subvolume group in the format "YYYY-MM-DD HH:MM:SS"
+* data_pool: data pool the subvolume group belongs to
+
+Check the presence of any subvolume group using::
+
+    $ ceph fs subvolumegroup exist <vol_name>
+
+The strings returned by the 'exist' command:
+
+* "subvolumegroup exists": if any subvolumegroup is present
+* "no subvolumegroup exists": if no subvolumegroup is present
+
+.. note:: It checks for the presence of custom groups and not the default one. To validate the emptiness of the volume, subvolumegroup existence check alone is not sufficient. The subvolume existence also needs to be checked as there might be subvolumes in the default group.
+
+Resize a subvolume group using::
+
+    $ ceph fs subvolumegroup resize <vol_name> <group_name> <new_size> [--no_shrink]
+
+The command resizes the subvolume group quota using the size specified by 'new_size'.
+The '--no_shrink' flag prevents the subvolume group to shrink below the current used
+size of the subvolume group.
+
+The subvolume group can be resized to an infinite size by passing 'inf' or 'infinite'
+as the new_size.
 
 Remove a snapshot of a subvolume group using::
 
@@ -279,6 +326,15 @@ List subvolumes using::
     $ ceph fs subvolume ls <vol_name> [--group_name <subvol_group_name>]
 
 .. note:: subvolumes that are removed but have snapshots retained, are also listed.
+
+Check the presence of any subvolume using::
+
+    $ ceph fs subvolume exist <vol_name> [--group_name <subvol_group_name>]
+
+The strings returned by the 'exist' command:
+
+* "subvolume exists": if any subvolume of given group_name is present
+* "no subvolume exists": if no subvolume of given group_name is present
 
 Set custom metadata on the subvolume as a key-value pair using::
 
