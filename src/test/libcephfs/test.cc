@@ -1877,7 +1877,7 @@ TEST(LibCephFS, DirChangeAttr) {
   ASSERT_EQ(0, ceph_conf_parse_env(cmount, NULL));
   ASSERT_EQ(ceph_mount(cmount, "/"), 0);
 
-  char dirname[32], filename[56];
+  char dirname[32], filename[56], newfilename[56];
   sprintf(dirname, "/dirchange%x", getpid());
   sprintf(filename, "%s/foo", dirname);
 
@@ -1889,17 +1889,51 @@ TEST(LibCephFS, DirChangeAttr) {
 
   uint64_t old_change_attr = stx.stx_version;
 
-  int fd = ceph_open(cmount, filename, O_RDWR|O_CREAT|O_EXCL, 0666);
-  ASSERT_LT(0, fd);
-  ceph_close(cmount, fd);
+  /* Alternate operations that change directory's ctime (setattr, setxattr, etc.)
+   * with those that change directory's mtime and ctime (create, rename, etc.).
+   * Check that directory's change_attr is updated everytime ctime changes.
+   */
 
+  /* set xattr on dir, and check whether dir's change_attr changed */
+  ASSERT_EQ(ceph_setxattr(cmount, dirname, "user.name", (void*)"bob", 3, XATTR_CREATE), 0);
   ASSERT_EQ(ceph_statx(cmount, dirname, &stx, CEPH_STATX_VERSION, 0), 0);
   ASSERT_TRUE(stx.stx_mask & CEPH_STATX_VERSION);
   ASSERT_NE(stx.stx_version, old_change_attr);
-
   old_change_attr = stx.stx_version;
 
-  ASSERT_EQ(ceph_unlink(cmount, filename), 0);
+  /* create a file within dir, and check whether dir's change_attr changed */
+  int fd = ceph_open(cmount, filename, O_RDWR|O_CREAT|O_EXCL, 0666);
+  ASSERT_LT(0, fd);
+  ceph_close(cmount, fd);
+  ASSERT_EQ(ceph_statx(cmount, dirname, &stx, CEPH_STATX_VERSION, 0), 0);
+  ASSERT_TRUE(stx.stx_mask & CEPH_STATX_VERSION);
+  ASSERT_NE(stx.stx_version, old_change_attr);
+  old_change_attr = stx.stx_version;
+
+  /* chmod dir, and check whether dir's change_attr changed */
+  ASSERT_EQ(ceph_chmod(cmount, dirname, 0777), 0);
+  ASSERT_EQ(ceph_statx(cmount, dirname, &stx, CEPH_STATX_VERSION, 0), 0);
+  ASSERT_TRUE(stx.stx_mask & CEPH_STATX_VERSION);
+  ASSERT_NE(stx.stx_version, old_change_attr);
+  old_change_attr = stx.stx_version;
+
+  /* rename a file within dir, and check whether dir's change_attr changed */
+  sprintf(newfilename, "%s/bar", dirname);
+  ASSERT_EQ(ceph_rename(cmount, filename, newfilename), 0);
+  ASSERT_EQ(ceph_statx(cmount, dirname, &stx, CEPH_STATX_VERSION, 0), 0);
+  ASSERT_TRUE(stx.stx_mask & CEPH_STATX_VERSION);
+  ASSERT_NE(stx.stx_version, old_change_attr);
+  old_change_attr = stx.stx_version;
+
+  /* remove xattr, and check whether dir's change_attr changed */
+  ASSERT_EQ(ceph_removexattr(cmount, dirname, "user.name"), 0);
+  ASSERT_EQ(ceph_statx(cmount, dirname, &stx, CEPH_STATX_VERSION, 0), 0);
+  ASSERT_TRUE(stx.stx_mask & CEPH_STATX_VERSION);
+  ASSERT_NE(stx.stx_version, old_change_attr);
+  old_change_attr = stx.stx_version;
+
+  /* remove a file within dir, and check whether dir's change_attr changed */
+  ASSERT_EQ(ceph_unlink(cmount, newfilename), 0);
   ASSERT_EQ(ceph_statx(cmount, dirname, &stx, CEPH_STATX_VERSION, 0), 0);
   ASSERT_TRUE(stx.stx_mask & CEPH_STATX_VERSION);
   ASSERT_NE(stx.stx_version, old_change_attr);
