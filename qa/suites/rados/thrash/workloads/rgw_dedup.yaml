@@ -27,3 +27,9 @@ overrides:
         rgw crypt s3 kms backend: testing
         rgw crypt s3 kms encryption keys: testkey-1=YmluCmJvb3N0CmJvb3N0LWJ1aWxkCmNlcGguY29uZgo= testkey-2=aWIKTWFrZWZpbGUKbWFuCm91dApzcmMKVGVzdGluZwo=
         rgw crypt require ssl: false
+  thrashosds:
+    op_delay: 30
+    chance_test_min_size: 0
+    ceph_objectstore_tool: false
+  rgw:
+    frontend: beast
