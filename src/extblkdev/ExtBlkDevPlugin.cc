@@ -30,7 +30,8 @@
 #include "common/ceph_context.h"
 #include "common/debug.h"
 
-#define dout_subsys ceph_subsys_context
+#define dout_subsys ceph_subsys_bluestore
+#define dout_context cct
 
 using namespace std;
 
@@ -70,7 +71,7 @@ namespace ceph {
 	  // let plugin populate set with required caps
 	  auto ebdplugin = dynamic_cast<ExtBlkDevPlugin*>(it.second);
 	  if (ebdplugin == nullptr) {
-	    lderr(cct) << __func__ << " Is not an extblkdev plugin: " << it.first << dendl;
+	    derr << __func__ << " Is not an extblkdev plugin: " << it.first << dendl;
 	    return -ENOENT;
 	  }
 	  int rc = ebdplugin->get_required_cap_set(plugin_caps);
@@ -162,11 +163,36 @@ namespace ceph {
     }
 #endif
 
+    void dump_dir(CephContext *cct, std::string dirname)
+    {
+      dout(1) << "Dumping directory: " << dirname << dendl;
+      DIR *dir = ::opendir(dirname.c_str());
+      if (!dir) {
+	dout(1) << "Could not open directory: " << dirname << dendl;
+	return;
+      }
+      struct dirent *de = nullptr;
+      while ((de = ::readdir(dir))) {
+	if (de->d_name[0] == '.')
+	  continue;
+	dout(1) << "dir entry: " << de->d_name << dendl;
+      }
+      closedir(dir);
+    }
+
     // preload set of extblkdev plugins defined in config
     int preload(CephContext *cct)
     {
       const auto& conf = cct->_conf;
       string plugins = conf.get_val<std::string>("osd_extblkdev_plugins");
+      dout(1) << "starting preload of extblkdev plugins: " << plugins << dendl;
+      dump_dir(cct,"/usr/lib64");
+      dump_dir(cct,"/usr/lib64/ceph");
+      dump_dir(cct,"/usr/lib64/ceph/extblkdev");
+      std::string fname = cct->_conf.get_val<std::string>("plugin_dir");
+      dump_dir(cct,fname);
+      fname += "/extblkdev";
+      dump_dir(cct,fname);
 
       list<string> plugins_list;
       get_str_list(plugins, plugins_list);
@@ -175,9 +201,14 @@ namespace ceph {
       {
 	std::lock_guard l(registry->lock);
 	for (auto& plg : plugins_list) {
+	  dout(1) << "starting load of extblkdev plugin: " << plg << dendl;
 	  int rc = registry->load("extblkdev", std::string("ebd_") + plg);
-	  if (rc)
+	  if (rc) {
+	    derr << __func__ << " failed preloading extblkdev plugin: " << plg << dendl;
 	    return rc;
+	  }else{
+	    dout(1) << "successful load of extblkdev plugin: " << plg << dendl;
+	  }
 	}
       }
 #ifdef __linux__
@@ -204,11 +235,11 @@ namespace ceph {
 
       for (auto& it : ptype->second) {
 
-	ldout(cct, 1) << __func__ << " Trying to detect block device " << logdevname 
+	dout(1) << __func__ << " Trying to detect block device " << logdevname 
 		      << " using plugin " << it.first << dendl;
 	auto ebdplugin = dynamic_cast<ExtBlkDevPlugin*>(it.second);
 	if (ebdplugin == nullptr) {
-	  lderr(cct) << __func__ << " Is not an extblkdev plugin: " << it.first << dendl;
+	  derr << __func__ << " Is not an extblkdev plugin: " << it.first << dendl;
 	  return -ENOENT;
 	}
 	rc = ebdplugin->factory(logdevname, ebd_impl);
@@ -218,10 +249,10 @@ namespace ceph {
 	}
       }
       if (rc == 0) {
-	ldout(cct, 1) << __func__ << " using plugin " << plg_name << ", " <<  "volume " << ebd_impl->get_devname()
+	dout(1) << __func__ << " using plugin " << plg_name << ", " <<  "volume " << ebd_impl->get_devname()
 		      << " maps to " << logdevname << dendl;
       } else {
-	ldout(cct, 20) << __func__ << " no plugin volume maps to " << logdevname << dendl;
+	dout(10) << __func__ << " no plugin volume maps to " << logdevname << dendl;
       }
       return rc;
     }

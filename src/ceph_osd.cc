@@ -473,8 +473,12 @@ flushjournal_out:
     forker.exit(0);
   }
   
-  if (extblkdev::preload(g_ceph_context) < 0) {
-    forker.exit(1);
+  {
+    int r = extblkdev::preload(g_ceph_context);
+    if (r < 0) {
+      derr << "Failed preloading extblkdev plugins, error code : " << r << dendl;
+      forker.exit(1);
+    }
   }
 
   string magic;

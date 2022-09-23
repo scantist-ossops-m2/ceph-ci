@@ -23,7 +23,7 @@
 #include <errno.h>
 #include "common/debug.h"
 
-#define dout_subsys ceph_subsys_context
+#define dout_subsys ceph_subsys_bluestore
 #define dout_context cct
 #undef dout_prefix
 #define dout_prefix *_dout << "vdo(" << this << ") "
@@ -32,6 +32,7 @@
 int ExtBlkDevVdo::_get_vdo_stats_handle(const std::string& devname)
 {
   int rc = -ENOENT;
+  dout(1) << __func__ << " VDO init checking device: " << devname << dendl;
 
   // we need to go from the raw devname (e.g., dm-4) to the VDO volume name.
   // currently the best way seems to be to look at /dev/mapper/* ...
