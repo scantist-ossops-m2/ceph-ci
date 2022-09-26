@@ -1,5 +1,7 @@
 #include "DaemonMetricCollector.h"
 
+#include <boost/algorithm/string.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <boost/json/src.hpp>
 #include <chrono>
 #include <filesystem>
@@ -145,14 +147,30 @@ void DaemonMetricCollector::dump_asok_metrics() {
         if (perf_info["priority"].as_int64() < prio_limit) {
           continue;
         }
-        std::string name = "ceph_" + perf_group + "_" + perf_name;
-        std::replace_if(name.begin(), name.end(), is_hyphen, '_');
+        std::string rgw_perf_name = "z_rgw";
+        std::vector<std::string> result;
+        std::string name = "";
+        labels_t labels;
+        if (perf_group.find("z_rgw") == 0) {
+          boost::split(result, perf_group, boost::is_any_of(":"));
+          name = "ceph_" + rgw_perf_name + "_" + perf_name;
+          result.pop_back();
+          result.erase(result.begin());
+          std::cout << result << std::endl;
+          for (std::vector<std::string>::iterator itr = result.begin();
+               itr != result.end(); itr += 2) {
+            labels[*(itr)] = *(itr + 1);
+          }
+          std::cout << labels << std::endl;
+        } else {
+          name = "ceph_" + perf_group + "_" + perf_name;
+          std::replace_if(name.begin(), name.end(), is_hyphen, '_');
 
-        // FIXME: test this, based on mgr_module perfpath_to_path_labels
-        auto labels_and_name = get_labels_and_metric_name(daemon_name, name);
-        labels_t labels = labels_and_name.first;
-        name = labels_and_name.second;
-
+          // FIXME: test this, based on mgr_module perfpath_to_path_labels
+          auto labels_and_name = get_labels_and_metric_name(daemon_name, name);
+          labels = labels_and_name.first;
+          name = labels_and_name.second;
+        }
         json_value perf_values = dump[perf_group].as_object()[perf_name];
         dump_asok_metric(perf_info, perf_values, name, labels);
       }
