@@ -113,6 +113,13 @@ namespace ceph {
 	dout(1) << " cap_get_proc failed with errno: " << errno << dendl;
 	return -errno;
       }
+      {
+	char *cap_str = cap_to_text(proc_caps, 0);
+	if (cap_str != nullptr){
+	  dout(1) << " cap_get_proc yields: " << cap_str << dendl;
+	  cap_free(cap_str);
+	}
+      }
       // iterate over capabilities
       for (int i = 0; i <= CAP_LAST_CAP; ++i) {
 	cap_flag_value_t val;
@@ -139,6 +146,11 @@ namespace ceph {
       }
       // apply reduced capability set to process
       if (changed) {
+	char *cap_str = cap_to_text(proc_caps, 0);
+	if (cap_str != nullptr){
+	  dout(1) << " new caps for cap_set_proc: " << cap_str << dendl;
+	  cap_free(cap_str);
+	}
 	if (cap_set_proc(proc_caps) < 0) {
 	  dout(1) << " cap_set_proc failed with errno: " << errno << dendl;
 	  return -errno;
