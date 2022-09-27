@@ -101,8 +101,8 @@ os._exit = os_exit_noop   # type: ignore
 
 # Default container images -----------------------------------------------------
 DEFAULT_IMAGE = 'docker.io/rhcsdashboard/ceph-exporter'
-DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.18.1'
-DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v0.18.1'
+DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.33.4'
+DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v1.3.1'
 DEFAULT_LOKI_IMAGE = 'docker.io/grafana/loki:2.4.0'
 DEFAULT_PROMTAIL_IMAGE = 'docker.io/grafana/promtail:2.4.0'
 DEFAULT_ALERT_MANAGER_IMAGE = 'quay.io/prometheus/alertmanager:v0.23.0'
@@ -2489,10 +2489,9 @@ Then run the following:
             deps.append(self.get_active_mgr().name())
             deps.append(str(self.get_module_option_ex('prometheus', 'server_port', 9283)))
             deps.append(str(self.service_discovery_port))
-            deps += [s for s in ['node-exporter', 'alertmanager', 'ingress'] if self.cache.get_daemons_by_service(s)]
+            deps += [s for s in ['node-exporter', 'alertmanager', 'ingress', 'ceph-exporter'] if self.cache.get_daemons_by_service(s)]
         else:
             need = {
-                'prometheus': ['ceph-exporter'],
                 'grafana': ['prometheus', 'loki'],
                 'alertmanager': ['mgr', 'alertmanager', 'snmp-gateway'],
                 'promtail': ['loki'],
@@ -2609,12 +2608,14 @@ Then run the following:
                 valid_units = ['y', 'w', 'd', 'h', 'm', 's']
                 m = re.search(rf"^(\d+)({'|'.join(valid_units)})$", spec.retention_time)
                 if not m:
-                    raise OrchestratorError(f"Invalid retention time. Valid units are: {', '.join(valid_units)}")
+                    raise OrchestratorError(
+                        f"Invalid retention time. Valid units are: {', '.join(valid_units)}")
             if spec.retention_size:
                 valid_units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']
                 m = re.search(rf"^(\d+)({'|'.join(valid_units)})$", spec.retention_size)
                 if not m:
-                    raise OrchestratorError(f"Invalid retention size. Valid units are: {', '.join(valid_units)}")
+                    raise OrchestratorError(
+                        f"Invalid retention size. Valid units are: {', '.join(valid_units)}")
 
         return self._apply_service_spec(cast(ServiceSpec, spec))
 
