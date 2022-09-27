@@ -159,7 +159,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
           std::cout << result << std::endl;
           for (std::vector<std::string>::iterator itr = result.begin();
                itr != result.end(); itr += 2) {
-            labels[*(itr)] = *(itr + 1);
+            labels[*(itr)] = quote(*(itr + 1));
           }
           std::cout << labels << std::endl;
         } else {
