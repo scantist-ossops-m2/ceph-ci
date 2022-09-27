@@ -110,6 +110,7 @@ namespace ceph {
       // get process capability set
       proc_caps = cap_get_proc(); 
       if (proc_caps == nullptr) {
+	dout(1) << " cap_get_proc failed with errno: " << errno << dendl;
 	return -errno;
       }
       // iterate over capabilities
@@ -130,12 +131,16 @@ namespace ceph {
 	    if (cap_set_flag(proc_caps, CAP_PERMITTED, 1, arr, CAP_CLEAR) < 0) {
 	      return -errno;
 	    }
+	    if (cap_set_flag(proc_caps, CAP_EFFECTIVE, 1, arr, CAP_CLEAR) < 0) {
+	      return -errno;
+	    }
 	  }
 	}
       }
       // apply reduced capability set to process
       if (changed) {
 	if (cap_set_proc(proc_caps) < 0) {
+	  dout(1) << " cap_set_proc failed with errno: " << errno << dendl;
 	  return -errno;
 	}
       }
