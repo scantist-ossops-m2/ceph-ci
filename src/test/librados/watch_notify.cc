@@ -137,11 +137,14 @@ TEST_F(LibRadosWatchNotify, WatchNotify) {
   char buf[128];
   memset(buf, 0xcc, sizeof(buf));
   ASSERT_EQ(0, rados_write(ioctx, "foo", buf, sizeof(buf), 0));
+  std::cout << "object write complete" << std::endl;
   uint64_t handle;
   ASSERT_EQ(0,
       rados_watch(ioctx, "foo", 0, &handle, watch_notify_test_cb, NULL));
+  std::cout << "object watch added " << handle << std::endl;
   for (unsigned i=0; i<10; ++i) {
     int r = rados_notify(ioctx, "foo", 0, NULL, 0);
+    std::cout << "rados notify return:" << r << std::endl;
     if (r == 0) {
       break;
     }
