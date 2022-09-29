@@ -10741,6 +10741,7 @@ void Server::handle_client_mksnap(MDRequestRef& mdr)
   if (!(mdr->locking_state & MutationImpl::ALL_LOCKED)) {
     MutationImpl::LockOpVec lov;
     lov.add_xlock(&diri->snaplock);
+    lov.add_xlock(&diri->authlock);
     if (!mds->locker->acquire_locks(mdr, lov))
       return;
 
@@ -10823,6 +10824,8 @@ void Server::handle_client_mksnap(MDRequestRef& mdr)
   pi.inode->ctime = info.stamp;
   if (info.stamp > pi.inode->rstat.rctime)
     pi.inode->rstat.rctime = info.stamp;
+  pi.inode->snap_mtime = info.stamp;
+  pi.inode->change_attr++;
   pi.inode->rstat.rsnaps++;
   pi.inode->version = diri->pre_dirty();
 
@@ -10924,10 +10927,10 @@ void Server::handle_client_rmsnap(MDRequestRef& mdr)
   }
   snapid_t snapid = diri->snaprealm->resolve_snapname(snapname, diri->ino());
   dout(10) << " snapname " << snapname << " is " << snapid << dendl;
-
   if (!(mdr->locking_state & MutationImpl::ALL_LOCKED)) {
     MutationImpl::LockOpVec lov;
     lov.add_xlock(&diri->snaplock);
+    lov.add_xlock(&diri->authlock);
     if (!mds->locker->acquire_locks(mdr, lov))
       return;
     if (CDentry *pdn = diri->get_projected_parent_dn(); pdn) {
@@ -10961,6 +10964,8 @@ void Server::handle_client_rmsnap(MDRequestRef& mdr)
   pi.inode->ctime = mdr->get_op_stamp();
   if (mdr->get_op_stamp() > pi.inode->rstat.rctime)
     pi.inode->rstat.rctime = mdr->get_op_stamp();
+  pi.inode->snap_mtime = mdr->get_op_stamp();
+  pi.inode->change_attr++;
   pi.inode->rstat.rsnaps--;
   
   mdr->ls = mdlog->get_current_segment();
@@ -11001,6 +11006,7 @@ void Server::_rmsnap_finish(MDRequestRef& mdr, CInode *diri, snapid_t snapid)
 
   // yay
   mdr->in[0] = diri;
+  mdr->tracei = diri;
   respond_to_request(mdr, 0);
 
   // purge snapshot data
@@ -11069,6 +11075,7 @@ void Server::handle_client_renamesnap(MDRequestRef& mdr)
   if (!(mdr->locking_state & MutationImpl::ALL_LOCKED)) {
     MutationImpl::LockOpVec lov;
     lov.add_xlock(&diri->snaplock);
+    lov.add_xlock(&diri->authlock);
     if (!mds->locker->acquire_locks(mdr, lov))
       return;
     if (CDentry *pdn = diri->get_projected_parent_dn(); pdn) {
@@ -11099,6 +11106,8 @@ void Server::handle_client_renamesnap(MDRequestRef& mdr)
   pi.inode->ctime = mdr->get_op_stamp();
   if (mdr->get_op_stamp() > pi.inode->rstat.rctime)
     pi.inode->rstat.rctime = mdr->get_op_stamp();
+  pi.inode->snap_mtime = mdr->get_op_stamp();
+  pi.inode->change_attr++;
   pi.inode->version = diri->pre_dirty();
 
   // project the snaprealm
