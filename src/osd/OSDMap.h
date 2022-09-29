@@ -1463,13 +1463,28 @@ public:
     );
 
 private: // Bunch of internal functions used only by calc_pg_upmaps (result of code refactoring)
+
+  std::map<uint64_t,std::set<pg_t>> get_pgs_by_osd(
+    CephContext *cct,
+    int64_t pid,
+    std::map<uint64_t, std::set<pg_t>> *p_primaries_by_osd = nullptr,
+    std::map<uint64_t, std::set<pg_t>> *p_acting_primaries_by_osd = nullptr
+  ) const; // used in calc_desired_primary_distribution()
+
+  float get_osds_weight(
+    CephContext *cct,
+    const OSDMap& tmp_osd_map,
+    int64_t pid,
+    std::map<int,float>& osds_weight
+  ) const;
+
   float build_pool_pgs_info (
     CephContext *cct,
     const std::set<int64_t>& pools,        ///< [optional] restrict to pool
     const OSDMap& tmp_osd_map,
     int& total_pgs,
     std::map<int, std::set<pg_t>>& pgs_by_osd,
-    std::map<int,float>& osd_weight
+    std::map<int,float>& osds_weight
   );  // return total weight of all OSDs
 
   float calc_deviations (
@@ -1558,6 +1573,28 @@ bool try_drop_remap_underfull(
   );
 
 public:
+    typedef struct {
+      float primary_affinity_avg;
+      float primary_affinity_weighted;
+      float primary_affinity_w_avg;
+      float raw_score;
+      float optimal_score;  	// based on primary_affinity values
+      float adjusted_score; 	// based on raw_score and primary_affinity_avg 1 is optimal
+      float acting_raw_score;   // based on active_primaries (temporary)
+      float acting_adj_score;   // based on raw_active_score and primary_affinity_avg 1 is optimal
+    } read_balance_info_t;
+  //
+  // This function calculates scores about the cluster read balance state
+  // p_rb_info->acting_adj_score is the current read balance score (acting)
+  // p_rb_info->adjusted_score is the stable read balance score 
+  // Return value of 0 is OK, negative means an error (may happen with
+  // some arifically generated osamap files)
+  //
+  int calc_read_balance_score(
+    CephContext *cct,
+    int64_t pool_id,
+    read_balance_info_t *p_rb_info) const;
+
   int get_osds_by_bucket_name(const std::string &name, std::set<int> *osds) const;
 
   bool have_pg_upmaps(pg_t pg) const {
@@ -1625,10 +1662,10 @@ public:
 private:
   void print_osd_line(int cur, std::ostream *out, ceph::Formatter *f) const;
 public:
-  void print(std::ostream& out) const;
+  void print(CephContext *cct, std::ostream& out) const;
   void print_osd(int id, std::ostream& out) const;
   void print_osds(std::ostream& out) const;
-  void print_pools(std::ostream& out) const;
+  void print_pools(CephContext *cct, std::ostream& out) const;
   void print_summary(ceph::Formatter *f, std::ostream& out,
 		     const std::string& prefix, bool extra=false) const;
   void print_oneline_summary(std::ostream& out) const;
@@ -1654,9 +1691,10 @@ public:
   static void dump_erasure_code_profiles(
     const mempool::osdmap::map<std::string,std::map<std::string,std::string> > &profiles,
     ceph::Formatter *f);
-  void dump(ceph::Formatter *f) const;
+  void dump(ceph::Formatter *f, CephContext *cct = nullptr) const;
   void dump_osd(int id, ceph::Formatter *f) const;
   void dump_osds(ceph::Formatter *f) const;
+  void dump_pool(CephContext *cct, int64_t pid, const pg_pool_t &pdata, ceph::Formatter *f) const;
   static void generate_test_instances(std::list<OSDMap*>& o);
   bool check_new_blocklist_entries() const { return new_blocklist_entries; }
 
