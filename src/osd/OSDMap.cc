@@ -3571,11 +3571,11 @@ void OSDMap::dump_pool(CephContext *cct,
     auto rc = calc_read_balance_score(cct, pid, &rb_info);
     if (rc >= 0) {
       f->open_object_section("read_balance");
-      f->dump_float("score (acting)", rb_info.acting_adj_score);
-      f->dump_float("score (stable)", rb_info.adjusted_score);
+      f->dump_float("score_acting", rb_info.acting_adj_score);
+      f->dump_float("score_stable", rb_info.adjusted_score);
       f->dump_float("optimal_score", rb_info.optimal_score);
-      f->dump_float("raw_score (acting)", rb_info.acting_raw_score);
-      f->dump_float("raw_score (stable)", rb_info.raw_score);
+      f->dump_float("raw_score_acting", rb_info.acting_raw_score);
+      f->dump_float("raw_score_stable", rb_info.raw_score);
       f->dump_float("primary_affinity_weighted", rb_info.primary_affinity_weighted);
       f->dump_float("average_primary_affinity", rb_info.primary_affinity_avg);
       f->dump_float("average_primary_affinity_weighted", rb_info.primary_affinity_w_avg);
