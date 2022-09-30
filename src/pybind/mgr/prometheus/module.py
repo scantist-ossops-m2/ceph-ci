@@ -1596,53 +1596,53 @@ class Module(MgrModule):
         self.get_pool_repaired_objects()
         self.get_num_objects()
 
-        for daemon, counters in self.get_all_perf_counters().items():
-            for path, counter_info in counters.items():
-                # Skip histograms, they are represented by long running avgs
-                stattype = self._stattype_to_str(counter_info['type'])
-                if not stattype or stattype == 'histogram':
-                    self.log.debug('ignoring %s, type %s' % (path, stattype))
-                    continue
+        # for daemon, counters in self.get_all_perf_counters().items():
+        #     for path, counter_info in counters.items():
+        #         # Skip histograms, they are represented by long running avgs
+        #         stattype = self._stattype_to_str(counter_info['type'])
+        #         if not stattype or stattype == 'histogram':
+        #             self.log.debug('ignoring %s, type %s' % (path, stattype))
+        #             continue
 
-                path, label_names, labels = self._perfpath_to_path_labels(
-                    daemon, path)
+        #         path, label_names, labels = self._perfpath_to_path_labels(
+        #             daemon, path)
 
-                # Get the value of the counter
-                value = self._perfvalue_to_value(
-                    counter_info['type'], counter_info['value'])
+        #         # Get the value of the counter
+        #         value = self._perfvalue_to_value(
+        #             counter_info['type'], counter_info['value'])
 
-                # Represent the long running avgs as sum/count pairs
-                if counter_info['type'] & self.PERFCOUNTER_LONGRUNAVG:
-                    _path = path + '_sum'
-                    if _path not in self.metrics:
-                        self.metrics[_path] = Metric(
-                            stattype,
-                            _path,
-                            counter_info['description'] + ' Total',
-                            label_names,
-                        )
-                    self.metrics[_path].set(value, labels)
+        #         # Represent the long running avgs as sum/count pairs
+        #         if counter_info['type'] & self.PERFCOUNTER_LONGRUNAVG:
+        #             _path = path + '_sum'
+        #             if _path not in self.metrics:
+        #                 self.metrics[_path] = Metric(
+        #                     stattype,
+        #                     _path,
+        #                     counter_info['description'] + ' Total',
+        #                     label_names,
+        #                 )
+        #             self.metrics[_path].set(value, labels)
 
-                    _path = path + '_count'
-                    if _path not in self.metrics:
-                        self.metrics[_path] = Metric(
-                            'counter',
-                            _path,
-                            counter_info['description'] + ' Count',
-                            label_names,
-                        )
-                    self.metrics[_path].set(counter_info['count'], labels,)
-                else:
-                    if path not in self.metrics:
-                        self.metrics[path] = Metric(
-                            stattype,
-                            path,
-                            counter_info['description'],
-                            label_names,
-                        )
-                    self.metrics[path].set(value, labels)
+        #             _path = path + '_count'
+        #             if _path not in self.metrics:
+        #                 self.metrics[_path] = Metric(
+        #                     'counter',
+        #                     _path,
+        #                     counter_info['description'] + ' Count',
+        #                     label_names,
+        #                 )
+        #             self.metrics[_path].set(counter_info['count'], labels,)
+        #         else:
+        #             if path not in self.metrics:
+        #                 self.metrics[path] = Metric(
+        #                     stattype,
+        #                     path,
+        #                     counter_info['description'],
+        #                     label_names,
+        #                 )
+        #             self.metrics[path].set(value, labels)
 
-        self.add_fixed_name_metrics()
+        # self.add_fixed_name_metrics()
         self.get_rbd_stats()
 
         self.get_collect_time_metrics()
