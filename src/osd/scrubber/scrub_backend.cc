@@ -813,7 +813,7 @@ std::optional<std::string> ScrubBackend::compare_obj_in_maps(
 
   object_error.set_version(auth_res.auth_oi.user_version);
   ScrubMap::object& auth_object = auth->second.objects[ho];
-  ceph_assert(!this_chunk->fix_digest);
+  //ceph_assert(!this_chunk->fix_digest); // RRR can remove. We have just cleared that flag.
 
   auto [auths, objerrs] =
     match_in_shards(ho, auth_res, object_error, errstream);
@@ -1051,6 +1051,9 @@ ScrubBackend::auth_and_obj_errs_t ScrubBackend::match_in_shards(
 
       // Compare
       stringstream ss;
+
+      // auth_sel.auth is the identification of the selected shard - a <shard, scrubmap> pair.
+      // auth_sel.auth->second is the authoritative smap.
       const auto& auth_object = auth_sel.auth->second.objects[ho];
       const bool discrep_found = compare_obj_details(auth_sel.auth_shard,
                                                      auth_object,
@@ -1062,17 +1065,32 @@ ScrubBackend::auth_and_obj_errs_t ScrubBackend::match_in_shards(
                                                      ho.has_snapset());
 
       dout(20) << fmt::format(
-                    "{}: {} {} {} shards: {} {} {}",
+                    "{}: {}{} <{}:{}> shards: {} {} {}",
                     __func__,
-                    (m_repair ? " repair " : " "),
+                    (m_repair ? "repair " : ""),
                     (m_is_replicated ? "replicated " : ""),
-                    (srd == auth_sel.auth_shard ? "auth" : ""),
+                    srd,
+                    (srd == auth_sel.auth_shard ? "auth" : "-"),
                     auth_sel.shard_map.size(),
                     (auth_sel.digest_match ? " digest_match " : " "),
                     (auth_sel.shard_map[srd].only_data_digest_mismatch_info()
                        ? "'info mismatch info'"
                        : ""))
                << dendl;
+
+      if (discrep_found) {
+        dout(10) << fmt::format("{}: <{}> auth:{} ({}/{}) vs {} ({}/{}) {}",
+                                __func__,
+                                ho,
+                                auth_sel.auth_shard,
+                                auth_object.omap_digest_present,
+                                auth_object.omap_digest,
+                                srd,
+                                smap.objects[ho].omap_digest_present ? true : false,
+                                smap.objects[ho].omap_digest,
+                                ss.str())
+                 << dendl;
+      }
 
       // If all replicas match, but they don't match object_info we can
       // repair it by using missing_digest mechanism
