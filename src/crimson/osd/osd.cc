@@ -1167,8 +1167,6 @@ seastar::future<> OSD::restart()
 seastar::future<> OSD::shutdown()
 {
   // TODO
-  superblock.mounted = boot_epoch;
-  superblock.clean_thru = osdmap->get_epoch();
   return seastar::now();
 }
 
