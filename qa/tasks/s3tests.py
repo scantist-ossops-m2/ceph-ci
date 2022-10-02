@@ -9,6 +9,8 @@ import logging
 import os
 import random
 import string
+import uuid
+import datetime
 
 from teuthology import misc as teuthology
 from teuthology import contextutil
@@ -384,7 +386,9 @@ def run_tests(ctx, config):
             attrs += ['!fails_with_subdomain']
         if not client_config.get('with-sse-s3'):
             attrs += ['!sse-s3']
-       
+        unittest_xml = None
+        xmlfile_id = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S--") + str(uuid.uuid4())
+        xmlpath= f'/home/ubuntu/cephtest/archive/nosetest-{xmlfile_id}.xml'
         if 'extra_attrs' in client_config:
             attrs = client_config.get('extra_attrs') 
         args += [
@@ -392,15 +396,20 @@ def run_tests(ctx, config):
             '-m', 'nose',
             '-w',
             '{tdir}/s3-tests-{client}'.format(tdir=testdir, client=client),
+            '--with-xunit',
+            '--xunit-file', xmlpath,
             '-v',
             '-a', ','.join(attrs),
             ]
         if 'extra_args' in client_config:
             args.append(client_config['extra_args'])
+        if 'unit_test_scan' in client_config and client_config['unit_test_scan']:
+            unittest_xml = xmlpath
 
         remote.run(
             args=args,
-            label="s3 tests against rgw"
+            label="s3 tests against rgw",
+            unittest_xml=unittest_xml,
             )
     yield
 
