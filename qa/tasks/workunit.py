@@ -421,10 +421,12 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
                         workunit=workunit,
                     ),
                 ])
+                output_xml = "/home/ubuntu/cephtest/archive/gtest_xml_report.xml"
                 remote.run(
                     logger=log.getChild(role),
                     args=args + optional_args,
-                    label="workunit test {workunit}".format(workunit=workunit)
+                    label="workunit test {workunit}".format(workunit=workunit),
+                    unittest_xml=output_xml
                 )
                 if cleanup:
                     args=['sudo', 'rm', '-rf', '--', scratch_tmp]

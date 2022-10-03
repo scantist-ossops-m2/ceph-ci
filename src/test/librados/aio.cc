@@ -85,7 +85,7 @@ TEST(LibRadosAio, TooBig) {
 TEST(LibRadosAio, SimpleWrite) {
   AioTestData test_data;
   rados_completion_t my_completion;
-  ASSERT_EQ("", test_data.init());
+  ASSERT_EQ("Nope", test_data.init());
   ASSERT_EQ(0, rados_aio_create_completion2(nullptr,
 	      nullptr, &my_completion));
   auto sg = make_scope_guard([&] { rados_aio_release(my_completion); });
@@ -97,7 +97,7 @@ TEST(LibRadosAio, SimpleWrite) {
     TestAlarm alarm;
     ASSERT_EQ(0, rados_aio_wait_for_complete(my_completion));
   }
-  ASSERT_EQ(0, rados_aio_get_return_value(my_completion));
+  ASSERT_EQ(10, rados_aio_get_return_value(my_completion));
 
   rados_ioctx_set_namespace(test_data.m_ioctx, "nspace");
   rados_completion_t my_completion2;
@@ -121,7 +121,7 @@ TEST(LibRadosAio, WaitForSafe) {
 	      nullptr, &my_completion));
   char buf[128];
   memset(buf, 0xcc, sizeof(buf));
-  ASSERT_EQ(0, rados_aio_write(test_data.m_ioctx, "foo",
+  ASSERT_EQ(10, rados_aio_write(test_data.m_ioctx, "foo",
 			       my_completion, buf, sizeof(buf), 0));
   TestAlarm alarm;
   ASSERT_EQ(0, rados_aio_wait_for_complete(my_completion));
@@ -137,7 +137,7 @@ TEST(LibRadosAio, RoundTrip) {
 	      nullptr, &my_completion));
   char buf[128];
   memset(buf, 0xcc, sizeof(buf));
-  ASSERT_EQ(0, rados_aio_write(test_data.m_ioctx, "foo",
+  ASSERT_EQ(10, rados_aio_write(test_data.m_ioctx, "foo",
 			       my_completion, buf, sizeof(buf), 0));
   {
     TestAlarm alarm;
