@@ -451,7 +451,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         Option(
             'prometheus_web_password',
             type='str',
-            default='$2b$12$iDhDKyxU6aosNsJExL19eO5JZ.cXMqiSfcE20X6ivleEIqzFdIimy',
+            default='admin',
             desc='Prometheus web password'
         ),
         Option(
@@ -463,7 +463,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         Option(
             'alertmanager_web_password',
             type='str',
-            default='$2b$12$iDhDKyxU6aosNsJExL19eO5JZ.cXMqiSfcE20X6ivleEIqzFdIimy',
+            default='admin',
             desc='Alertmanager web password'
         ),
         Option(
@@ -2651,6 +2651,18 @@ Then run the following:
         except OrchestratorError as e:
             self.events.from_orch_error(e)
             raise
+
+    @handle_orch_error
+    def get_prometheus_access_info(self) -> Dict[str, str]:
+        return {'user': self.prometheus_web_user or '',
+                'password': self.prometheus_web_password or '',
+                'certificate': self.http_server.service_discovery.ssl_certs.get_root_cert()}
+
+    @handle_orch_error
+    def get_alertmanager_access_info(self) -> Dict[str, str]:
+        return {'user': self.alertmanager_web_user or '',
+                'password': self.alertmanager_web_password or '',
+                'certificate': self.http_server.service_discovery.ssl_certs.get_root_cert()}
 
     @handle_orch_error
     def apply_mon(self, spec: ServiceSpec) -> str:

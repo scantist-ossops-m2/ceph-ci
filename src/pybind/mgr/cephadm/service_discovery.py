@@ -7,11 +7,12 @@ except ImportError:
         pass
 
 import logging
+import socket
+
 import orchestrator  # noqa
 from mgr_module import ServiceInfoT
 from mgr_util import build_url
 from typing import Dict, List, TYPE_CHECKING, cast, Collection, Callable, NamedTuple, Optional
-import secrets
 from cephadm.services.monitoring import AlertmanagerService, NodeExporterService, PrometheusService
 import secrets
 
@@ -96,9 +97,10 @@ class ServiceDiscovery:
             self.ssl_certs.generate_root_cert(self.mgr.get_mgr_ip())
             self.mgr.set_store(self.KV_STORE_SD_ROOT_CERT, self.ssl_certs.get_root_cert())
             self.mgr.set_store(self.KV_STORE_SD_ROOT_KEY, self.ssl_certs.get_root_key())
-        host = self.mgr.get_hostname()
         addr = self.mgr.get_mgr_ip()
-        server.ssl_certificate, server.ssl_private_key = self.ssl_certs.generate_cert_files(host, addr)
+        host_fqdn = socket.getfqdn(addr)
+        server.ssl_certificate, server.ssl_private_key = self.ssl_certs.generate_cert_files(
+            host_fqdn, addr)
 
     def configure(self, port: int, addr: str, enable_security: bool) -> None:
         # we create a new server to enforce TLS/SSL config refresh
@@ -174,7 +176,8 @@ class Root(Server):
             for service in cast(List[ServiceInfoT], server.get('services', [])):
                 if service['type'] != 'mgr':
                     continue
-                port = self.mgr.get_module_option_ex('prometheus', 'server_port', PrometheusService.DEFAULT_MGR_PROMETHEUS_PORT)
+                port = self.mgr.get_module_option_ex(
+                    'prometheus', 'server_port', PrometheusService.DEFAULT_MGR_PROMETHEUS_PORT)
                 targets.append(f'{hostname}:{port}')
         return [{"targets": targets, "labels": {}}]
 
