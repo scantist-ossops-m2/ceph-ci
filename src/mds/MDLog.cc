@@ -288,7 +288,7 @@ void MDLog::_submit_entry(LogEvent *le, MDSLogContextBase *c)
 
   // let the event register itself in the segment
   ceph_assert(!segments.empty());
-  LogSegment *ls = segments.rbegin()->second;
+  auto& ls = segments.rbegin()->second;
   ls->num_events++;
 
   le->_segment = ls;
@@ -383,7 +383,7 @@ void MDLog::_submit_thread()
 
     if (data.le) {
       LogEvent *le = data.le;
-      LogSegment *ls = le->_segment;
+      const LogSegmentRef& ls = le->_segment;
       // encode it, with event type
       bufferlist bl;
       le->encode_with_header(bl, features);
@@ -550,7 +550,8 @@ void MDLog::_prepare_new_segment()
   uint64_t seq = event_seq + 1;
   dout(7) << __func__ << " seq " << seq << dendl;
 
-  segments[seq] = new LogSegment(seq);
+  [[maybe_unused]] auto [_, inserted] = segments.try_emplace(seq, std::make_shared<LogSegment>(seq));
+  ceph_assert(inserted);
 
   logger->inc(l_mdl_segadd);
   logger->set(l_mdl_seg, segments.size());
@@ -652,7 +653,7 @@ void MDLog::trim(int m)
     max_expiring_segments = std::max<unsigned>(max_expiring_segments,segments.size() - pre_segments_size);
   }
   
-  map<uint64_t,LogSegment*>::iterator p = segments.begin();
+  auto p = segments.begin();
   while (p != segments.end()) {
     if (stop < ceph_clock_now())
       break;
@@ -672,7 +673,7 @@ void MDLog::trim(int m)
       break;
     
     // look at first segment
-    LogSegment *ls = p->second;
+    auto& ls = p->second;
     ceph_assert(ls);
     ++p;
     
@@ -712,10 +713,10 @@ void MDLog::trim(int m)
 
 class C_MaybeExpiredSegment : public MDSInternalContext {
   MDLog *mdlog;
-  LogSegment *ls;
+  LogSegmentRef ls;
   int op_prio;
   public:
-  C_MaybeExpiredSegment(MDLog *mdl, LogSegment *s, int p) :
+  C_MaybeExpiredSegment(MDLog *mdl, const LogSegmentRef& s, int p) :
     MDSInternalContext(mdl->mds), mdlog(mdl), ls(s), op_prio(p) {}
   void finish(int res) override {
     if (res < 0)
@@ -743,11 +744,11 @@ int MDLog::trim_all()
     try_to_commit_open_file_table(last_seq);
   }
 
-  map<uint64_t,LogSegment*>::iterator p = segments.begin();
+  auto p = segments.begin();
   while (p != segments.end() &&
 	 p->first < last_seq &&
 	 p->second->end < safe_pos) { // next segment should have been started
-    LogSegment *ls = p->second;
+    auto& ls = p->second;
     ++p;
 
     // Caller should have flushed journaler before calling this
@@ -783,7 +784,7 @@ int MDLog::trim_all()
 }
 
 
-void MDLog::try_expire(LogSegment *ls, int op_prio)
+void MDLog::try_expire(const LogSegmentRef& ls, int op_prio)
 {
   MDSGatherBuilder gather_bld(g_ceph_context);
   ls->try_to_expire(mds, gather_bld, op_prio);
@@ -806,7 +807,7 @@ void MDLog::try_expire(LogSegment *ls, int op_prio)
   logger->set(l_mdl_evexg, expiring_events);
 }
 
-void MDLog::_maybe_expired(LogSegment *ls, int op_prio)
+void MDLog::_maybe_expired(const LogSegmentRef& ls, int op_prio)
 {
   if (mds->mdcache->is_readonly()) {
     dout(10) << "_maybe_expired, ignoring read-only FS" <<  dendl;
@@ -827,7 +828,7 @@ void MDLog::_trim_expired_segments()
   // trim expired segments?
   bool trimmed = false;
   while (!segments.empty()) {
-    LogSegment *ls = segments.begin()->second;
+    auto ls = segments.begin()->second;
     if (!expired_segments.count(ls)) {
       dout(10) << "_trim_expired_segments waiting for " << ls->seq << "/" << ls->offset
 	       << " to expire" << dendl;
@@ -837,6 +838,14 @@ void MDLog::_trim_expired_segments()
     if (!mds_is_shutting_down && ls->seq >= oft_committed_seq) {
       dout(10) << "_trim_expired_segments open file table committedseq " << oft_committed_seq
 	       << " <= " << ls->seq << "/" << ls->offset << dendl;
+      break;
+    }
+    // avoid triming if the LogSegmentRef has other references in the MDS.   
+    // in the context of mdlog: it has LS_REF_COUNTS(3) references from - 
+    // local ls / expired_segments / segments 
+    if ( ls.use_count() > LS_REF_COUNTS ){ 
+      dout(10) << "_trim_expired_segments skipping trim for " << ls->seq << "/" << ls->offset
+	       << " segment reference-count = " << ls.use_count() << dendl;
       break;
     }
     
@@ -860,7 +869,6 @@ void MDLog::_trim_expired_segments()
     logger->inc(l_mdl_evtrm, ls->num_events);
     
     segments.erase(ls->seq);
-    delete ls;
     trimmed = true;
   }
 
@@ -876,7 +884,7 @@ void MDLog::trim_expired_segments()
   _trim_expired_segments();
 }
 
-void MDLog::_expired(LogSegment *ls)
+void MDLog::_expired(const LogSegmentRef& ls)
 {
   ceph_assert(ceph_mutex_is_locked_by_me(submit_mutex));
 
@@ -1419,7 +1427,7 @@ void MDLog::_replay_thread()
 	event_seq = sle->event_seq;
       else
 	event_seq = pos;
-      segments[event_seq] = new LogSegment(event_seq, pos);
+      segments[event_seq] = std::make_shared<LogSegment>(event_seq, pos);
       logger->set(l_mdl_seg, segments.size());
     } else {
       event_seq++;
@@ -1484,7 +1492,7 @@ void MDLog::standby_trim_segments()
 
   bool removed_segment = false;
   while (have_any_segments()) {
-    LogSegment *seg = get_oldest_segment();
+    const auto& seg = get_oldest_segment();
     dout(10) << " segment seq=" << seg->seq << " " << seg->offset <<
       "~" << seg->end - seg->offset << dendl;
 

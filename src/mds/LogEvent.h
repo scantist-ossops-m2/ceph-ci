@@ -49,6 +49,7 @@
 
 class MDSRank;
 class LogSegment;
+using LogSegmentRef = std::shared_ptr<LogSegment>;
 class EMetaBlob;
 
 // generic log event
@@ -110,8 +111,8 @@ public:
   virtual EMetaBlob *get_metablob() { return NULL; }
 
 protected:
-  LogSegment* get_segment() { return _segment; }
-  LogSegment const* get_segment() const { return _segment; }
+  LogSegmentRef& get_segment() { return _segment; }
+  const LogSegmentRef& get_segment() const { return _segment; }
 
   utime_t stamp;
 
@@ -122,7 +123,7 @@ private:
 
   EventType _type = 0;
   uint64_t _start_off = 0;
-  LogSegment *_segment = nullptr;
+  LogSegmentRef _segment;
 };
 
 inline std::ostream& operator<<(std::ostream& out, const LogEvent &le) {

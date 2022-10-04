@@ -1394,7 +1394,7 @@ CDir::fnode_ptr CDir::project_fnode(const MutationRef& mut)
   return pf;
 }
 
-void CDir::pop_and_dirty_projected_fnode(LogSegment *ls, const MutationRef& mut)
+void CDir::pop_and_dirty_projected_fnode(const LogSegmentRef& ls, const MutationRef& mut)
 {
   ceph_assert(!projected_fnode.empty());
   auto pf = std::move(projected_fnode.front());
@@ -1417,7 +1417,7 @@ version_t CDir::pre_dirty(version_t min)
   return projected_version;
 }
 
-void CDir::mark_dirty(LogSegment *ls, version_t pv)
+void CDir::mark_dirty(const LogSegmentRef& ls, version_t pv)
 {
   ceph_assert(is_auth());
 
@@ -1431,7 +1431,7 @@ void CDir::mark_dirty(LogSegment *ls, version_t pv)
   _mark_dirty(ls);
 }
 
-void CDir::_mark_dirty(LogSegment *ls)
+void CDir::_mark_dirty(const LogSegmentRef& ls)
 {
   if (!state_test(STATE_DIRTY)) {
     dout(10) << __func__ << " (was clean) " << *this << " version " << get_version() << dendl;
@@ -1449,7 +1449,7 @@ void CDir::_mark_dirty(LogSegment *ls)
   }
 }
 
-void CDir::mark_new(LogSegment *ls)
+void CDir::mark_new(const LogSegmentRef& ls)
 {
   ls->new_dirfrags.push_back(&item_new);
   state_clear(STATE_CREATING);
@@ -2889,7 +2889,7 @@ void CDir::finish_export()
   dirty_old_rstat.clear();
 }
 
-void CDir::decode_import(bufferlist::const_iterator& blp, LogSegment *ls)
+void CDir::decode_import(bufferlist::const_iterator& blp, const LogSegmentRef& ls)
 {
   DECODE_START(1, blp);
   decode(first, blp);

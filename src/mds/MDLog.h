@@ -66,7 +66,7 @@ public:
                       submit_thread(this) {}
   ~MDLog();
 
-  const std::set<LogSegment*> &get_expiring_segments() const
+  const std::set<LogSegmentRef> &get_expiring_segments() const
   {
     return expiring_segments;
   }
@@ -91,19 +91,19 @@ public:
       flush();
   }
 
-  LogSegment *peek_current_segment() {
-    return segments.empty() ? NULL : segments.rbegin()->second;
+  const LogSegmentRef& peek_current_segment() {
+    return segments.empty() ? null_lsr : segments.rbegin()->second;
   }
-
-  LogSegment *get_current_segment() { 
+  
+  const LogSegmentRef& get_current_segment() {
     ceph_assert(!segments.empty());
     return segments.rbegin()->second;
   }
 
-  LogSegment *get_segment(LogSegment::seq_t seq) {
-    if (segments.count(seq))
-      return segments[seq];
-    return NULL;
+  const LogSegmentRef& get_segment(LogSegment::seq_t seq) {
+    if (auto it = segments.find(seq); it != segments.end())
+      return it->second;
+    return null_lsr;
   }
 
   bool have_any_segments() const {
@@ -247,12 +247,11 @@ protected:
     ceph_assert(!segments.empty());
     return segments.rbegin()->first;
   }
-  LogSegment *get_oldest_segment() {
+  const LogSegmentRef& get_oldest_segment() {
     return segments.begin()->second;
   }
   void remove_oldest_segment() {
-    std::map<uint64_t, LogSegment*>::iterator p = segments.begin();
-    delete p->second;
+    auto p = segments.begin();
     segments.erase(p);
   }
 
@@ -275,9 +274,10 @@ protected:
   MDSContext::vec waitfor_replay;
 
   // -- segments --
-  std::map<uint64_t,LogSegment*> segments;
-  std::set<LogSegment*> expiring_segments;
-  std::set<LogSegment*> expired_segments;
+  std::map<uint64_t,LogSegmentRef> segments;
+  std::set<LogSegmentRef> expiring_segments;
+  std::set<LogSegmentRef> expired_segments;  
+
   std::size_t pre_segments_size = 0;            // the num of segments when the mds finished replay-journal, to calc the num of segments growing
   uint64_t event_seq = 0;
   int expiring_events = 0;
@@ -300,13 +300,16 @@ private:
 
   void try_to_commit_open_file_table(uint64_t last_seq);
 
-  void try_expire(LogSegment *ls, int op_prio);
-  void _maybe_expired(LogSegment *ls, int op_prio);
-  void _expired(LogSegment *ls);
+  void try_expire(const LogSegmentRef &ls, int op_prio);
+  void _maybe_expired(const LogSegmentRef &ls, int op_prio);
+  void _expired(const LogSegmentRef &ls);
   void _trim_expired_segments();
   void write_head(MDSContext *onfinish);
 
   // -- events --
   LogEvent *cur_event = nullptr;
+
+  LogSegmentRef null_lsr;
+  const int LS_REF_COUNTS = 3; // indicate the number of valid references mdlog has to a SP segment
 };
 #endif
