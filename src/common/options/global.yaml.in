@@ -5140,6 +5140,26 @@ options:
   flags:
   - runtime
   with_legacy: true
+- name: bluestore_clone_cow_defrag_threshold
+  type: float
+  level: advanced
+  desc: When bluestore_clone_cow is enabled, defragment objects and sever
+    associations with existing shared_blobs when the average extent size for
+    that object drops below this value.  Set to 0 to never defragment objects.
+  default: 0
+  flags:
+  - runtime
+  with_legacy: true
+- name: bluestore_clone_cow_defrag_jitter
+  type: float
+  level: advanced
+  desc: When bluestore_clone_cow is enabled, defragment objects and sever
+    associations with existing shared_blobs when the average extent size for
+    that object drops below this value.  Set to 0 to never defragment objects.
+  default: 0
+  flags:
+  - runtime
+  with_legacy: true
 - name: bluestore_default_buffered_read
   type: bool
   level: advanced

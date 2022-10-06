@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <algorithm>
+#include <random>
 
 #include <boost/container/flat_set.hpp>
 #include <boost/algorithm/string.hpp>
@@ -48,7 +49,6 @@
 #include "common/numa.h"
 #include "common/pretty_binary.h"
 #include "kv/KeyValueHistogram.h"
-
 #ifdef HAVE_LIBZBD
 #include "ZonedAllocator.h"
 #include "ZonedFreelistManager.h"
@@ -4752,7 +4752,8 @@ BlueStore::BlueStore(CephContext *cct,
 #endif
     min_alloc_size(_min_alloc_size),
     min_alloc_size_order(ctz(_min_alloc_size)),
-    mempool_thread(this)
+    mempool_thread(this),
+    mt(rd())
 {
   _init_logger();
   cct->_conf.add_observer(this);
@@ -16889,8 +16890,34 @@ int BlueStore::_clone(TransContext *txc,
   oldo->flush();
   _do_truncate(txc, c, newo, 0);
   if (cct->_conf->bluestore_clone_cow) {
+    // create a defrag threshold and add jitter
+    float threshold = cct->_conf->bluestore_clone_cow_defrag_threshold;
+    if (threshold > 0) {
+      float jitter = cct->_conf->bluestore_clone_cow_defrag_jitter;
+      if (jitter > 0) {
+        std::uniform_real_distribution<float> dist(-jitter, jitter);
+        threshold += dist(mt);
+      }
+    }
+    // Find the current fragmentation
+    float avg_extent_bytes = (float) oldo->onode.size /
+                                oldo->extent_map.extent_map.size();
+    float fragmentation = (float) min_alloc_size / avg_extent_bytes;
+
+    // Check see if we want to defrag
+    if (threshold > 0 && fragmentation > threshold) {
+      bufferlist bl;
+      r = _do_read(c.get(), oldo, 0, oldo->onode.size, bl, 0);
+      if (r < 0)
+        goto out;
+      r = _do_write(txc, c, oldo, 0, oldo->onode.size, bl, 0);
+      if (r < 0)
+        goto out;
+    }
+    // Do the actual clone
     _do_clone_range(txc, c, oldo, newo, 0, oldo->onode.size, 0);
   } else {
+    // Otherwise just copy
     bufferlist bl;
     r = _do_read(c.get(), oldo, 0, oldo->onode.size, bl, 0);
     if (r < 0)
