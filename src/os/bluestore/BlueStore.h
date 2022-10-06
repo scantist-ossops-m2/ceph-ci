@@ -2303,6 +2303,9 @@ private:
 
   bool per_pool_stat_collection = true;
 
+  std::random_device rd;
+  std::mt19937 mt;
+
   struct MempoolThread : public Thread {
   public:
     BlueStore *store;
