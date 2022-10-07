@@ -2295,10 +2295,18 @@ Then run the following:
                     f"OSD{'s' if len(active_osds) > 1 else ''}"
                     f" ({', '.join(active_osds)}). Use 'ceph orch osd rm' first.")
 
+        ret, keyring, err = self.check_mon_command({
+            'prefix': 'auth get',
+            'entity': 'client.bootstrap-osd',
+        })
+        config = {'keyring': keyring}
         out, err, code = self.wait_async(CephadmServe(self)._run_cephadm(
             host, 'osd', 'ceph-volume',
-            ['--', 'lvm', 'zap', '--destroy', path],
-            error_ok=True))
+            ['--config-json', '-', '--', 'lvm', 'zap', '--destroy', path],
+            error_ok=True,
+            stdin=json.dumps(config)))
+        if code:
+            raise OrchestratorError(f"Can't zap {path}.\n{err}")
 
         self.cache.invalidate_host_devices(host)
         self.cache.invalidate_host_networks(host)
