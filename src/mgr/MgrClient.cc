@@ -431,7 +431,6 @@ void MgrClient::_send_report()
 
 void MgrClient::send_pgstats()
 {
-  std::lock_guard l(lock);
   _send_pgstats();
 }
 
