@@ -388,7 +388,7 @@ def run_tests(ctx, config):
             attrs += ['!sse-s3']
         unittest_xml = None
         xmlfile_id = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S--") + str(uuid.uuid4())
-        xmlpath= f'/home/ubuntu/cephtest/archive/nosetest-{xmlfile_id}.xml'
+        xmlpath= f'{testdir}/archive/nosetest-{xmlfile_id}.xml'
         if 'extra_attrs' in client_config:
             attrs = client_config.get('extra_attrs') 
         args += [

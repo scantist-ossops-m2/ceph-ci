@@ -421,7 +421,7 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
                         workunit=workunit,
                     ),
                 ])
-                output_xml = "/home/ubuntu/cephtest/archive/gtest_xml_report.xml"
+                output_xml = f'{testdir}/archive/gtest_xml_report.xml'
                 remote.run(
                     logger=log.getChild(role),
                     args=args + optional_args,
