@@ -293,6 +293,9 @@ public:
   virtual int  store_snap_maps(const std::unordered_map<spg_t, class SnapMapper*>& snap_mappers) {return 0;}
   virtual int  remove_snap_mapper(spg_t pgid) {return 0;}
   virtual int  restore_snap_mapper(SnapMapper & sm, spg_t pgid) { return 0;}
+  virtual void foreach_old_snap_mapper_obj(std::function<void(const bufferlist &, const char *shard)> cb) {};
+  virtual void remove_old_snap_mapper_from_db() {};
+  virtual bool new_snap_map_mode() { return false;}
 
   // return store min allocation size, if applicable
   virtual uint64_t get_min_alloc_size() const {

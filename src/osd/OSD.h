@@ -2018,7 +2018,8 @@ private:
   float get_osd_recovery_sleep();
   float get_osd_delete_sleep();
   float get_osd_snap_trim_sleep();
-
+  void  convert_old_snap_mapper_objects(OSDMapRef & osdmap);
+  
   int get_recovery_max_active();
   void maybe_override_max_osd_capacity_for_qos();
   bool maybe_override_options_for_qos();

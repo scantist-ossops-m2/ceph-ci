@@ -331,7 +331,7 @@ void generate_transaction(
       size_t bl_size = (oiter->second.updated_snaps->second.size() * 8 + 8);
       bl_size += (oiter->second.updated_snaps->first.size() * 8 + 8);
       bufferlist bl(bl_size);
-      //lgeneric_derr(cct) << __func__ << "::GBH::new_snaps=" << oiter->second.updated_snaps->second << dendl;
+      //lgeneric_derr(cct) << __func__ << "::GBH::new_snaps=" << oiter->second.updated_snaps->second << ", old_snaps=" << oiter->second.updated_snaps->first<< dendl;
       encode(oiter->second.updated_snaps->second, bl);
       if (oiter->second.updated_snaps->first.size()) {
 	//lgeneric_derr(cct) << __func__ << "::GBH::old_snaps=" << oiter->second.updated_snaps->first  << dendl;

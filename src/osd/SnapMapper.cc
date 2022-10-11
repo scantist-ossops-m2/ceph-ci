@@ -171,6 +171,7 @@ bool SnapMapper::check(const hobject_t &hoid) const
   return false;
 }
 
+
 void SnapMapper::print_snaps(const char *s) const
 {
   for (auto itr = snap_to_objs.begin(); itr != snap_to_objs.end(); ++itr) {
@@ -193,10 +194,9 @@ int SnapMapper::remove_mapping_from_snapid_to_hobject(
   if (itr != snap_to_objs.end()) {
     auto & obj_set = itr->second;
     ceph_assert(obj_set.erase(coid) == 1);
-    //dout(1) << "+++GBH::SNAPMAP::" << __func__ << "::snapid=" << snapid << ", coid=" << coid << dendl ;
     // if was the last element in the set -> remove the mapping
     if (obj_set.empty()) {
-#if 0
+#if 1
       utime_t start    = snap_trim_time[snapid];
       utime_t duration = ceph_clock_now() - start;
       dout(10) << "---GBH::SNAPMAP::" << __func__ << "::removed the last obj from snap " << snapid << dendl;
@@ -233,7 +233,7 @@ int SnapMapper::update_snaps(
       //dout(1) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
       remove_mapping_from_snapid_to_hobject(coid, *snap_itr);
       if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
-	dout(20) << __func__ << " rm " << to_raw_key(make_pair(*snap_itr, coid)) << dendl;
+	dout(20) << __func__ << " rm " << coid << " from " << *snap_itr << dendl;
       }
     }
   }
@@ -252,7 +252,7 @@ void SnapMapper::add_oid(
 
   // add the coid to the coid_set of all snaps affected by it
   for (auto snap_itr = snaps.begin(); snap_itr != snaps.end(); ++snap_itr) {
-    //dout(1) << "+++GBH::SNAPMAP::" << __func__ << "::(" << *snap_itr << ") -> (" << coid << ")" <<  dendl;
+    dout(10) << "+++GBH::SNAPMAP::" << __func__ << "::(" << *snap_itr << ") -> (" << coid << ")" <<  dendl;
     snap_to_objs[*snap_itr].insert(coid);
   }
 
@@ -281,23 +281,23 @@ int SnapMapper::get_next_objects_to_trim(
   ceph_assert(out);
   ceph_assert(out->empty());
   ceph_assert(max > 0);
-  dout(10) << "***GBH::SNAPMAP::" << __func__ << "::snap_id=" << snap << ", max=" << max << dendl;
+  dout(20) << "***GBH::SNAPMAP::" << __func__ << "::snap_id=" << snap << ", max=" << max << dendl;
 
   auto itr = snap_to_objs.find(snap);
   if (itr != snap_to_objs.end()) {
     auto & obj_set  = itr->second;
-#if 0
+#if 1
     auto const & itr_time = snap_trim_time.find(snap);
     if (unlikely(itr_time == snap_trim_time.end())) {
       uint32_t global_count = count_objects();
       snap_trim_time[snap] = ceph_clock_now();
-      dout(1) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid <<"::snap_id=" << snap
+      dout(10) << "GBH::SNAPMAP::TIME::" << __func__ << "::" << pgid <<"::snap_id=" << snap
 	      << ", count=" << itr->second.size() << ", global_count=" << global_count << dendl;
     }
 #endif
     for (auto itr = obj_set.begin(); itr != obj_set.end(); ++itr) {
       const hobject_t & coid = *itr;
-      //dout(1) << "GBH::SNAPMAP::" << __func__ << "::" << snap << "-->" << coid << dendl;
+      dout(20) << "GBH::SNAPMAP::" << __func__ << "::" << snap << "-->" << coid << dendl;
       ceph_assert(check(coid));
       out->push_back(coid);
       if (out->size() == max) {
@@ -344,11 +344,11 @@ int SnapMapper::_remove_oid(const hobject_t &coid, const std::vector<snapid_t> &
   // iterate over snap-set attached to this coid
   for (auto snap_itr = old_snaps.begin(); snap_itr != old_snaps.end(); ++snap_itr) {
     // remove the coid from the coid_set of objects modified since snap creation
-    //dout(1) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
+    dout(20) << "---GBH::SNAPMAP::" << __func__ << "::remove mapping from snapid->obj_id :: " << *snap_itr << "::" << coid << dendl;
     remove_mapping_from_snapid_to_hobject(coid, *snap_itr);
 
     if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
-      dout(20) << __func__ << " rm " << to_raw_key(make_pair(*snap_itr, coid)) << dendl;
+      dout(20) << __func__ << " rm " << coid << " from " << *snap_itr << dendl;
     }
   }
 

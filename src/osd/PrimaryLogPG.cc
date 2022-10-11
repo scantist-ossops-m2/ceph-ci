@@ -400,13 +400,10 @@ void PrimaryLogPG::on_local_recover(
   clear_object_snap_mapping(t, hoid);
   if (!is_delete && recovery_info.soid.is_snap()) {
     OSDriver::OSTransaction _t(osdriver.get_transaction(t));
-    set<snapid_t> snaps;
     dout(20) << " snapset " << recovery_info.ss << dendl;
     auto p = recovery_info.ss.clone_snaps.find(hoid.snap);
     if (p != recovery_info.ss.clone_snaps.end()) {
-      //snaps.insert(p->second.begin(), p->second.end());
-      //dout(20) << " snaps " << snaps << dendl;
-      //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling add_oid()::snaps=" << snaps << dendl;
+      dout(20) << "GBH::SNAPMAP::" <<__func__ << "::calling add_oid()::snaps=" << p->second << dendl;
       snap_mapper.add_oid(
 	recovery_info.soid,
 	p->second,
@@ -4616,12 +4613,14 @@ int PrimaryLogPG::get_snaps(const hobject_t& coid, std::vector<snapid_t>* snaps_
 {
   if (coid.is_head()) {
     osd->clog->error() << __func__ << ": Head-Objects got no snaps_set (must call with a coid)";
+    //derr << "GBH::SNAPMAP::" << __func__ << ": Head-Objects got no snaps_set (must call with a coid)" << dendl;
     return -ENOENT;
   }
 
   ObjectContextRef obc = get_object_context(coid, false, NULL);
   if (!obc || !obc->ssc || !obc->ssc->exists) {
     osd->clog->error() << __func__ << ": coid<" << coid << "> " << (obc ? "(no obc->ssc or !exists)" : "(no obc)");
+    //derr << "GBH::SNAPMAP::" << __func__ << ": coid<" << coid << "> " << (obc ? "(no obc->ssc or !exists)" : "(no obc)") << dendl;
     return -ENOENT;
   }
 
@@ -4632,11 +4631,13 @@ int PrimaryLogPG::get_snaps(const hobject_t& coid, std::vector<snapid_t>* snaps_
   if (citer == snapset.clone_snaps.end()) {
     osd->clog->error() << "No clone_snaps in snapset " << snapset
 		       << " for object " << coid << "\n";
+    derr << "GBH::SNAPMAP::" << "No clone_snaps in snapset " << snapset << " for object " << coid << dendl;
     return -ENOENT;
   }
 
   if (citer->second.empty()) {
     osd->clog->error() << "No object info snaps for object " << coid;
+    //derr << "GBH::SNAPMAP::" << "No object info snaps for object " << coid << dendl;
     return -ENOENT;
   }
 
@@ -15676,7 +15677,6 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
     ceph_abort_msg("get_next_objects_to_trim returned an invalid code");
   } else if (r == -ENOENT) {
     // Done!
-    //ldout(pg->cct, 1) << "GBH::SNAPMAP::" << "ERR::got ENOENT" << dendl;
     ldout(pg->cct, 10) << "got ENOENT" << dendl;
 
     pg->snap_trimq.erase(snap_to_trim);
@@ -15710,11 +15710,9 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
   }
   ceph_assert(!to_trim.empty());
 
-  //ldout(pg->cct, 1) << "GBH::SNAPMAP::" << __func__ << "::hobjects::" << to_trim << "::snap_to_trim::" << snap_to_trim << dendl;
   for (auto &&object: to_trim) {
     // Get next
     ldout(pg->cct, 10) << "AwaitAsyncWork react trimming " << object << dendl;
-    //ldout(pg->cct, 1) << "GBH::SNAPMAP::AwaitAsyncWork react trimming " << object << dendl;
     OpContextUPtr ctx;
     int error = pg->trim_object(in_flight.empty(), object, snap_to_trim, &ctx);
     if (error) {

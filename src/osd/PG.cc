@@ -323,7 +323,6 @@ void PG::clear_object_snap_mapping(
     PrimaryLogPG *plPG = dynamic_cast<PrimaryLogPG*>(this);
     std::vector<snapid_t>old_snaps;
     int ret = plPG->get_snaps(soid, &old_snaps);
-    //dout(1) << "GBH::SNAPMAP::" << __func__ << "::coid=" << soid << dendl;
     ret = snap_mapper.remove_oid_from_all_snaps(
       soid,
       old_snaps,
@@ -341,7 +340,6 @@ void PG::update_object_snap_mapping(
   OSDriver::OSTransaction _t(osdriver.get_transaction(t));
   ceph_assert(soid.snap < CEPH_MAXSNAP);
   std::vector<snapid_t> _snaps(snaps.begin(), snaps.end());
-  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::coid=" << soid << dendl;
   int r = snap_mapper.remove_oid_from_all_snaps(
     soid,
     _snaps,
@@ -351,7 +349,6 @@ void PG::update_object_snap_mapping(
     ceph_abort();
   }
 
-  //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling add_oid()::snaps=" << snaps << dendl;
   snap_mapper.add_oid(
     soid,
     _snaps,
@@ -1170,10 +1167,8 @@ void PG::update_snap_map(
   const vector<pg_log_entry_t> &log_entries,
   ObjectStore::Transaction &t)
 {
-  //dout(1) << "GBH::SNAPMAP::" << __func__ << dendl;
   for (auto i = log_entries.cbegin(); i != log_entries.cend(); ++i) {
     OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
-    //dout(1) << "GBH::SNAPMAP::" << __func__ << "::i->soid.snap=" << i->soid.snap << dendl;
     if (i->soid.snap < CEPH_MAXSNAP) {
       if (i->is_delete()) {
 	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.remove_oid(oid=" << i->soid << ")" << dendl;
@@ -1182,11 +1177,19 @@ void PG::update_snap_map(
 	auto p = snapbl.cbegin();
 	try {
 	  decode(new_snaps, p);
-	  decode(old_snaps, p);
 	} catch (...) {
 	  derr << __func__ << " ::new_snaps:: decode snaps failure on " << *i << dendl;
 	  return;
 	}
+	try {
+	  decode(old_snaps, p);
+	} catch (...) {
+	  //ceph_abort_msg("TBD::transactions from old code won't have the old_snap field");
+	  derr << "::GBH::remove_oid::old_snaps:: decode snaps failure on " << *i << dendl;
+	  derr << "::GBH::TBD: need to use legacy API with RocksDB::OMAP (which we must keep alive!!" << dendl;
+	  return;
+	}
+
 	// This path is only used when we remove the last snap
 	// new_snap must be empty and old_snaps should probaly only hold {i->soid.snap}
 	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
@@ -1225,7 +1228,9 @@ void PG::update_snap_map(
 	  try {
 	    decode(old_snaps, p);
 	  } catch (...) {
-	    derr << __func__ << " ::old_snaps:: decode snaps failure on " << *i << dendl;
+	    //ceph_abort_msg("TBD::transactions from old code won't have the old_snap field");
+	    derr << "::GBH::update_snaps()::old_snaps:: decode snaps failure on " << *i << dendl;
+	    derr << "::GBH::TBD: need to use legacy API with RocksDB::OMAP (which we must keep alive!!" << dendl;
 	    return;
 	  }
 	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
