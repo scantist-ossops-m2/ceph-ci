@@ -9113,6 +9113,35 @@ int BlueStore::_fsck(BlueStore::FSCKDepth depth, bool repair)
   return _fsck_on_open(depth, repair);
 }
 
+static const char*    OBJECT_PREFIX     = "OBJ_";
+static const unsigned OBJECT_PREFIX_LEN = 4;
+//========================================================================
+void BlueStore::foreach_old_snap_mapper_obj(std::function<void(const bufferlist &, const char *shard)> cb)
+{
+  static const unsigned SKIP_LEN = sizeof(uint64_t) + sizeof(uint32_t) + sizeof(uint64_t) + sizeof(char);
+  KeyValueDB::Iterator it;
+  it = db->get_iterator(PREFIX_PERPG_OMAP, KeyValueDB::ITERATOR_NOCACHE);
+  if (it) {
+    for (it->lower_bound(string()); it->valid(); it->next()) {
+      const char* c  = it->key().c_str();
+      // skip past pool,hash,omap_head
+      c += SKIP_LEN;
+      if (strncmp(c, OBJECT_PREFIX, OBJECT_PREFIX_LEN) == 0) {
+	cb(it->value(), c+OBJECT_PREFIX_LEN);
+      }
+    }
+  }
+}
+
+//========================================================================
+void BlueStore::remove_old_snap_mapper_from_db()
+{
+  dout(1) << "::GBH::t->rmkeys_by_prefix(PREFIX_ALLOC_BITMAP)" << dendl;
+  KeyValueDB::Transaction t = db->get_transaction();
+  t->rmkeys_by_prefix(PREFIX_PERPG_OMAP);
+  db->submit_transaction_sync(t);
+}
+
 int BlueStore::_fsck_on_open(BlueStore::FSCKDepth depth, bool repair)
 {
   uint64_t sb_hash_size = uint64_t(
@@ -18782,8 +18811,18 @@ int BlueStore::restore_from_snap_maps_file(std::unordered_map<snapid_t, std::uno
 }
 
 //-----------------------------------------------------------------------------------
+bool BlueStore::new_snap_map_mode()
+{
+  return bluefs->dir_exists(snap_maps_dir);
+}
+
+//-----------------------------------------------------------------------------------
 int BlueStore::restore_snap_mapper(SnapMapper & sm, spg_t pgid)
 {
+  if (bluefs->dir_exists(snap_maps_dir) == false) {
+    dout(10) << "::snap_maps directory <" << snap_maps_dir << "> doesn't exist" << dendl;
+    return 0;
+  }
   std::vector<snap_listing_entry_t> sdir;
   int ret = restore_snap_map_listing_file(sdir);
   if (ret != 0) {
@@ -19416,11 +19455,18 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
   }
   dout(5) << "onode_count=" << stats.onode_count << " ,shard_count=" << stats.shard_count << dendl;
 
+  // storing snap_map will mark that we are in new snap mode
+  // so we need to check before calling store_snap_map()
+  bool did_recovery_upgrade = !new_snap_map_mode();
   store_snap_maps(snap_mappers);
+  // by storing the maps we will prevent conversion from old snapmapper objects
+  // which was done already here (we piggybacked SnapMapper recovery)
+
   for (auto itr = snap_mappers.begin(); itr != snap_mappers.end() ; itr ++) {
     SnapMapper* sm = itr->second;
     delete sm;
   }
+
   return 0;
 }
 

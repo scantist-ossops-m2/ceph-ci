@@ -3464,6 +3464,71 @@ float OSD::get_osd_snap_trim_sleep()
   return cct->_conf.get_val<double>("osd_snap_trim_sleep_hdd");
 }
 
+// convert SnapMapper objects from old-format to the new mode
+void OSD::convert_old_snap_mapper_objects(OSDMapRef & osdmap)
+{
+  uint64_t obj_converted_count = 0;
+  auto convert_old_snap_obj = [&](const bufferlist &bl, const char *shard_str) {
+    SnapMapper::object_snaps objsnap;
+    try {
+      decode(objsnap, bl);
+    }
+    catch (ceph::buffer::error& e) {
+      derr << "GBH::[" << obj_converted_count << "]failed object_snaps decode" << dendl;
+      return;
+    }
+
+    const hobject_t          &hoid  = objsnap.oid;
+    const std::set<snapid_t> &snaps = objsnap.snaps;
+    shard_id_t shard = shard_id_t::NO_SHARD;
+    if (shard_str[0] == '.') {
+      int sh = 0;
+      int r = sscanf(shard_str+1, "%x", &sh);
+      if (r == 1) {
+	shard = shard_id_t(sh);
+      }
+    }
+
+    pg_t pgid;
+    int  ret = osdmap->map_to_pg(hoid.pool, hoid.oid.name, hoid.get_key(), hoid.nspace, &pgid);
+    dout(20) << __func__ << "::GBH:: (" << ret << ")"  << hoid << " || " << snaps << dendl;
+    if (ret == 0) {
+      spg_t spg(osdmap->raw_pg_to_pg(pgid), shard);
+      PGRef pgref =_lookup_pg(spg);
+      if (pgref) {
+	SnapMapper& snap_mapper = pgref->get_snap_mapper();
+	std::vector snap_vec(snaps.begin(), snaps.end());
+	snap_mapper.add_oid(hoid, snap_vec, nullptr);
+	obj_converted_count++;
+      }
+      else {
+	derr << "GBH::[" << obj_converted_count << "]failed _lookup_pg() for     hoid=" << hoid << dendl;
+	derr << "GBH::[" << obj_converted_count << "]failed _lookup_pg() for raw pgid=" << pgid << dendl;
+	derr << "GBH::[" << obj_converted_count << "]failed _lookup_pg() for     pgid=" << osdmap->raw_pg_to_pg(pgid) << dendl;
+      }
+    }
+    else {
+      derr << "GBH::failed osdmap->map_to_pg():" << hoid << " || " << snaps << dendl;
+    }
+  };
+
+  utime_t  start_time = ceph_clock_now();
+  store->foreach_old_snap_mapper_obj(convert_old_snap_obj);
+#if 0
+  // keep SNapObj in DB until after we finish PGLog recovery
+  // since we will need the data for transactions which started
+  // before the upgrade
+
+  // TBD: maybe we can remove it if no recovery was done???
+
+  //Remove the full perfeix from RocksDB
+  store->remove_old_snap_mapper_from_db();
+#endif
+  utime_t end_time = ceph_clock_now();
+  dout(1) << "::GBH::" << obj_converted_count << " Old SnapMapper Objs were converted; elapsed time="
+	  << end_time - start_time << " seconds" << dendl;
+}
+
 int OSD::init()
 {
   OSDMapRef osdmap;
@@ -3686,6 +3751,18 @@ int OSD::init()
   // load up pgs (as they previously existed)
   load_pgs();
 
+  if (!store->new_snap_map_mode()) {
+    // skip conversion step if we already moved to new-snap--mode
+    // this will also stop conversion when an upgrade happens after
+    //   recovery (where we already built the new tables)
+
+    // TBD:
+    // we need to maintain the old DB until after we finish PGLog recovery as we
+    // might need data stored in the Snaps Objects for transaction which failed in the middle
+    // we will still need to delete the old tables after PGLog recovery is done
+
+    convert_old_snap_mapper_objects(osdmap);
+  }
   dout(2) << "superblock: I am osd." << superblock.whoami << dendl;
 
   if (cct->_conf.get_val<bool>("osd_compact_on_start")) {
@@ -4401,11 +4478,6 @@ int OSD::shutdown()
   // stop sending work to pgs.  this just prevents any new work in _process
   // from racing with on_shutdown and potentially entering the pg after.
   op_shardedwq.drain();
-
-  // TBD::
-  // We need to wait store_snap_maps() after PG->shutdown()
-  // but that will clear snap_maps
-  // Need to copy them outside the PG and don't destroy them!!!
 
   dout(1) << "calling OSD::store_snap_maps()" << dendl;
   store_snap_maps();
