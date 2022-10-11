@@ -225,3 +225,48 @@ For the reverse situation:
 
 The ``home/patrick`` directory and its children will be pinned to rank 2
 because its export pin overrides the policy on ``home``.
+
+
+Dynamic subtree partitioning with Balancer on specific ranks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+CephFS file system provides the ``bal_rank_mask`` option to enforce the balancer
+to dynamically rebalance subtrees within particular active MDS ranks. This
+allows administrators to exploit both the dynamic subtree partitioning and
+static pining schemes in different active MDS ranks so that metadata loads
+are optimized based on users demand. For instance, in realistic cloud
+storage environments, where a lot of sub-volumes are allotted to multiple
+computing nodes (e.g., VMs and containers), some subvolumes that require
+high performance are managed by static partitioning, whereas most subvolumes
+that have moderate workload are managed by the balancer. As the balancer
+evenly spreads metadata workloads to all active MDS ranks, performances of
+static pinned subvolumes inevitably may be affected or degraded. If this option
+is configured, subtrees managed by the balancer are not affected by
+static pinned subtrees. The opposite is also true.
+
+This option can be configured through ``ceph fs set`` command. For example:
+
+::
+
+    ceph fs set <fs_name> bal_rank_mask <hex> 
+
+Each bit of this ``<hex>`` number represents a dedicated rank. If the ``<hex>`` is
+set to ``0x3``, the balancer runs on active ``0`` and ``1`` ranks. For instance:
+
+::
+
+    ceph fs set <fs_name> bal_rank_mask 0x3
+
+If the bal_rank_mask is set to ``-1`` or ``all``, all active ranks are masked
+and utilized by the balancer. As an example:
+
+::
+
+    ceph fs set <fs_name> bal_rank_mask -1
+
+On the other hands, if the balancer needs to be disabled for several reasons,
+the bal_rank_mask should be set to ``0x0``. For example:
+
+::
+
+    ceph fs set <fs_name> bal_rank_mask 0x0
