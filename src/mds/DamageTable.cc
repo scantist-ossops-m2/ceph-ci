@@ -200,6 +200,11 @@ bool DamageTable::notify_remote_damaged(inodeno_t ino, std::string_view path)
   return false;
 }
 
+damage_entry_id_t DamageTable::inode_to_id(inodeno_t ino)
+{
+  return remotes.find(ino)->second->id;
+}
+
 bool DamageTable::oversized() const
 {
   return by_id.size() > (size_t)(g_conf()->mds_damage_table_max_entries);

@@ -155,6 +155,8 @@ class DamageTable
      */
     bool notify_remote_damaged(inodeno_t ino, std::string_view path);
 
+    damage_entry_id_t inode_to_id(inodeno_t ino);
+    
     bool is_dentry_damaged(
       const CDir *dir_frag,
       std::string_view dname,

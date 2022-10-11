@@ -4777,6 +4777,8 @@ next:
                            false);
         // Flag that we repaired this BT so that it won't go into damagetable
         results->backtrace.repaired = true;
+        damage_entry_id_t damage_id = mdcache->mds->damage_table.inode_to_id(in->ino());
+        mdcache->mds->damage_table.erase(damage_id);
         if (in->mdcache->mds->logger)
           in->mdcache->mds->logger->inc(l_mds_scrub_backtrace_repaired);
       }
