@@ -3693,7 +3693,7 @@ void OSDMap::dump_pool(CephContext *cct,
   if (pni != pool_name.end())
     name = pni->second;
   f->open_object_section("pool");
-  f->dump_int("pool", pid);
+  f->dump_int("pool_id", pid);
   f->dump_string("pool_name", name);
   pdata.dump(f);
   if (pdata.is_replicated()) {
