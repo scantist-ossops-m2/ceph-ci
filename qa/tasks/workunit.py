@@ -388,6 +388,7 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
                 raise RuntimeError('Spec did not match any workunits: {spec!r}'.format(spec=spec))
             for workunit in to_run:
                 log.info('Running workunit %s...', workunit)
+                output_xml = f'{testdir}/archive/'
                 args = [
                     'mkdir', '-p', '--', scratch_tmp,
                     run.Raw('&&'),
@@ -421,7 +422,6 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
                         workunit=workunit,
                     ),
                 ])
-                output_xml = f'{testdir}/archive/gtest_xml_report.xml'
                 remote.run(
                     logger=log.getChild(role),
                     args=args + optional_args,

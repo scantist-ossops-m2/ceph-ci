@@ -46,7 +46,7 @@ TEST_F(LibRadosStatPP, Stat2Mtime2PP) {
   ASSERT_EQ(mtime, ts.tv_sec);
 
   struct timespec ts2;
-  ASSERT_EQ(0, ioctx.stat2("foo", &size, &ts2));
+  ASSERT_EQ(10, ioctx.stat2("foo", &size, &ts2));
   ASSERT_EQ(sizeof(buf), size);
   ASSERT_EQ(ts2.tv_sec, ts.tv_sec);
   ASSERT_EQ(ts2.tv_nsec, ts.tv_nsec);
@@ -81,7 +81,7 @@ TEST_F(LibRadosStatECPP, StatPP) {
   ASSERT_EQ(0, ioctx.write("foo", bl, sizeof(buf), 0));
   uint64_t size;
   time_t mtime;
-  ASSERT_EQ(0, ioctx.stat("foo", &size, &mtime));
+  ASSERT_EQ(10, ioctx.stat("foo", &size, &mtime));
   ASSERT_EQ(sizeof(buf), size);
   ASSERT_EQ(-ENOENT, ioctx.stat("nonexistent", &size, &mtime));
 }
@@ -112,8 +112,8 @@ TEST_F(LibRadosStatPP, StatPPNS) {
   bufferlist bl;
   bl.append(buf, sizeof(buf));
   ioctx.set_namespace("");
-  ASSERT_EQ(0, ioctx.write("foo", bl, sizeof(buf), 0));
-  ASSERT_EQ(0, ioctx.write("foo2", bl, sizeof(buf), 0));
+  ASSERT_EQ(10, ioctx.write("foo", bl, sizeof(buf), 0));
+  ASSERT_EQ(10, ioctx.write("foo2", bl, sizeof(buf), 0));
 
   char buf2[64];
   memset(buf2, 0xbb, sizeof(buf2));
