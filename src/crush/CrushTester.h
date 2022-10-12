@@ -5,6 +5,7 @@
 #define CEPH_CRUSH_TESTER_H
 
 #include "crush/CrushWrapper.h"
+#include "include/common_fwd.h"
 
 #include <fstream>
 
@@ -33,6 +34,7 @@ class CrushTester {
 
   bool output_data_file;
   bool output_csv;
+  CephContext *cct;
 
   std::string output_data_file_name;
 
