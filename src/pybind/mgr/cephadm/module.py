@@ -2273,14 +2273,6 @@ Then run the following:
         path_found = False
         osd_id_list: List[str] = []
 
-        for dev in host_devices:
-            if dev.path == path:
-                path_found = True
-                break
-        if not path_found:
-            raise OrchestratorError(
-                f"Device path '{path}' not found on host '{host}'")
-
         if osd_id_list:
             dev_name = os.path.basename(path)
             active_osds: List[str] = []
@@ -2295,10 +2287,19 @@ Then run the following:
                     f"OSD{'s' if len(active_osds) > 1 else ''}"
                     f" ({', '.join(active_osds)}). Use 'ceph orch osd rm' first.")
 
+        ret, keyring, err = self.check_mon_command({
+            'prefix': 'auth get',
+            'entity': 'client.bootstrap-osd',
+        })
+        config = {'keyring': keyring}
         out, err, code = self.wait_async(CephadmServe(self)._run_cephadm(
             host, 'osd', 'ceph-volume',
-            ['--', 'lvm', 'zap', '--destroy', path],
-            error_ok=True))
+            ['--config-json', '-', '--', 'lvm', 'zap', '--destroy', path],
+            error_ok=True,
+            stdin=json.dumps(config)))
+        if code:
+            err = "\n".join(err)
+            raise OrchestratorError(f"Can't zap {path}.\n{err}")
 
         self.cache.invalidate_host_devices(host)
         self.cache.invalidate_host_networks(host)
