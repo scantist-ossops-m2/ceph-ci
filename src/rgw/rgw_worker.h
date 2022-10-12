@@ -22,13 +22,17 @@
 
 #include "common/Thread.h"
 #include "common/ceph_mutex.h"
+#include "common/dout.h"
 #include "include/common_fwd.h"
 
-#define dout_subsys ceph_subsys_rgw
+#include "rgw/rgw_rados.h"
 
 class RGWRados;
 
 class RGWRadosThread {
+public:
+  static constexpr auto dout_subsys = ceph_subsys_rgw;
+private:
   class Worker : public Thread, public DoutPrefixProvider {
     CephContext *cct;
     RGWRadosThread *processor;
@@ -53,10 +57,9 @@ class RGWRadosThread {
       cond.notify_all();
     }
 
-  CephContext *get_cct() const { return cct; }
-  unsigned get_subsys() const { return dout_subsys; }
-  std::ostream& gen_prefix(std::ostream& out) const { return out << "rgw rados thread: "; }
-
+    CephContext *get_cct() const override { return cct; }
+    unsigned get_subsys() const override { return dout_subsys; }
+    std::ostream& gen_prefix(std::ostream& out) const override { return out << "rgw rados thread: "; }
   };
 
   Worker *worker;

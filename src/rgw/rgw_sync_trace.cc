@@ -13,6 +13,7 @@
 #include "rgw_rados.h"
 #include "rgw_worker.h"
 
+static constexpr auto dout_subsys = ceph_subsys_rgw;
 
 #define dout_context g_ceph_context
 
