@@ -62,7 +62,7 @@ class AppMain {
   std::vector<RGWFrontendConfig*> fe_configs;
   std::multimap<string, RGWFrontendConfig*> fe_map;
   std::unique_ptr<rgw::LDAPHelper> ldh;
-  OpsLogSink* olog;
+  OpsLogSink* olog = nullptr;
   RGWREST rest;
   std::unique_ptr<rgw::lua::Background> lua_background;
   std::unique_ptr<rgw::auth::ImplicitTenants> implicit_tenant_context;
@@ -75,7 +75,7 @@ class AppMain {
   std::unique_ptr<RGWFrontendPauser> fe_pauser;
   std::unique_ptr<RGWRealmWatcher> realm_watcher;
   std::unique_ptr<RGWPauser> rgw_pauser;
-  rgw::sal::Store* store;
+  rgw::sal::Store* store = nullptr;
   DoutPrefixProvider* dpp;
 
 public:
