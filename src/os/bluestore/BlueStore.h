@@ -2130,7 +2130,7 @@ public:
       uint64_t block_size,
       uint64_t offset,
       uint64_t l);
-    bool apply_defer();
+    bool apply_defer(bool allow_whole_blob);
   };
 
   bool has_null_fm();

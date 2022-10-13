@@ -15111,13 +15111,18 @@ bool BlueStore::BigDeferredWriteContext::can_defer(
   return res;
 }
 
-bool BlueStore::BigDeferredWriteContext::apply_defer()
+bool BlueStore::BigDeferredWriteContext::apply_defer(bool allow_whole_blob)
 {
   int r = blob_ref->get_blob().map(
     b_off, blob_aligned_len(),
     [&](const bluestore_pextent_t& pext,
       uint64_t offset,
       uint64_t length) {
+        // if we are allowed to defer continous blob, take everything
+        if (allow_whole_blob) {
+	  res_extents.emplace_back(bluestore_pextent_t(offset, length));
+	  return 0;
+	}
         // apply deferred if overwrite breaks blob continuity only.
         // if it totally overlaps some pextent - fallback to regular write
         if (pext.offset < offset ||
@@ -15209,6 +15214,7 @@ void BlueStore::_do_write_big(
   logger->inc(l_bluestore_write_big_bytes, length);
   auto max_bsize = std::max(wctx->target_blob_size, min_alloc_size);
   uint64_t prefer_deferred_size_snapshot = prefer_deferred_size.load();
+  bool want_to_defer_all = length < prefer_deferred_size_snapshot;
   while (length > 0) {
     bool new_blob = false;
     BlobRef b;
@@ -15216,7 +15222,7 @@ void BlueStore::_do_write_big(
     uint32_t l = 0;
 
     //attempting to reuse existing blob
-    if (!wctx->compress) {
+    if (!wctx->compress && want_to_defer_all) {
       // enforce target blob alignment with max_bsize
       l = max_bsize - p2phase(offset, max_bsize);
       l = std::min(uint64_t(l), length);
@@ -15228,7 +15234,7 @@ void BlueStore::_do_write_big(
                << std::dec << dendl;
 
       if (prefer_deferred_size_snapshot &&
-          l <= prefer_deferred_size_snapshot * 2) {
+	  l <= prefer_deferred_size_snapshot * 2) {
         // Single write that spans two adjusted existing blobs can result
         // in up to two deferred blocks of 'prefer_deferred_size'
         // So we're trying to minimize the amount of resulting blobs
@@ -15281,13 +15287,13 @@ void BlueStore::_do_write_big(
               << dendl;
           }
 
-          will_defer = head_info.apply_defer();
+          will_defer = head_info.apply_defer(want_to_defer_all);
           if (!will_defer) {
             dout(20) << __func__
               << " deferring big fell back, head isn't continuous"
               << dendl;
           } else if (remaining) {
-            will_defer = tail_info.apply_defer();
+            will_defer = tail_info.apply_defer(want_to_defer_all);
             if (!will_defer) {
               dout(20) << __func__
                 << " deferring big fell back, tail isn't continuous"
