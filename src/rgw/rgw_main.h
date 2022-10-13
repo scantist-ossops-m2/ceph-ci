@@ -51,6 +51,8 @@ public:
 
 namespace rgw {
 
+namespace sal { class ConfigStore; }
+
 class RGWLib;
 class AppMain {
   /* several components should be initalized only if librgw is
@@ -75,17 +77,21 @@ class AppMain {
   std::unique_ptr<RGWFrontendPauser> fe_pauser;
   std::unique_ptr<RGWRealmWatcher> realm_watcher;
   std::unique_ptr<RGWPauser> rgw_pauser;
+  std::unique_ptr<sal::ConfigStore> cfgstore;
+  SiteConfig site;
   rgw::sal::Store* store = nullptr;
-  DoutPrefixProvider* dpp;
+  const DoutPrefixProvider* dpp;
 
 public:
-  AppMain(DoutPrefixProvider* dpp)
-    : dpp(dpp)
-    {}
+  AppMain(const DoutPrefixProvider* dpp);
+  ~AppMain();
 
   void shutdown(std::function<void(void)> finalize_async_signals
 	       = []() { /* nada */});
 
+  sal::ConfigStore* get_config_store() const {
+    return cfgstore.get();
+  }
   rgw::sal::Store* get_store() {
     return store;
   }
@@ -96,7 +102,7 @@ public:
 
   void init_frontends1(bool nfs = false);
   void init_numa();
-  void init_storage();
+  int init_storage();
   void init_perfcounters();
   void init_http_clients();
   void cond_init_apis();
