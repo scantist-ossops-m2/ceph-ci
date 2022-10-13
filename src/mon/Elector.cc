@@ -461,8 +461,9 @@ void Elector::begin_peer_ping(int peer)
   }
 
   dout(5) << __func__ << " against " << peer << dendl;
-
+  dout(10) << "peer_tracker before: " << peer_tracker << dendl;
   peer_tracker.report_live_connection(peer, 0); // init this peer as existing
+  dout(10) << "peer_tracker before: " << peer_tracker << dendl;
   live_pinging.insert(peer);
   dead_pinging.erase(peer);
   peer_acked_ping[peer] = ceph_clock_now();
@@ -575,7 +576,9 @@ void Elector::handle_ping(MonOpRequestRef op)
       return;
     }
     if (m->stamp > previous_acked) {
+      dout(10) << "peer_tracker before: " << peer_tracker << dendl;
       peer_tracker.report_live_connection(prank, m->stamp - previous_acked);
+      dout(10) << "peer_tracker after: " << peer_tracker << dendl;
       peer_acked_ping[prank] = m->stamp;
     }
     utime_t now = ceph_clock_now();
@@ -710,7 +713,10 @@ void Elector::notify_rank_changed(int new_rank)
 
 void Elector::notify_rank_removed(int rank_removed)
 {
+  dout(10) << __func__ << ": " << rank_removed << dendl; 
+  dout(10) << "peer_tracker before: " << peer_tracker << dendl;
   peer_tracker.notify_rank_removed(rank_removed);
+  dout(10) << "peer_tracker after: " << peer_tracker << dendl;
   /* we have to clean up the pinging state, which is annoying
      because it's not indexed anywhere (and adding indexing
      would also be annoying).
