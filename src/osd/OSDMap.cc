@@ -3693,11 +3693,20 @@ void OSDMap::dump_pool(CephContext *cct,
   if (pni != pool_name.end())
     name = pni->second;
   f->open_object_section("pool");
-  f->dump_int("pool_id", pid);
+  f->dump_int("pool", pid);
   f->dump_string("pool_name", name);
   pdata.dump(f);
+  dump_read_balance_score(cct, pid, pdata, f);
+  f->close_section(); // pool
+}
+
+void OSDMap::dump_read_balance_score(CephContext *cct,
+				     int64_t pid,
+				     const pg_pool_t &pdata,
+				     ceph::Formatter *f) const
+{
   if (pdata.is_replicated()) {
-    // Add wlb section with values for score, optimal score, raw score
+    // Add rb section with values for score, optimal score, raw score
     //       // and primary_affinity average
     OSDMap::read_balance_info_t rb_info;
     auto rc = calc_read_balance_score(cct, pid, &rb_info);
@@ -3714,7 +3723,6 @@ void OSDMap::dump_pool(CephContext *cct,
       f->close_section(); // read_balance
     }
   }
-  f->close_section(); // pool
 }
 
 void OSDMap::dump(Formatter *f, CephContext *cct) const
