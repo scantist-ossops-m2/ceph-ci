@@ -63,12 +63,12 @@ class AppMain {
   std::vector<RGWFrontend*> fes;
   std::vector<RGWFrontendConfig*> fe_configs;
   std::multimap<string, RGWFrontendConfig*> fe_map;
-  std::unique_ptr<rgw::LDAPHelper> ldh;
+  std::unique_ptr<LDAPHelper> ldh;
   OpsLogSink* olog = nullptr;
   RGWREST rest;
-  std::unique_ptr<rgw::lua::Background> lua_background;
-  std::unique_ptr<rgw::auth::ImplicitTenants> implicit_tenant_context;
-  std::unique_ptr<rgw::dmclock::SchedulerCtx> sched_ctx;
+  std::unique_ptr<lua::Background> lua_background;
+  std::unique_ptr<auth::ImplicitTenants> implicit_tenant_context;
+  std::unique_ptr<dmclock::SchedulerCtx> sched_ctx;
   std::unique_ptr<ActiveRateLimiter> ratelimiter;
   std::map<std::string, std::string> service_map_meta;
   // wow, realm reloader has a lot of parts
@@ -79,7 +79,7 @@ class AppMain {
   std::unique_ptr<RGWPauser> rgw_pauser;
   std::unique_ptr<sal::ConfigStore> cfgstore;
   SiteConfig site;
-  rgw::sal::Store* store = nullptr;
+  sal::Store* store = nullptr;
   const DoutPrefixProvider* dpp;
 
 public:
@@ -92,11 +92,11 @@ public:
   sal::ConfigStore* get_config_store() const {
     return cfgstore.get();
   }
-  rgw::sal::Store* get_store() {
+  sal::Store* get_store() {
     return store;
   }
 
-  rgw::LDAPHelper* get_ldh() {
+  LDAPHelper* get_ldh() {
     return ldh.get();
   }
 
