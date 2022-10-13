@@ -6877,6 +6877,239 @@ INSTANTIATE_TEST_SUITE_P(
     "bluestore"));
 #endif
 
+
+struct deferred_test_t {
+  uint32_t bdev_block_size;
+  uint32_t min_alloc_size;
+  uint32_t max_blob_size;
+  uint32_t prefer_deferred_size;
+};
+
+void PrintTo(const deferred_test_t& t, ::std::ostream* os)
+{
+  *os << t.bdev_block_size << "/" << t.min_alloc_size << "/"
+      << t.max_blob_size << "/" << t.prefer_deferred_size;
+}
+
+class DeferredWriteTest : public StoreTestFixture,
+		          public ::testing::WithParamInterface<deferred_test_t> {
+public:
+  DeferredWriteTest()
+    : StoreTestFixture("bluestore")
+  {}
+  void SetUp() override {
+    //do nothing
+  }
+protected:
+  void DeferredSetup() {
+    StoreTestFixture::SetUp();
+  }
+public:
+  std::vector<uint32_t> offsets = {0, 3000, 4096, 20000, 32768, 65000, 65536, 80000, 128 * 1024};
+  std::vector<uint32_t> lengths = {1, 1000, 4096, 12000, 32768, 30000, 80000, 128 * 1024};
+};
+
+TEST_P(DeferredWriteTest, NewData) {
+  const bool print = false;
+  deferred_test_t t = GetParam();
+  SetVal(g_conf(), "bdev_block_size", stringify(t.bdev_block_size).c_str());
+  SetVal(g_conf(), "bluestore_min_alloc_size", stringify(t.min_alloc_size).c_str());
+  SetVal(g_conf(), "bluestore_max_blob_size", stringify(t.max_blob_size).c_str());
+  SetVal(g_conf(), "bluestore_prefer_deferred_size", stringify(t.prefer_deferred_size).c_str());
+  g_conf().apply_changes(nullptr);
+  DeferredSetup();
+
+  int r;
+  coll_t cid;
+  const PerfCounters* logger = store->get_perf_counters();
+  ObjectStore::CollectionHandle ch = store->create_new_collection(cid);
+  {
+    ObjectStore::Transaction t;
+    t.create_collection(cid, 0);
+    r = queue_transaction(store, ch, std::move(t));
+    ASSERT_EQ(r, 0);
+  }
+  {
+    for (auto offset:offsets) {
+      for (auto length:lengths) {
+	std::string hname = fmt::format("test-{}-{}", offset, length);
+	ghobject_t hoid(hobject_t(hname, "", CEPH_NOSNAP, 0, -1, ""));
+	{
+	  ObjectStore::Transaction t;
+	  t.touch(cid, hoid);
+	  r = queue_transaction(store, ch, std::move(t));
+	  ASSERT_EQ(r, 0);
+	}
+	if (print)
+	  std::cout << hname << std::endl;
+
+	auto w_new =             logger->get(l_bluestore_write_new);
+	auto w_big_deferred =    logger->get(l_bluestore_write_big_deferred);
+	auto i_deferred_w =      logger->get(l_bluestore_issued_deferred_writes);
+	{
+	  ObjectStore::Transaction t;
+	  bufferlist bl;
+	  bl.append(std::string(length, 'x'));
+	  t.write(cid, hoid, offset, bl.length(), bl,
+		  CEPH_OSD_OP_FLAG_FADVISE_NOCACHE);
+	  r = queue_transaction(store, ch, std::move(t));
+	  ASSERT_EQ(r, 0);
+	}
+	uint32_t first_db = offset / t.bdev_block_size;
+	uint32_t last_db = (offset + length - 1) / t.bdev_block_size;
+
+	uint32_t write_size = (last_db - first_db + 1) * t.bdev_block_size;
+	if (write_size < t.prefer_deferred_size) {
+	  // expect no direct writes
+	  ASSERT_EQ(w_new ,             logger->get(l_bluestore_write_new));
+	} else {
+	  // expect no deferred
+	  ASSERT_EQ(w_big_deferred ,    logger->get(l_bluestore_write_big_deferred));
+	  ASSERT_EQ(i_deferred_w ,      logger->get(l_bluestore_issued_deferred_writes));
+	}
+      }
+    }
+  }
+}
+
+TEST_P(DeferredWriteTest, OverwriteData) {
+  deferred_test_t td = GetParam();
+  SetVal(g_conf(), "bdev_block_size", stringify(td.bdev_block_size).c_str());
+  SetVal(g_conf(), "bluestore_min_alloc_size", stringify(td.min_alloc_size).c_str());
+  SetVal(g_conf(), "bluestore_max_blob_size", stringify(td.max_blob_size).c_str());
+  SetVal(g_conf(), "bluestore_prefer_deferred_size", stringify(td.prefer_deferred_size).c_str());
+  g_conf().apply_changes(nullptr);
+  DeferredSetup();
+  const bool print = false;
+  int r;
+  coll_t cid;
+  const PerfCounters* logger = store->get_perf_counters();
+  ObjectStore::CollectionHandle ch = store->create_new_collection(cid);
+  {
+    ObjectStore::Transaction t;
+    t.create_collection(cid, 0);
+    r = queue_transaction(store, ch, std::move(t));
+    ASSERT_EQ(r, 0);
+  }
+  // create objects and fill with data
+  {
+    for (auto offset:offsets) {
+      for (auto length:lengths) {
+	std::string hname = fmt::format("test-{}-{}", offset, length);
+	ghobject_t hoid(hobject_t(hname, "", CEPH_NOSNAP, 0, -1, ""));
+	{
+	  ObjectStore::Transaction t;
+	  t.touch(cid, hoid);
+	  r = queue_transaction(store, ch, std::move(t));
+	  ASSERT_EQ(r, 0);
+	}
+	if (print)
+	  std::cout << "fill " << hname << std::endl;
+	{
+	  ObjectStore::Transaction t;
+	  bufferlist bl;
+	  bl.append(std::string(offset + length + td.min_alloc_size + td.max_blob_size, 'x'));
+	  t.write(cid, hoid, 0, bl.length(), bl,
+		  CEPH_OSD_OP_FLAG_FADVISE_NOCACHE);
+	  r = queue_transaction(store, ch, std::move(t));
+	  ASSERT_EQ(r, 0);
+	}
+      }
+    }
+  }
+  {
+    for (auto offset_x:offsets) {
+      for (auto length:lengths) {
+	auto offset = offset_x;
+	std::string hname = fmt::format("test-{}-{}", offset, length);
+	ghobject_t hoid(hobject_t(hname, "", CEPH_NOSNAP, 0, -1, ""));
+	if (print)
+	  std::cout << hname << std::endl;
+	uint32_t end = offset + length;
+	auto i_deferred_w =      logger->get(l_bluestore_issued_deferred_writes);
+	{
+	  ObjectStore::Transaction t;
+	  bufferlist bl;
+	  bl.append(std::string(length, 'x'));
+	  t.write(cid, hoid, offset, bl.length(), bl,
+		  CEPH_OSD_OP_FLAG_FADVISE_NOCACHE);
+	  r = queue_transaction(store, ch, std::move(t));
+	  ASSERT_EQ(r, 0);
+	}
+
+	int32_t head = p2nphase(offset, td.min_alloc_size);
+	int32_t tail = p2phase(offset + length, td.min_alloc_size);
+	int32_t head_b = p2nphase(offset + head, td.max_blob_size);
+	int32_t tail_b = p2phase(offset + length - tail, td.max_blob_size);
+	int32_t mid = end - tail_b - tail - (offset + head_b + head);
+	if (print)
+	  std::cout << i_deferred_w << std::hex << " " << head << " " << head_b << " "
+		    << mid << " " << tail_b << " " << tail << std::dec << std::endl;
+	if (print)
+	  std::cout << i_deferred_w << std::hex << " " << offset << " " << offset + head
+		    << " " << offset + head_b + head << " " << end - tail_b - tail << " "
+		    << end - tail << " "  << end << std::dec << std::endl;
+
+	if (offset + head > end - tail)
+	{
+	  i_deferred_w++;
+	} else {
+	  if (head) {
+	    i_deferred_w++;
+	    offset += head;
+	  }
+	  if (tail) {
+	    i_deferred_w++;
+	    end -= tail;
+	  }
+	  if (print)
+	    std::cout << i_deferred_w << std::hex << "a " << offset << " " <<  end << std::dec << std::endl;
+
+	  if (offset < end && end - offset < td.prefer_deferred_size) {
+	    if (offset + head_b > end - tail_b) {
+	      // same blob
+	      i_deferred_w++;
+	    } else {
+	      if (head_b) {
+		// blob-unaligned head
+		i_deferred_w++;
+	      }
+	      offset += head_b;
+	      if (tail_b) {
+		// blob-unaligned tail
+		i_deferred_w++;
+	      }
+	      end -= tail_b;
+	      if (print)
+		std::cout << i_deferred_w << std::hex << "b " << offset << " " <<  end << std::dec << std::endl;
+	      if (offset < end) {
+		// center
+		i_deferred_w += (end - offset) / td.max_blob_size;
+	      }
+	    }
+	  }
+	}
+	ASSERT_EQ(i_deferred_w ,      logger->get(l_bluestore_issued_deferred_writes));
+      }
+    }
+  }
+}
+
+#if defined(WITH_BLUESTORE)
+INSTANTIATE_TEST_SUITE_P(
+  BlueStore,
+  DeferredWriteTest,
+  ::testing::Values(
+    //              bdev      alloc      blob       deferred
+    deferred_test_t{4 * 1024, 4 * 1024,  16 * 1024, 32 * 1024},
+    deferred_test_t{4 * 1024, 16 * 1024, 64 * 1024, 64 * 1024},
+    deferred_test_t{4 * 1024, 64 * 1024, 64 * 1024, 4 * 1024},
+    deferred_test_t{4 * 1024, 4 * 1024, 64 * 1024, 0 * 1024},
+    deferred_test_t{4 * 1024, 16 * 1024, 32 * 1024, 32 * 1024},
+    deferred_test_t{4 * 1024, 16 * 1024, 64 * 1024, 128 * 1024}
+  ));
+#endif
+
 void doMany4KWritesTest(ObjectStore* store,
                         unsigned max_objects,
                         unsigned max_ops,
