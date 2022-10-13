@@ -424,38 +424,78 @@ public:
     auto result = t.get_extent(offset, &ret);
     if (result != Transaction::get_extent_ret::ABSENT) {
       SUBTRACET(seastore_cache, "{} {}~{} is {} on t -- {}",
-          t,
-          T::TYPE,
-          offset,
-          length,
-          result == Transaction::get_extent_ret::PRESENT ? "present" : "retired",
-          *ret);
+	  t,
+	  T::TYPE,
+	  offset,
+	  length,
+	  result == Transaction::get_extent_ret::PRESENT ? "present" : "retired",
+	  *ret);
       assert(result != Transaction::get_extent_ret::RETIRED);
       return ret->wait_io().then([ret] {
 	return seastar::make_ready_future<TCachedExtentRef<T>>(
 	  ret->cast<T>());
       });
-    } else {
-      SUBTRACET(seastore_cache, "{} {}~{} is absent on t, query cache ...",
-                t, T::TYPE, offset, length);
-      auto f = [&t, this](CachedExtent &ext) {
-	t.add_to_read_set(CachedExtentRef(&ext));
-	touch_extent(ext);
-      };
-      auto metric_key = std::make_pair(t.get_src(), T::TYPE);
-      return trans_intr::make_interruptible(
-	get_extent<T>(
-	  offset, length, &metric_key,
-	  std::forward<Func>(extent_init_func), std::move(f))
-      );
     }
+
+    SUBTRACET(seastore_cache, "{} {}~{} is absent on t, query cache ...",
+	      t, T::TYPE, offset, length);
+    auto f = [&t, this](CachedExtent &ext) {
+      t.add_to_read_set(CachedExtentRef(&ext));
+      touch_extent(ext);
+    };
+    auto metric_key = std::make_pair(t.get_src(), T::TYPE);
+    return trans_intr::make_interruptible(
+      get_extent<T>(
+	offset, length, &metric_key,
+	std::forward<Func>(extent_init_func), std::move(f))
+    );
   }
+
+  template <typename T, typename Func>
+  get_extent_iertr::future<TCachedExtentRef<T>> get_absent_extent(
+    Transaction &t,
+    paddr_t offset,
+    extent_len_t length,
+    Func &&extent_init_func) {
+    CachedExtentRef ret;
+    LOG_PREFIX(Cache::get_extent);
+
+#ifndef NDEBUG
+    auto r = t.get_extent(offset, &ret);
+    if (r != Transaction::get_extent_ret::ABSENT) {
+      SUBERRORT(seastore_cache, "unexpected non-absent extent {}", t, *ret);
+      ceph_abort();
+    }
+#endif
+
+    SUBTRACET(seastore_cache, "{} {}~{} is absent on t, query cache ...",
+	      t, T::TYPE, offset, length);
+    auto f = [&t, this](CachedExtent &ext) {
+      t.add_to_read_set(CachedExtentRef(&ext));
+      touch_extent(ext);
+    };
+    auto metric_key = std::make_pair(t.get_src(), T::TYPE);
+    return trans_intr::make_interruptible(
+      get_extent<T>(
+	offset, length, &metric_key,
+	std::forward<Func>(extent_init_func), std::move(f))
+    );
+  }
+
   template <typename T>
   get_extent_iertr::future<TCachedExtentRef<T>> get_extent(
     Transaction &t,
     paddr_t offset,
     extent_len_t length) {
     return get_extent<T>(t, offset, length, [](T &){});
+  }
+
+  template <typename T>
+  get_extent_iertr::future<TCachedExtentRef<T>> get_absent_extent(
+    Transaction &t,
+    paddr_t offset,
+    extent_len_t length) {
+    return get_absent_extent<T>(t, offset, length, [](T &){});
   }
 
   extent_len_t get_block_size() const {
