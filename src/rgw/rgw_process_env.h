@@ -9,16 +9,20 @@ class ActiveRateLimiter;
 class OpsLogSink;
 class RGWREST;
 
-namespace rgw::auth {
+namespace rgw {
+class SiteConfig;
+namespace auth {
   class StrategyRegistry;
 }
-namespace rgw::lua {
+namespace lua {
   class Background;
 }
-namespace rgw::sal {
+namespace sal {
   class Store;
+  class ConfigStore;
   class LuaManager;
 }
+} // namespace rgw
 
 struct RGWLuaProcessEnv {
   std::string luarocks_path;
@@ -29,6 +33,8 @@ struct RGWLuaProcessEnv {
 struct RGWProcessEnv {
   RGWLuaProcessEnv lua;
   rgw::sal::Store* store = nullptr;
+  rgw::sal::ConfigStore* cfgstore = nullptr;
+  const rgw::SiteConfig* site = nullptr;
   RGWREST *rest = nullptr;
   OpsLogSink *olog = nullptr;
   std::unique_ptr<rgw::auth::StrategyRegistry> auth_registry;
