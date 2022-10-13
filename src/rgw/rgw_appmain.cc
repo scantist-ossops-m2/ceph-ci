@@ -497,7 +497,7 @@ int rgw::AppMain::init_frontends2(RGWLib* rgwlib)
       rgw_pauser->add_pauser(env.lua.background);
     }
     reloader = std::make_unique<RGWRealmReloader>(
-        env, *implicit_tenant_context, service_map_meta, rgw_pauser.get());
+        env, site, *implicit_tenant_context, service_map_meta, rgw_pauser.get());
     realm_watcher = std::make_unique<RGWRealmWatcher>(dpp, g_ceph_context,
 				  static_cast<rgw::sal::RadosStore*>(env.store)->svc()->zone->get_realm());
     realm_watcher->add_watcher(RGWRealmNotify::Reload, *reloader);
