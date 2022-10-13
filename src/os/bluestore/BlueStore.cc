@@ -15902,7 +15902,9 @@ void BlueStore::_do_write_data(
       _do_write_small(txc, c, o, head_offset, head_length, p, wctx);
     }
 
-    _do_write_big(txc, c, o, middle_offset, middle_length, p, wctx);
+    if (middle_length) {
+      _do_write_big(txc, c, o, middle_offset, middle_length, p, wctx);
+    }
 
     if (tail_length) {
       _do_write_small(txc, c, o, tail_offset, tail_length, p, wctx);
