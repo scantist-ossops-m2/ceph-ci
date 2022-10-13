@@ -6068,7 +6068,12 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       for (auto &[pid, pdata] : osdmap.get_pools()) {
 	if (f) {
 	  if (detail == "detail") {
-	    osdmap.dump_pool(cct, pid, pdata, f.get());
+	    f->open_object_section("pool");
+	    f->dump_int("pool_id", pid);
+	    f->dump_string("pool_name", osdmap.get_pool_name(pid));
+	    pdata.dump(f.get());
+	    osdmap.dump_read_balance_score(cct, pid, pdata, f.get());
+	    f->close_section();
 	  } else {
 	    f->dump_string("pool_name", osdmap.get_pool_name(pid));
 	  }
