@@ -503,7 +503,8 @@ int rgw::AppMain::init_frontends2(RGWLib* rgwlib)
     if (lua_background) {
       rgw_pauser->add_pauser(lua_background.get());
     }
-    reloader = std::make_unique<RGWRealmReloader>(store, service_map_meta, rgw_pauser.get());
+    reloader = std::make_unique<RGWRealmReloader>(
+        cfgstore.get(), site, store, service_map_meta, rgw_pauser.get());
     realm_watcher = std::make_unique<RGWRealmWatcher>(dpp, g_ceph_context,
 				  static_cast<rgw::sal::RadosStore*>(store)->svc()->zone->get_realm());
     realm_watcher->add_watcher(RGWRealmNotify::Reload, *reloader);

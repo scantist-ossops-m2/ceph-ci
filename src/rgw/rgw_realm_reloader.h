@@ -8,6 +8,8 @@
 #include "common/Cond.h"
 #include "rgw_sal_fwd.h"
 
+namespace rgw { class SiteConfig; }
+
 /**
  * RGWRealmReloader responds to new period notifications by recreating RGWRados
  * with the updated realm configuration.
@@ -31,7 +33,8 @@ class RGWRealmReloader : public RGWRealmWatcher::Watcher {
     virtual void resume(rgw::sal::Store* store) = 0;
   };
 
-  RGWRealmReloader(rgw::sal::Store*& store, std::map<std::string, std::string>& service_map_meta,
+  RGWRealmReloader(rgw::sal::ConfigStore* cfgstore, rgw::SiteConfig& site,
+                   rgw::sal::Store*& store, std::map<std::string, std::string>& service_map_meta,
                    Pauser* frontends);
   ~RGWRealmReloader() override;
 
@@ -44,8 +47,12 @@ class RGWRealmReloader : public RGWRealmWatcher::Watcher {
 
   class C_Reload; //< Context that calls reload()
 
+  rgw::sal::ConfigStore* cfgstore;
+  rgw::SiteConfig& site;
+
   /// main()'s Store pointer as a reference, modified by reload()
   rgw::sal::Store*& store;
+
   std::map<std::string, std::string>& service_map_meta;
   Pauser *const frontends;
 
