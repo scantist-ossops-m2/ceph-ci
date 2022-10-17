@@ -7036,7 +7036,7 @@ std::vector<Option> get_rgw_options() {
     .set_description("Should run sync thread"),
 
     Option("rgw_sync_lease_period", Option::TYPE_INT, Option::LEVEL_DEV)
-    .set_default(120)
+    .set_default(1200)
     .set_description(""),
 
     Option("rgw_sync_log_trim_interval", Option::TYPE_INT, Option::LEVEL_ADVANCED)
