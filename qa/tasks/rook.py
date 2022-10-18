@@ -235,10 +235,14 @@ def ceph_log(ctx, config):
             r = ctx.rook[cluster_name].remote.run(
                 stdout=BytesIO(),
                 args=args,
+                stderr=StringIO(),
             )
             stdout = r.stdout.getvalue().decode()
             if stdout:
                 return stdout
+            stderr = r.stderr.getvalue()
+            if stderr:
+                return stderr
             return None
 
         if first_in_ceph_log('\[ERR\]|\[WRN\]|\[SEC\]',
