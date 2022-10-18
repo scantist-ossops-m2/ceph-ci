@@ -231,6 +231,7 @@ PrimaryLogScrub::PrimaryLogScrub(PrimaryLogPG* pg) : PgScrubber{pg}, m_pl_pg{pg}
 
 void PrimaryLogScrub::_scrub_clear_state()
 {
+  dout(15) << __func__ << dendl;
   m_scrub_cstat = object_stat_collection_t();
 }
 
