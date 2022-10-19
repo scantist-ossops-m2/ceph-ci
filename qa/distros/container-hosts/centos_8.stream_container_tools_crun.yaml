@@ -6,6 +6,9 @@ overrides:
       - scontext=system_u:system_r:logrotate_t:s0
 
 tasks:
+- ceph:
+    log-ignorelist:
+    - \(POOL_APP_NOT_ENABLED\)
 - pexec:
     all:
     - sudo cp /etc/containers/registries.conf /etc/containers/registries.conf.backup

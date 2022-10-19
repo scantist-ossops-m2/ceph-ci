@@ -4,6 +4,10 @@ roles:
 log-rotate:
   ceph-mds: 10G
   ceph-osd: 10G
+tasks:
+- ceph:
+    log-ignorelist:
+    - \(POOL_APP_NOT_ENABLED\)
 openstack:
   - volumes: # attached to each instance
       count: 2
