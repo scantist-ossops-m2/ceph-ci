@@ -8,7 +8,7 @@ from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, List, Callable, TypeVar, \
     Optional, Dict, Any, Tuple, NewType, cast
 
-from mgr_module import CommandResult, HandleCommandResult, MonCommandFailed
+from mgr_module import HandleCommandResult, MonCommandFailed
 
 from ceph.deployment.service_spec import ServiceSpec, RGWSpec, CephExporterSpec
 from ceph.deployment.utils import is_ipv6, unwrap_ipv6
@@ -1051,38 +1051,14 @@ class CephExporterService(CephService):
                                               'mgr', 'allow r',
                                               'osd', 'allow r'])
         exporter_config = {}
-        logger.info("exporter: %s", daemon_spec.name())
         if spec.sock_dir:
             exporter_config.update({'sock-dir': spec.sock_dir})
-            ret, out, err = self.mgr.check_mon_command({
-                'prefix': 'config set',
-                'who': utils.name_to_config_section(daemon_spec.name()),
-                'name': 'exporter_sock_dir',
-                'value': spec.sock_dir
-            })
         if spec.port:
             exporter_config.update({'port': f'{spec.port}'})
-        if spec.prio_limit:
+        if spec.prio_limit >= 0:
             exporter_config.update({'prio-limit': f'{spec.prio_limit}'})
-            prefix = f'--admin-daemon /var/run/ceph/ceph-client.{daemon_spec.name()}.asok config set exporter_prio_limit {spec.prio_limit}'
-            result = CommandResult('')
-            self.mgr.send_command(result, 'mon', '', json.dumps({
-                'prefix': prefix,
-            }), '')
-            logger.info("result1 %s", result)
         if spec.stats_period:
             exporter_config.update({'stats-period': f'{spec.stats_period}'})
-
-        prefix = f'--admin-daemon /var/run/ceph/ceph-client.{daemon_spec.name()}.asok config set exporter_prio_limit {spec.prio_limit}'
-        result = CommandResult('')
-        self.mgr.send_command(result, 'mon', '', json.dumps({
-            'prefix': prefix,
-        }), '')
-        ret, _, outs = result.wait()
-        if ret != 0:
-            logger.error(
-                'failed to reset device life expectancy, %s' % outs)
-        logger.info("result2 %s", ret)
 
         daemon_spec.keyring = keyring
         daemon_spec.final_config, daemon_spec.deps = self.generate_config(daemon_spec)

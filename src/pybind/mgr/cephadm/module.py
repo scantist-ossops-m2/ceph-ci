@@ -100,7 +100,7 @@ os._exit = os_exit_noop   # type: ignore
 
 
 # Default container images -----------------------------------------------------
-DEFAULT_IMAGE = 'docker.io/rhcsdashboard/ceph-exporter'
+DEFAULT_IMAGE = 'quay.io/ceph/ceph'
 DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.33.4'
 DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v1.3.1'
 DEFAULT_LOKI_IMAGE = 'docker.io/grafana/loki:2.4.0'
@@ -2489,7 +2489,12 @@ Then run the following:
             deps.append(self.get_active_mgr().name())
             deps.append(str(self.get_module_option_ex('prometheus', 'server_port', 9283)))
             deps.append(str(self.service_discovery_port))
-            deps += [s for s in ['node-exporter', 'alertmanager', 'ingress', 'ceph-exporter'] if self.cache.get_daemons_by_service(s)]
+            # add dependency on ceph-exporter daemons
+            exporter_daemons = self.cache.get_daemons_by_service('ceph-exporter')
+            if exporter_daemons:
+                deps += [d.name() for d in exporter_daemons]
+            deps += [s for s in ['node-exporter', 'alertmanager', 'ingress']
+                     if self.cache.get_daemons_by_service(s)]
         else:
             need = {
                 'grafana': ['prometheus', 'loki'],
