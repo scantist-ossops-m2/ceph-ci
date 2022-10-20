@@ -6,6 +6,7 @@ from ceph_volume.util import prepare as prepare_utils
 from ceph_volume.util import encryption as encryption_utils
 from ceph_volume.util import system, disk
 from ceph_volume.util.arg_validators import exclude_group_options
+from ceph_volume.util.device import validate_devices
 from ceph_volume import conf, decorators, terminal
 from ceph_volume.api import lvm as api
 from .common import prepare_parser, rollback_osd
@@ -429,6 +430,9 @@ class Prepare(object):
             return
         exclude_group_options(parser, argv=self.argv, groups=['filestore', 'bluestore'])
         self.args = parser.parse_args(self.argv)
+
+        validate_devices(self.args, as_string=True)
+
         # the unfortunate mix of one superset for both filestore and bluestore
         # makes this validation cumbersome
         if self.args.filestore:
