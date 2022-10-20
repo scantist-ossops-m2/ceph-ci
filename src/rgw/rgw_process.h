@@ -29,14 +29,13 @@ namespace rgw::lua {
 }
 
 struct RGWProcessEnv {
-  rgw::sal::Store* store;
-  RGWREST *rest;
-  OpsLogSink *olog;
+  rgw::sal::Store* store = nullptr;
+  RGWREST *rest = nullptr;
+  OpsLogSink *olog = nullptr;
   std::string uri_prefix;
   std::shared_ptr<rgw::auth::StrategyRegistry> auth_registry;
-  //maybe there is a better place to store the rate limit data structure
-  ActiveRateLimiter* ratelimiting;
-  rgw::lua::Background* lua_background;
+  ActiveRateLimiter* ratelimiting = nullptr;
+  rgw::lua::Background* lua_background = nullptr;
 };
 
 class RGWFrontendConfig;
