@@ -333,6 +333,9 @@ public:
 
   std::set<client_t> client_reclaim_gather;
 
+  const bufferlist& get_snap_trace(Session *session, SnapRealm *realm) const;
+  const bufferlist& get_snap_trace(client_t client, SnapRealm *realm) const;
+
 private:
   friend class MDSContinuation;
   friend class ServerContext;
