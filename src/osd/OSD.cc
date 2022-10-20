@@ -4183,9 +4183,10 @@ void OSD::final_init()
     "Scrub purged_snaps vs snapmapper index");
   ceph_assert(r == 0);
   r = admin_socket->register_command(
-    "scrubdebug "						\
-    "name=pgid,type=CephPgid "	                                \
-    "name=cmd,type=CephChoices,strings=block|unblock|set|unset|repdelay|prmdelay " \
+    "scrubdebug "
+    "name=pgid,type=CephPgid "
+    "name=cmd,type=CephChoices,strings=block|unblock|set"
+    "|unset|repdelay|prmdelay "
     "name=value,type=CephString,req=false",
     asok_hook,
     "debug the scrubber");
@@ -7442,10 +7443,12 @@ void OSD::look_for_stuck_scrubs()
 
     auto tracker = stuck_pg.value();
     clog->warn() << fmt::format(
-		 "{}: replica-scrub timed out on pg {} (requested by {} @ {})",
+		 "{}: replica-scrub timed out on pg[{}] (requested by {} @ {})",
 		 __func__, tracker->m_pgid, tracker->m_primary,
 		 tracker->m_created_at);
   }
+
+  /// \todo complete implementation for primary-scrub tracking
 }
 
 void OSD::sched_scrub()

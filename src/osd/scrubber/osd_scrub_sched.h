@@ -128,22 +128,15 @@ namespace Scrub {
 
 using namespace ::std::literals;
 
-/// tracking the last forward motion of the active scrub
-
-// RRR we are mostly interested in the Primary's wellbeing. Must
-// make sure we are not "forgotten" - either as a result of us missing
-// an interval (a bug that should probably cause a crash), or as a result
-// of a Primary issue.
-
 /*
-  RRR there seem to be a few invariants maintained by this structure. Consider
- 'classifying' it.
-
-  Invariants:
-   - the timeout, as a max(local,primary)+delta;
-
-
+ * ----------- aux objects --  tracking support:
+ * tracking the last forward motion of the active scrubs.
+ *
+ * Must make sure we are not "forgotten" - either as a result of us missing
+ * an interval (a bug that should probably cause a crash), or as a result
+ * of a Primary issue.
 */
+
 /**
  * A record maintained by the replica OSD for each active scrub.
  * Tracking the last forward progress of the scrub - monitoring both the
@@ -160,10 +153,8 @@ struct ScrubbingReplica : boost::noncopyable {
 
   enum class rep_tracker_state_t {
     wait_for_primary_request,  ///< waiting for a chunk request
-    t_o_on_primary_request,
     wait_for_rep_reply,	 ///< waiting for our scrub data to be sent to the
 			 ///< Primary
-    t_o_on_reply,
     relinquished  ///< the scrubber got a resource-release request
   };
 
@@ -193,7 +184,6 @@ struct ScrubbingReplica : boost::noncopyable {
   bool m_pg_owned{true};  //< cleared by the scrubber when it releases the
 			  // registration
 
-  // RRR combine with the t.o. states?
   bool m_reported{false};  //< set by the OSD after a t.o was handled
 
   auto operator<=>(const ScrubbingReplica& rh) const

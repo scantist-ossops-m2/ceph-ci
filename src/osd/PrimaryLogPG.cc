@@ -1195,21 +1195,33 @@ void PrimaryLogPG::do_command(
   }
 
   else if (prefix == "block" || prefix == "unblock" || prefix == "set" ||
-           prefix == "unset"|| prefix == "repdelay" || prefix == "prmdelay") {
+           prefix == "unset") {
+    // primary-only scrub commands
     string value;
     cmd_getval(cmdmap, "value", value);
 
-    //if (is_primary()) {
+    if (is_primary()) {
       ret = m_scrubber->asok_debug(prefix, value, f.get(), ss);
       f->open_object_section("result");
       f->dump_bool("success", true);
       f->close_section();
-    //} else {
-    //  ss << "Not primary";
-    //  ret = -EPERM;
-    //}
+    } else {
+     ss << "Not primary";
+     ret = -EPERM;
+    }
     outbl.append(ss.str());
   }
+
+  else if (prefix == "repdelay" || prefix == "prmdelay") {
+    string value;
+    cmd_getval(cmdmap, "value", value);
+    ret = m_scrubber->asok_debug(prefix, value, f.get(), ss);
+    f->open_object_section("result");
+    f->dump_bool("success", true);
+    f->close_section();
+    outbl.append(ss.str());
+  }
+
   else {
     ret = -ENOSYS;
     ss << "prefix '" << prefix << "' not implemented";

@@ -1024,6 +1024,7 @@ void PgScrubber::on_init()
   m_pg->publish_stats_to_osd();
 }
 
+// RRR make sure to erase irrelevant changes to the next comment
 /*
  * note: not idempotent anymore!
  * And as it is likely to be called twice (entering both ReplicaWaitUpdates &
@@ -1076,19 +1077,18 @@ int PgScrubber::build_replica_map_chunk()
   dout(10) << __func__ << " interval start: " << m_interval_start
 	   << " current token: " << m_current_token
 	   << " epoch: " << m_epoch_start << " deep: " << m_is_deep << dendl;
-
   ceph_assert(m_be);
-
-  int ret{-EINVAL};
 
   if (dbg_delay_replica_response) {
     dout(10) << __func__ << " delaying replica response" << dendl;
     dbg_delay_replica_response_time = ceph_clock_now();
     dbg_delay_replica_response = false;
   }
-  if (
-    (dbg_delay_replica_response_time != utime_t{0, 0}) &&
+
+  int ret{-EINVAL};
+  if ((dbg_delay_replica_response_time != utime_t{0, 0}) &&
     (ceph_clock_now() - dbg_delay_replica_response_time) < utime_t{5, 0}) {
+    // ut/debug path is activated
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     ret = -EINPROGRESS;
   } else {
@@ -2901,6 +2901,12 @@ ReservedByRemotePrimary::~ReservedByRemotePrimary()
     m_osds->get_scrub_services().dec_scrubs_remote();
   }
 }
+
+[[nodiscard]] bool ReservedByRemotePrimary::is_reserved() const
+{
+  return m_reserved_by_remote_primary;
+}
+
 
 void ReservedByRemotePrimary::track_primary_alive()
 {

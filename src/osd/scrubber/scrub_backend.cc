@@ -1073,11 +1073,13 @@ ScrubBackend::auth_and_obj_errs_t ScrubBackend::match_in_shards(
 		       : ""))
 	       << dendl;
       if (discrep_found) {
+        // note: casting the boolean bit-fields for fmtlib
 	dout(10) << fmt::format(
 		      "{}: <{}> auth:{} ({}/{}) vs {} ({}/{}) {}", __func__, ho,
-		      auth_sel.auth_shard, auth_object.omap_digest_present ? true : false,
+		      auth_sel.auth_shard,
+                      static_cast<bool>(auth_object.omap_digest_present),
 		      auth_object.omap_digest, srd,
-		      smap.objects[ho].omap_digest_present ? true : false,
+		      static_cast<bool>(smap.objects[ho].omap_digest_present),
 		      smap.objects[ho].omap_digest, ss.str())
 		 << dendl;
       }

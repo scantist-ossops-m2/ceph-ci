@@ -816,7 +816,7 @@ int ScrubQueue::get_blocked_pgs_count() const
   return blocked_scrubs_cnt;
 }
 
-// ////////////////////////////////////////////////////////////////////////// //
+// //////////////////////////////////////////////////////////////////////// //
 // tracking the forward movement of the scrubber
 
 using ScrubbingReplica = Scrub::ScrubbingReplica;
@@ -899,8 +899,6 @@ void Scrub::ScrubbingReplicas::update_primary_times(
   switch (trckr->m_state) {
     case rep_tracker_state_t::wait_for_primary_request:
       // the expected state
-      [[fallthrough]];
-    case rep_tracker_state_t::t_o_on_primary_request:
       trckr->m_last_p_update = ScrubbingReplica::clock::now();
       trckr->m_last_local_update = trckr->m_last_p_update;
       trckr->recompute_timeout();
@@ -913,7 +911,6 @@ void Scrub::ScrubbingReplicas::update_primary_times(
       ceph_assert(false);
       break;
 
-    case rep_tracker_state_t::t_o_on_reply:
     case rep_tracker_state_t::relinquished:
       ceph_assert(false);  // RRR not the correct response
       break;
