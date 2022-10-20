@@ -1210,3 +1210,13 @@ def get_lv_by_fullname(full_name):
     except ValueError:
         res_lv = None
     return res_lv
+
+def get_lv_path_from_mapper(mapper):
+    vg = ""
+    for i in range(0, len(mapper)):
+        if mapper[i] == '-' and mapper[i-1] != '-' and mapper[i+1] != '-':
+            lv = mapper[i+1:]
+            break
+        vg += mapper[i]
+    return f"/dev/{vg.replace('--', '-')}/{lv.replace('--', '-')}"
+
