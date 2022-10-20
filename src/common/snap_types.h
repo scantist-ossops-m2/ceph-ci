@@ -2,6 +2,7 @@
 #define __CEPH_SNAP_TYPES_H
 
 #include "include/types.h"
+#include "include/utime.h"
 #include "include/fs_types.h"
 
 namespace ceph {
@@ -12,18 +13,26 @@ struct SnapRealmInfo {
   mutable ceph_mds_snap_realm h;
   std::vector<snapid_t> my_snaps;
   std::vector<snapid_t> prior_parent_snaps;  // before parent_since
+  utime_t last_modified;
+  uint64_t change_attr;
 
   SnapRealmInfo() {
     // FIPS zeroization audit 20191115: this memset is not security related.
     memset(&h, 0, sizeof(h));
   }
-  SnapRealmInfo(inodeno_t ino_, snapid_t created_, snapid_t seq_, snapid_t current_parent_since_) {
+  SnapRealmInfo(inodeno_t ino_, snapid_t created_, snapid_t seq_, snapid_t current_parent_since_,
+                utime_t last_modified_, uint64_t change_attr_) {
     // FIPS zeroization audit 20191115: this memset is not security related.
     memset(&h, 0, sizeof(h));
     h.ino = ino_;
     h.created = created_;
     h.seq = seq_;
     h.parent_since = current_parent_since_;
+    last_modified = last_modified_;
+    change_attr = change_attr_;
+  }
+  SnapRealmInfo(inodeno_t ino_, snapid_t created_, snapid_t seq_, snapid_t current_parent_since_)
+    : SnapRealmInfo(ino_, created_, seq_, current_parent_since_, utime_t(), 0) {
   }
 
   inodeno_t ino() const { return inodeno_t(h.ino); }

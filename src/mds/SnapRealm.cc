@@ -405,7 +405,8 @@ void SnapRealm::build_snap_trace() const
     return;
   }
 
-  SnapRealmInfo info(inode->ino(), srnode.created, srnode.seq, srnode.current_parent_since);
+  SnapRealmInfo info(inode->ino(), srnode.created, srnode.seq, srnode.current_parent_since,
+                     srnode.last_modified, srnode.change_attr);
   if (parent) {
     info.h.parent = parent->inode->ino();
 
