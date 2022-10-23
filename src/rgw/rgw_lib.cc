@@ -347,6 +347,8 @@ namespace rgw {
 
     rgw_env.set("HTTP_HOST", "");
 
+    s->trace = tracing::rgw::tracer.start_trace(op->name(), s->trace_enabled);
+
     int ret = req->init(rgw_env, store, &io_ctx, s);
     if (ret < 0) {
       ldpp_dout(op, 10) << "failed to initialize request" << dendl;
