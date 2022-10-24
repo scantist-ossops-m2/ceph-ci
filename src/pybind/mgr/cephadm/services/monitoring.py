@@ -411,6 +411,8 @@ class PrometheusService(CephadmService):
         }
 
         web_context = {
+            'alertmanager_web_user': self.mgr.alertmanager_web_user,
+            'alertmanager_web_password': self.mgr.alertmanager_web_password,
             'prometheus_web_user': self.mgr.prometheus_web_user,
             'prometheus_web_password': password_hash(self.mgr.prometheus_web_password),
         }

@@ -9,8 +9,16 @@ rule_files:
 alerting:
   alertmanagers:
     - scheme: https
+      basic_auth:
+        username: {{ alertmanager_web_user }}
+        password: {{ alertmanager_web_password }}
+      tls_config:
+        ca_file: root_cert.pem
       http_sd_configs:
         - url: {{ alertmanager_sd_url }}
+          basic_auth:
+            username: {{ service_discovery_username }}
+            password: {{ service_discovery_password }}
           tls_config:
 {% if secure_monitoring_stack %}
             ca_file: root_cert.pem
