@@ -519,6 +519,20 @@ void PgScrubber::on_primary_change(
     m_osds->get_scrub_services().remove_from_osd_queue(m_scrub_job);
   }
 
+  // is there an interval change we should respond to?
+  if (is_primary() && is_scrub_active()) {
+    // const bool interval_changed = m_interval_start <
+    // m_pg->get_same_interval_since();
+    if (m_interval_start < m_pg->get_same_interval_since()) {
+      dout(10) << fmt::format(
+		    "{}: interval changed ({} -> {}). Aborting active scrub.",
+		    __func__, m_interval_start, m_pg->get_same_interval_since())
+	       << dendl;
+      // m_fsm->process_event(Scrub::FullReset{});
+      scrub_clear_state();
+    }
+  }
+
   dout(10)
     << fmt::format(
 	 "{} (from {} {}): {}. <{:.5}>&<{:.10}> --> <{:.5}>&<{:.14}>",
@@ -1024,11 +1038,12 @@ void PgScrubber::on_init()
   m_pg->publish_stats_to_osd();
 }
 
-// RRR make sure to erase irrelevant changes to the next comment
 /*
- * note: not idempotent anymore!
- * And as it is likely to be called twice (entering both ReplicaWaitUpdates &
- * ActiveReplica), we now check the 'active' flag.
+ * Note: as on_replica_init() is likely to be called twice (entering
+ * both ReplicaWaitUpdates & ActiveReplica), its operations should be
+ * idempotent.
+ * Now that it includes some state-changing operations, we need to check
+ * m_active against double-activation.
  */
 void PgScrubber::on_replica_init()
 {
@@ -2597,8 +2612,8 @@ ReplicaReservations::ReplicaReservations(
     , m_conf{conf}
 {
   epoch_t epoch = m_pg->get_osdmap_epoch();
-  m_timeout = std::chrono::milliseconds(
-    conf.get_val<int64_t>("osd_scrub_slow_reservation_response"));
+  m_timeout = conf.get_val<std::chrono::milliseconds>(
+    "osd_scrub_slow_reservation_response");
   m_log_msg_prefix = fmt::format(
     "osd.{} ep: {} scrubber::ReplicaReservations pg[{}]: ", m_osds->whoami,
     epoch, pg->pg_id);
@@ -2743,7 +2758,6 @@ void ReplicaReservations::handle_reserve_grant(OpRequestRef op, pg_shard_t from)
 	m_osds->whoami,
 	m_pg->pg_id,
 	from);
-      dout(10) << fmt::format(" late reservation from osd.{}", from) << dendl;
       m_timeout_point.reset();
     } else {
       // possibly set a timer to warn about late-coming reservations
@@ -2820,8 +2834,8 @@ ReplicaReservations::no_reply_t::no_reply_t(
 {
   using namespace std::chrono;
   auto now_is = clock::now();
-  milliseconds timeout =
-    milliseconds(conf.get_val<int64_t>("osd_scrub_reservation_timeout"));
+  auto timeout =
+    conf.get_val<std::chrono::milliseconds>("osd_scrub_reservation_timeout");
 
   m_abort_callback = new LambdaContext([this, now_is]([[maybe_unused]] int r) {
     // behave as if a REJECT was received
