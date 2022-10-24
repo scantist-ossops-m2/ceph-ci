@@ -36,7 +36,7 @@ class STSAuthStrategy : public rgw::auth::Strategy,
                         public rgw::auth::RoleApplier::Factory {
   typedef rgw::auth::IdentityApplier::aplptr_t aplptr_t;
   rgw::sal::Store* store;
-  rgw::auth::ImplicitTenants& implicit_tenant_context;
+  const rgw::auth::ImplicitTenants& implicit_tenant_context;
 
   STSEngine  sts_engine;
 
@@ -74,7 +74,7 @@ class STSAuthStrategy : public rgw::auth::Strategy,
 public:
   STSAuthStrategy(CephContext* const cct,
                        rgw::sal::Store* store,
-                       rgw::auth::ImplicitTenants& implicit_tenant_context,
+                       const rgw::auth::ImplicitTenants& implicit_tenant_context,
                        AWSEngine::VersionAbstractor* const ver_abstractor)
     : store(store),
       implicit_tenant_context(implicit_tenant_context),
@@ -96,7 +96,7 @@ class ExternalAuthStrategy : public rgw::auth::Strategy,
                              public rgw::auth::RemoteApplier::Factory {
   typedef rgw::auth::IdentityApplier::aplptr_t aplptr_t;
   rgw::sal::Store* store;
-  rgw::auth::ImplicitTenants& implicit_tenant_context;
+  const rgw::auth::ImplicitTenants& implicit_tenant_context;
 
   using keystone_config_t = rgw::keystone::CephCtxConfig;
   using keystone_cache_t = rgw::keystone::TokenCache;
@@ -121,7 +121,7 @@ class ExternalAuthStrategy : public rgw::auth::Strategy,
 public:
   ExternalAuthStrategy(CephContext* const cct,
                        rgw::sal::Store* store,
-                       rgw::auth::ImplicitTenants& implicit_tenant_context,
+                       const rgw::auth::ImplicitTenants& implicit_tenant_context,
                        AWSEngine::VersionAbstractor* const ver_abstractor)
     : store(store),
       implicit_tenant_context(implicit_tenant_context),
@@ -219,7 +219,7 @@ public:
   }
 
   AWSAuthStrategy(CephContext* const cct,
-                  rgw::auth::ImplicitTenants& implicit_tenant_context,
+                  const rgw::auth::ImplicitTenants& implicit_tenant_context,
                   rgw::sal::Store* store)
     : store(store),
       ver_abstractor(cct),
