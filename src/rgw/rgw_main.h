@@ -75,8 +75,8 @@ class AppMain {
   std::unique_ptr<RGWFrontendPauser> fe_pauser;
   std::unique_ptr<RGWRealmWatcher> realm_watcher;
   std::unique_ptr<RGWPauser> rgw_pauser;
-  rgw::sal::Store* store;
   DoutPrefixProvider* dpp;
+  RGWProcessEnv env;
 
 public:
   AppMain(DoutPrefixProvider* dpp)
@@ -87,7 +87,7 @@ public:
 	       = []() { /* nada */});
 
   rgw::sal::Store* get_store() {
-    return store;
+    return env.store;
   }
 
   rgw::LDAPHelper* get_ldh() {
