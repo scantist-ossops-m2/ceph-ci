@@ -30,6 +30,7 @@ class GrafanaService(CephadmService):
     def generate_config(self, daemon_spec: CephadmDaemonDeploySpec) -> Tuple[Dict[str, Any], List[str]]:
         assert self.TYPE == daemon_spec.daemon_type
         deps = []  # type: List[str]
+        deps.append(f'secure_monitoring_stack:{self.mgr.secure_monitoring_stack}')
 
         prom_services = []  # type: List[str]
         for dd in self.mgr.cache.get_daemons_by_service('prometheus'):
@@ -400,6 +401,8 @@ class PrometheusService(CephadmService):
 
         # generate the prometheus configuration
         context = {
+            'alertmanager_web_user': self.mgr.alertmanager_web_user,
+            'alertmanager_web_password': self.mgr.alertmanager_web_password,
             'secure_monitoring_stack': self.mgr.secure_monitoring_stack,
             'service_discovery_username': self.mgr.http_server.service_discovery.username,
             'service_discovery_password': self.mgr.http_server.service_discovery.password,
@@ -411,8 +414,6 @@ class PrometheusService(CephadmService):
         }
 
         web_context = {
-            'alertmanager_web_user': self.mgr.alertmanager_web_user,
-            'alertmanager_web_password': self.mgr.alertmanager_web_password,
             'prometheus_web_user': self.mgr.prometheus_web_user,
             'prometheus_web_password': password_hash(self.mgr.prometheus_web_password),
         }

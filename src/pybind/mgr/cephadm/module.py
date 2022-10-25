@@ -2559,7 +2559,7 @@ Then run the following:
                 for dd in self.cache.get_daemons_by_type(dep_type):
                     deps.append(dd.name())
 
-        if daemon_type in ['prometheus', 'node-exporter', 'alertmanager']:
+        if daemon_type in ['prometheus', 'node-exporter', 'alertmanager', 'grafana']:
             deps.append(f'secure_monitoring_stack:{self.secure_monitoring_stack}')
 
         return sorted(deps)

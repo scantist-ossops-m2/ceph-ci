@@ -8,6 +8,7 @@ rule_files:
 {% if alertmanager_sd_url %}
 alerting:
   alertmanagers:
+{% if secure_monitoring_stack %}
     - scheme: https
       basic_auth:
         username: {{ alertmanager_web_user }}
@@ -20,10 +21,11 @@ alerting:
             username: {{ service_discovery_username }}
             password: {{ service_discovery_password }}
           tls_config:
-{% if secure_monitoring_stack %}
             ca_file: root_cert.pem
 {% else %}
-            insecure_skip_verify: true
+    - scheme: http
+      http_sd_configs:
+        - url: {{ alertmanager_sd_url }}
 {% endif %}
 {% endif %}
 
