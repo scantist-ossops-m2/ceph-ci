@@ -4,6 +4,13 @@ set -e
 
 mydir=`dirname $0`
 
+testdir='./'
+if [ $# -ge 1 ]
+then
+    testdir=$1
+fi
+pushd $testdir
+
 # try it again if the clone is slow and the second time
 trap -- 'retry' EXIT
 retry() {
@@ -28,4 +35,5 @@ do
 done
 cd ..
 rm -r tmp ffsb*
+popd
 
