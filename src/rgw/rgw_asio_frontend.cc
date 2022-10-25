@@ -371,7 +371,7 @@ class ConnectionList {
 
 namespace dmc = rgw::dmclock;
 class AsioFrontend {
-  RGWProcessEnv env;
+  RGWProcessEnv& env;
   RGWFrontendConfig* conf;
   boost::asio::io_context context;
   std::string uri_prefix;
@@ -417,7 +417,7 @@ class AsioFrontend {
   void accept(Listener& listener, boost::system::error_code ec);
 
  public:
-  AsioFrontend(const RGWProcessEnv& env, RGWFrontendConfig* conf,
+  AsioFrontend(RGWProcessEnv& env, RGWFrontendConfig* conf,
 	       dmc::SchedulerCtx& sched_ctx)
     : env(env), conf(conf), pause_mutex(context.get_executor()),
     lua_manager(env.store->get_lua_manager())
@@ -1139,12 +1139,12 @@ void AsioFrontend::unpause(rgw::sal::Store* const store,
 
 class RGWAsioFrontend::Impl : public AsioFrontend {
  public:
-  Impl(const RGWProcessEnv& env, RGWFrontendConfig* conf,
+  Impl(RGWProcessEnv& env, RGWFrontendConfig* conf,
        rgw::dmclock::SchedulerCtx& sched_ctx)
     : AsioFrontend(env, conf, sched_ctx) {}
 };
 
-RGWAsioFrontend::RGWAsioFrontend(const RGWProcessEnv& env,
+RGWAsioFrontend::RGWAsioFrontend(RGWProcessEnv& env,
                                  RGWFrontendConfig* conf,
 				 rgw::dmclock::SchedulerCtx& sched_ctx)
   : impl(new Impl(env, conf, sched_ctx))
