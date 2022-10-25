@@ -1,0 +1,28 @@
+overrides:
+  kclient:
+    all:
+      mountpoint: /tmp/fscrypt-cephfs
+tasks:
+  - workunit:
+      timeout: 6h
+      clients:
+        client.0:
+          - fs/fscrypt.sh none ffsb_test_dir_none
+          - fs/ffsb.sh ffsb_test_dir_none
+          - fs/fscrypt.sh unlocked ffsb_test_dir_locked
+          - fs/ffsb.sh ffsb_test_dir_locked
+        client.1:
+          - fs/fscrypt.sh none pjd_test_dir_none
+          - fs/pjd.sh pjd_test_dir_none
+          - fs/fscrypt.sh unlocked pjd_test_dir_locked
+          - fs/pjd.sh pjd_test_dir_locked
+        client.2:
+          - fs/fscrypt.sh none dbench_test_dir_none
+          - fs/dbench.sh dbench_test_dir_none
+          - fs/fscrypt.sh unlocked dbench_test_dir_locked
+          - fs/dbench.sh dbench_test_dir_locked
+        client.3:
+          - fs/fscrypt.sh none iozone_test_dir_none
+          - fs/iozone.sh iozone_test_dir_none
+          - fs/fscrypt.sh unlocked iozone_test_dir_locked
+          - fs/iozone.sh iozone_test_dir_locked
