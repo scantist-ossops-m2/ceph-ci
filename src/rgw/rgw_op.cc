@@ -12,6 +12,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/optional.hpp>
 #include <boost/utility/in_place_factory.hpp>
+#include <boost/asio.hpp>
 
 #include "include/scope_guard.h"
 #include "common/Clock.h"
@@ -6842,6 +6843,7 @@ void RGWDeleteMultiObj::execute(optional_yield y)
 {
   RGWMultiDelDelete *multi_delete;
   vector<rgw_obj_key>::iterator iter;
+  boost::asio::io_context io_ctx{};
   RGWMultiDelXMLParser parser;
   char* buf;
 
@@ -6904,142 +6906,146 @@ void RGWDeleteMultiObj::execute(optional_yield y)
   for (iter = multi_delete->objects.begin();
         iter != multi_delete->objects.end();
         ++iter) {
-    std::string version_id;
-    std::unique_ptr<rgw::sal::Object> obj = bucket->get_object(*iter);
-    if (s->iam_policy || ! s->iam_user_policies.empty() || !s->session_policies.empty()) {
-      auto identity_policy_res = eval_identity_or_session_policies(this, s->iam_user_policies, s->env,
-                                              iter->instance.empty() ?
-                                              rgw::IAM::s3DeleteObject :
-                                              rgw::IAM::s3DeleteObjectVersion,
-                                              ARN(obj->get_obj()));
-      if (identity_policy_res == Effect::Deny) {
-        send_partial_response(*iter, false, "", -EACCES);
-        continue;
-      }
-
-      rgw::IAM::Effect e = Effect::Pass;
-      rgw::IAM::PolicyPrincipal princ_type = rgw::IAM::PolicyPrincipal::Other;
-      if (s->iam_policy) {
-        ARN obj_arn(obj->get_obj());
-        e = s->iam_policy->eval(s->env,
-				   *s->auth.identity,
-				   iter->instance.empty() ?
-				   rgw::IAM::s3DeleteObject :
-				   rgw::IAM::s3DeleteObjectVersion,
-				   obj_arn,
-           princ_type);
-      }
-      if (e == Effect::Deny) {
-        send_partial_response(*iter, false, "", -EACCES);
-	      continue;
-      }
-
-      if (!s->session_policies.empty()) {
-        auto session_policy_res = eval_identity_or_session_policies(this, s->session_policies, s->env,
-                                              iter->instance.empty() ?
-                                              rgw::IAM::s3DeleteObject :
-                                              rgw::IAM::s3DeleteObjectVersion,
-                                              ARN(obj->get_obj()));
-        if (session_policy_res == Effect::Deny) {
+    spawn::spawn(io_ctx, [&] (yield_context yield) {
+      auto y = optional_yield { io_ctx, yield };
+      std::string version_id;
+      std::unique_ptr<rgw::sal::Object> obj = bucket->get_object(*iter);
+      if (s->iam_policy || ! s->iam_user_policies.empty() || !s->session_policies.empty()) {
+        auto identity_policy_res = eval_identity_or_session_policies(this, s->iam_user_policies, s->env,
+                                                                     iter->instance.empty() ?
+                                                                     rgw::IAM::s3DeleteObject :
+                                                                     rgw::IAM::s3DeleteObjectVersion,
+                                                                     ARN(obj->get_obj()));
+        if (identity_policy_res == Effect::Deny) {
           send_partial_response(*iter, false, "", -EACCES);
-	        continue;
+          return;
         }
-        if (princ_type == rgw::IAM::PolicyPrincipal::Role) {
-          //Intersection of session policy and identity policy plus intersection of session policy and bucket policy
-          if ((session_policy_res != Effect::Allow || identity_policy_res != Effect::Allow) &&
-              (session_policy_res != Effect::Allow || e != Effect::Allow)) {
-            send_partial_response(*iter, false, "", -EACCES);
-	          continue;
-          }
-        } else if (princ_type == rgw::IAM::PolicyPrincipal::Session) {
-          //Intersection of session policy and identity policy plus bucket policy
-          if ((session_policy_res != Effect::Allow || identity_policy_res != Effect::Allow) && e != Effect::Allow) {
-            send_partial_response(*iter, false, "", -EACCES);
-	          continue;
-          }
-        } else if (princ_type == rgw::IAM::PolicyPrincipal::Other) {// there was no match in the bucket policy
-          if (session_policy_res != Effect::Allow || identity_policy_res != Effect::Allow) {
-            send_partial_response(*iter, false, "", -EACCES);
-	          continue;
-          }
+
+        rgw::IAM::Effect e = Effect::Pass;
+        rgw::IAM::PolicyPrincipal princ_type = rgw::IAM::PolicyPrincipal::Other;
+        if (s->iam_policy) {
+          ARN obj_arn(obj->get_obj());
+          e = s->iam_policy->eval(s->env,
+                                  *s->auth.identity,
+                                  iter->instance.empty() ?
+                                  rgw::IAM::s3DeleteObject :
+                                  rgw::IAM::s3DeleteObjectVersion,
+                                  obj_arn,
+                                  princ_type);
         }
-        send_partial_response(*iter, false, "", -EACCES);
-	      continue;
+        if (e == Effect::Deny) {
+          send_partial_response(*iter, false, "", -EACCES);
+          return;
+        }
+
+        if (!s->session_policies.empty()) {
+          auto session_policy_res = eval_identity_or_session_policies(this, s->session_policies, s->env,
+                                                                      iter->instance.empty() ?
+                                                                      rgw::IAM::s3DeleteObject :
+                                                                      rgw::IAM::s3DeleteObjectVersion,
+                                                                      ARN(obj->get_obj()));
+          if (session_policy_res == Effect::Deny) {
+            send_partial_response(*iter, false, "", -EACCES);
+            return;
+          }
+          if (princ_type == rgw::IAM::PolicyPrincipal::Role) {
+            //Intersection of session policy and identity policy plus intersection of session policy and bucket policy
+            if ((session_policy_res != Effect::Allow || identity_policy_res != Effect::Allow) &&
+                (session_policy_res != Effect::Allow || e != Effect::Allow)) {
+              send_partial_response(*iter, false, "", -EACCES);
+              return;
+            }
+          } else if (princ_type == rgw::IAM::PolicyPrincipal::Session) {
+            //Intersection of session policy and identity policy plus bucket policy
+            if ((session_policy_res != Effect::Allow || identity_policy_res != Effect::Allow) && e != Effect::Allow) {
+              send_partial_response(*iter, false, "", -EACCES);
+              return;
+            }
+          } else if (princ_type == rgw::IAM::PolicyPrincipal::Other) {// there was no match in the bucket policy
+            if (session_policy_res != Effect::Allow || identity_policy_res != Effect::Allow) {
+              send_partial_response(*iter, false, "", -EACCES);
+              return;
+            }
+          }
+          send_partial_response(*iter, false, "", -EACCES);
+          return;
+        }
+
+        if ((identity_policy_res == Effect::Pass && e == Effect::Pass && !acl_allowed)) {
+          send_partial_response(*iter, false, "", -EACCES);
+          return;
+        }
       }
 
-      if ((identity_policy_res == Effect::Pass && e == Effect::Pass && !acl_allowed)) {
-	      send_partial_response(*iter, false, "", -EACCES);
-	      continue;
-      }
-    }
+      uint64_t obj_size = 0;
+      std::string etag;
 
-    uint64_t obj_size = 0;
-    std::string etag;
+      if (!rgw::sal::Object::empty(obj.get())) {
+        RGWObjState* astate = nullptr;
+        bool check_obj_lock = obj->have_instance() && bucket->get_info().obj_lock_enabled();
+        const auto ret = obj->get_obj_state(this, &astate, s->yield, true);
 
-    if (!rgw::sal::Object::empty(obj.get())) {
-      RGWObjState* astate = nullptr;
-      bool check_obj_lock = obj->have_instance() && bucket->get_info().obj_lock_enabled();
-      const auto ret = obj->get_obj_state(this, &astate, s->yield, true);
-
-      if (ret < 0) {
-        if (ret == -ENOENT) {
-          // object maybe delete_marker, skip check_obj_lock
-          check_obj_lock = false;
+        if (ret < 0) {
+          if (ret == -ENOENT) {
+            // object maybe delete_marker, skip check_obj_lock
+            check_obj_lock = false;
+          } else {
+            // Something went wrong.
+            send_partial_response(*iter, false, "", ret);
+            return;
+          }
         } else {
-          // Something went wrong.
-          send_partial_response(*iter, false, "", ret);
-          continue;
+          obj_size = astate->size;
+          etag = astate->attrset[RGW_ATTR_ETAG].to_str();
         }
-      } else {
-        obj_size = astate->size;
-        etag = astate->attrset[RGW_ATTR_ETAG].to_str();
-      }
 
-      if (check_obj_lock) {
-        ceph_assert(astate);
-        int object_lock_response = verify_object_lock(this, astate->attrset, bypass_perm, bypass_governance_mode);
-        if (object_lock_response != 0) {
-          send_partial_response(*iter, false, "", object_lock_response);
-          continue;
+        if (check_obj_lock) {
+          ceph_assert(astate);
+          int object_lock_response = verify_object_lock(this, astate->attrset, bypass_perm, bypass_governance_mode);
+          if (object_lock_response != 0) {
+            send_partial_response(*iter, false, "", object_lock_response);
+            return;
+          }
         }
       }
-    }
 
-    // make reservation for notification if needed
-    const auto versioned_object = s->bucket->versioning_enabled();
-    const auto event_type = versioned_object && obj->get_instance().empty() ?
-      rgw::notify::ObjectRemovedDeleteMarkerCreated :
-      rgw::notify::ObjectRemovedDelete;
-    std::unique_ptr<rgw::sal::Notification> res
-      = store->get_notification(obj.get(), s->src_object.get(), s, event_type);
-    op_ret = res->publish_reserve(this);
-    if (op_ret < 0) {
-      send_partial_response(*iter, false, "", op_ret);
-      continue;
-    }
+      // make reservation for notification if needed
+      const auto versioned_object = s->bucket->versioning_enabled();
+      const auto event_type = versioned_object && obj->get_instance().empty() ?
+                              rgw::notify::ObjectRemovedDeleteMarkerCreated :
+                              rgw::notify::ObjectRemovedDelete;
+      std::unique_ptr<rgw::sal::Notification> res
+              = store->get_notification(obj.get(), s->src_object.get(), s, event_type);
+      op_ret = res->publish_reserve(this);
+      if (op_ret < 0) {
+        send_partial_response(*iter, false, "", op_ret);
+        return;
+      }
 
-    obj->set_atomic();
+      obj->set_atomic();
 
-    std::unique_ptr<rgw::sal::Object::DeleteOp> del_op = obj->get_delete_op();
-    del_op->params.versioning_status = obj->get_bucket()->get_info().versioning_status();
-    del_op->params.obj_owner = s->owner;
-    del_op->params.bucket_owner = s->bucket_owner;
-    del_op->params.marker_version_id = version_id;
+      std::unique_ptr<rgw::sal::Object::DeleteOp> del_op = obj->get_delete_op();
+      del_op->params.versioning_status = obj->get_bucket()->get_info().versioning_status();
+      del_op->params.obj_owner = s->owner;
+      del_op->params.bucket_owner = s->bucket_owner;
+      del_op->params.marker_version_id = version_id;
 
-    op_ret = del_op->delete_obj(this, y);
-    if (op_ret == -ENOENT) {
-      op_ret = 0;
-    }
+      op_ret = del_op->delete_obj(this, y);
+      if (op_ret == -ENOENT) {
+        op_ret = 0;
+      }
 
-    send_partial_response(*iter, obj->get_delete_marker(), del_op->result.version_id, op_ret);
+      send_partial_response(*iter, obj->get_delete_marker(), del_op->result.version_id, op_ret);
 
-    // send request to notification manager
-    int ret = res->publish_commit(this, obj_size, ceph::real_clock::now(), etag, version_id);
-    if (ret < 0) {
-      ldpp_dout(this, 1) << "ERROR: publishing notification failed, with error: " << ret << dendl;
-      // too late to rollback operation, hence op_ret is not set here
-    }
+      // send request to notification manager
+      int ret = res->publish_commit(this, obj_size, ceph::real_clock::now(), etag, version_id);
+      if (ret < 0) {
+        ldpp_dout(this, 1) << "ERROR: publishing notification failed, with error: " << ret << dendl;
+        // too late to rollback operation, hence op_ret is not set here
+      }
+    });
   }
+  io_ctx.run();
 
   /*  set the return code to zero, errors at this point will be
   dumped to the response */
