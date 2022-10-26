@@ -65,7 +65,9 @@ public:
 	      << " err " << err << std::endl;
     ceph_assert(cookie > 1000);
     notify_ioctx->unwatch2(cookie);
-    notify->notify_cookies.erase(cookie);
+    if (notify->notify_cookies.count(cookie) != 0) {
+      notify->notify_cookies.erase(cookie);
+    }
     notify->notify_err = notify_ioctx->watch2(notify->notify_oid, &cookie, this);
     if (notify->notify_err < err ) {
       std::cout << "reconnect notify_err " << notify->notify_err << " err " << err << std::endl;

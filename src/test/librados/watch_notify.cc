@@ -90,7 +90,9 @@ void LibRadosWatchNotify::watch_notify2_test_errcb_reconnect(void *arg,
   auto thiz = reinterpret_cast<LibRadosWatchNotify*>(arg);
   ceph_assert(thiz);
   thiz->notify_err = rados_unwatch2(thiz->ioctx, cookie);
-  thiz->notify_cookies.erase(cookie); //delete old cookie
+  if (thiz->notify_cookies.count(cookie)) {
+    thiz->notify_cookies.erase(cookie);
+  }
   thiz->notify_err = rados_watch2(thiz->ioctx, thiz->notify_oid, &cookie,
                   watch_notify2_test_cb, watch_notify2_test_errcb_reconnect, thiz);
   if (thiz->notify_err < 0) {
@@ -111,7 +113,9 @@ void LibRadosWatchNotify::watch_notify2_test_errcb_aio_reconnect(void *arg,
   ceph_assert(thiz);
   thiz->notify_err = rados_aio_unwatch(thiz->ioctx, cookie, thiz->notify_comp);
   ASSERT_EQ(0, rados_aio_create_completion2(nullptr, nullptr, &thiz->notify_comp));
-  thiz->notify_cookies.erase(cookie); //delete old cookie
+  if (thiz->notify_cookies.count(cookie)) {
+    thiz->notify_cookies.erase(cookie);
+  }
   thiz->notify_err = rados_aio_watch(thiz->ioctx, thiz->notify_oid, thiz->notify_comp, &cookie,
                   watch_notify2_test_cb, watch_notify2_test_errcb_aio_reconnect, thiz);
   ASSERT_EQ(0, rados_aio_wait_for_complete(thiz->notify_comp));
