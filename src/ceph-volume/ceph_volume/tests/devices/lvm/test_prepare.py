@@ -1,6 +1,7 @@
 import pytest
 from ceph_volume.devices import lvm
 from ceph_volume.api import lvm as api
+from ceph_volume.util.device import Device
 from mock.mock import patch, Mock, MagicMock
 
 
@@ -67,8 +68,10 @@ class TestPrepare(object):
         assert 'A physical device or logical' in stdout
 
 
+    @patch.object(Device, 'exists')
     @patch('ceph_volume.util.disk.has_bluestore_label', return_value=False)
-    def test_excludes_filestore_bluestore_flags(self, m_has_bs_label, fake_call, capsys, device_info):
+    def test_excludes_filestore_bluestore_flags(self, m_has_bs_label, m_device, fake_call, capsys, device_info):
+        m_device.return_value = True
         device_info()
         with pytest.raises(SystemExit):
             lvm.prepare.Prepare(argv=['--data', '/dev/sdfoo', '--filestore', '--bluestore']).main()
@@ -77,10 +80,12 @@ class TestPrepare(object):
         assert expected in stderr
 
 
+    @patch.object(Device, 'exists')
     @patch('ceph_volume.util.disk.has_bluestore_label', return_value=False)
-    def test_excludes_other_filestore_bluestore_flags(self, m_has_bs_label, fake_call, capsys, device_info):
+    def test_excludes_other_filestore_bluestore_flags(self, m_has_bs_label, m_device, fake_call, capsys, device_info):
+        m_device.return_value = True
         device_info()
-        with pytest.raises(SystemExit):
+        with pytest.raises(RuntimeError):
             lvm.prepare.Prepare(argv=[
                 '--bluestore', '--data', '/dev/sdfoo',
                 '--journal', '/dev/sf14',
@@ -89,10 +94,12 @@ class TestPrepare(object):
         expected = 'Cannot use --bluestore (bluestore) with --journal (filestore)'
         assert expected in stderr
 
+    @patch.object(Device, 'exists')
     @patch('ceph_volume.util.disk.has_bluestore_label', return_value=False)
-    def test_excludes_block_and_journal_flags(self, m_has_bs_label, fake_call, capsys, device_info):
+    def test_excludes_block_and_journal_flags(self, m_has_bs_label, m_device, fake_call, capsys, device_info):
+        m_device.return_value = True
         device_info()
-        with pytest.raises(SystemExit):
+        with pytest.raises(RuntimeError):
             lvm.prepare.Prepare(argv=[
                 '--bluestore', '--data', '/dev/sdfoo', '--block.db', 'vg/ceph1',
                 '--journal', '/dev/sf14',
@@ -101,7 +108,7 @@ class TestPrepare(object):
         expected = 'Cannot use --block.db (bluestore) with --journal (filestore)'
         assert expected in stderr
 
-    @patch('ceph_volume.util.arg_validators.Device')
+    @patch('ceph_volume.util.device.Device')
     @patch('ceph_volume.util.disk.has_bluestore_label', return_value=False)
     def test_journal_is_required_with_filestore(self, m_has_bs_label, m_device, is_root, monkeypatch, device_info):
         m_device.return_value = MagicMock(exists=True,
