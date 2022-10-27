@@ -468,10 +468,20 @@ class TestMonitoring:
     @patch("cephadm.serve.CephadmServe._run_cephadm")
     def test_prometheus_config_security_disabled(self, _run_cephadm, cephadm_module: CephadmOrchestrator):
         _run_cephadm.side_effect = async_side_effect(('{}', '', 0))
-
+        s = RGWSpec(service_id="foo", placement=PlacementSpec(count=1), rgw_frontend_type='beast')
         with with_host(cephadm_module, 'test'):
             with with_service(cephadm_module, MonitoringSpec('node-exporter')) as _, \
                     with_service(cephadm_module, CephExporterSpec('ceph-exporter')) as _, \
+                    with_service(cephadm_module, s) as _, \
+                    with_service(cephadm_module, AlertManagerSpec('alertmanager')) as _, \
+                    with_service(cephadm_module, IngressSpec(service_id='ingress',
+                                                             frontend_port=8089,
+                                                             monitor_port=8999,
+                                                             monitor_user='admin',
+                                                             monitor_password='12345',
+                                                             keepalived_password='12345',
+                                                             virtual_ip="1.2.3.4/32",
+                                                             backend_service='rgw.foo')) as _, \
                     with_service(cephadm_module, PrometheusSpec('prometheus')) as _:
 
                 y = dedent("""
@@ -484,11 +494,9 @@ class TestMonitoring:
 
                 alerting:
                   alertmanagers:
-                    - scheme: https
+                    - scheme: http
                       http_sd_configs:
                         - url: http://[::1]:8765/sd/prometheus/sd-config?service=alertmanager
-                          tls_config:
-                            insecure_skip_verify: true
 
                 scrape_configs:
                   - job_name: 'ceph'
@@ -535,6 +543,7 @@ class TestMonitoring:
     @patch("cephadm.services.monitoring.password_hash", lambda password: 'fake_password')
     def test_prometheus_config_security_enabled(self, _run_cephadm, cephadm_module: CephadmOrchestrator):
         _run_cephadm.side_effect = async_side_effect(('{}', '', 0))
+        s = RGWSpec(service_id="foo", placement=PlacementSpec(count=1), rgw_frontend_type='beast')
 
         def gen_cert(host, addr):
             return ('mycert', 'mykey')
@@ -546,6 +555,16 @@ class TestMonitoring:
             cephadm_module.http_server.service_discovery.ssl_certs.generate_cert = MagicMock(
                 side_effect=gen_cert)
             with with_service(cephadm_module, MonitoringSpec('node-exporter')) as _, \
+                    with_service(cephadm_module, s) as _, \
+                    with_service(cephadm_module, AlertManagerSpec('alertmanager')) as _, \
+                    with_service(cephadm_module, IngressSpec(service_id='ingress',
+                                                             frontend_port=8089,
+                                                             monitor_port=8999,
+                                                             monitor_user='admin',
+                                                             monitor_password='12345',
+                                                             keepalived_password='12345',
+                                                             virtual_ip="1.2.3.4/32",
+                                                             backend_service='rgw.foo')) as _, \
                     with_service(cephadm_module, PrometheusSpec('prometheus')) as _:
 
                 web_config = dedent("""
@@ -566,8 +585,16 @@ class TestMonitoring:
                 alerting:
                   alertmanagers:
                     - scheme: https
+                      basic_auth:
+                        username: admin
+                        password: admin
+                      tls_config:
+                        ca_file: root_cert.pem
                       http_sd_configs:
                         - url: https://[::1]:8765/sd/prometheus/sd-config?service=alertmanager
+                          basic_auth:
+                            username: admin
+                            password: fake_password
                           tls_config:
                             ca_file: root_cert.pem
 
@@ -859,7 +886,7 @@ class TestMonitoring:
                                     '    isDefault: false\n'
                                     '    editable: false',
                                 'certs/cert_file': ANY,
-                                'certs/cert_key': ANY}}, [])
+                                'certs/cert_key': ANY}}, ['secure_monitoring_stack:False'])
 
     @patch("cephadm.serve.CephadmServe._run_cephadm")
     def test_monitoring_ports(self, _run_cephadm, cephadm_module: CephadmOrchestrator):
