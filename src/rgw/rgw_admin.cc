@@ -37,7 +37,6 @@ extern "C" {
 #include "include/str_list.h"
 
 #include "rgw_user.h"
-#include "rgw_bucket.h"
 #include "rgw_otp.h"
 #include "rgw_rados.h"
 #include "rgw_acl.h"
@@ -73,6 +72,8 @@ extern "C" {
 #include "services/svc_meta_be_otp.h"
 #include "services/svc_user.h"
 #include "services/svc_zone.h"
+
+#include "driver/rados/rgw_bucket.h"
 
 #define dout_context g_ceph_context
 
@@ -8587,7 +8588,7 @@ next:
   }
 
   if (opt_cmd == OPT::USER_CHECK) {
-    check_bad_user_bucket_mapping(driver, user.get(), fix, null_yield, dpp());
+    check_bad_user_bucket_mapping(driver, *user.get(), fix, null_yield, dpp());
   }
 
   if (opt_cmd == OPT::USER_STATS) {
