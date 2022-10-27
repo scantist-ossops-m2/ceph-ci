@@ -174,7 +174,7 @@ class Root(Server):
         for server in servers:
             hostname = server.get('hostname', '')
             for service in cast(List[ServiceInfoT], server.get('services', [])):
-                if service['type'] != 'mgr':
+                if service['type'] != 'mgr' or service['id'] != self.mgr.get_mgr_id():
                     continue
                 port = self.mgr.get_module_option_ex(
                     'prometheus', 'server_port', PrometheusService.DEFAULT_MGR_PROMETHEUS_PORT)
