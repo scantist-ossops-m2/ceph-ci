@@ -150,7 +150,6 @@ const string BLUESTORE_GLOBAL_STATFS_KEY = "bluestore_statfs";
 
 #define OBJECT_MAX_SIZE 0xffffffff // 32 bits
 
-
 /*
  * extent map blob encoding
  *
