@@ -3174,6 +3174,7 @@ int RGWRados::Object::Write::_do_write_meta(const DoutPrefixProvider *dpp,
   if (!index_op->is_prepared()) {
     tracepoint(rgw_rados, prepare_enter, req_id.c_str());
     r = index_op->prepare(dpp, CLS_RGW_OP_ADD, &state->write_tag, y);
+    ldpp_dout(dpp, 0) << "ERIC UpdateIndex::prepare returned " << r << dendl;
     tracepoint(rgw_rados, prepare_exit, req_id.c_str());
     if (r < 0)
       return r;
@@ -6065,27 +6066,58 @@ int RGWRados::Bucket::UpdateIndex::guard_reshard(const DoutPrefixProvider *dpp, 
       ldpp_dout(dpp, 5) << "failed to get BucketShard object: ret=" << ret << dendl;
       return ret;
     }
+
     r = call(bs);
-    if (r != -ERR_BUSY_RESHARDING) {
+    if (r != -ERR_BUSY_RESHARDING && r != -ENOENT) {
       break;
     }
-    ldpp_dout(dpp, 0) << "NOTICE: resharding operation on bucket index detected, blocking" << dendl;
-    string new_bucket_id;
-    r = store->block_while_resharding(bs, &new_bucket_id,
-                                      target->bucket_info, null_yield, dpp);
-    if (r == -ERR_BUSY_RESHARDING) {
-      continue;
+
+    std::string new_bucket_id;
+
+    // different logic depending whether resharding completed or is
+    // underway
+
+    if (r == -ENOENT) { // case where resharding must have completed
+      ldpp_dout(dpp, 0) <<
+	"NOTICE: resharding operation recently completed, invalidating "
+	"old BucketInfo" << dendl;
+
+      RGWBucketInfo new_bucket_info;
+      r = store->fetch_new_bucket_id(target->bucket_info,
+				     "re-reading BucketInfo due to recent resharding",
+				     &new_bucket_info,
+				     new_bucket_id,
+				     dpp);
+      if (r < 0) {
+	ldpp_dout(dpp, 0) << "ERROR: " << __func__ <<
+	  " unable to refresh stale bucket_id after reshard; r=" <<
+	  r << dendl;
+	return r;
+      }
+    } else { // must have been resharding at the time
+      ldpp_dout(dpp, 0) << "NOTICE: resharding operation on bucket index detected, blocking" << dendl;
+
+      r = store->block_while_resharding(bs, &new_bucket_id,
+					target->bucket_info, null_yield, dpp);
+      if (r == -ERR_BUSY_RESHARDING) {
+	continue;
+      }
+      if (r < 0) {
+	return r;
+      }
+
+      ldpp_dout(dpp, 20) << "reshard completion identified, new_bucket_id=" << new_bucket_id << dendl;
+      i = 0; /* resharding is finished, make sure we can retry */
     }
-    if (r < 0) {
-      return r;
-    }
-    ldpp_dout(dpp, 20) << "reshard completion identified, new_bucket_id=" << new_bucket_id << dendl;
-    i = 0; /* resharding is finished, make sure we can retry */
+
+    // common portion -- finished resharding either way
+    
     r = target->update_bucket_id(new_bucket_id, dpp);
     if (r < 0) {
       ldpp_dout(dpp, 0) << "ERROR: update_bucket_id() new_bucket_id=" << new_bucket_id << " returned r=" << r << dendl;
       return r;
     }
+
     invalidate_bs();
   } // for loop
 
@@ -6727,11 +6759,36 @@ int RGWRados::guard_reshard(const DoutPrefixProvider *dpp,
   return 0;
 }
 
-int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
-				     string *new_bucket_id,
+
+int RGWRados::fetch_new_bucket_id(
+  const RGWBucketInfo& curr_bucket_info,
+  const std::string& log_tag,
+  RGWBucketInfo* save_bucket_info, // nullptr -> no save
+  std::string& new_bucket_id,
+  const DoutPrefixProvider *dpp)
+{
+  RGWBucketInfo local_bucket_info; // use if save_bucket_info is null
+  RGWBucketInfo* bip = save_bucket_info ? save_bucket_info : &local_bucket_info;
+  *bip = curr_bucket_info; // copy
+
+  int ret = try_refresh_bucket_info(*bip, nullptr, dpp);
+  if (ret < 0) {
+    ldpp_dout(dpp, 0) << __func__ <<
+      " ERROR: failed to refresh bucket info after reshard at " <<
+      log_tag << ": " << cpp_strerror(-ret) << dendl;
+    return ret;
+  }
+
+  new_bucket_id = bip->bucket.bucket_id;
+  return 0;
+}
+
+
+int RGWRados::block_while_resharding(RGWRados::BucketShard* bs,
+				     std::string* new_bucket_id,
                                      const RGWBucketInfo& bucket_info,
                                      optional_yield y,
-                                     const DoutPrefixProvider *dpp)
+                                     const DoutPrefixProvider* dpp)
 {
   int ret = 0;
   cls_rgw_bucket_instance_entry entry;
@@ -6741,7 +6798,7 @@ int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
   // lambda successfully fetches a new bucket id, it sets
   // new_bucket_id and returns 0, otherwise it returns a negative
   // error code
-  auto fetch_new_bucket_id =
+  auto old_fetch_new_bucket_id =
     [this, &bucket_info, dpp](const std::string& log_tag,
 			 std::string* new_bucket_id) -> int {
       RGWBucketInfo fresh_bucket_info = bucket_info;
@@ -6761,7 +6818,10 @@ int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
     auto& ref = bs->bucket_obj.get_ref();
     ret = cls_rgw_get_bucket_resharding(ref.pool.ioctx(), ref.obj.oid, &entry);
     if (ret == -ENOENT) {
-      return fetch_new_bucket_id("get_bucket_resharding_failed", new_bucket_id);
+      return fetch_new_bucket_id(bucket_info,
+				 "get_bucket_resharding_failed",
+				 nullptr, *new_bucket_id,
+				 dpp);
     } else if (ret < 0) {
       ldpp_dout(dpp, 0) << __func__ <<
 	" ERROR: failed to get bucket resharding : " << cpp_strerror(-ret) <<
@@ -6770,8 +6830,10 @@ int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
     }
 
     if (!entry.resharding_in_progress()) {
-      return fetch_new_bucket_id("get_bucket_resharding_succeeded",
-				 new_bucket_id);
+      return fetch_new_bucket_id(bucket_info,
+				 "get_bucket_resharding_succeeded",
+				 nullptr, *new_bucket_id,
+				 dpp);
     }
 
     ldpp_dout(dpp, 20) << "NOTICE: reshard still in progress; " <<
@@ -8259,6 +8321,7 @@ int RGWRados::cls_obj_prepare_op(const DoutPrefixProvider *dpp, BucketShard& bs,
   zones_trace.insert(svc.zone->get_zone().id, bs.bucket.get_key());
 
   ObjectWriteOperation o;
+  o.assert_exists();
   cls_rgw_obj_key key(obj.key.get_index_key_name(), obj.key.instance);
   cls_rgw_guard_bucket_resharding(o, -ERR_BUSY_RESHARDING);
   cls_rgw_bucket_prepare_op(o, op, tag, key, obj.key.get_loc(), svc.zone->get_zone().log_data, bilog_flags, zones_trace);
