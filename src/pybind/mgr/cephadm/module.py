@@ -2544,12 +2544,24 @@ Then run the following:
             # an explicit dependency is added for each service-type to force a reconfig
             # whenever the number of daemons for those service-type changes from 0 to greater
             # than zero and vice versa.
+            if self.secure_monitoring_stack and self.prometheus_web_user and self.prometheus_web_password:
+                deps.append(f'{hash(self.prometheus_web_user + self.prometheus_web_password)}')
+            if self.secure_monitoring_stack and self.alertmanager_web_user and self.alertmanager_web_password:
+                deps.append(f'{hash(self.alertmanager_web_user + self.alertmanager_web_password)}')
             deps += [s for s in ['node-exporter', 'alertmanager'] if self.cache.get_daemons_by_service(s)]
             if len(self.cache.get_daemons_by_type('ingress')) > 0:
                 deps.append('ingress')
             # add dependency on ceph-exporter daemons
             deps += [d.name() for d in self.cache.get_daemons_by_service('ceph-exporter')]
         else:
+            if self.secure_monitoring_stack:
+                if daemon_type == 'grafana':
+                    if self.prometheus_web_user and self.prometheus_web_password:
+                        deps.append(f'{hash(self.prometheus_web_user + self.prometheus_web_password)}')
+                elif daemon_type == 'alertmanager':
+                    if self.alertmanager_web_user and self.alertmanager_web_password:
+                        deps.append(f'{hash(self.alertmanager_web_user + self.alertmanager_web_password)}')
+
             need = {
                 'grafana': ['prometheus', 'loki'],
                 'alertmanager': ['mgr', 'alertmanager', 'snmp-gateway'],

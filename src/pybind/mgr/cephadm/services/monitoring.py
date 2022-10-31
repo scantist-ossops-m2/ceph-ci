@@ -30,6 +30,8 @@ class GrafanaService(CephadmService):
     def generate_config(self, daemon_spec: CephadmDaemonDeploySpec) -> Tuple[Dict[str, Any], List[str]]:
         assert self.TYPE == daemon_spec.daemon_type
         deps = []  # type: List[str]
+        if self.mgr.secure_monitoring_stack and self.mgr.prometheus_web_user and self.mgr.prometheus_web_password:
+            deps.append(f'{hash(self.mgr.prometheus_web_user + self.mgr.prometheus_web_password)}')
         deps.append(f'secure_monitoring_stack:{self.mgr.secure_monitoring_stack}')
 
         prom_services = []  # type: List[str]
@@ -273,7 +275,10 @@ class AlertmanagerService(CephadmService):
             addr = self._inventory_get_fqdn(dd.hostname)
             peers.append(build_url(host=addr, port=port).lstrip('/'))
 
+        if self.mgr.secure_monitoring_stack and self.mgr.alertmanager_web_user and self.mgr.alertmanager_web_password:
+            deps.append(f'{hash(self.mgr.alertmanager_web_user + self.mgr.alertmanager_web_password)}')
         deps.append(f'secure_monitoring_stack:{self.mgr.secure_monitoring_stack}')
+
         if self.mgr.secure_monitoring_stack:
             node_ip = self.mgr.inventory.get_addr(daemon_spec.host)
             host_fqdn = self._inventory_get_fqdn(daemon_spec.host)
@@ -363,15 +368,6 @@ class PrometheusService(CephadmService):
     ) -> Tuple[Dict[str, Any], List[str]]:
 
         assert self.TYPE == daemon_spec.daemon_type
-        deps = []  # type: List[str]
-        port = cast(int, self.mgr.get_module_option_ex(
-            'prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
-        deps.append(str(port))
-        # add an explicit dependency on the active manager. This will force to
-        # re-deploy prometheus if the mgr has changed (due to a fail-over i.e).
-        deps.append(self.mgr.get_active_mgr().name())
-        deps.append(str(self.mgr.secure_monitoring_stack))
-
         spec = cast(PrometheusSpec, self.mgr.spec_store[daemon_spec.service_name].spec)
 
         try:
@@ -479,13 +475,17 @@ class PrometheusService(CephadmService):
 
     def calculate_deps(self) -> List[str]:
         deps = []  # type: List[str]
-        port = cast(int, self.mgr.get_module_option_ex(
-            'prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
+        port = cast(int, self.mgr.get_module_option_ex('prometheus', 'server_port', self.DEFAULT_MGR_PROMETHEUS_PORT))
         deps.append(str(port))
         deps.append(str(self.mgr.service_discovery_port))
         # add an explicit dependency on the active manager. This will force to
         # re-deploy prometheus if the mgr has changed (due to a fail-over i.e).
         deps.append(self.mgr.get_active_mgr().name())
+        if self.mgr.secure_monitoring_stack:
+            if self.mgr.prometheus_web_user and self.mgr.prometheus_web_password:
+                deps.append(f'{hash(self.mgr.prometheus_web_user + self.mgr.prometheus_web_password)}')
+            if self.mgr.alertmanager_web_user and self.mgr.alertmanager_web_password:
+                deps.append(f'{hash(self.mgr.alertmanager_web_user + self.mgr.alertmanager_web_password)}')
         deps.append(f'secure_monitoring_stack:{self.mgr.secure_monitoring_stack}')
         # add dependency on ceph-exporter daemons
         deps += [d.name() for d in self.mgr.cache.get_daemons_by_service('ceph-exporter')]
