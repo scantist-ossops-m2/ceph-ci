@@ -56,8 +56,8 @@ class GrafanaService(CephadmService):
         oneline_root_cert = '\\n'.join([line.strip() for line in root_cert.splitlines()])
         grafana_data_sources = self.mgr.template.render('services/grafana/ceph-dashboard.yml.j2',
                                                         {'hosts': prom_services,
-                                                         'basic_auth_user': 'admin',
-                                                         'basic_auth_password': 'admin',
+                                                         'prometheus_user': self.mgr.prometheus_web_user,
+                                                         'prometheus_password': self.mgr.prometheus_web_password,
                                                          'cephadm_root_ca': oneline_root_cert,
                                                          'security_enabled': self.mgr.secure_monitoring_stack,
                                                          'loki_host': loki_host})

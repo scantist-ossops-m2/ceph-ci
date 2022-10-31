@@ -18,14 +18,14 @@ datasources:
     isDefault: {{ 'true' if loop.first else 'false' }}
     editable: false
 {% if security_enabled %}
-    basicAuthUser: {{ basic_auth_user }}
+    basicAuthUser: {{ prometheus_user }}
     jsonData:
        graphiteVersion: "1.1"
        tlsAuth: false
        tlsAuthWithCACert: true
        tlsSkipVerify: false
     secureJsonData:
-      basicAuthPassword: {{ basic_auth_password }}
+      basicAuthPassword: {{ prometheus_password }}
       tlsCACert: "{{ cephadm_root_ca }}"
 {% endif %}
 {% endfor %}
