@@ -35,16 +35,18 @@ scrape_configs:
     scheme: https
     tls_config:
       ca_file: mgr_prometheus_cert.pem
-{% endif %}
     honor_labels: true
     http_sd_configs:
     - url: {{ mgr_prometheus_sd_url }}
-{% if secure_monitoring_stack %}
       basic_auth:
         username: {{ service_discovery_username }}
         password: {{ service_discovery_password }}
       tls_config:
         ca_file: root_cert.pem
+{% else %}
+    honor_labels: true
+    http_sd_configs:
+    - url: {{ mgr_prometheus_sd_url }}
 {% endif %}
 
 {% if node_exporter_sd_url %}
@@ -53,15 +55,16 @@ scrape_configs:
     scheme: https
     tls_config:
       ca_file: root_cert.pem
-{% endif %}
     http_sd_configs:
     - url: {{ node_exporter_sd_url }}
-{% if secure_monitoring_stack %}
       basic_auth:
         username: {{ service_discovery_username }}
         password: {{ service_discovery_password }}
       tls_config:
         ca_file: root_cert.pem
+{% else %}
+    http_sd_configs:
+    - url: {{ node_exporter_sd_url }}
 {% endif %}
 {% endif %}
 
@@ -71,15 +74,16 @@ scrape_configs:
     scheme: https
     tls_config:
       ca_file: root_cert.pem
-{% endif %}
     http_sd_configs:
     - url: {{ haproxy_sd_url }}
-{% if secure_monitoring_stack %}
       basic_auth:
         username: {{ service_discovery_username }}
         password: {{ service_discovery_password }}
       tls_config:
         ca_file: root_cert.pem
+{% else %}
+    http_sd_configs:
+    - url: {{ haproxy_sd_url }}
 {% endif %}
 
 
