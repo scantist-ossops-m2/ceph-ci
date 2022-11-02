@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import tempfile
 import errno
+import os
 
 import requests
 
@@ -32,56 +33,48 @@ class PrometheusReceiver(BaseController):
 class PrometheusRESTController(RESTController):
     def prometheus_proxy(self, method, path, params=None, payload=None):
         # type (str, str, dict, dict)
-        user = None
-        password = None
-        verify = Settings.PROMETHEUS_API_SSL_VERIFY
-        secure_monitoring_stack = bool(mgr.get_module_option_ex('cephadm', 'secure_monitoring_stack', 'false'))
-        if secure_monitoring_stack:
-            cmd = {'prefix': 'orch prometheus access info'}
-            ret, out, err = mgr.mon_command(cmd)
-            if ret == 0 and out is not None:
-                access_info = json.loads(out)
-                user = access_info['user']
-                password = access_info['password']
-                certificate = access_info['certificate']
-                cert_file = tempfile.NamedTemporaryFile()
-                cert_file.write(certificate.encode('utf-8'))
-                cert_file.flush()
-                verify = cert_file.name
-        return self._proxy(self._get_api_url(Settings.PROMETHEUS_API_HOST),
-                           method, path, 'Prometheus', params, payload,
-                           user=user, password=password, verify=verify)
-
-    def get_config_option(self, key):
-        cmd = {'prefix': 'config get',
-               'who': 'mgr',
-               'key': key}
-        ret, option, err = mgr.mon_command(cmd)
-        if ret < 0 and not ret == -errno.ENOENT:
-            return option
-        return None
+        user, password, cert_file = self.get_access_info('prometheus')
+        verify = cert_file.name if cert_file else Settings.PROMETHEUS_API_SSL_VERIFY
+        response = self._proxy(self._get_api_url(Settings.PROMETHEUS_API_HOST),
+                               method, path, 'Prometheus', params, payload,
+                               user=user, password=password, verify=verify)
+        if cert_file:
+            cert_file.close()
+            os.unlink(cert_file.name)
+        return response
 
     def alert_proxy(self, method, path, params=None, payload=None):
         # type (str, str, dict, dict)
+        user, password, cert_file = self.get_access_info('alertmanager')
+        verify = cert_file.name if cert_file else Settings.ALERTMANAGER_API_SSL_VERIFY
+        response = self._proxy(self._get_api_url(Settings.ALERTMANAGER_API_HOST),
+                               method, path, 'Alertmanager', params, payload,
+                               user=user, password=password, verify=verify)
+        if cert_file:
+            cert_file.close()
+            os.unlink(cert_file.name)
+        return response
+
+    def get_access_info(self, module_name):
+        # type (str, str, str)
+        if module_name not in ['prometheus', 'alertmanager']:
+            raise DashboardException(f'Invalid module name {module_name}', component='prometheus')
         user = None
         password = None
-        verify = Settings.ALERTMANAGER_API_SSL_VERIFY
+        cert_file = None
         secure_monitoring_stack = bool(mgr.get_module_option_ex('cephadm', 'secure_monitoring_stack', 'false'))
         if secure_monitoring_stack:
-            cmd = {'prefix': 'orch alertmanager access info'}
+            cmd = {'prefix': f'orch {module_name} access info'}
             ret, out, err = mgr.mon_command(cmd)
             if ret == 0 and out is not None:
                 access_info = json.loads(out)
                 user = access_info['user']
                 password = access_info['password']
                 certificate = access_info['certificate']
-                cert_file = tempfile.NamedTemporaryFile()
+                cert_file = tempfile.NamedTemporaryFile(delete=False)
                 cert_file.write(certificate.encode('utf-8'))
                 cert_file.flush()
-                verify = cert_file.name
-        return self._proxy(self._get_api_url(Settings.ALERTMANAGER_API_HOST),
-                           method, path, 'Alertmanager', params, payload,
-                           user=user, password=password, verify=verify)
+        return user, password, cert_file
 
     def _get_api_url(self, host):
         return host.rstrip('/') + '/api/v1'
