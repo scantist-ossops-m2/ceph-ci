@@ -1573,6 +1573,17 @@ options:
     lead to their eviction, this option once enabled can help defer client
     eviction.
   default: true
+- name: mds_scrub_stats_review_period
+  type: uint
+  level: advanced
+  desc: Period for which scrub stats will be available for review.
+  long_desc: Number of days for which scrub stats will be available for review since
+    start of scrub operation. After this period, the stats will be auto purged.
+    These stats will not be saved to the disk. So any restart or failover of mds
+    will cause stats to be lost forever.
+  default: 1
+  min: 1
+  max: 60
   services:
   - mds
   flags:
