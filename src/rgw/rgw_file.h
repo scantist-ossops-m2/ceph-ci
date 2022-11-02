@@ -2489,11 +2489,11 @@ public:
   size_t bytes_written;
   bool eio;
 
-  RGWWriteRequest(rgw::sal::Store* store,
+  RGWWriteRequest(rgw::sal::Store* store, const RGWProcessEnv& penv,
 		  std::unique_ptr<rgw::sal::User> _user,
 		  RGWFileHandle* _fh, const std::string& _bname,
 		  const std::string& _oname)
-    : RGWLibContinuedReq(store->ctx(), std::move(_user)),
+    : RGWLibContinuedReq(store->ctx(), penv, std::move(_user)),
       bucket_name(_bname), obj_name(_oname),
       rgw_fh(_fh), filter(nullptr), timer_id(0), real_ofs(0),
       bytes_written(0), eio(false) {
