@@ -84,11 +84,11 @@ public:
     return sts_strategy;
   }
 
-  static std::shared_ptr<StrategyRegistry>
+  static std::unique_ptr<StrategyRegistry>
   create(CephContext* const cct,
          const ImplicitTenants& implicit_tenant_context,
          rgw::sal::Store* store) {
-    return std::make_shared<StrategyRegistry>(cct, implicit_tenant_context, store);
+    return std::make_unique<StrategyRegistry>(cct, implicit_tenant_context, store);
   }
 };
 
@@ -96,6 +96,6 @@ public:
 } /* namespace rgw */
 
 using rgw_auth_registry_t = rgw::auth::StrategyRegistry;
-using rgw_auth_registry_ptr_t = std::shared_ptr<rgw_auth_registry_t>;
+using rgw_auth_registry_ptr_t = std::unique_ptr<rgw_auth_registry_t>;
 
 #endif /* CEPH_RGW_AUTH_REGISTRY_H */
