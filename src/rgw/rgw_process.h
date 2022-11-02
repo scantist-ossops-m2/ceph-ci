@@ -115,11 +115,8 @@ public:
     m_tp.pause();
   }
 
-  void unpause_with_new_config(rgw::sal::Store* const store,
-                               rgw_auth_registry_ptr_t auth_registry) {
-    env.store = store;
-    env.auth_registry = std::move(auth_registry);
-    lua_manager = store->get_lua_manager();
+  void unpause_with_new_config() {
+    lua_manager = env.store->get_lua_manager();
     m_tp.unpause();
   }
 
