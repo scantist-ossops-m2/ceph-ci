@@ -52,8 +52,7 @@ class GrafanaService(CephadmService):
         grafana_data_sources = self.mgr.template.render(
             'services/grafana/ceph-dashboard.yml.j2', {'hosts': prom_services, 'loki_host': loki_host})
 
-        spec: GrafanaSpec = cast(
-            GrafanaSpec, self.mgr.spec_store.active_specs[daemon_spec.service_name])
+        spec: GrafanaSpec = cast(GrafanaSpec, self.mgr.spec_store.active_specs[daemon_spec.service_name])
         grafana_ini = self.mgr.template.render(
             'services/grafana/grafana.ini.j2', {
                 'initial_admin_password': spec.initial_admin_password,
@@ -125,8 +124,7 @@ class GrafanaService(CephadmService):
                > ceph orch daemon reconfig <grafana-daemon>
 
             """
-            self.mgr.set_health_warning(
-                'CEPHADM_CERT_ERROR', 'Invalid grafana certificate: ', 1, [err_msg])
+            self.mgr.set_health_warning('CEPHADM_CERT_ERROR', 'Invalid grafana certificate: ', 1, [err_msg])
 
         return cert, pkey
 
@@ -359,14 +357,7 @@ class PrometheusService(CephadmService):
         alertmanager_sd_url = f'{srv_end_point}service=alertmanager' if alertmgr_cnt > 0 else None
         haproxy_sd_url = f'{srv_end_point}service=haproxy' if haproxy_cnt > 0 else None
         mgr_prometheus_sd_url = f'{srv_end_point}service=mgr-prometheus'  # always included
-
-        # scrape ceph exporters
-        ceph_exporter_nodes = []
-        for dd in self.mgr.cache.get_daemons_by_service('ceph-exporter'):
-            assert dd.hostname is not None
-            addr = self._inventory_get_fqdn(dd.hostname)
-            exporter_port = dd.ports[0] if dd.ports else 9926
-            ceph_exporter_nodes.append(build_url(host=addr, port=exporter_port).lstrip('/'))
+        ceph_exporter_sd_url = f'{srv_end_point}service=ceph-exporter'  # always included
 
         # generate the prometheus configuration
         context = {
@@ -374,7 +365,7 @@ class PrometheusService(CephadmService):
             'node_exporter_sd_url': node_exporter_sd_url,
             'alertmanager_sd_url': alertmanager_sd_url,
             'haproxy_sd_url': haproxy_sd_url,
-            'ceph_exporter_nodes': ceph_exporter_nodes
+            'ceph_exporter_sd_url': ceph_exporter_sd_url
         }
 
         r: Dict[str, Any] = {
@@ -421,9 +412,7 @@ class PrometheusService(CephadmService):
         # re-deploy prometheus if the mgr has changed (due to a fail-over i.e).
         deps.append(self.mgr.get_active_mgr().name())
         # add dependency on ceph-exporter daemons
-        exporter_daemons = self.mgr.cache.get_daemons_by_service('ceph-exporter')
-        if exporter_daemons:
-            deps += [d.name() for d in exporter_daemons]
+        deps += [d.name() for d in self.mgr.cache.get_daemons_by_service('ceph-exporter')]
         deps += [s for s in ['node-exporter', 'alertmanager', 'ingress']
                  if self.mgr.cache.get_daemons_by_service(s)]
         return deps

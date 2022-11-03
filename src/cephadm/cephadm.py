@@ -964,6 +964,8 @@ class CephExporter(object):
         self.prio_limit = config_json.get('prio-limit', 5)
         self.stats_period = config_json.get('stats-period', 5)
 
+        self.validate()
+
     @classmethod
     def init(cls, ctx: CephadmContext, fsid: str,
              daemon_id: Union[int, str]) -> 'CephExporter':
@@ -985,6 +987,10 @@ class CephExporter(object):
             f'--stats-period={self.stats_period}',
         ]
         return args
+
+    def validate(self) -> None:
+        if not os.path.isdir(self.sock_dir):
+            raise Error(f'Directory does not exist. Got: {self.sock_dir}')
 
 
 ##################################

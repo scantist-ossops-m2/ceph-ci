@@ -1041,6 +1041,7 @@ class CrashService(CephService):
 
 class CephExporterService(CephService):
     TYPE = 'ceph-exporter'
+    DEFAULT_SERVICE_PORT = 9926
 
     def prepare_create(self, daemon_spec: CephadmDaemonDeploySpec) -> CephadmDaemonDeploySpec:
         assert self.TYPE == daemon_spec.daemon_type
@@ -1055,7 +1056,7 @@ class CephExporterService(CephService):
             exporter_config.update({'sock-dir': spec.sock_dir})
         if spec.port:
             exporter_config.update({'port': f'{spec.port}'})
-        if spec.prio_limit >= 0:
+        if spec.prio_limit is not None:
             exporter_config.update({'prio-limit': f'{spec.prio_limit}'})
         if spec.stats_period:
             exporter_config.update({'stats-period': f'{spec.stats_period}'})
@@ -1133,8 +1134,7 @@ class CephadmAgent(CephService):
                'host': daemon_spec.host,
                'device_enhanced_scan': str(self.mgr.device_enhanced_scan)}
 
-        listener_cert, listener_key = agent.ssl_certs.generate_cert(
-            daemon_spec.host, self.mgr.inventory.get_addr(daemon_spec.host))
+        listener_cert, listener_key = agent.ssl_certs.generate_cert(daemon_spec.host, self.mgr.inventory.get_addr(daemon_spec.host))
         config = {
             'agent.json': json.dumps(cfg),
             'keyring': daemon_spec.keyring,

@@ -2490,9 +2490,7 @@ Then run the following:
             deps.append(str(self.get_module_option_ex('prometheus', 'server_port', 9283)))
             deps.append(str(self.service_discovery_port))
             # add dependency on ceph-exporter daemons
-            exporter_daemons = self.cache.get_daemons_by_service('ceph-exporter')
-            if exporter_daemons:
-                deps += [d.name() for d in exporter_daemons]
+            deps += [d.name() for d in self.cache.get_daemons_by_service('ceph-exporter')]
             deps += [s for s in ['node-exporter', 'alertmanager', 'ingress']
                      if self.cache.get_daemons_by_service(s)]
         else:
@@ -2613,14 +2611,12 @@ Then run the following:
                 valid_units = ['y', 'w', 'd', 'h', 'm', 's']
                 m = re.search(rf"^(\d+)({'|'.join(valid_units)})$", spec.retention_time)
                 if not m:
-                    raise OrchestratorError(
-                        f"Invalid retention time. Valid units are: {', '.join(valid_units)}")
+                    raise OrchestratorError(f"Invalid retention time. Valid units are: {', '.join(valid_units)}")
             if spec.retention_size:
                 valid_units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']
                 m = re.search(rf"^(\d+)({'|'.join(valid_units)})$", spec.retention_size)
                 if not m:
-                    raise OrchestratorError(
-                        f"Invalid retention size. Valid units are: {', '.join(valid_units)}")
+                    raise OrchestratorError(f"Invalid retention size. Valid units are: {', '.join(valid_units)}")
 
         return self._apply_service_spec(cast(ServiceSpec, spec))
 

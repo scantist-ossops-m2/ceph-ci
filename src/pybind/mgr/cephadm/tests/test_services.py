@@ -378,9 +378,11 @@ class TestMonitoring:
 
 
                   - job_name: 'ceph-exporter'
-                    static_configs:
-                    - targets:
-                      - '[1::4]:9926'
+                    honor_labels: true
+                    http_sd_configs:
+                    - url: https://[::1]:8765/sd/prometheus/sd-config?service=ceph-exporter
+                      tls_config:
+                        ca_file: root_cert.pem
                 """).lstrip()
 
                 _run_cephadm.assert_called_with(

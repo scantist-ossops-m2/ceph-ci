@@ -166,10 +166,10 @@ class PlacementSpec(object):
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, PlacementSpec):
             return self.label == other.label \
-                and self.hosts == other.hosts \
-                and self.count == other.count \
-                and self.host_pattern == other.host_pattern \
-                and self.count_per_host == other.count_per_host
+                   and self.hosts == other.hosts \
+                   and self.count == other.count \
+                   and self.host_pattern == other.host_pattern \
+                   and self.count_per_host == other.count_per_host
         return NotImplemented
 
     def set_hosts(self, hosts: Union[List[str], List[HostPlacementSpec]]) -> None:
@@ -752,7 +752,7 @@ class ServiceSpec(object):
                 raise SpecValidationError('Cannot add Service: id required')
             if self.service_type not in self.REQUIRES_SERVICE_ID and self.service_id:
                 raise SpecValidationError(
-                    f'Service of type \'{self.service_type}\' should not contain a service id')
+                        f'Service of type \'{self.service_type}\' should not contain a service id')
 
         if self.service_id:
             if not re.match('^[a-zA-Z0-9_.-]+$', str(self.service_id)):
@@ -914,10 +914,10 @@ class RGWSpec(ServiceSpec):
 
         if self.rgw_realm and not self.rgw_zone:
             raise SpecValidationError(
-                'Cannot add RGW: Realm specified but no zone specified')
+                    'Cannot add RGW: Realm specified but no zone specified')
         if self.rgw_zone and not self.rgw_realm:
             raise SpecValidationError(
-                'Cannot add RGW: Zone specified but no realm specified')
+                    'Cannot add RGW: Zone specified but no realm specified')
 
 
 yaml.add_representer(RGWSpec, ServiceSpec.yaml_representer)
@@ -1614,6 +1614,16 @@ class CephExporterSpec(ServiceSpec):
         self.port = port
         self.prio_limit = prio_limit
         self.stats_period = stats_period
+
+    def validate(self) -> None:
+        super(CephExporterSpec, self).validate()
+
+        if not isinstance(self.prio_limit, int):
+            raise SpecValidationError(
+                    f'prio_limit must be an integer. Got {type(self.prio_limit)}')
+        if not isinstance(self.stats_period, int):
+            raise SpecValidationError(
+                    f'stats_period must be an integer. Got {type(self.stats_period)}')
 
 
 yaml.add_representer(CephExporterSpec, ServiceSpec.yaml_representer)
