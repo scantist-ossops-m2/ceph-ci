@@ -54,8 +54,7 @@ class ServiceDiscovery:
         self.password: Optional[str] = None
 
     def validate_password(self, realm: str, username: str, password: str) -> bool:
-        # TODO(redo): should we include the realm as part of the security checks
-        return password == self.password
+        return (password == self.password and username == self.username)
 
     def configure_routes(self, server: Server, enable_auth: bool) -> None:
         ROUTES = [

@@ -275,11 +275,11 @@ class AlertmanagerService(CephadmService):
             addr = self._inventory_get_fqdn(dd.hostname)
             peers.append(build_url(host=addr, port=port).lstrip('/'))
 
-        if self.mgr.secure_monitoring_stack and self.mgr.alertmanager_web_user and self.mgr.alertmanager_web_password:
-            deps.append(f'{hash(self.mgr.alertmanager_web_user + self.mgr.alertmanager_web_password)}')
         deps.append(f'secure_monitoring_stack:{self.mgr.secure_monitoring_stack}')
 
         if self.mgr.secure_monitoring_stack:
+            if self.mgr.alertmanager_web_user and self.mgr.alertmanager_web_password:
+                deps.append(f'{hash(self.mgr.alertmanager_web_user + self.mgr.alertmanager_web_password)}')
             node_ip = self.mgr.inventory.get_addr(daemon_spec.host)
             host_fqdn = self._inventory_get_fqdn(daemon_spec.host)
             cert, key = self.mgr.http_server.service_discovery.ssl_certs.generate_cert(
@@ -415,16 +415,15 @@ class PrometheusService(CephadmService):
         }
 
         if self.mgr.secure_monitoring_stack:
-            key = 'mgr/prometheus/root/cert'
-            cmd = {'prefix': 'config-key get', 'key': key}
+            cfg_key = 'mgr/prometheus/root/cert'
+            cmd = {'prefix': 'config-key get', 'key': cfg_key}
             ret, mgr_prometheus_rootca, err = self.mgr.mon_command(cmd)
-            if ret < 0 and not ret == -errno.ENOENT:
-                logger.error(f'mon command to get config-key {key} failed: {err}')
+            if ret != 0:
+                logger.error(f'mon command to get config-key {cfg_key} failed: {err}')
             else:
                 node_ip = self.mgr.inventory.get_addr(daemon_spec.host)
                 host_fqdn = self._inventory_get_fqdn(daemon_spec.host)
-                cert, key = self.mgr.http_server.service_discovery.ssl_certs.generate_cert(
-                    host_fqdn, node_ip)
+                cert, key = self.mgr.http_server.service_discovery.ssl_certs.generate_cert(host_fqdn, node_ip)
                 r: Dict[str, Any] = {
                     'files': {
                         'prometheus.yml': self.mgr.template.render('services/prometheus/prometheus.yml.j2', context),
@@ -441,8 +440,7 @@ class PrometheusService(CephadmService):
         else:
             r = {
                 'files': {
-                    'prometheus.yml': self.mgr.template.render('services/prometheus/prometheus.yml.j2', context),
-                    'root_cert.pem': self.mgr.http_server.service_discovery.ssl_certs.get_root_cert()
+                    'prometheus.yml': self.mgr.template.render('services/prometheus/prometheus.yml.j2', context)
                 },
                 'retention_time': retention_time,
                 'retention_size': retention_size

@@ -402,11 +402,15 @@ class TestMonitoring:
         def gen_cert(host, addr):
             return ('mycert', 'mykey')
 
+        def get_root_cert():
+            return 'my_root_cert'
+
         with with_host(cephadm_module, 'test'):
             cephadm_module.secure_monitoring_stack = True
             cephadm_module.alertmanager_web_password = 'fake_password'
             cephadm_module.alertmanager_web_user = 'admin'
             cephadm_module.http_server.service_discovery.ssl_certs.generate_cert = MagicMock(side_effect=gen_cert)
+            cephadm_module.http_server.service_discovery.ssl_certs.get_root_cert = MagicMock(side_effect=get_root_cert)
             with with_service(cephadm_module, AlertManagerSpec()):
 
                 y = dedent("""
@@ -458,7 +462,7 @@ class TestMonitoring:
                             'alertmanager.crt': 'mycert',
                             'alertmanager.key': 'mykey',
                             'web.yml': web_config,
-                            'root_cert.pem': ''
+                            'root_cert.pem': 'my_root_cert'
                         },
                         'peers': [],
                         'web_config': '/etc/alertmanager/web.yml'
@@ -533,7 +537,7 @@ class TestMonitoring:
                         '--config-json', '-',
                         '--tcp-ports', '9095'
                     ],
-                    stdin=json.dumps({"files": {"prometheus.yml": y, "root_cert.pem": '',
+                    stdin=json.dumps({"files": {"prometheus.yml": y,
                                                 "/etc/prometheus/alerting/custom_alerts.yml": ""},
                                       'retention_time': '15d',
                                       'retention_size': '0'}),

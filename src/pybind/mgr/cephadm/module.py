@@ -2497,6 +2497,14 @@ Then run the following:
                           spec: Optional[ServiceSpec],
                           daemon_type: str,
                           daemon_id: str) -> List[str]:
+
+        def get_daemon_names(daemons: List[str]) -> List[str]:
+            daemon_names = []
+            for daemon_type in daemons:
+                for dd in self.cache.get_daemons_by_type(daemon_type):
+                    daemon_names.append(dd.name())
+            return daemon_names
+
         deps = []
         if daemon_type == 'haproxy':
             # because cephadm creates new daemon instances whenever
@@ -2544,33 +2552,29 @@ Then run the following:
             # an explicit dependency is added for each service-type to force a reconfig
             # whenever the number of daemons for those service-type changes from 0 to greater
             # than zero and vice versa.
-            if self.secure_monitoring_stack:
-                if self.prometheus_web_user and self.prometheus_web_password:
-                    deps.append(f'{hash(self.prometheus_web_user + self.prometheus_web_password)}')
-                if self.alertmanager_web_user and self.alertmanager_web_password:
-                    deps.append(f'{hash(self.alertmanager_web_user + self.alertmanager_web_password)}')
             deps += [s for s in ['node-exporter', 'alertmanager'] if self.cache.get_daemons_by_service(s)]
             if len(self.cache.get_daemons_by_type('ingress')) > 0:
                 deps.append('ingress')
             # add dependency on ceph-exporter daemons
             deps += [d.name() for d in self.cache.get_daemons_by_service('ceph-exporter')]
-        else:
             if self.secure_monitoring_stack:
-                if daemon_type == 'grafana':
-                    if self.prometheus_web_user and self.prometheus_web_password:
-                        deps.append(f'{hash(self.prometheus_web_user + self.prometheus_web_password)}')
-                elif daemon_type == 'alertmanager':
-                    if self.alertmanager_web_user and self.alertmanager_web_password:
-                        deps.append(f'{hash(self.alertmanager_web_user + self.alertmanager_web_password)}')
-
-            need = {
-                'grafana': ['prometheus', 'loki'],
-                'alertmanager': ['mgr', 'alertmanager', 'snmp-gateway'],
-                'promtail': ['loki'],
-            }
-            for dep_type in need.get(daemon_type, []):
-                for dd in self.cache.get_daemons_by_type(dep_type):
-                    deps.append(dd.name())
+                if self.prometheus_web_user and self.prometheus_web_password:
+                    deps.append(f'{hash(self.prometheus_web_user + self.prometheus_web_password)}')
+                if self.alertmanager_web_user and self.alertmanager_web_password:
+                    deps.append(f'{hash(self.alertmanager_web_user + self.alertmanager_web_password)}')
+        elif daemon_type == 'grafana':
+            deps += get_daemon_names(['prometheus', 'loki'])
+            if self.secure_monitoring_stack and self.prometheus_web_user and self.prometheus_web_password:
+                deps.append(f'{hash(self.prometheus_web_user + self.prometheus_web_password)}')
+        elif daemon_type == 'alertmanager':
+            deps += get_daemon_names(['mgr', 'alertmanager', 'snmp-gateway'])
+            if self.secure_monitoring_stack and self.alertmanager_web_user and self.alertmanager_web_password:
+                deps.append(f'{hash(self.alertmanager_web_user + self.alertmanager_web_password)}')
+        elif daemon_type == 'promtail':
+            deps += get_daemon_names(['loki'])
+        else:
+            # TODO(redo): some error message!
+            pass
 
         if daemon_type in ['prometheus', 'node-exporter', 'alertmanager', 'grafana']:
             deps.append(f'secure_monitoring_stack:{self.secure_monitoring_stack}')
