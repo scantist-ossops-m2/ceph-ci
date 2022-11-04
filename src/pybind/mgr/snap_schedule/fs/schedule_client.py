@@ -66,6 +66,7 @@ def updates_schedule_db(func: FuncT) -> FuncT:
         path = schedule_or_path
         if isinstance(schedule_or_path, Schedule):
             path = schedule_or_path.path
+        log.debug(f"SnapSchedClient::updates_schedule_db: refreshing snap timers for {fs} after {func}")
         self.refresh_snap_timers(fs, path)
         return ret
     return cast(FuncT, f)
@@ -166,6 +167,7 @@ class SnapSchedClient(CephfsClient):
 
         # restart old schedules
         for fs_name in self.get_all_filesystems():
+            log.debug(f"SnapSchedClient::__init__: getting schedule db for {fs_name}")
             with self.get_schedule_db(fs_name) as conn_mgr:
                 db = conn_mgr.dbinfo.db
                 sched_list = Schedule.list_all_schedules(db, fs_name)
@@ -245,6 +247,7 @@ class SnapSchedClient(CephfsClient):
             if olddb:
                 rows = self.fetch_schedules(olddb, path)
             else:
+                log.debug(f"SnapSchedClient::refresh_snap_timers: getting schedule db for {fs}")
                 with self.get_schedule_db(fs) as conn_mgr:
                     db = conn_mgr.dbinfo.db
                     rows = self.fetch_schedules(db, path)
@@ -275,6 +278,7 @@ class SnapSchedClient(CephfsClient):
                                   start: str,
                                   repeat: str) -> None:
         log.debug(f'Scheduled snapshot of {path} triggered')
+        log.debug(f"SnapSchedClient::create_scheduled_snapshot: getting schedule db for {fs_name}")
         with self.get_schedule_db(fs_name) as conn_mgr:
             db = conn_mgr.dbinfo.db
             try:
@@ -335,6 +339,7 @@ class SnapSchedClient(CephfsClient):
             self._log_exception('prune_snapshots')
 
     def get_snap_schedules(self, fs: str, path: str) -> List[Schedule]:
+        log.debug(f"SnapSchedClient::get_snap_schedules: getting schedule db for {fs}")
         with self.get_schedule_db(fs) as conn_mgr:
             db = conn_mgr.dbinfo.db
             return Schedule.get_db_schedules(path, db, fs)
@@ -343,6 +348,7 @@ class SnapSchedClient(CephfsClient):
                             fs: str,
                             path: str,
                             recursive: bool) -> List[Schedule]:
+        log.debug(f"SnapSchedClient::list_snap_schedules: getting schedule db for {fs}")
         with self.get_schedule_db(fs) as conn_mgr:
             db = conn_mgr.dbinfo.db
             return Schedule.list_schedules(path, db, fs, recursive)
@@ -359,6 +365,7 @@ class SnapSchedClient(CephfsClient):
             log.error('not allowed')
             raise ValueError('no minute snaps allowed')
         log.debug(f'attempting to add schedule {sched}')
+        log.debug(f"SnapSchedClient::store_snap_schedule: getting schedule db for {fs}")
         with self.get_schedule_db(fs) as conn_mgr:
             db = conn_mgr.dbinfo.db
             sched.store_schedule(db)
@@ -368,6 +375,7 @@ class SnapSchedClient(CephfsClient):
                          fs: str, path: str,
                          schedule: Optional[str],
                          start: Optional[str]) -> None:
+        log.debug(f"SnapSchedClient::rm_snap_schedule: getting schedule db for {fs}")
         with self.get_schedule_db(fs) as conn_mgr:
             db = conn_mgr.dbinfo.db
             Schedule.rm_schedule(db, path, schedule, start)
@@ -381,6 +389,7 @@ class SnapSchedClient(CephfsClient):
         retention_spec = retention_spec_or_period
         if retention_count:
             retention_spec = retention_count + retention_spec
+        log.debug(f"SnapSchedClient::add_retention_spec: getting schedule db for {fs}")
         with self.get_schedule_db(fs) as conn_mgr:
             db = conn_mgr.dbinfo.db
             Schedule.add_retention(db, path, retention_spec)
@@ -394,6 +403,7 @@ class SnapSchedClient(CephfsClient):
         retention_spec = retention_spec_or_period
         if retention_count:
             retention_spec = retention_count + retention_spec
+        log.debug(f"SnapSchedClient::rm_retention_spec: getting schedule db for {fs}")
         with self.get_schedule_db(fs) as conn_mgr:
             db = conn_mgr.dbinfo.db
             Schedule.rm_retention(db, path, retention_spec)
@@ -404,6 +414,7 @@ class SnapSchedClient(CephfsClient):
                                path: str,
                                schedule: Optional[str],
                                start: Optional[str]) -> None:
+        log.debug(f"SnapSchedClient::activate_snap_schedule: getting schedule db for {fs}")
         with self.get_schedule_db(fs) as conn_mgr:
             db = conn_mgr.dbinfo.db
             schedules = Schedule.get_db_schedules(path, db, fs,
@@ -417,6 +428,7 @@ class SnapSchedClient(CephfsClient):
                                  fs: str, path: str,
                                  schedule: Optional[str],
                                  start: Optional[str]) -> None:
+        log.debug(f"SnapSchedClient::deactivate_snap_schedule: getting schedule db for {fs}")
         with self.get_schedule_db(fs) as conn_mgr:
             db = conn_mgr.dbinfo.db
             schedules = Schedule.get_db_schedules(path, db, fs,
