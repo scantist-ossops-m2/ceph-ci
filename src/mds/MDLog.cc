@@ -336,7 +336,7 @@ class C_MDL_Flushed : public MDSLogContextBase {
 protected:
   MDLog *mdlog;
   MDSRank *get_mds() override {return mdlog->mds;}
-  MDSContext *wrapped;
+  Context *wrapped;
 
   void finish(int r) override {
     if (wrapped)
@@ -344,7 +344,7 @@ protected:
   }
 
 public:
-  C_MDL_Flushed(MDLog *m, MDSContext *w)
+  C_MDL_Flushed(MDLog *m, Context *w)
     : mdlog(m), wrapped(w) {}
   C_MDL_Flushed(MDLog *m, uint64_t wp) : mdlog(m), wrapped(NULL) {
     set_write_pos(wp);
@@ -420,8 +420,7 @@ void MDLog::_submit_thread()
       delete le;
     } else {
       if (data.fin) {
-	MDSContext* fin =
-		dynamic_cast<MDSContext*>(data.fin);
+	Context* fin = dynamic_cast<Context*>(data.fin);
 	ceph_assert(fin);
 	C_MDL_Flushed *fin2 = new C_MDL_Flushed(this, fin);
 	fin2->set_write_pos(journaler->get_write_pos());
@@ -439,7 +438,7 @@ void MDLog::_submit_thread()
   }
 }
 
-void MDLog::wait_for_safe(MDSContext *c)
+void MDLog::wait_for_safe(Context* c)
 {
   submit_mutex.lock();
 
