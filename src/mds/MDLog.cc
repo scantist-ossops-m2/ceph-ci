@@ -657,7 +657,7 @@ void MDLog::trim(int m)
 
     unsigned num_remaining_segments = (segments.size() - expired_segments.size() - expiring_segments.size());
     if ((num_remaining_segments <= max_segments) &&
-	(max_events < 0 || num_events - expiring_events - expired_events <= max_events))
+	(max_events < 0 || (num_events - expiring_events - expired_events) <= (uint64_t)max_events))
       break;
 
     // Do not trim too many segments at once for peak workload. If mds keeps creating N segments each tick,
