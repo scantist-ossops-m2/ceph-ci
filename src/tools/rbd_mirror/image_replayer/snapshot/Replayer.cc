@@ -1569,6 +1569,7 @@ bool Replayer<I>::is_replay_interrupted(std::unique_lock<ceph::mutex>* locker) {
 }
 
 void add_labeled_counters(ceph::common::PerfCountersBuilder *lpcb) {
+  lpcb->set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
   lpcb->add_u64_counter(l_rbd_mirror_snapshot_replay_snapshots, "snapshots",
                         "Snapshots", "r", CLOG_DEBUG);
   lpcb->add_time_avg(l_rbd_mirror_snapshot_replay_snapshots_time,
