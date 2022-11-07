@@ -4368,13 +4368,6 @@ void OSD::store_snap_maps()
     const spg_t&      pgid  = pg->get_pgid();
     SnapMapper& snap_mapper = pg->get_snap_mapper();
     snap_mappers[pgid] = &snap_mapper;
-    auto snap_to_objs = snap_mapper.get_snap_to_objs_const();
-    if (!snap_to_objs.empty()) {
-      //dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->store_snap_maps(" << pgid << ")" << dendl;
-      //snap_mapper.print_snaps(__func__);
-      //dout(1) << "OSD::store_snap_maps::spg_name=" << pgid << ", snap_to_objs.size() =" << snap_to_objs.size() << dendl;
-    }
-
   }
   dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->store_snap_maps()" << dendl;
   store->store_snap_maps(snap_mappers);

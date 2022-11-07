@@ -1333,6 +1333,8 @@ public:
   void write_if_dirty(PeeringCtx &rctx) {
     write_if_dirty(rctx.transaction);
   }
+private:
+  int recover_old_snaps_from_obc(std::vector<snapid_t> *p_old_snaps, const hobject_t &soid, const char *caller);
 protected:
   void write_if_dirty(ObjectStore::Transaction& t) {
     recovery_state.write_if_dirty(t);

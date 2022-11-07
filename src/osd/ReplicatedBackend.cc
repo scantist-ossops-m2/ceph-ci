@@ -1825,6 +1825,17 @@ bool ReplicatedBackend::handle_pull_response(
 
   bool first = pi.recovery_progress.first;
   if (first) {
+    // During pull_response we might need to clear the oid from the SnapMapper.
+    // snap_mapper.remove_oid() needs the old_snap map which we don't have
+    // in the recovery path.
+    // However, on the first call we should still have a valid ONode holding the old_snap map
+    // This means we should start by calling clear_object_snap_mapping() which will
+    // read the old_snaps from the ONode and clear it from the SnapMapper *before* we
+    // make *any*change to the ONode.
+    // Subsequnet calls to snap_mapper.remove_oid() will become a NOP when the old_snap
+    // is removed from the ONode
+    get_parent()->pgb_clear_object_snap_mapping(t, pi.recovery_info.soid);
+
     // attrs only reference the origin bufferlist (decode from
     // MOSDPGPush message) whose size is much greater than attrs in
     // recovery. If obc cache it (get_obc maybe cache the attr), this
@@ -1914,6 +1925,20 @@ void ReplicatedBackend::handle_push(
   pg_shard_t from, const PushOp &pop, PushReplyOp *response,
   ObjectStore::Transaction *t, bool is_repair)
 {
+  // During push we might need to clear the oid from the SnapMapper.
+  // snap_mapper.remove_oid() needs the old_snap map which we don't have
+  // in the recovery path.
+  // However, on the first call we should still have a valid ONode holding the old_snap map
+  // This means we should start by calling clear_object_snap_mapping() which will
+  // read the old_snaps from the ONode and clear it from the SnapMapper *before* we
+  // make *any*change to the ONode.
+  // Subsequnet calls to snap_mapper.remove_oid() will become a NOP when the old_snap
+  // is removed from the ONode
+#if 1
+    if (pop.before_progress.first) {
+      get_parent()->pgb_clear_object_snap_mapping(t, pop.recovery_info.soid);
+    }
+#endif
   dout(10) << "handle_push "
 	   << pop.recovery_info
 	   << pop.after_progress
@@ -1949,6 +1974,7 @@ void ReplicatedBackend::handle_push(
       get_parent()->inc_osd_stat_repaired();
       dout(20) << __func__ << " repair complete" << dendl;
     }
+    // this is done after OBC was removed
     get_parent()->on_local_recover(
       pop.recovery_info.soid,
       pop.recovery_info,

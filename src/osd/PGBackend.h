@@ -246,8 +246,8 @@ typedef std::shared_ptr<const OSDMap> OSDMapRef;
        ObjectStore::Transaction *t) = 0;
 
      virtual void pgb_clear_object_snap_mapping(
-       const hobject_t &soid,
-       ObjectStore::Transaction *t) = 0;
+       ObjectStore::Transaction *t,
+       const hobject_t &soid) = 0;
 
      virtual void update_peer_last_complete_ondisk(
        pg_shard_t fromosd,

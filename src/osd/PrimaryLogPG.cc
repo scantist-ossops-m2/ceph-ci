@@ -4603,6 +4603,9 @@ void PrimaryLogPG::do_backfill_remove(OpRequestRef op)
                  << dendl;
       }
     }
+    // The old_snaps map in the ONode is valid in this stage
+    // Which means inside remove_snap_mapped_object()->clear_object_snap_mapping()
+    // we will be ableto fetch it from the OBC before calling snap_mapper.remove_oid()
     remove_snap_mapped_object(t, p.first);
   }
   int r = osd->store->queue_transaction(ch, std::move(t), NULL);
@@ -12435,6 +12438,9 @@ void PrimaryLogPG::remove_missing_object(const hobject_t &soid,
   ceph_assert(on_complete != nullptr);
   // delete locally
   ObjectStore::Transaction t;
+  // The old_snaps map in the ONode is valid in this stage
+  // Which means inside remove_snap_mapped_object()->clear_object_snap_mapping()
+  // we will be ableto fetch it from the OBC before calling snap_mapper.remove_oid()
   remove_snap_mapped_object(t, soid);
 
   ObjectRecoveryInfo recovery_info;

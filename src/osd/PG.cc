@@ -323,6 +323,13 @@ void PG::clear_object_snap_mapping(
     PrimaryLogPG *plPG = dynamic_cast<PrimaryLogPG*>(this);
     std::vector<snapid_t>old_snaps;
     int ret = plPG->get_snaps(soid, &old_snaps);
+    if (ret != 0) {
+      // need to return as there is nothing to do
+      // It is still legal to reach here without a valid old_snaps in the OBC
+      // This probably means that the SnapMapper was updated already
+      dout(1) << __func__ << ": no valid OBC was found for oid=" << soid << ", ret=" << cpp_strerror(ret) << dendl;
+      return;
+    }
     ret = snap_mapper.remove_oid_from_all_snaps(
       soid,
       old_snaps,
@@ -1163,91 +1170,102 @@ void PG::read_state(ObjectStore *store)
   store->queue_transaction(ch, std::move(rctx.transaction));
 }
 
-void PG::update_snap_map(
-  const vector<pg_log_entry_t> &log_entries,
-  ObjectStore::Transaction &t)
+int PG::recover_old_snaps_from_obc(std::vector<snapid_t> *p_old_snaps, const hobject_t &soid, const char *caller)
 {
-  for (auto i = log_entries.cbegin(); i != log_entries.cend(); ++i) {
+  derr << "::GBH::" << caller <<"::old_snaps:: decode snaps failure on soid=" << soid << dendl;
+  derr << "::GBH::attempt to recover_old_snaps_from_obc!!" << dendl;
+
+  PrimaryLogPG *plPG = dynamic_cast<PrimaryLogPG*>(this);
+  int ret = plPG->get_snaps(soid, p_old_snaps);
+  if (ret != 0) {
+    // need to return as there is nothing to do
+    // It is still legal to reach here without a valid old_snaps in the OBC
+    // This probably means that the SnapMapper was updated already
+    dout(1) << __func__ << ": no valid OBC was found for oid=" << soid << ", ret=" << cpp_strerror(ret) << dendl;
+  }
+  return ret;
+}
+
+static char get_operation_type(const vector<pg_log_entry_t>::const_iterator le)
+{
+  if (le->is_delete()) {
+    return 'D';
+  }
+  if (le->is_update()) {
+    if (le->is_clone()) {
+      return 'C';
+    }
+    if (le->is_promote()) {
+      return 'P';
+    }
+    if (le->is_modify()) {
+      return 'M';
+    }
+    return 'U';
+  }
+  return '-';
+}
+
+void PG::update_snap_map(const vector<pg_log_entry_t> &log_entries, ObjectStore::Transaction &t)
+{
+  for (auto le = log_entries.cbegin(); le != log_entries.cend(); ++le) {
     OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
-    if (i->soid.snap < CEPH_MAXSNAP) {
-      if (i->is_delete()) {
-	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.remove_oid(oid=" << i->soid << ")" << dendl;
-	std::vector<snapid_t> new_snaps, old_snaps;
-	bufferlist snapbl = i->snaps;
-	auto p = snapbl.cbegin();
-	try {
-	  decode(new_snaps, p);
-	} catch (...) {
-	  derr << __func__ << " ::new_snaps:: decode snaps failure on " << *i << dendl;
-	  return;
-	}
+    if (le->soid.snap < CEPH_MAXSNAP) {
+      dout(20) << "GBH::SNAPMAP::" << __func__ << "::op_type=" << get_operation_type(le) << ", oid=" << le->soid << dendl;
+      vector<snapid_t> new_snaps;
+      bufferlist snapbl = le->snaps;
+      auto p = snapbl.cbegin();
+      try {
+	decode(new_snaps, p);
+      } catch (...) {
+	derr << __func__ << "::failed to decode new_snaps on soid=" << le->soid << ", op_type=" << get_operation_type(le) << dendl;
+	return;
+      }
+
+      if (le->is_delete()) {
+	std::vector<snapid_t> old_snaps;
 	try {
 	  decode(old_snaps, p);
 	} catch (...) {
-	  //ceph_abort_msg("TBD::transactions from old code won't have the old_snap field");
-	  derr << "::GBH::remove_oid::old_snaps:: decode snaps failure on " << *i << dendl;
-	  derr << "::GBH::TBD: need to use legacy API with RocksDB::OMAP (which we must keep alive!!" << dendl;
-	  return;
+	  if (recover_old_snaps_from_obc(&old_snaps, le->soid, "remove_oid") != 0) {
+	    return;
+	  }
 	}
 
 	// This path is only used when we remove the last snap
-	// new_snap must be empty and old_snaps should probaly only hold {i->soid.snap}
-	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
-	
-	int ret = snap_mapper.remove_oid_from_all_snaps(
-	  i->soid,
-	  old_snaps,
-	  &_t);
-
-	if (ret)
-	  derr << __func__ << " remove_oid " << i->soid << " failed with " << ret << dendl;
-        // On removal tolerate missing key corruption
-        ceph_assert(ret == 0 || ret == -ENOENT);
-      } else if (i->is_update()) {
-	//dout(1) << "GBH::SNAPMAP::" << __func__ << "::*** is_update *** oid=" << i->soid << ")" << dendl;
-	ceph_assert(i->snaps.length() > 0);
-	vector<snapid_t> new_snaps;
-	bufferlist snapbl = i->snaps;
-	auto p = snapbl.cbegin();
-	try {
-	  decode(new_snaps, p);
-	} catch (...) {
-	  derr << __func__ << " ::new_snaps:: decode snaps failure on " << *i << dendl;
-	  return;
+	// new_snap must be empty and old_snaps should probaly only hold {le->soid.snap}
+	// dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
+	ceph_assert(new_snaps.empty());
+	int ret = snap_mapper.remove_oid_from_all_snaps(le->soid, old_snaps, &_t);
+	if (ret) {
+	  derr << __func__ << "::snap_mapper.remove_oid_from_all_snaps() for soid=" << le->soid << " failed with " << ret << dendl;
 	}
-
-	if (i->is_clone() || i->is_promote()) {
-	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.add_oid(" << i->soid << ", " << new_snaps << ")" << dendl;
-	  snap_mapper.add_oid(
-	    i->soid,
-	    new_snaps,
-	    &_t);
-	} else if (i->is_modify()) {
-	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.update_snaps(" << i->soid << ")" << dendl;
+	// On removal tolerate missing key corruption
+	ceph_assert(ret == 0 || ret == -ENOENT);
+      } else if (le->is_update()) {
+	ceph_assert(le->snaps.length() > 0);
+	if (le->is_clone() || le->is_promote()) {
+	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.add_oid(" << le->soid << ", " << new_snaps << ")" << dendl;
+	  snap_mapper.add_oid(le->soid, new_snaps, &_t);
+	} else if (le->is_modify()) {
 	  vector<snapid_t> old_snaps;
 	  try {
 	    decode(old_snaps, p);
 	  } catch (...) {
-	    //ceph_abort_msg("TBD::transactions from old code won't have the old_snap field");
-	    derr << "::GBH::update_snaps()::old_snaps:: decode snaps failure on " << *i << dendl;
-	    derr << "::GBH::TBD: need to use legacy API with RocksDB::OMAP (which we must keep alive!!" << dendl;
-	    return;
+	    if (recover_old_snaps_from_obc(&old_snaps, le->soid, "update_oid") != 0) {
+	      return;
+	    }
 	  }
 	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
-	  //dout(1) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.update_snaps(" << i->soid << ", " << new_snaps << ")" << dendl;
-	  int r = snap_mapper.update_snaps(
-	    i->soid,
-	    new_snaps,
-	    old_snaps,
-	    &_t);
+	  int r = snap_mapper.update_snaps(le->soid, new_snaps, old_snaps, &_t);
 	  ceph_assert(r == 0);
 	} else {
-	  ceph_assert(i->is_clean());
+	  ceph_assert(le->is_clean());
 	}
       }
     }
     else {
-      //dout(1) << "GBH::SNAPMAP::" << __func__ << "::(i->soid.snap >= CEPH_MAXSNAP)" << dendl;
+      dout(1) << "GBH::SNAPMAP::" << __func__ << "::(le->soid.snap >= CEPH_MAXSNAP)" << dendl;
     }
   }
 }

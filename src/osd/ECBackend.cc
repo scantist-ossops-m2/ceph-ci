@@ -312,6 +312,19 @@ void ECBackend::handle_recovery_push(
     ceph_abort();
   }
 
+  // During recovery_push we might need to clear the oid from the SnapMapper.
+  // snap_mapper.remove_oid() needs the old_snap map which we don't have
+  // in the recovery path.
+  // However, on the first call we should still have a valid ONode holding the old_snap map
+  // This means we should start by calling clear_object_snap_mapping() which will
+  // read the old_snaps from the ONode and clear it from the SnapMapper *before* we
+  // make *any*change to the ONode.
+  // Subsequnet calls to snap_mapper.remove_oid() will become a NOP when the old_snap
+  // is removed from the ONode
+  if (op.before_progress.first) {
+    get_parent()->pgb_clear_object_snap_mapping(&m->t, op.soid);
+  }
+
   bool oneshot = op.before_progress.first && op.after_progress.data_complete;
   ghobject_t tobj;
   if (oneshot) {
