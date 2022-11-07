@@ -553,6 +553,7 @@ class ServiceSpec(object):
                  preview_only: bool = False,
                  networks: Optional[List[str]] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
 
@@ -593,6 +594,7 @@ class ServiceSpec(object):
             self.config = {k.replace(' ', '_'): v for k, v in config.items()}
 
         self.extra_container_args: Optional[List[str]] = extra_container_args
+        self.extra_entrypoint_args: Optional[List[str]] = extra_entrypoint_args
         self.custom_configs: Optional[List[CustomConfig]] = custom_configs
 
     @classmethod
@@ -721,6 +723,8 @@ class ServiceSpec(object):
             ret['networks'] = self.networks
         if self.extra_container_args:
             ret['extra_container_args'] = self.extra_container_args
+        if self.extra_entrypoint_args:
+            ret['extra_entrypoint_args'] = self.extra_entrypoint_args
         if self.custom_configs:
             ret['custom_configs'] = [c.to_json() for c in self.custom_configs]
 
@@ -799,6 +803,7 @@ class NFSServiceSpec(ServiceSpec):
                  networks: Optional[List[str]] = None,
                  port: Optional[int] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'nfs'
@@ -806,7 +811,7 @@ class NFSServiceSpec(ServiceSpec):
             'nfs', service_id=service_id,
             placement=placement, unmanaged=unmanaged, preview_only=preview_only,
             config=config, networks=networks, extra_container_args=extra_container_args,
-            custom_configs=custom_configs)
+            extra_entrypoint_args=extra_entrypoint_args, custom_configs=custom_configs)
 
         self.port = port
 
@@ -864,6 +869,7 @@ class RGWSpec(ServiceSpec):
                  networks: Optional[List[str]] = None,
                  subcluster: Optional[str] = None,  # legacy, only for from_json on upgrade
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'rgw', service_type
@@ -876,7 +882,8 @@ class RGWSpec(ServiceSpec):
             'rgw', service_id=service_id,
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config, networks=networks,
-            extra_container_args=extra_container_args, custom_configs=custom_configs)
+            extra_container_args=extra_container_args, extra_entrypoint_args=extra_entrypoint_args,
+            custom_configs=custom_configs)
 
         #: The RGW realm associated with this service. Needs to be manually created
         self.rgw_realm: Optional[str] = rgw_realm
@@ -934,6 +941,7 @@ class IscsiServiceSpec(ServiceSpec):
                  config: Optional[Dict[str, str]] = None,
                  networks: Optional[List[str]] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'iscsi'
@@ -942,6 +950,7 @@ class IscsiServiceSpec(ServiceSpec):
                                                preview_only=preview_only,
                                                config=config, networks=networks,
                                                extra_container_args=extra_container_args,
+                                               extra_entrypoint_args=extra_entrypoint_args,
                                                custom_configs=custom_configs)
 
         #: RADOS pool where ceph-iscsi config data is stored.
@@ -1006,6 +1015,7 @@ class IngressSpec(ServiceSpec):
                  unmanaged: bool = False,
                  ssl: bool = False,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'ingress'
@@ -1015,6 +1025,7 @@ class IngressSpec(ServiceSpec):
             placement=placement, config=config,
             networks=networks,
             extra_container_args=extra_container_args,
+            extra_entrypoint_args=extra_entrypoint_args,
             custom_configs=custom_configs
         )
         self.backend_service = backend_service
@@ -1075,10 +1086,11 @@ class CustomContainerSpec(ServiceSpec):
                  preview_only: bool = False,
                  image: Optional[str] = None,
                  entrypoint: Optional[str] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  uid: Optional[int] = None,
                  gid: Optional[int] = None,
                  volume_mounts: Optional[Dict[str, str]] = {},
-                 args: Optional[List[str]] = [],
+                 args: Optional[List[str]] = [],  # args for the container runtime, not entrypoint
                  envs: Optional[List[str]] = [],
                  privileged: Optional[bool] = False,
                  bind_mounts: Optional[List[List[str]]] = None,
@@ -1094,7 +1106,7 @@ class CustomContainerSpec(ServiceSpec):
             service_type, service_id,
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config,
-            networks=networks)
+            networks=networks, extra_entrypoint_args=extra_entrypoint_args)
 
         self.image = image
         self.entrypoint = entrypoint
@@ -1142,6 +1154,7 @@ class MonitoringSpec(ServiceSpec):
                  preview_only: bool = False,
                  port: Optional[int] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type in ['grafana', 'node-exporter', 'prometheus', 'alertmanager',
@@ -1152,6 +1165,7 @@ class MonitoringSpec(ServiceSpec):
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config,
             networks=networks, extra_container_args=extra_container_args,
+            extra_entrypoint_args=extra_entrypoint_args,
             custom_configs=custom_configs)
 
         self.service_type = service_type
@@ -1188,6 +1202,7 @@ class AlertManagerSpec(MonitoringSpec):
                  port: Optional[int] = None,
                  secure: bool = False,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'alertmanager'
@@ -1195,7 +1210,8 @@ class AlertManagerSpec(MonitoringSpec):
             'alertmanager', service_id=service_id,
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config, networks=networks, port=port,
-            extra_container_args=extra_container_args, custom_configs=custom_configs)
+            extra_container_args=extra_container_args, extra_entrypoint_args=extra_entrypoint_args,
+            custom_configs=custom_configs)
 
         # Custom configuration.
         #
@@ -1240,6 +1256,7 @@ class GrafanaSpec(MonitoringSpec):
                  port: Optional[int] = None,
                  initial_admin_password: Optional[str] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'grafana'
@@ -1247,7 +1264,8 @@ class GrafanaSpec(MonitoringSpec):
             'grafana', service_id=service_id,
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config, networks=networks, port=port,
-            extra_container_args=extra_container_args, custom_configs=custom_configs)
+            extra_container_args=extra_container_args, extra_entrypoint_args=extra_entrypoint_args,
+            custom_configs=custom_configs)
 
         self.initial_admin_password = initial_admin_password
 
@@ -1268,6 +1286,7 @@ class PrometheusSpec(MonitoringSpec):
                  retention_time: Optional[str] = None,
                  retention_size: Optional[str] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'prometheus'
@@ -1275,7 +1294,8 @@ class PrometheusSpec(MonitoringSpec):
             'prometheus', service_id=service_id,
             placement=placement, unmanaged=unmanaged,
             preview_only=preview_only, config=config, networks=networks, port=port,
-            extra_container_args=extra_container_args, custom_configs=custom_configs)
+            extra_container_args=extra_container_args, extra_entrypoint_args=extra_entrypoint_args,
+            custom_configs=custom_configs)
 
         self.retention_time = retention_time.strip() if retention_time else None
         self.retention_size = retention_size.strip() if retention_size else None
@@ -1324,6 +1344,7 @@ class SNMPGatewaySpec(ServiceSpec):
                  preview_only: bool = False,
                  port: Optional[int] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'snmp-gateway'
@@ -1334,6 +1355,7 @@ class SNMPGatewaySpec(ServiceSpec):
             unmanaged=unmanaged,
             preview_only=preview_only,
             extra_container_args=extra_container_args,
+            extra_entrypoint_args=extra_entrypoint_args,
             custom_configs=custom_configs)
 
         self.service_type = service_type
@@ -1445,6 +1467,7 @@ class MDSSpec(ServiceSpec):
                  unmanaged: bool = False,
                  preview_only: bool = False,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  ):
         assert service_type == 'mds'
@@ -1454,6 +1477,7 @@ class MDSSpec(ServiceSpec):
                                       unmanaged=unmanaged,
                                       preview_only=preview_only,
                                       extra_container_args=extra_container_args,
+                                      extra_entrypoint_args=extra_entrypoint_args,
                                       custom_configs=custom_configs)
 
     def validate(self) -> None:
