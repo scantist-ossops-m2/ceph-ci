@@ -2,8 +2,14 @@
 // vim: ts=8 sw=2 smarttab
 
 #include "Replayer.h"
+#include <string_view>
 #include "common/debug.h"
+#include "common/dout.h"
 #include "common/errno.h"
+#include "common/labeled_perf_counters.h"
+#include "common/ostream_temp.h"
+#include "global/global_context.h"
+#include "include/ceph_assert.h"
 #include "include/stringify.h"
 #include "common/Timer.h"
 #include "cls/rbd/cls_rbd_client.h"
@@ -28,6 +34,7 @@
 #include "tools/rbd_mirror/image_replayer/CloseImageRequest.h"
 #include "tools/rbd_mirror/image_replayer/ReplayerListener.h"
 #include "tools/rbd_mirror/image_replayer/Utils.h"
+#include "common/perf_counters_cache_key.h"
 #include "tools/rbd_mirror/image_replayer/snapshot/ApplyImageStateRequest.h"
 #include "tools/rbd_mirror/image_replayer/snapshot/StateBuilder.h"
 #include "tools/rbd_mirror/image_replayer/snapshot/Utils.h"
@@ -162,6 +169,8 @@ void Replayer<I>::init(Context* on_finish) {
     std::shared_lock image_locker{local_image_ctx->image_lock};
     m_image_spec = image_replayer::util::compute_image_spec(
       local_image_ctx->md_ctx, local_image_ctx->name);
+    name_of_image = local_image_ctx->name;
+    name_of_pool = local_image_ctx->md_ctx.get_pool_name();
   }
 
   {
@@ -329,6 +338,9 @@ void Replayer<I>::load_local_image_meta() {
       local_image_ctx->md_ctx, local_image_ctx->name);
     if (m_image_spec != image_spec) {
       m_image_spec = image_spec;
+      name_of_image = local_image_ctx->name;
+      name_of_pool = local_image_ctx->md_ctx.get_pool_name();
+
       update_status = true;
     }
   }
@@ -1111,11 +1123,27 @@ void Replayer<I>::handle_copy_image(int r) {
       g_snapshot_perf_counters->tinc(
         l_rbd_mirror_snapshot_replay_snapshots_time, time);
     }
-    if (m_perf_counters) {
-      m_perf_counters->inc(l_rbd_mirror_snapshot_replay_bytes, m_snapshot_bytes);
-      m_perf_counters->inc(l_rbd_mirror_snapshot_replay_snapshots);
-      m_perf_counters->tinc(l_rbd_mirror_snapshot_replay_snapshots_time, time);
+    // TODO remove the m_perf_counters and convert it into labeled counters
+    // if (m_perf_counters) {
+    //   m_perf_counters->inc(l_rbd_mirror_snapshot_replay_bytes, m_snapshot_bytes);
+    //   m_perf_counters->inc(l_rbd_mirror_snapshot_replay_snapshots);
+    //   m_perf_counters->tinc(l_rbd_mirror_snapshot_replay_snapshots_time, time);
+    // }
+    if (perf_counters_cache) {
+      std::string labels =
+          ceph::perf_counters::cache_key("rbd", {
+                                                    {"Pool", name_of_pool},
+                                                    {"Image", name_of_image},
+                                                });
+
+      perf_counters_cache->add(labels);
+      perf_counters_cache->inc(labels, l_rbd_mirror_snapshot_replay_bytes,
+                               m_snapshot_bytes);
+      perf_counters_cache->inc(labels, l_rbd_mirror_snapshot_replay_snapshots, 1);
+      perf_counters_cache->tinc(
+          labels, l_rbd_mirror_snapshot_replay_snapshots_time, time);
     }
+
     m_snapshot_bytes = 0;
   }
 
@@ -1541,15 +1569,61 @@ bool Replayer<I>::is_replay_interrupted(std::unique_lock<ceph::mutex>* locker) {
   return false;
 }
 
-template <typename I>
-void Replayer<I>::register_perf_counters() {
+void add_labeled_counters(ceph::common::LabeledPerfCountersBuilder *lpcb) {
+  lpcb->add_u64_counter(l_rbd_mirror_snapshot_replay_snapshots, "snapshots",
+                        "Snapshots", "r", CLOG_DEBUG);
+  lpcb->add_time_avg(l_rbd_mirror_snapshot_replay_snapshots_time,
+                     "snapshots_time", "Snapshots time", "rl", CLOG_DEBUG);
+  lpcb->add_u64_counter(l_rbd_mirror_snapshot_replay_bytes, "replay_bytes",
+                        "Replayed data", "rb", CLOG_DEBUG, unit_t(UNIT_BYTES));
+}
+
+template <typename T>
+constexpr auto type_name() {
+  std::string_view name, prefix, suffix;
+#ifdef __clang__
+  name = __PRETTY_FUNCTION__;
+  prefix = "auto type_name() [T = ";
+  suffix = "]";
+#elif defined(__GNUC__)
+  name = __PRETTY_FUNCTION__;
+  prefix = "constexpr auto type_name() [with T = ";
+  suffix = "]";
+#elif defined(_MSC_VER)
+  name = __FUNCSIG__;
+  prefix = "auto __cdecl type_name<";
+  suffix = ">(void)";
+#endif
+  name.remove_prefix(prefix.size());
+  name.remove_suffix(suffix.size());
+  return name;
+}
+
+template <typename I> void Replayer<I>::register_perf_counters() {
   dout(5) << dendl;
 
   ceph_assert(ceph_mutex_is_locked_by_me(m_lock));
   ceph_assert(m_perf_counters == nullptr);
+  ceph_assert(perf_counters_cache == nullptr);
 
   auto cct = static_cast<CephContext *>(m_state_builder->local_image_ctx->cct);
   auto prio = cct->_conf.get_val<int64_t>("rbd_mirror_image_perf_stats_prio");
+  // build a cache
+  // make it a global variable
+  // increment it as same as other perf counters
+
+  // placeholder
+  uint64_t target_size = 10;
+
+  std::function<void(ceph::common::LabeledPerfCountersBuilder *)> lpcb_init =
+      add_labeled_counters;
+
+  derr << type_name<decltype(lpcb_init)>() << dendl;
+
+  perf_counters_cache =
+      new PerfCountersCache(g_ceph_context, target_size, l_rbd_mirror_snapshot_first,
+                            l_rbd_mirror_snapshot_last, lpcb_init , "rbd");
+
   PerfCountersBuilder plb(g_ceph_context,
                           "rbd_mirror_snapshot_image_" + m_image_spec,
                           l_rbd_mirror_snapshot_first,
@@ -1575,6 +1649,11 @@ void Replayer<I>::unregister_perf_counters() {
   if (perf_counters != nullptr) {
     g_ceph_context->get_perfcounters_collection()->remove(perf_counters);
     delete perf_counters;
+  }
+
+  if (perf_counters_cache != nullptr) {
+    perf_counters_cache->clear_cache();
+    delete perf_counters_cache;
   }
 }
 
