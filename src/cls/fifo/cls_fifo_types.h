@@ -370,22 +370,23 @@ struct info {
 
   [[nodiscard]] int apply_update(const update& update,
 				 std::string* errmsg = nullptr) {
+    auto target = *this;
     if (update.tail_part_num()) {
-      tail_part_num = *update.tail_part_num();
+      target.tail_part_num = *update.tail_part_num();
     }
 
     if (update.min_push_part_num()) {
-      min_push_part_num = *update.min_push_part_num();
+      target.min_push_part_num = *update.min_push_part_num();
     }
 
     if (update.max_push_part_num()) {
-      max_push_part_num = *update.max_push_part_num();
+      target.max_push_part_num = *update.max_push_part_num();
     }
 
     for (const auto& entry : update.journal_entries_add()) {
       using enum journal_entry::Op;
-      auto iter = journal.find(entry.part_num);
-      if (iter != journal.end() &&
+      auto iter = target.journal.find(entry.part_num);
+      if (iter != target.journal.end() &&
 	  iter->second.op == entry.op) {
 	/* don't allow multiple identical operations on the same part,
 	   racing clients should use objv to avoid races anyway */
@@ -397,7 +398,7 @@ struct info {
       }
 
       if (entry.op == set_head &&
-	  std::ranges::count_if(journal,
+	  std::ranges::count_if(target.journal,
 				[](const auto& e) {
 				  return e.second.op == set_head; })) {
 	if (errmsg) {
@@ -410,31 +411,33 @@ struct info {
 
 
       if (entry.op == create) {
-	tags[entry.part_num] = entry.part_tag;
+	target.tags[entry.part_num] = entry.part_tag;
       }
 
-      journal.emplace(entry.part_num, entry);
+      target.journal.emplace(entry.part_num, entry);
     }
 
     for (const auto& entry : update.journal_entries_rm()) {
-      journal.erase(entry.part_num);
+      target.journal.erase(entry.part_num);
     }
 
     if (update.head_part_num()) {
-      tags.erase(head_part_num);
-      head_part_num = *update.head_part_num();
-      auto iter = tags.find(head_part_num);
-      if (iter != tags.end()) {
-	head_tag = iter->second;
+      target.tags.erase(target.head_part_num);
+      target.head_part_num = *update.head_part_num();
+      auto iter = target.tags.find(target.head_part_num);
+      if (iter != target.tags.end()) {
+	target.head_tag = iter->second;
       } else {
-	head_tag.erase();
+	target.head_tag.erase();
       }
     }
 
+    *this = std::move(target);
     return 0;
   }
 };
 WRITE_CLASS_ENCODER(info)
+
 inline std::ostream& operator <<(std::ostream& m, const info& i) {
   return m << "id: " << i.id << ", "
 	   << "version: " << i.version << ", "
