@@ -542,16 +542,6 @@ CephContext* FilterStore::ctx(void)
   return next->ctx();
 }
 
-const std::string& FilterStore::get_luarocks_path() const
-{
-  return next->get_luarocks_path();
-}
-
-void FilterStore::set_luarocks_path(const std::string& path)
-{
-  next->set_luarocks_path(path);
-}
-
 int FilterUser::list_buckets(const DoutPrefixProvider* dpp, const std::string& marker,
 			     const std::string& end_marker, uint64_t max,
 			     bool need_stats, BucketList &buckets, optional_yield y)

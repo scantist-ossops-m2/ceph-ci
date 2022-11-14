@@ -153,10 +153,11 @@ int list_packages(const DoutPrefixProvider *dpp, rgw::sal::Store* store, optiona
   return lua_mgr->list_packages(dpp, y, packages);
 }
 
-int install_packages(const DoutPrefixProvider *dpp, rgw::sal::Store* store, optional_yield y, packages_t& failed_packages, std::string& output) {
+int install_packages(const DoutPrefixProvider *dpp, rgw::sal::Store* store,
+                     optional_yield y, const std::string& luarocks_path,
+                     packages_t& failed_packages, std::string& output) {
   // luarocks directory cleanup
   std::error_code ec;
-  const auto& luarocks_path = store->get_luarocks_path();
   if (std::filesystem::remove_all(luarocks_path, ec)
       == static_cast<std::uintmax_t>(-1) &&
       ec != std::errc::no_such_file_or_directory) {
