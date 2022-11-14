@@ -385,6 +385,16 @@ struct info {
 
     for (const auto& entry : update.journal_entries_add()) {
       using enum journal_entry::Op;
+
+      if ((entry.op == create && entry.part_num == max_push_part_num)
+	|| (entry.op == set_head && entry.part_num == head_part_num)) {
+	if (errmsg) {
+	  *errmsg = fmt::format("Repeated operationis are not allowed, "
+				"part num={}", entry.part_num);
+	}
+	return -ECANCELED;
+      }
+
       auto iter = target.journal.find(entry.part_num);
       if (iter != target.journal.end() &&
 	  iter->second.op == entry.op) {
