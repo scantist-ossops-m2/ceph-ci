@@ -1,2 +1,5 @@
 tasks:
-    - tests:
+  - tests:
+overrides:
+  ansible.cephlab:
+    skip_tags: "user,pubkeys,packages,selinux"
