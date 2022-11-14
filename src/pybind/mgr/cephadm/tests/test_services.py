@@ -895,7 +895,7 @@ class TestIngressService:
     def test_ingress_config(self, _run_cephadm, cephadm_module: CephadmOrchestrator):
         _run_cephadm.side_effect = async_side_effect(('{}', '', 0))
 
-        with with_host(cephadm_module, 'test'):
+        with with_host(cephadm_module, 'test', addr='1.2.3.7'):
             cephadm_module.cache.update_host_networks('test', {
                 '1.2.3.0/24': {
                     'if0': ['1.2.3.4/32']
@@ -942,7 +942,7 @@ class TestIngressService:
                                 'auth_type PASS\n      '
                                 'auth_pass 12345\n  '
                                 '}\n  '
-                                'unicast_src_ip 1::4\n  '
+                                'unicast_src_ip 1.2.3.7\n  '
                                 'unicast_peer {\n  '
                                 '}\n  '
                                 'virtual_ipaddress {\n    '
@@ -993,7 +993,7 @@ class TestIngressService:
                                 '\nfrontend stats\n    '
                                 'mode http\n    '
                                 'bind 1.2.3.4:8999\n    '
-                                'bind localhost:8999\n    '
+                                'bind 1.2.3.7:8999\n    '
                                 'stats enable\n    '
                                 'stats uri /stats\n    '
                                 'stats refresh 10s\n    '
@@ -1008,7 +1008,7 @@ class TestIngressService:
                                 'balance static-rr\n    '
                                 'option httpchk HEAD / HTTP/1.0\n    '
                                 'server '
-                                + haproxy_generated_conf[1][0] + ' 1::4:80 check weight 100\n'
+                                + haproxy_generated_conf[1][0] + ' 1.2.3.7:80 check weight 100\n'
                         }
                 }
 
@@ -1143,7 +1143,7 @@ class TestIngressService:
     def test_ingress_config_multi_vips(self, _run_cephadm, cephadm_module: CephadmOrchestrator):
         _run_cephadm.side_effect = async_side_effect(('{}', '', 0))
 
-        with with_host(cephadm_module, 'test'):
+        with with_host(cephadm_module, 'test', addr='1.2.3.7'):
             cephadm_module.cache.update_host_networks('test', {
                 '1.2.3.0/24': {
                     'if0': ['1.2.3.4/32']
@@ -1191,7 +1191,7 @@ class TestIngressService:
                                 'auth_type PASS\n      '
                                 'auth_pass 12345\n  '
                                 '}\n  '
-                                'unicast_src_ip 1::4\n  '
+                                'unicast_src_ip 1.2.3.7\n  '
                                 'unicast_peer {\n  '
                                 '}\n  '
                                 'virtual_ipaddress {\n    '
@@ -1242,7 +1242,7 @@ class TestIngressService:
                                 '\nfrontend stats\n    '
                                 'mode http\n    '
                                 'bind *:8999\n    '
-                                'bind localhost:8999\n    '
+                                'bind 1.2.3.7:8999\n    '
                                 'stats enable\n    '
                                 'stats uri /stats\n    '
                                 'stats refresh 10s\n    '
@@ -1257,7 +1257,7 @@ class TestIngressService:
                                 'balance static-rr\n    '
                                 'option httpchk HEAD / HTTP/1.0\n    '
                                 'server '
-                                + haproxy_generated_conf[1][0] + ' 1::4:80 check weight 100\n'
+                                + haproxy_generated_conf[1][0] + ' 1.2.3.7:80 check weight 100\n'
                         }
                 }
 
