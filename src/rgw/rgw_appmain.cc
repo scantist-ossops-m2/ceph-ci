@@ -407,8 +407,7 @@ int rgw::AppMain::init_frontends2(RGWLib* rgwlib)
   env.auth_registry = rgw::auth::StrategyRegistry::create(
       dpp->get_cct(), *implicit_tenant_context, env.store);
   env.ratelimiting = ratelimiter.get();
-  env.lua_background = lua_background.get();
-  env.lua_manager = env.store->get_lua_manager();
+  env.lua.background = lua_background.get();
 
   int fe_count = 0;
   for (multimap<string, RGWFrontendConfig *>::iterator fiter = fe_map.begin();
@@ -472,8 +471,8 @@ int rgw::AppMain::init_frontends2(RGWLib* rgwlib)
     fe_pauser = std::make_unique<RGWFrontendPauser>(fes, pusher.get());
     rgw_pauser = std::make_unique<RGWPauser>();
     rgw_pauser->add_pauser(fe_pauser.get());
-    if (lua_background) {
-      rgw_pauser->add_pauser(lua_background.get());
+    if (env.lua.background) {
+      rgw_pauser->add_pauser(env.lua.background);
     }
     reloader = std::make_unique<RGWRealmReloader>(
         env, *implicit_tenant_context, service_map_meta, rgw_pauser.get());
@@ -536,6 +535,8 @@ void rgw::AppMain::init_lua()
   }
 #endif
 
+  env.lua.manager = env.store->get_lua_manager();
+
   if (store->get_name() == "rados") { /* Supported for only RadosStore */
     lua_background = std::make_unique<
       rgw::lua::Background>(store, dpp->get_cct(), store->get_luarocks_path());
@@ -568,8 +569,8 @@ void rgw::AppMain::shutdown(std::function<void(void)> finalize_async_signals)
   
   delete olog;
 
-  if (lua_background) {
-    lua_background->shutdown();
+  if (env.lua.background) {
+    env.lua.background->shutdown();
   }
 
   StoreManager::close_storage(env.store);
