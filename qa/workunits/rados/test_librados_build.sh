@@ -68,10 +68,16 @@ function run_binaries () {
 
 pushd $DESTDIR
 case $(distro_id) in
-    centos|fedora|rhel|opensuse*|suse|sles)
-        install gcc-c++ make libradospp-devel librados-devel;;
+    fedora|rhel)
+        install devtoolset-11 gcc-c++ make libradospp-devel librados-devel
+        scl enable gcc-toolset-11 bash;;
+    centos)
+        install centos-release-scl gcc-c++ make libradospp-devel librados-devel
+        scl enable gcc-toolset-11 bash;;
     ubuntu|debian|devuan|softiron)
         install gcc-11 g++-11 make libradospp-dev librados-dev;;
+    opensuse*|suse|sles)
+        install gcc-c++ make libradospp-devel librados-devel;;
     *)
         echo "$(distro_id) is unknown, $@ will have to be installed manually."
 esac
