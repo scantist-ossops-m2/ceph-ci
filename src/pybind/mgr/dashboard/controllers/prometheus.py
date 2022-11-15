@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import json
-import tempfile
 import os
+import tempfile
 from datetime import datetime
 
 import requests
