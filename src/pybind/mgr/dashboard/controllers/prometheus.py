@@ -66,7 +66,7 @@ class PrometheusRESTController(RESTController):
                                                                 'false'))
         if secure_monitoring_stack:
             cmd = {'prefix': f'orch {module_name} access info'}
-            ret, out, err = mgr.mon_command(cmd)
+            ret, out, _ = mgr.mon_command(cmd)
             if ret == 0 and out is not None:
                 access_info = json.loads(out)
                 user = access_info['user']
