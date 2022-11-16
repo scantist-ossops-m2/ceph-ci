@@ -33,7 +33,7 @@ PROGNAME=$(basename $0)
 
 # xfstests is downloaded from this git repository and then built.
 # XFSTESTS_REPO="git://oss.sgi.com/xfs/cmds/xfstests.git"
-XFSTESTS_REPO="git://git.ceph.com/xfstests.git"
+XFSTESTS_REPO="https://git.kernel.org/pub/scm/fs/xfs/xfstests-dev.git"
 
 # Default command line option values
 COUNT="1"
@@ -275,7 +275,7 @@ function install_xfstests() {
 
 	pushd "${TESTDIR}"
 
-	git clone "${XFSTESTS_REPO}"
+	GIT_SSL_NO_VERIFY=true git clone "${XFSTESTS_REPO}" xfstests
 
 	cd xfstests
 
