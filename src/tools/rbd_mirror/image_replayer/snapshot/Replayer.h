@@ -6,7 +6,6 @@
 
 #include "tools/rbd_mirror/image_replayer/Replayer.h"
 #include "common/perf_counters_cache.h"
-#include "common/labeled_perf_counters.h"
 #include "common/ceph_mutex.h"
 #include "common/AsyncOpTracker.h"
 #include "cls/rbd/cls_rbd_types.h"

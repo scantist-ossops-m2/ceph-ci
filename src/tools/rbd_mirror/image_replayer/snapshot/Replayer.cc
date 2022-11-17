@@ -6,7 +6,6 @@
 #include "common/debug.h"
 #include "common/dout.h"
 #include "common/errno.h"
-#include "common/labeled_perf_counters.h"
 #include "common/ostream_temp.h"
 #include "global/global_context.h"
 #include "include/ceph_assert.h"
@@ -1569,7 +1568,7 @@ bool Replayer<I>::is_replay_interrupted(std::unique_lock<ceph::mutex>* locker) {
   return false;
 }
 
-void add_labeled_counters(ceph::common::LabeledPerfCountersBuilder *lpcb) {
+void add_labeled_counters(ceph::common::PerfCountersBuilder *lpcb) {
   lpcb->add_u64_counter(l_rbd_mirror_snapshot_replay_snapshots, "snapshots",
                         "Snapshots", "r", CLOG_DEBUG);
   lpcb->add_time_avg(l_rbd_mirror_snapshot_replay_snapshots_time,
@@ -1615,7 +1614,7 @@ template <typename I> void Replayer<I>::register_perf_counters() {
   // placeholder
   uint64_t target_size = 10;
 
-  std::function<void(ceph::common::LabeledPerfCountersBuilder *)> lpcb_init =
+  std::function<void(ceph::common::PerfCountersBuilder *)> lpcb_init =
       add_labeled_counters;
 
   derr << type_name<decltype(lpcb_init)>() << dendl;
