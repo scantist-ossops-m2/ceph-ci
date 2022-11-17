@@ -30,6 +30,7 @@ std::ostream &ProtocolV2::_conn_prefix(std::ostream *_dout) {
                 << " tx=" << session_stream_handlers.tx.get()
                 << " comp rx=" << session_compression_handlers.rx.get()
                 << " tx=" << session_compression_handlers.tx.get()
+		<< " features=" << connection->get_features()
                 << ").";
 }
 
@@ -422,7 +423,7 @@ void ProtocolV2::prepare_send_message(uint64_t features,
 		 << features << " " << m  << " " << *m << dendl;
 
   // encode and copy out of *m
-  m->encode(features, 0);
+  //m->encode(features, 0);
 }
 
 void ProtocolV2::send_message(Message *m) {
@@ -656,6 +657,8 @@ void ProtocolV2::write_event() {
       if (!out_entry.m) {
         break;
       }
+
+      out_entry.m->encode(connection->get_features(), 0);
 
       if (!connection->policy.lossy) {
         // put on sent list
