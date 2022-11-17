@@ -1375,7 +1375,9 @@ bool verify_bucket_permission(const DoutPrefixProvider* dpp, struct req_state * 
 int verify_bucket_owner_or_policy(struct req_state* const s,
 				  const uint64_t op)
 {
-  auto identity_policy_res = eval_identity_or_session_policies(s, s->iam_user_policies, s->env, op, ARN(s->bucket->get_key()));
+  rgw_bucket emptybucket;
+  const rgw_bucket& bucketkey = s->bucket ? s->bucket->get_key() : emptybucket;
+  auto identity_policy_res = eval_identity_or_session_policies(s, s->iam_user_policies, s->env, op, ARN(bucketkey));
   if (identity_policy_res == Effect::Deny) {
     return -EACCES;
   }
@@ -1383,14 +1385,14 @@ int verify_bucket_owner_or_policy(struct req_state* const s,
   rgw::IAM::PolicyPrincipal princ_type = rgw::IAM::PolicyPrincipal::Other;
   auto e = eval_or_pass(s, s->iam_policy,
 			s->env, *s->auth.identity,
-			op, ARN(s->bucket->get_key()), princ_type);
+			op, ARN(bucketkey), princ_type);
   if (e == Effect::Deny) {
     return -EACCES;
   }
 
   if (!s->session_policies.empty()) {
     auto session_policy_res = eval_identity_or_session_policies(s, s->session_policies, s->env, op,
-								ARN(s->bucket->get_key()));
+								ARN(bucketkey));
     if (session_policy_res == Effect::Deny) {
         return -EACCES;
     }
