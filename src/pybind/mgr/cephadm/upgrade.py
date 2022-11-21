@@ -30,8 +30,8 @@ def normalize_image_digest(digest: str, default_registry: str) -> str:
     'docker.io/ceph/ceph'
 
     No change:
-    >>> normalize_image_digest('quay.ceph.io/ceph/ceph', 'docker.io')
-    'quay.ceph.io/ceph/ceph'
+    >>> normalize_image_digest('quay-quay-quay.apps.os.sepia.ceph.com/ceph/ceph', 'docker.io')
+    'quay-quay-quay.apps.os.sepia.ceph.com/ceph/ceph'
 
     >>> normalize_image_digest('docker.io/ubuntu', 'docker.io')
     'docker.io/ubuntu'

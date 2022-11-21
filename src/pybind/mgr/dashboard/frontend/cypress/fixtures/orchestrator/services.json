@@ -30,10 +30,10 @@
     {
         "container_id": "44add59a53bc",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:21:00.330646Z",
         "daemon_id": "ceph-node-00",
         "daemon_type": "crash",
@@ -54,10 +54,10 @@
     {
         "container_id": "4a2180e2e4ae",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:24:23.552501Z",
         "daemon_id": "ceph-node-01",
         "daemon_type": "crash",
@@ -78,10 +78,10 @@
     {
         "container_id": "2eb2f0a13f46",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:24:21.012014Z",
         "daemon_id": "ceph-node-02",
         "daemon_type": "crash",
@@ -128,10 +128,10 @@
     {
         "container_id": "04e86dfde3ae",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph:master",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:master",
         "created": "2021-04-04T14:17:17.458301Z",
         "daemon_id": "ceph-node-00.cephlab.com.qqwcpr",
         "daemon_type": "mgr",
@@ -154,10 +154,10 @@
     {
         "container_id": "04e86dfde3ae",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph:master",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:master",
         "created": "2021-04-04T14:17:17.458301Z",
         "daemon_id": "ceph-node-00.cephlab.com.qqwcpr",
         "daemon_type": "mgr",
@@ -180,10 +180,10 @@
     {
         "container_id": "7bfba45507ab",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:24:25.445135Z",
         "daemon_id": "ceph-node-02.mywsmi",
         "daemon_type": "mgr",
@@ -207,10 +207,10 @@
     {
         "container_id": "6045be766e88",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph:master",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:master",
         "created": "2021-04-04T14:17:07.904023Z",
         "daemon_id": "ceph-node-00.cephlab.com",
         "daemon_type": "mon",
@@ -231,10 +231,10 @@
     {
         "container_id": "6045be766e88",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph:master",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:master",
         "created": "2021-04-04T14:17:07.904023Z",
         "daemon_id": "ceph-node-00.cephlab.com",
         "daemon_type": "mon",
@@ -255,10 +255,10 @@
     {
         "container_id": "d2d261f4eb17",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:24:28.269212Z",
         "daemon_id": "ceph-node-02",
         "daemon_type": "mon",
@@ -357,10 +357,10 @@
     {
         "container_id": "51d864a583df",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:25:03.086634Z",
         "daemon_id": "0",
         "daemon_type": "osd",
@@ -381,10 +381,10 @@
     {
         "container_id": "7a141557611e",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:25:02.803534Z",
         "daemon_id": "1",
         "daemon_type": "osd",
@@ -405,10 +405,10 @@
     {
         "container_id": "bbf4cc5b870a",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:25:03.771174Z",
         "daemon_id": "2",
         "daemon_type": "osd",
@@ -456,10 +456,10 @@
     {
         "container_id": "5cdeb705c7f6",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:27:26.775628Z",
         "daemon_id": "foo.ceph-node-00.qknfoh",
         "daemon_type": "rgw",
@@ -481,10 +481,10 @@
     {
         "container_id": "18a2179a35c0",
         "container_image_digests": [
-            "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
+            "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4"
         ],
         "container_image_id": "f72dfde44435bedf5e4c8be05c8194cc57f5f654b9bb146b73e81f1c5358b4c5",
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:27:24.200977Z",
         "daemon_id": "foo.ceph-node-02.fgzmmm",
         "daemon_type": "rgw",
@@ -504,7 +504,7 @@
         "version": "17.0.0-2786-g7fb0569e"
     },
     {
-        "container_image_name": "quay.ceph.io/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
+        "container_image_name": "quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph@sha256:cfd9dc4a437e11894a9a0d930ed1221ccc4e939b943981f6dfbdc611816904d4",
         "created": "2021-04-04T14:27:30.048136Z",
         "daemon_id": "foo.ceph-node-02.hqjyla",
         "daemon_type": "rgw",

@@ -144,7 +144,7 @@ def run_cephadm_shell_command(command: str, expect_error=False) -> str:
     config = Config.get('config')
     keyring = Config.get('keyring')
 
-    with_cephadm_image = 'CEPHADM_IMAGE=quay.ceph.io/ceph-ci/ceph:master'
+    with_cephadm_image = 'CEPHADM_IMAGE=quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:master'
     out = run_shell_command(
         f'{with_cephadm_image} cephadm --verbose shell --config {config} --keyring {keyring} -- {command}',
         expect_error,

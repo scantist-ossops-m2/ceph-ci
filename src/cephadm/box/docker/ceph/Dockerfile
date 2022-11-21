@@ -1,2 +1,2 @@
-FROM quay.ceph.io/ceph-ci/ceph:master
+FROM quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:master
 EXPOSE 8443

@@ -44,7 +44,7 @@ from pathlib import Path
 FuncT = TypeVar('FuncT', bound=Callable)
 
 # Default container images -----------------------------------------------------
-DEFAULT_IMAGE = 'quay.ceph.io/ceph-ci/ceph:main'
+DEFAULT_IMAGE = 'quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:main'
 DEFAULT_IMAGE_IS_MAIN = True
 DEFAULT_IMAGE_RELEASE = 'reef'
 DEFAULT_PROMETHEUS_IMAGE = 'quay.io/prometheus/prometheus:v2.33.4'
@@ -4724,8 +4724,8 @@ def normalize_image_digest(digest: str) -> str:
     'docker.io/ceph/ceph'
 
     No change:
-    >>> normalize_image_digest('quay.ceph.io/ceph/ceph', 'docker.io')
-    'quay.ceph.io/ceph/ceph'
+    >>> normalize_image_digest('quay-quay-quay.apps.os.sepia.ceph.com/ceph/ceph', 'docker.io')
+    'quay-quay-quay.apps.os.sepia.ceph.com/ceph/ceph'
 
     >>> normalize_image_digest('docker.io/ubuntu', 'docker.io')
     'docker.io/ubuntu'

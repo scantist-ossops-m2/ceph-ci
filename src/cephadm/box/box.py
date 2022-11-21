@@ -22,7 +22,7 @@ from util import (
     Colors
 )
 
-CEPH_IMAGE = 'quay.ceph.io/ceph-ci/ceph:main'
+CEPH_IMAGE = 'quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:main'
 BOX_IMAGE = 'cephadm-box:latest'
 
 # NOTE: this image tar is a trickeroo so cephadm won't pull the image everytime
@@ -153,12 +153,12 @@ class Cluster(Target):
         os.chmod(cephadm_path, st.st_mode | stat.S_IEXEC)
 
         run_shell_command(f'{engine()} load < /cephadm/box/docker/ceph/image/quay.ceph.image.tar')
-        # cephadm guid error because it sometimes tries to use quay.ceph.io/ceph-ci/ceph:<none>
+        # cephadm guid error because it sometimes tries to use quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:<none>
         # instead of main branch's tag
         run_shell_command('export CEPH_SOURCE_FOLDER=/ceph')
-        run_shell_command('export CEPHADM_IMAGE=quay.ceph.io/ceph-ci/ceph:main')
+        run_shell_command('export CEPHADM_IMAGE=quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:main')
         run_shell_command(
-            'echo "export CEPHADM_IMAGE=quay.ceph.io/ceph-ci/ceph:main" >> ~/.bashrc'
+            'echo "export CEPHADM_IMAGE=quay-quay-quay.apps.os.sepia.ceph.com/ceph-ci/ceph:main" >> ~/.bashrc'
         )
 
         extra_args = []
