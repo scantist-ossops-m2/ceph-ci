@@ -510,7 +510,7 @@ TEST_F(TestDeepCopy, Stress)
   test_stress();
 }
 
-TEST_F(TestDeepCopy, NoSnaps_LargerDstObjSize)
+TEST_F(TestDeepCopy, DISABLED_NoSnaps_LargerDstObjSize)
 {
   uint64_t order = m_src_ictx->order + 1;
   ASSERT_EQ(0, m_opts.set(RBD_IMAGE_OPTION_ORDER, order));
@@ -518,7 +518,7 @@ TEST_F(TestDeepCopy, NoSnaps_LargerDstObjSize)
   test_no_snaps();
 }
 
-TEST_F(TestDeepCopy, Snaps_LargerDstObjSize)
+TEST_F(TestDeepCopy, DISABLED_Snaps_LargerDstObjSize)
 {
   uint64_t order = m_src_ictx->order + 1;
   ASSERT_EQ(0, m_opts.set(RBD_IMAGE_OPTION_ORDER, order));
@@ -548,7 +548,7 @@ TEST_F(TestDeepCopy, CloneFlatten_LargerDstObjSize)
   test_clone();
 }
 
-TEST_F(TestDeepCopy, Stress_LargerDstObjSize)
+TEST_F(TestDeepCopy, DISABLED_Stress_LargerDstObjSize)
 {
   uint64_t order = m_src_ictx->order + 1 + rand() % 2;
   ASSERT_EQ(0, m_opts.set(RBD_IMAGE_OPTION_ORDER, order));
