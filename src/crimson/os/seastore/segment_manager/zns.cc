@@ -86,7 +86,17 @@ static zns_sm_metadata_t make_metadata(
   size_t segment_size = zone_size;
   size_t zones_per_segment = segment_size / zone_size;
   size_t segments = (num_zones - RESERVED_ZONES) / zones_per_segment;
+  size_t per_shard_segments = segments / seastar::smp::count;
+  std::vector<size_t> shard_segments(seastar::smp::count, per_shard_segments);
   size_t available_size = zone_capacity * segments;
+  size_t per_shard_available_size = zone_capacity * per_shard_segments;
+  std::vector<size_t> shard_size(seastar::smp::count, per_shard_available_size);
+
+  std::vector<size_t> shard_fist_segment_offset(seastar::smp::count, 0);
+  for (unsigned int i = 0; i < seastar::smp::count; i++) {
+    shard_fist_segment_offset[i] = zone_size * RESERVED_ZONES
+      + i * segment_size* per_shard_segments;
+  }
 
   assert(total_size == num_zones * zone_size);
 
@@ -107,15 +117,16 @@ static zns_sm_metadata_t make_metadata(
     zone_capacity * zones_per_segment);
 
   zns_sm_metadata_t ret = zns_sm_metadata_t{
-    available_size,
+    seastar::smp::count,
+    shard_size,
     segment_size,
     zone_capacity * zones_per_segment,
     zones_per_segment,
     zone_capacity,
     data.block_size,
-    segments,
+    shard_segments,
     zone_size,
-    zone_size * RESERVED_ZONES,
+    shard_fist_segment_offset,
     meta};
   ret.validate();
   return ret;
@@ -160,8 +171,7 @@ static seastar::future<> reset_device(
 {
   return seastar::do_with(
     blk_zone_range{},
-    ZoneReport(nr_zones),
-    [&, nr_zones](auto &range, auto &zr) {
+    [&, nr_zones, zone_size_sects](auto &range) {
       range.sector = 0;
       range.nr_sectors = zone_size_sects * nr_zones;
       return device.ioctl(
@@ -409,6 +419,26 @@ ZNSSegmentManager::mkfs_ret ZNSSegmentManager::mkfs(
     });
 }
 
+ZNSSegmentManager::mkfs_ret ZNSSegmentManager::shard_mkfs(
+  device_config_t config)
+{
+  LOG_PREFIX(ZNSSegmentManager::shard_mkfs);
+  INFO("starting, device_path {}", device_path);
+  return open_device(
+    device_path, seastar::open_flags::rw
+  ).safe_then([=, this](auto p) {
+    device = std::move(p.first);
+    auto sd = p.second;
+    return read_metadata(device, sd);
+  }).safe_then([=, this](auto meta){
+    metadata = meta;
+    return device.close();
+  }).safe_then([FNAME] {
+    DEBUG("Returning from shard_mkfs.");
+    return mkfs_ertr::now();
+  });
+}
+
 // Return range of sectors to operate on.
 struct blk_zone_range make_range(
   segment_id_t id,
@@ -479,7 +509,7 @@ ZNSSegmentManager::open_ertr::future<SegmentRef> ZNSSegmentManager::open(
       range = make_range(
 	id,
 	metadata.segment_size,
-        metadata.first_segment_offset);
+        metadata.shard_first_segment_offset[seastar::this_shard_id()]);
       return blk_zone_op(
 	device,
 	range,
@@ -506,7 +536,7 @@ ZNSSegmentManager::release_ertr::future<> ZNSSegmentManager::release(
       range = make_range(
 	id,
 	metadata.segment_size,
-        metadata.first_segment_offset);
+        metadata.shard_first_segment_offset[seastar::this_shard_id()]);
       return blk_zone_op(
 	device,
 	range,
@@ -555,7 +585,7 @@ Segment::close_ertr::future<> ZNSSegmentManager::segment_close(
       range = make_range(
 	id,
 	metadata.segment_size,
-        metadata.first_segment_offset);
+        metadata.shard_first_segment_offset[seastar::this_shard_id()]);
       return blk_zone_op(
 	device,
 	range,

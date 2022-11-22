@@ -19,16 +19,19 @@
 
 namespace crimson::os::seastore::segment_manager::zns {
 
+  using std::vector;
+
   struct zns_sm_metadata_t {
-    size_t size = 0;
+    unsigned int shard_num = 0;
+    vector<size_t> shard_size;
     size_t segment_size = 0;
     size_t segment_capacity = 0;
     size_t zones_per_segment = 0;
     size_t zone_capacity = 0;
     size_t block_size = 0;
-    size_t segments = 0;
+    vector<size_t> shard_segments;
     size_t zone_size = 0;
-    size_t first_segment_offset = 0;
+    vector<size_t> shard_first_segment_offset;
 
     seastore_meta_t meta;
     
@@ -40,15 +43,16 @@ namespace crimson::os::seastore::segment_manager::zns {
 
     DENC(zns_sm_metadata_t, v, p) {
       DENC_START(1, 1, p);
-      denc(v.size, p);
+      denc(v.shard_num, p);
+      denc(v.shard_size, p);
       denc(v.segment_size, p);
       denc(v.segment_capacity, p);
       denc(v.zones_per_segment, p);
       denc(v.zone_capacity, p);
       denc(v.block_size, p);
-      denc(v.segments, p);
+      denc(v.shard_segments, p);
       denc(v.zone_size, p);
-      denc(v.first_segment_offset, p);
+      denc(v.shard_first_segment_offset, p);
       denc(v.meta, p);
       denc(v.magic, p);
       denc(v.dtype, p);
@@ -60,12 +64,15 @@ namespace crimson::os::seastore::segment_manager::zns {
     }
 
     void validate() const {
-      ceph_assert_always(size > 0);
-      ceph_assert_always(size <= DEVICE_OFF_MAX);
+      ceph_assert_always(shard_num == seastar::smp::count);
+      for (unsigned int i = 0; i < seastar::smp::count; i++) {
+        ceph_assert_always(shard_size[i] > 0);
+        ceph_assert_always(shard_size[i] <= DEVICE_OFF_MAX);
+        ceph_assert_always(shard_segments[i] > 0);
+        ceph_assert_always(shard_segments[i] <= DEVICE_SEGMENT_ID_MAX);
+      }
       ceph_assert_always(segment_capacity > 0);
       ceph_assert_always(segment_capacity <= SEGMENT_OFF_MAX);
-      ceph_assert_always(segments > 0);
-      ceph_assert_always(segments <= DEVICE_SEGMENT_ID_MAX);
     }
   };
 
@@ -105,6 +112,7 @@ namespace crimson::os::seastore::segment_manager::zns {
   public:
     mount_ret mount() final;
     mkfs_ret mkfs(device_config_t meta) final;
+    mkfs_ret shard_mkfs(device_config_t meta) final;
     open_ertr::future<SegmentRef> open(segment_id_t id) final;
     close_ertr::future<> close() final;
 
@@ -116,7 +124,7 @@ namespace crimson::os::seastore::segment_manager::zns {
       ceph::bufferptr &out) final;
 
     size_t get_available_size() const final {
-      return metadata.size;
+      return metadata.shard_size[seastar::this_shard_id()];
     };
 
     extent_len_t get_block_size() const final {
@@ -184,7 +192,7 @@ namespace crimson::os::seastore::segment_manager::zns {
 
     uint64_t get_offset(paddr_t addr) {
       auto& seg_addr = addr.as_seg_paddr();
-      return (metadata.first_segment_offset +
+      return (metadata.shard_first_segment_offset[seastar::this_shard_id()] +
 	      (seg_addr.get_segment_id().device_segment_id() * 
 	       metadata.segment_size)) + seg_addr.get_segment_off();
     }
