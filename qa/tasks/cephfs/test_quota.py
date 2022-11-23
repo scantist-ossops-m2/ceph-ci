@@ -104,3 +104,69 @@ class TestQuota(CephFSTestCase):
         with self.assertRaises(CommandFailedError):
             self.mount_b.write_n_mb("subdir_data/file", 40)
 
+    def test_human_readable_quota_values(self):
+        self.mount_a.run_shell(["mkdir", "subdir"])
+
+        self.assertEqual(self.mount_a.getfattr("./subdir",
+                                               "ceph.quota.max_bytes"), None)
+
+        # kibibyte
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "10K")
+        self.assertEqual(self.mount_a.getfattr(
+            "./subdir", "ceph.quota.max_bytes"), "10240")
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "100Ki")
+        self.assertEqual(self.mount_a.getfattr(
+            "./subdir", "ceph.quota.max_bytes"), "102400")
+
+        # mebibyte
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "10M")
+        self.assertEqual(self.mount_a.getfattr(
+            "./subdir", "ceph.quota.max_bytes"), "10485760")
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "100Mi")
+        self.assertEqual(self.mount_a.getfattr(
+            "./subdir", "ceph.quota.max_bytes"), "104857600")
+
+        # gibibyte
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "2G")
+        self.assertEqual(self.mount_a.getfattr(
+            "./subdir", "ceph.quota.max_bytes"), "2147483648")
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "4Gi")
+        self.assertEqual(self.mount_a.getfattr(
+            "./subdir", "ceph.quota.max_bytes"), "4294967296")
+
+        # tebibyte
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "1T")
+        self.assertEqual(self.mount_a.getfattr(
+            "./subdir", "ceph.quota.max_bytes"), "1099511627776")
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "2Ti")
+        self.assertEqual(self.mount_a.getfattr(
+            "./subdir", "ceph.quota.max_bytes"), "2199023255552")
+
+        # invalid arguments
+        with self.assertRaises(CommandFailedError):
+            self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "10A")
+        with self.assertRaises(CommandFailedError):
+            self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "1y00K")
+        with self.assertRaises(CommandFailedError):
+            self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "af00")
+        with self.assertRaises(CommandFailedError):
+            self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "G")
+        with self.assertRaises(CommandFailedError):
+            self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "")
+        with self.assertRaises(CommandFailedError):
+            self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", " ")
+        with self.assertRaises(CommandFailedError):
+            self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "-1t")
+        with self.assertRaises(CommandFailedError):
+            self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "-1")
+
+        # disable(bytes)-enable(human readable)-disable(human-readable)
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "0")
+        self.assertEqual(self.mount_a.getfattr("./subdir",
+                                               "ceph.quota.max_bytes"), None)
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "1K")
+        self.assertEqual(self.mount_a.getfattr("./subdir",
+                                               "ceph.quota.max_bytes"), "1024")
+        self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "0M")
+        self.assertEqual(self.mount_a.getfattr("./subdir",
+                                               "ceph.quota.max_bytes"), None)
