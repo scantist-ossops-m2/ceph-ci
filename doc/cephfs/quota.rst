@@ -74,6 +74,14 @@ To set a quota::
   setfattr -n ceph.quota.max_bytes -v 100000000 /some/dir     # 100 MB
   setfattr -n ceph.quota.max_files -v 10000 /some/dir         # 10,000 files
 
+``ceph.quota.max_bytes`` can also be set using human-friendly units::
+
+  setfattr -n ceph.quota.max_bytes -v 100K /some/dir          # 100 KiB
+  setfattr -n ceph.quota.max_bytes -v 5Gi /some/dir           # 5 GiB
+
+.. note:: Please keep in mind that values will be strictly casted to IEC unit
+   even in case of SI units as input, i.e. 1K = 1024 bytes
+
 To view quota settings::
 
   getfattr -n ceph.quota.max_bytes /some/dir
