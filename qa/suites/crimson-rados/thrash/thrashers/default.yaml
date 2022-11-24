@@ -1,5 +1,6 @@
 overrides:
   ceph:
+    wait-for-scrub: false
     log-ignorelist:
     - but it is still running
     - objects unfound and apparently lost
