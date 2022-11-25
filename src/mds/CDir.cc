@@ -2421,6 +2421,13 @@ void CDir::_omap_commit_ops(int r, int op_prio, int64_t metapool, version_t vers
   auto commit_one = [&](bool header=false) {
     ObjectOperation op;
 
+    /*
+     * just skip submiting the invalid request, which could cause
+     * the cephfs to become readonly.
+     */
+    if (!header && _set.empty() && _rm.empty())
+      return;
+
     // don't create new dirfrag blindly
     if (!_new)
       op.stat(nullptr, nullptr, nullptr);
@@ -2445,6 +2452,7 @@ void CDir::_omap_commit_ops(int r, int op_prio, int64_t metapool, version_t vers
       op.omap_set(_set);
     if (!_rm.empty())
       op.omap_rm_keys(_rm);
+
     mdcache->mds->objecter->mutate(oid, oloc, op, snapc,
                                    ceph::real_clock::now(),
                                    0, gather.new_sub());
@@ -2455,24 +2463,22 @@ void CDir::_omap_commit_ops(int r, int op_prio, int64_t metapool, version_t vers
 
   int count = 0;
   for (auto &key : stales) {
-    unsigned size = key.length() + sizeof(__u32);
-    if (write_size + size > max_write_size)
-      commit_one();
-
-    write_size += size;
+    write_size += key.length() + sizeof(__u32);
     _rm.emplace(key);
+
+    if (write_size > max_write_size)
+      commit_one();
 
     if (!(++count % mdcache->mds->heartbeat_reset_grace(2)))
       mdcache->mds->heartbeat_reset();
   }
 
   for (auto &key : to_remove) {
-    unsigned size = key.length() + sizeof(__u32);
-    if (write_size + size > max_write_size)
-      commit_one();
-
-    write_size += size;
+    write_size += key.length() + sizeof(__u32);
     _rm.emplace(std::move(key));
+
+    if (write_size >= max_write_size)
+      commit_one();
 
     if (!(++count % mdcache->mds->heartbeat_reset_grace(2)))
       mdcache->mds->heartbeat_reset();
@@ -2495,12 +2501,11 @@ void CDir::_omap_commit_ops(int r, int op_prio, int64_t metapool, version_t vers
       ENCODE_FINISH(bl);
     }
 
-    unsigned size = item.key.length() + bl.length() + 2 * sizeof(__u32);
-    if (write_size + size > max_write_size)
-      commit_one();
-
-    write_size += size;
+    write_size += item.key.length() + bl.length() + 2 * sizeof(__u32);
     _set[std::move(item.key)].swap(bl);
+
+    if (write_size >= max_write_size)
+      commit_one();
 
     if (!(++count % mdcache->mds->heartbeat_reset_grace()))
       mdcache->mds->heartbeat_reset();
