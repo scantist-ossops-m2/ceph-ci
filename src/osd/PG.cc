@@ -1457,21 +1457,9 @@ void PG::on_info_history_change()
   m_scrubber->on_maybe_registration_change();
 }
 
-// void PG::reschedule_scrub()
-// {
-//   dout(20) << __func__ << " for a "
-// 	   << (is_primary() ? "Primary" : "non-primary") << dendl;
-//   // we are assuming no change in primary status
-//   if (is_primary()) {
-//     ceph_assert(m_scrubber);
-//     m_scrubber->update_scrub_job(m_planned_scrub);
-//   }
-// }
-
 void PG::on_primary_status_change(bool was_primary, bool now_primary)
 {
   // make sure we have a working scrubber when becoming a primary
-
   if (was_primary != now_primary) {
     ceph_assert(m_scrubber);
     m_scrubber->on_primary_change(__func__);
@@ -2617,3 +2605,4 @@ PgLockWrapper::~PgLockWrapper()
 uint64_t PG::get_min_alloc_size() const {
   return osd->store->get_min_alloc_size();
 }
+
