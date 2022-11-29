@@ -221,6 +221,10 @@ private:
     instance_handle_t &ihref,
     Ref<PG>& pg,
     crimson::osd::ObjectContextRef obc);
+  interruptible_future<> _do_process(
+    instance_handle_t &ihref,
+    Ref<PG>& pg,
+    crimson::osd::ObjectContextRef obc);
   ::crimson::interruptible::interruptible_future<
     ::crimson::osd::IOInterruptCondition> process_pg_op(
     Ref<PG> &pg);
