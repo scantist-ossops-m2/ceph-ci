@@ -22,13 +22,13 @@ describe('DocService', () => {
 
   it('should return full URL', () => {
     expect(service.urlGenerator('iscsi', 'pacific')).toBe(
-      'https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/5/html/dashboard_guide/block_devices#iscsi-functions'
+      'https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/5/html/dashboard_guide/management-of-block-devices-using-the-ceph-dashboard#management-of-iscsi-functions-on-the-ceph-dashboard'
     );
   });
 
   it('should return latest version URL for 5', () => {
     expect(service.urlGenerator('orch', 'pacific')).toBe(
-      'https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/5/html/operations_guide/orchestrator/'
+      'https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/5/html/operations_guide/introduction-to-the-ceph-orchestrator'
     );
   });
 
@@ -66,7 +66,7 @@ describe('DocService', () => {
 
       nextSummary('5');
       expect(result).toEqual(
-        'https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/5/html/dashboard_guide/managing-the-cluster#viewing-and-managing-alerts'
+        'https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/5/html/dashboard_guide/management-of-alerts-on-the-ceph-dashboard'
       );
       expect(i).toBe(1);
       expect(subscriber.closed).toBe(true);
