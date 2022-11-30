@@ -393,7 +393,7 @@ struct ScrubJob final : public RefCountedObject {
   SchedTarget next_deep;     // only used when currently d-scrubbing
 
   /**
-   * guarding the access to the 4 'targets' above.
+   * guarding the access to the four 'targets' above.
    * All writes are done under this mutex. For reads - for some we
    * may be able to get away with other locks and path analysis.
    */
@@ -417,6 +417,8 @@ struct ScrubJob final : public RefCountedObject {
    */
   std::atomic_bool in_queues{false};
 
+  // failures/aborts-related information
+
   /// last scrub attempt failed to secure replica resources. A temporary
   /// flag, signalling the need to modify both targets under lock.
   bool resources_failure{false};  // atomic?
@@ -432,6 +434,9 @@ struct ScrubJob final : public RefCountedObject {
 
   utime_t penalty_timeout{0, 0};
 
+  /// the more consecutive failures - the longer we will delay before
+  /// re-queueing the scrub job
+  int consec_aborts{0};
 
   ScrubJob(CephContext* cct, const spg_t& pg, int node_id);
 
@@ -490,7 +495,7 @@ struct ScrubJob final : public RefCountedObject {
 
   void un_penalize(utime_t now_is);
 
-  void at_scrub_failure(scrub_level_t lvl, delay_cause_t issue);
+  void at_failure(scrub_level_t lvl, delay_cause_t issue);
 
   /**
    * relatively low-cost(*) access to the scrub job's state, to be used in
@@ -519,6 +524,8 @@ struct ScrubJob final : public RefCountedObject {
   std::string scheduling_state(utime_t now_is, bool is_deep_expected) const;
 
   friend std::ostream& operator<<(std::ostream& out, const ScrubJob& pg);
+  std::ostream& gen_prefix(std::ostream& out) const;
+  std::string m_log_msg_prefix;
 };
 
 // what the OSD is using to schedule scrubs:
@@ -581,10 +588,7 @@ struct SchedEntry {
   }
 };
 
-
-
 class ScrubSchedListener;
-
 } // namespace Scrub
 
 /**
@@ -614,24 +618,6 @@ class ScrubQueue {
       const ceph::common::ConfigProxy& config,
       bool is_recovery_active);
 
-
-  /**
-   * called periodically by the OSD to select the first scrub-eligible PG
-   * and scrub it.
-   *
-   * Selection is affected by:
-   * - time of day: scheduled scrubbing might be configured to only happen
-   *   during certain hours;
-   * - same for days of the week, and for the system load;
-   *
-   * @param preconds: what types of scrub are allowed, given system status &
-   *                  config. Some of the preconditions are calculated here.
-   * @return Scrub::attempt_t::scrubbing if a scrub session was successfully
-   *         initiated. Otherwise - the failure cause.
-   *
-   * locking: locks jobs_lock
-   */
-  Scrub::schedule_result_t select_pg_and_scrub(Scrub::ScrubPreconds& preconds);
 
   /**
    * Translate attempt_ values into readable text
@@ -747,6 +733,27 @@ class ScrubQueue {
   static inline constexpr auto invalid_state = [](const auto& jobref) -> bool {
     return jobref->state == Scrub::qu_state_t::not_registered;
   };
+
+  /**
+   * called periodically(*) to select the first scrub-eligible PG
+   * and scrub it.
+   *
+   * (*) by the OSD's tick_without_osd_lock() method, indirectly via
+   *    sched_scrub();
+   *
+   * Selection is affected by:
+   * - time of day: scheduled scrubbing might be configured to only happen
+   *   during certain hours;
+   * - same for days of the week, and for the system load;
+   *
+   * @param preconds: what types of scrub are allowed, given system status &
+   *                  config. Some of the preconditions are calculated here.
+   * @return Scrub::schedule_result_t::scrub_initiated if a scrub session was
+   *                  successfully initiated. Otherwise - the failure cause.
+   *
+   * locking: locks jobs_lock
+   */
+  Scrub::schedule_result_t select_pg_and_scrub(Scrub::ScrubPreconds& preconds);
 
   /**
    * Are there scrub jobs that should be reinstated?

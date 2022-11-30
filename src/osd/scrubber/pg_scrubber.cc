@@ -611,7 +611,7 @@ void PgScrubber::at_scrub_failure(delay_cause_t issue)
   // if there is a 'next' target - it might have higher priority than
   // what was just run. Let's merge the two.
   ceph_assert(m_active_target);
-  m_active_target->job->at_scrub_failure(m_active_target->s_or_d, issue);
+  m_active_target->job->at_failure(m_active_target->s_or_d, issue);
   m_active_target.reset();
 }
 
@@ -2552,6 +2552,7 @@ void PgScrubber::cleanup_on_finish()
     // reset the urgency, as we have already scheduled the scrub
     // related to this target
     m_active_target->target().urgency = urgency_t::periodic_regular;
+    m_active_target->job->consec_aborts = 0;
   }
   m_pg->publish_stats_to_osd();
 
@@ -2716,12 +2717,12 @@ ostream& PgScrubber::show_concise(ostream& out) const
   if (m_active && is_primary()) {
     if (m_active_target) {
       return out << fmt::format(
-		 " ({},{}{:4.4}{}) ", m_is_deep ? "deep" : "shallow",
+		 " ({},{}{:4.4}{})", m_is_deep ? "deep" : "shallow",
 		 (m_scrub_job->blocked ? "-*blocked*" : ""),
 		 (*m_active_target).target().urgency, m_flags);
     } else {
       return out << fmt::format(
-		 " ({},{}x{}) ", m_is_deep ? "deep" : "shallow",
+		 " ({},{}{}-inac)", m_is_deep ? "deep" : "shallow",
 		 (m_scrub_job->blocked ? "-*blocked*" : ""), m_flags);
     }
   }

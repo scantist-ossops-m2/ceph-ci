@@ -2,7 +2,6 @@
 // vim: ts=8 sw=2 smarttab
 #include "./osd_scrub_sched.h"
 #include <compare>
-#include <mutex>
 
 #include "osd/OSD.h"
 
@@ -252,8 +251,6 @@ void SchedTarget::set_oper_period_sh(
   // the 'stamp' was "faked" to trigger a "periodic" scrub.
   // auto base = stamp;
   urgency = std::max(urgency_t::periodic_regular, urgency);
-  // target = std::min(ceph_clock_now(), add_double(stamp,
-  // aconf.shallow_interval));
   target = add_double(stamp, aconf.shallow_interval);
   deadline = add_double(
       stamp, aconf.max_shallow.value_or(aconf.shallow_interval));  // RRR fix
@@ -373,7 +370,13 @@ void SchedTarget::dump(std::string_view sect_name, ceph::Formatter* f) const
 #define dout_context (cct)
 #define dout_subsys ceph_subsys_osd
 #undef dout_prefix
-#define dout_prefix *_dout << "osd." << whoami << "  "
+#define dout_prefix _prefix(_dout, this)
+
+template <class T>
+static ostream& _prefix(std::ostream* _dout, T* t)
+{
+  return t->gen_prefix(*_dout);
+}
 
 using qu_state_t = Scrub::qu_state_t;
 using ScrubJob = Scrub::ScrubJob;
@@ -387,12 +390,19 @@ ScrubJob::ScrubJob(CephContext* cct, const spg_t& pg, int node_id)
     , closest_target{std::ref(shallow_target)}
     , next_shallow{*this, scrub_level_t::shallow, "ns"}
     , next_deep{*this, scrub_level_t::deep, "nd"}
-{}
+{
+  m_log_msg_prefix = fmt::format("osd.{} pg[{}] ScrubJob: ", whoami, pgid.pgid);
+}
 
 // debug usage only
 ostream& operator<<(ostream& out, const ScrubJob& sjob)
 {
   return out << fmt::format("{}", sjob);
+}
+
+std::ostream& ScrubJob::gen_prefix(std::ostream& out) const
+{
+  return out << m_log_msg_prefix; 
 }
 
 std::string ScrubJob::scheduling_state(utime_t now_is, bool is_deep_expected)
@@ -425,7 +435,12 @@ bool ScrubJob::verify_targets_disabled() const
 }
 
 
-void ScrubJob::at_scrub_failure(scrub_level_t lvl, delay_cause_t issue)
+/**
+ * delay the next time we'll be able to scrub the PG by pushing the
+ * not_before time forward.
+ * \todo use the number of ripe jobs to determine the delay
+ */
+void ScrubJob::at_failure(scrub_level_t lvl, delay_cause_t issue)
 {
   std::unique_lock l{targets_lock};
   auto& aborted_target = get_current_trgt(lvl);
@@ -434,6 +449,7 @@ void ScrubJob::at_scrub_failure(scrub_level_t lvl, delay_cause_t issue)
 
   aborted_target.clear_scrubbing();
   aborted_target.last_issue = issue;
+  ++consec_aborts;
 
   // if there is a 'next' target - it might have higher priority than
   // what was just run. Let's merge the two.
@@ -443,13 +459,13 @@ void ScrubJob::at_scrub_failure(scrub_level_t lvl, delay_cause_t issue)
     // we already have plans for the next scrub once we manage to finish the
     // one that just failed. The 'N' one is high-priority for sure. The
     // failed one - may be.
-    merge_targets(base_lvl, 5s);
+    merge_targets(base_lvl, 5s*consec_aborts);
   } else {
-    aborted_target.push_nb_out(5s, issue);
+    aborted_target.push_nb_out(5s*consec_aborts, issue);
   }
   dout(10) << fmt::format(
-		  "{}: post [c.target/base:{}] [c.target/abrtd:{}]", __func__,
-		  get_current_trgt(base_lvl), get_current_trgt(lvl))
+		  "{}: post [c.target/base:{}] [c.target/abrtd:{}] {}s delay", __func__,
+		  get_current_trgt(base_lvl), get_current_trgt(lvl), 5*consec_aborts)
 	   << dendl;
   determine_closest();
 }
