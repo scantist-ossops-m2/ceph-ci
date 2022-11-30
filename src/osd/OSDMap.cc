@@ -20,8 +20,6 @@
 #include <optional>
 #include <random>
 
-//#include <sstream>  //TO-REMOVE (Done)
-
 #include <boost/algorithm/string.hpp>
 
 #include "OSDMap.h"
@@ -2711,7 +2709,8 @@ void OSDMap::_apply_upmap(const pg_pool_t& pi, pg_t raw_pg, vector<int> *raw) co
         (*raw)[new_prim_idx] = (*raw)[0];
         (*raw)[0] = new_prim;
       }
-      //FIXME: Notify the admin if we have a pg_upmap_primarosd which is not part of the pg
+      //FIXME: Notify the admin if we have a pg_upmap_primary osd which is not part of the pg
+      //       Optional: Warn for null record as well (record that maps tp the existing primary)
     }
   }
 }
@@ -3862,8 +3861,10 @@ void OSDMap::dump(Formatter *f) const
   //FIXME: add primary mapping (Done)
   f->open_array_section("pg_upmap_primaries");
   for (const auto& [pg, osd] : pg_upmap_primaries) {
+    f->open_object_section("primary_mapping");
     f->dump_stream("pgid") << pg;
-    f->dump_int("osd", osd);
+    f->dump_int("primary_osd", osd);
+    f->close_section();
   }
   f->close_section(); // primary_temp
 
