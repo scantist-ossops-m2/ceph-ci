@@ -43,7 +43,6 @@
 #include "common/perf_counters_collection.h"
 #endif
 
-
 #include "crush/CrushLocation.h"
 
 class AdminSocket;
