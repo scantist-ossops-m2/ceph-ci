@@ -1181,7 +1181,6 @@ void OSDMap::Incremental::dump(Formatter *f) const
   }
   f->close_section();
 
-  //FIXME: incremental dump
   f->open_array_section("new_pg_upmap_items");
   for (auto& i : new_pg_upmap_items) {
     f->open_object_section("mapping");
@@ -1197,24 +1196,24 @@ void OSDMap::Incremental::dump(Formatter *f) const
     f->close_section();
   }
   f->close_section();
-  f->open_array_section("old_pg_upmap_items");	//FIXME: incremental dump
+  f->open_array_section("old_pg_upmap_items");
   for (auto& i : old_pg_upmap_items) {
     f->dump_stream("pgid") << i;
   }
   f->close_section();
 
-  //FIXME: (Done-Test) incremental dump - add new_pg_upmap_items, old_pg_upmap_items
-  // Add section for all primary items OR add primary for each PG
-
   // dump upmap_primaries
   f->open_array_section("new_pg_upmap_primaries");
   for (auto& [pg, osd] : new_pg_upmap_primary) {
+    f->open_object_section("primary_mapping");
     f->dump_stream("pgid") << pg;
-    f->dump_int("osd", osd);
+    f->dump_int("primary_osd", osd);
+    f->close_section();
   }
   f->close_section();  // new_pg_upmap_primaries
 
-  f->open_array_section("old_pg_upmap_primaries");	//FIXME: incremental dump (Done-Test)
+  // dump old_pg_upmap_primaries (removed primary mappings)
+  f->open_array_section("old_pg_upmap_primaries");
   for (auto& pg : old_pg_upmap_primary) {
     f->dump_stream("pgid") << pg;
   }
@@ -1733,7 +1732,7 @@ uint64_t OSDMap::get_features(int entity_type, uint64_t *pmask) const
   }
   mask |= CEPH_FEATURES_CRUSH;
 
-  if (!pg_upmap.empty() || !pg_upmap_items.empty() || !pg_upmap_primaries.empty())  //FIXME: need new feature bit?
+  if (!pg_upmap.empty() || !pg_upmap_items.empty() || !pg_upmap_primaries.empty())
     features |= CEPH_FEATUREMASK_OSDMAP_PG_UPMAP;
   mask |= CEPH_FEATUREMASK_OSDMAP_PG_UPMAP;
 
@@ -2010,21 +2009,15 @@ void OSDMap::clean_temps(CephContext *cct,
   }
 }
 
-//FIXME: Check if need to updtate for pg_upmap_primary (Done)
 void OSDMap::get_upmap_pgs(vector<pg_t> *upmap_pgs) const
 {
-  upmap_pgs->reserve(pg_upmap.size() + pg_upmap_items.size() + pg_upmap_primaries.size());
+  upmap_pgs->reserve(pg_upmap.size() + pg_upmap_items.size());
   for (auto& p : pg_upmap)
     upmap_pgs->push_back(p.first);
   for (auto& p : pg_upmap_items)
     upmap_pgs->push_back(p.first);
-  // The only reason to add upmap primaries here is because if forces yet another
-  // verify_upmap on the pg (preventing changes that are not allowed by the CRUSH rule)
-  for (auto& p : pg_upmap_primaries)
-    upmap_pgs->push_back(p.first);
 }
 
-//FIXME: Check if need to updtate for pg_upmap_primary (Review)
 bool OSDMap::check_pg_upmaps(
   CephContext *cct,
   const vector<pg_t>& to_check,
@@ -2151,13 +2144,11 @@ bool OSDMap::check_pg_upmaps(
         any_change = true;
       }
     }
-    //FIXME: Josh - add checks here for primary mapping
   }
   any_change = any_change || !to_cancel->empty();
   return any_change;
 }
 
-//FIXME: add clean of pg_upmap_primaries here
 void OSDMap::clean_pg_upmaps(
   CephContext *cct,
   Incremental *pending_inc,
@@ -2213,6 +2204,9 @@ bool OSDMap::clean_pg_upmaps(
   get_upmap_pgs(&to_check);
   auto any_change = check_pg_upmaps(cct, to_check, &to_cancel, &to_remap);
   clean_pg_upmaps(cct, pending_inc, to_cancel, to_remap);
+  //TODO: Create these 3 functions for pg_upmap_primaries and so they can be checked 
+  //      and cleaned in the same way as pg_upmap. This is not critical since invalid
+  //      pg_upmap_primaries are never applied, (the final check is in _apply_upmap).
   return any_change;
 }
 
@@ -2420,25 +2414,16 @@ int OSDMap::apply_incremental(const Incremental &inc)
   }
   for (auto& p : inc.new_pg_upmap_items) {
     pg_upmap_items[p.first] = p.second;
-    //TO-REMOVE: Josh
-    ldout(g_ceph_context, 20) << __func__ << " Josh: pg_upmap_items "
-                              << p.first << " -> " << p.second << dendl;
   }
   for (auto& pg : inc.old_pg_upmap_items) {
     pg_upmap_items.erase(pg);
   }
-  // FIXME: handle upmap_primary here (old and new) (Done)
+
   for (auto& [pg, prim] : inc.new_pg_upmap_primary) {
     pg_upmap_primaries[pg] = prim;
-    //TO-REMOVE: Josh
-    ldout(g_ceph_context, 20) << __func__ << " Josh: pg_upmap_primary "
-                              << pg << ": osd." << prim << dendl;
   }
   for (auto& pg : inc.old_pg_upmap_primary) {
     pg_upmap_primaries.erase(pg);
-    //TO-REMOVE: Josh
-    ldout(g_ceph_context, 20) << __func__ << " Josh: remove pg_upmap_primary for "
-                              << pg << dendl;
   }
 
   // blocklist
@@ -2709,8 +2694,6 @@ void OSDMap::_apply_upmap(const pg_pool_t& pi, pg_t raw_pg, vector<int> *raw) co
         (*raw)[new_prim_idx] = (*raw)[0];
         (*raw)[0] = new_prim;
       }
-      //FIXME: Notify the admin if we have a pg_upmap_primary osd which is not part of the pg
-      //       Optional: Warn for null record as well (record that maps tp the existing primary)
     }
   }
 }
@@ -3858,7 +3841,6 @@ void OSDMap::dump(Formatter *f) const
   }
   f->close_section();
 
-  //FIXME: add primary mapping (Done)
   f->open_array_section("pg_upmap_primaries");
   for (const auto& [pg, osd] : pg_upmap_primaries) {
     f->open_object_section("primary_mapping");
@@ -4149,7 +4131,6 @@ void OSDMap::print(ostream& out) const
     out << "pg_upmap_items " << p.first << " " << p.second << "\n";
   }
 
-  //FIXME: print priamry mapping (DONE)
   for (auto& [pg, osd] : pg_upmap_primaries) {
     out << "pg_upmap_primary " << pg << " " << osd << "\n";
   }
