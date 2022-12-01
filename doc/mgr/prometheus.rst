@@ -39,6 +39,7 @@ Configuration
 .. confval:: rbd_stats_pools_refresh_interval
 .. confval:: standby_behaviour
 .. confval:: standby_error_status_code
+.. confval:: fetch_perf_counters_metrics
 
 By default the module will accept HTTP requests on port ``9283`` on all IPv4
 and IPv6 addresses on the host.  The port and listen address are both
@@ -183,6 +184,18 @@ RBD image.
 Example to turn up the sync interval to 10 minutes::
 
   ceph config set mgr mgr/prometheus/rbd_stats_pools_refresh_interval 600
+
+
+Ceph daemons performance counters metrics
+-----------------
+
+With the introduction of ceph-exporter daemon, the module will no longer export ceph daemons
+perf counters as prometheus metrics by default. Although with the module option ``fetch_perf_counters_metrics`` you can still
+enable support for exporting these metrics. By default, the value of config will be ``false``.
+To enable this module option, simply set config key to ``true``::
+
+    ceph config set mgr/prometheus/fetch_perf_counters_metrics true
+
 
 Statistic names and labels
 ==========================
