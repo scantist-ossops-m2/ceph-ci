@@ -5944,20 +5944,6 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
     r = parse_pgid(cmdmap, ss, pgid);
     if (r < 0)
       goto reply;
-//     pg_t pgid;
-//     string pgidstr;
-//     cmd_getval(cmdmap, "pgid", pgidstr);
-//     if (!pgid.parse(pgidstr.c_str())) {
-//       ss << "invalid pgid '" << pgidstr << "'";
-//       r = -EINVAL;
-//       goto reply;
-//     }
-//     vector<int> up, acting;
-//     if (!osdmap.have_pg_pool(pgid.pool())) {
-//       ss << "pg '" << pgidstr << "' does not exist";
-//       r = -ENOENT;
-//       goto reply;
-//     }
     pg_t mpgid = osdmap.raw_pg_to_pg(pgid);
     osdmap.pg_to_up_acting_osds(pgid, up, acting);
     if (f) {
@@ -9901,7 +9887,8 @@ int OSDMonitor::parse_pgid(const cmdmap_t& cmdmap, stringstream &ss,
                            /* out */ pg_t &pgid, std::optional<string> pgids) {
   string pgidstr;
   if (!cmd_getval(cmdmap, "pgid", pgidstr)) {
-    ss << "unable to find pgid";
+    ss << "unable to parse 'pgid' value '"
+       << cmd_vartype_stringify(cmdmap.at("pgid")) << "'";
     return -EINVAL;
   }
   if (!pgid.parse(pgidstr.c_str())) {
@@ -11995,23 +11982,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     err = parse_pgid(cmdmap, ss, pgid);
     if (err < 0)
       goto reply;
-//     string pgidstr;
-//     if (!cmd_getval(cmdmap, "pgid", pgidstr)) {
-//       ss << "unable to parse 'pgid' value '"
-//          << cmd_vartype_stringify(cmdmap.at("pgid")) << "'";
-//       err = -EINVAL;
-//       goto reply;
-//     }
-//     if (!pgid.parse(pgidstr.c_str())) {
-//       ss << "invalid pgid '" << pgidstr << "'";
-//       err = -EINVAL;
-//       goto reply;
-//     }
-//     if (!osdmap.pg_exists(pgid)) {
-//       ss << "pg " << pgid << " does not exist";
-//       err = -ENOENT;
-//       goto reply;
-//     }
     if (pending_inc.new_pg_temp.count(pgid)) {
       dout(10) << __func__ << " waiting for pending update on " << pgid << dendl;
       wait_for_finished_proposal(op, new C_RetryMessage(this, op));
@@ -12060,24 +12030,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     err = parse_pgid(cmdmap, ss, pgid);
     if (err < 0)
       goto reply;
-//     string pgidstr;
-//     if (!cmd_getval(cmdmap, "pgid", pgidstr)) {
-//       ss << "unable to parse 'pgid' value '"
-//          << cmd_vartype_stringify(cmdmap.at("pgid")) << "'";
-//       err = -EINVAL;
-//       goto reply;
-//     }
-//     pg_t pgid;
-//     if (!pgid.parse(pgidstr.c_str())) {
-//       ss << "invalid pgid '" << pgidstr << "'";
-//       err = -EINVAL;
-//       goto reply;
-//     }
-//     if (!osdmap.pg_exists(pgid)) {
-//       ss << "pg " << pgid << " does not exist";
-//       err = -ENOENT;
-//       goto reply;
-//     }
 
     int64_t osd;
     if (!cmd_getval(cmdmap, "id", osd)) {
@@ -12109,19 +12061,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     err = parse_pgid(cmdmap, ss, pgid);
     if (err < 0)
       goto reply;
-//     pg_t pgid;
-//     string pgidstr;
-//     cmd_getval(cmdmap, "pgid", pgidstr);
-//     if (!pgid.parse(pgidstr.c_str())) {
-//       ss << "invalid pgid '" << pgidstr << "'";
-//       err = -EINVAL;
-//       goto reply;
-//     }
-//     if (!osdmap.pg_exists(pgid)) {
-//       ss << "pg '" << pgidstr << "' does not exist";
-//       err = -ENOENT;
-//       goto reply;
-//     }
     vector<int> acting;
     int primary;
     osdmap.pg_to_acting_osds(pgid, &acting, &primary);
@@ -12227,24 +12166,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     err = parse_pgid(cmdmap, ss, pgid);
     if (err < 0)
       goto reply;
-//     string pgidstr;
-//     if (!cmd_getval(cmdmap, "pgid", pgidstr)) {
-//       ss << "unable to parse 'pgid' value '"
-//          << cmd_vartype_stringify(cmdmap.at("pgid")) << "'";
-//       err = -EINVAL;
-//       goto reply;
-//     }
-//     pg_t pgid;
-//     if (!pgid.parse(pgidstr.c_str())) {
-//       ss << "invalid pgid '" << pgidstr << "'";
-//       err = -EINVAL;
-//       goto reply;
-//     }
-//     if (!osdmap.pg_exists(pgid)) {
-//       ss << "pg " << pgid << " does not exist";
-//       err = -ENOENT;
-//       goto reply;
-//     }
     if (pending_inc.old_pools.count(pgid.pool())) {
       ss << "pool of " << pgid << " is pending removal";
       err = -ENOENT;
@@ -13898,18 +13819,6 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     err = parse_pgid(cmdmap, ss, pgid, pgidstr);
     if (err < 0)
       goto reply;
-//     pg_t pgid;
-//     cmd_getval(cmdmap, "pgid", pgidstr);
-//     if (!pgid.parse(pgidstr.c_str())) {
-//       ss << "invalid pgid '" << pgidstr << "'";
-//       err = -EINVAL;
-//       goto reply;
-//     }
-//     if (!osdmap.pg_exists(pgid)) {
-//       ss << "pg " << pgid << " should not exist";
-//       err = -ENOENT;
-//       goto reply;
-//     }
     bool sure = false;
     cmd_getval(cmdmap, "yes_i_really_mean_it", sure);
     if (!sure) {
