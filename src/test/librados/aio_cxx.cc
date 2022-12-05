@@ -2267,10 +2267,6 @@ void pool_io_callback(completion_t cb, void *arg /* Actually AioCompletion* */)
 {
   io_info *info = (io_info *)arg;
   unsigned long i = info->i;
-  {
-    TestAlarm alarm;
-    ASSERT_EQ(0, info->c->wait_for_complete());
-  }
   int r = info->c->get_return_value();
   //cout << "finish " << i << " r = " << r << std::endl;
 
@@ -2298,7 +2294,7 @@ TEST(LibRadosAio, PoolEIOFlag) {
   unsigned max = 100;
   unsigned long i = 1;
   my_lock.lock();
-  for (; min_failed == 0 && i <= max; ++i) {
+  for (; min_failed == 0; ++i) {
     io_info *info = new io_info;
     info->i = i;
     info->c = Rados::aio_create_completion();
@@ -2313,13 +2309,14 @@ TEST(LibRadosAio, PoolEIOFlag) {
       t = new std::thread(
 	[&] {
 	  bufferlist empty;
-	  ASSERT_EQ(0, test_data.m_cluster.mon_command(
+	  int r = test_data.m_cluster.mon_command(
 	    "{\"prefix\": \"osd pool set\", \"pool\": \"" + test_data.m_pool_name +
-	    "\", \"var\": \"eio\", \"val\": \"true\"}", empty, nullptr, nullptr));
+	    "\", \"var\": \"eio\", \"val\": \"true\"}", empty, nullptr, nullptr);
+	  ceph_assert(r == 0);
 	});
     }
 
-    std::this_thread::sleep_for(10ms);
+    std::this_thread::sleep_for(10'000us);
     my_lock.lock();
     if (r < 0) {
       inflight.erase(i);
