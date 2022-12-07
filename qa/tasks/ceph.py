@@ -1394,7 +1394,9 @@ def run_daemon(ctx, config, type_):
                 'ceph-%s' % (type_),
                 '-f',
                 '--cluster', cluster_name,
-                '-i', id_]
+                '-i', id_,
+                '--setuser', 'ceph',
+                '--setgroup', 'ceph']
 
             if type_ in config.get('cpu_profile', []):
                 profile_path = '/var/log/ceph/profiling-logger/%s.prof' % (role)
