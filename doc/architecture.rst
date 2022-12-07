@@ -13,6 +13,7 @@ replicate and redistribute data dynamically.
 
 .. image:: images/stack.png
 
+.. _arch-ceph-storage-cluster:
 
 The Ceph Storage Cluster
 ========================
@@ -134,6 +135,8 @@ detailed discussion of CRUSH, see `CRUSH - Controlled, Scalable, Decentralized
 Placement of Replicated Data`_.
 
 .. index:: architecture; cluster map
+
+.. _architecture_cluster_map:
 
 Cluster Map
 ~~~~~~~~~~~
@@ -1619,7 +1622,7 @@ instance for high availability.
 
 
 
-.. _RADOS - A Scalable, Reliable Storage Service for Petabyte-scale Storage Clusters: https://ceph.com/assets/pdfs/weil-rados-pdsw07.pdf
+.. _RADOS - A Scalable, Reliable Storage Service for Petabyte-scale Storage Clusters: https://ceph.io/assets/pdfs/weil-rados-pdsw07.pdf
 .. _Paxos: https://en.wikipedia.org/wiki/Paxos_(computer_science)
 .. _Monitor Config Reference: ../rados/configuration/mon-config-ref
 .. _Monitoring OSDs and PGs: ../rados/operations/monitoring-osd-pg
