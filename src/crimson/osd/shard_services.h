@@ -363,6 +363,7 @@ public:
   }
 
   auto &get_registry() { return local_state.registry; }
+  auto &get_obc_registry() { return local_state.obc_registry; }
 
   // Loggers
   PerfCounters &get_recoverystate_perf_logger() {
