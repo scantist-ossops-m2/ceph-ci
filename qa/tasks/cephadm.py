@@ -313,9 +313,9 @@ def ceph_log(ctx, config):
             if excludes:
                 for exclude in excludes:
                     args.extend([run.Raw('|'), 'egrep', '-v', exclude])
-            args.extend([
-                run.Raw('|'), 'head', '-n', '1',
-            ])
+            #args.extend([
+             #   run.Raw('|'), 'head', '-n', '100',
+            #])
             r = ctx.ceph[cluster_name].bootstrap_remote.run(
                 stdout=BytesIO(),
                 args=args,
