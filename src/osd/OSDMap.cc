@@ -5699,17 +5699,28 @@ int OSDMap::calc_read_balance_score(CephContext *cct, int64_t pool_id,
 		    << dendl;
   }
 
+  if (prim_affinity_sum == 0.0) {
+    lderr(cct) << __func__ << " pool " << pool_id
+	       << " has primary_affinity set to zero on all OSDs" << dendl;
+  }
+
   p_rbi->primary_affinity_avg = prim_affinity_sum / (float)num_osds;  // in [0..1]
   p_rbi->primary_affinity_weighted = total_weighted_prim_affinity;
   p_rbi->primary_affinity_w_avg = // weighted_prim_affinity_avg
   p_rbi->primary_affinity_weighted / total_osd_weight; // in [0..1]
   p_rbi->raw_score = (float)max_prims_per_osd / avg_prims_per_osd; // >=1
   p_rbi->acting_raw_score = (float)max_acting_prims_per_osd / avg_prims_per_osd;
-  p_rbi->optimal_score = 1. / p_rbi->primary_affinity_avg;
-  // adjust the score to the primary affinity setting (if prim affinity is set
-  // the raw score can't be 1 and the optimal (perfect) score is hifgher than 1)
-  p_rbi->adjusted_score = p_rbi->raw_score / p_rbi->optimal_score; // >= 1
-  p_rbi->acting_adj_score = p_rbi->acting_raw_score / p_rbi->optimal_score; // >= 1
+  if (p_rbi->primary_affinity_avg != 0.) {
+    p_rbi->optimal_score = 1. / p_rbi->primary_affinity_avg;
+    // adjust the score to the primary affinity setting (if prim affinity is set
+    // the raw score can't be 1 and the optimal (perfect) score is hifgher than 1)
+    p_rbi->adjusted_score = p_rbi->raw_score / p_rbi->optimal_score; // >= 1
+    p_rbi->acting_adj_score = p_rbi->acting_raw_score / p_rbi->optimal_score; // >= 1
+  } else {
+    p_rbi->optimal_score = 0.;	// Indicating all OSDs are with primary-affinity=0
+    p_rbi->adjusted_score = 0.; 
+    p_rbi->acting_adj_score = 0.; 
+  }
 
   if (cct != nullptr) {
     ldout(cct,20) << __func__ << " pool " << get_pool_name(pool_id)
