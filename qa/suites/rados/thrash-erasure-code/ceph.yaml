@@ -1,3 +1,9 @@
 tasks:
 - install:
 - ceph:
+overrides:
+  ceph:
+    log-ignorelist:
+    - timeout on replica
+    - late reservation from
+
