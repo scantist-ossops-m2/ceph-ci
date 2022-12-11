@@ -422,7 +422,7 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
                         workunit=workunit,
                     ),
                 ])
-                remote.run(
+                remote.run_unit_test(
                     logger=log.getChild(role),
                     args=args + optional_args,
                     label="workunit test {workunit}".format(workunit=workunit),

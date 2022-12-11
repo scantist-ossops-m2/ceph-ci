@@ -406,7 +406,7 @@ def run_tests(ctx, config):
         if 'unit_test_scan' in client_config and client_config['unit_test_scan']:
             unittest_xml = xmlpath
 
-        remote.run(
+        remote.run_unit_test(
             args=args,
             label="s3 tests against rgw",
             unittest_xml=unittest_xml,
