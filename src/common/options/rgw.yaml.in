@@ -175,6 +175,14 @@ options:
   services:
   - rgw
   with_legacy: true
+- name: rgw_multi_obj_del_max_aio
+  type: uint
+  level: advanced
+  desc: Max number of concurrent RADOS requests per multi-object delete request.
+  default: 16
+  services:
+  - rgw
+  with_legacy: true
 # whether or not the quota/gc threads should be started
 - name: rgw_enable_quota_threads
   type: bool
@@ -1864,7 +1872,7 @@ options:
   level: advanced
   desc: Bucket ACLs override object ACLs
   long_desc: If not empty, a string that selects that mode of operation. 'recurse'
-    will use bucket's ACL for the authorizaton. 'full-control' will allow users that
+    will use bucket's ACL for the authorization. 'full-control' will allow users that
     users that have full control permission on the bucket have access to the object.
   services:
   - rgw

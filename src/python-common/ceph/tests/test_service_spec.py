@@ -8,7 +8,7 @@ import pytest
 
 from ceph.deployment.service_spec import HostPlacementSpec, PlacementSpec, \
     ServiceSpec, RGWSpec, NFSServiceSpec, IscsiServiceSpec, AlertManagerSpec, \
-    CustomContainerSpec
+    CustomContainerSpec, GrafanaSpec
 from ceph.deployment.drive_group import DriveGroupSpec
 from ceph.deployment.hostspec import SpecValidationError
 
@@ -44,6 +44,22 @@ def test_parse_host_placement_specs(test_input, expected, require_network):
     assert ret == HostPlacementSpec.from_json(ret.to_json())
 
 
+@pytest.mark.parametrize(
+    "spec, raise_exception, msg",
+    [
+        (GrafanaSpec(protocol=''), True, '^Invalid protocol'),
+        (GrafanaSpec(protocol='invalid'), True, '^Invalid protocol'),
+        (GrafanaSpec(protocol='-http'), True, '^Invalid protocol'),
+        (GrafanaSpec(protocol='-https'), True, '^Invalid protocol'),
+        (GrafanaSpec(protocol='http'), False, ''),
+        (GrafanaSpec(protocol='https'), False, ''),
+    ])
+def test_apply_grafana(spec: GrafanaSpec, raise_exception: bool, msg: str):
+    if  raise_exception:
+        with pytest.raises(SpecValidationError, match=msg):
+            spec.validate()
+    else:
+        spec.validate()
 
 
 @pytest.mark.parametrize(
@@ -250,12 +266,14 @@ service_type: grafana
 service_name: grafana
 spec:
   port: 1234
+  protocol: https
 ---
 service_type: grafana
 service_name: grafana
 spec:
   initial_admin_password: secure
   port: 1234
+  protocol: https
 ---
 service_type: ingress
 service_id: rgw.foo
@@ -283,7 +301,9 @@ service_name: iscsi.iscsi
 networks:
 - ::0/8
 spec:
-  api_user: api_user
+  api_password: admin
+  api_port: 5000
+  api_user: admin
   pool: pool
   trusted_ip_list:
   - ::1

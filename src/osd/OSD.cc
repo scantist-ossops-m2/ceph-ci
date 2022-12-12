@@ -2130,6 +2130,17 @@ int OSD::write_meta(CephContext *cct, ObjectStore *store, uuid_d& cluster_fsid, 
       return r;
   }
 
+  r = store->write_meta("ceph_version_when_created", pretty_version_to_str());
+  if (r < 0)
+    return r;
+
+  ostringstream created_at;
+  utime_t now = ceph_clock_now();
+  now.gmtime(created_at);
+  r = store->write_meta("created_at", created_at.str());
+  if (r < 0)
+    return r;
+
   r = store->write_meta("ready", "ready");
   if (r < 0)
     return r;
@@ -3181,6 +3192,7 @@ int OSD::run_osd_bench_test(
   ostream &ss)
 {
   int ret = 0;
+  srand(time(NULL) % (unsigned long) -1);
   uint32_t duration = cct->_conf->osd_bench_duration;
 
   if (bsize > (int64_t) cct->_conf->osd_bench_max_block_size) {
@@ -3262,12 +3274,6 @@ int OSD::run_osd_bench_test(
     }
   }
 
-  bufferlist bl;
-  bufferptr bp(bsize);
-  memset(bp.c_str(), 'a', bp.length());
-  bl.push_back(std::move(bp));
-  bl.rebuild_page_aligned();
-
   {
     C_SaferCond waiter;
     if (!service.meta_ch->flush_commit(&waiter)) {
@@ -3275,10 +3281,15 @@ int OSD::run_osd_bench_test(
     }
   }
 
+  bufferlist bl;
   utime_t start = ceph_clock_now();
   for (int64_t pos = 0; pos < count; pos += bsize) {
     char nm[34];
     unsigned offset = 0;
+    bufferptr bp(bsize);
+    memset(bp.c_str(), rand() & 0xff, bp.length());
+    bl.push_back(std::move(bp));
+    bl.rebuild_page_aligned();
     if (onum && osize) {
       snprintf(nm, sizeof(nm), "disk_bw_test_%d", (int)(rand() % onum));
       offset = rand() % (osize / bsize) * bsize;
@@ -3293,6 +3304,7 @@ int OSD::run_osd_bench_test(
     if (!onum || !osize) {
       cleanupt.remove(coll_t::meta(), ghobject_t(soid));
     }
+    bl.clear();
   }
 
   {
@@ -3824,7 +3836,8 @@ int OSD::init()
     derr << "unable to obtain rotating service keys; retrying" << dendl;
     ++rotating_auth_attempts;
     if (rotating_auth_attempts > g_conf()->max_rotating_auth_attempts) {
-        derr << __func__ << " wait_auth_rotating timed out" << dendl;
+        derr << __func__ << " wait_auth_rotating timed out"
+	     <<" -- maybe I have a clock skew against the monitors?" << dendl;
 	exit(1);
     }
   }
@@ -6734,6 +6747,18 @@ void OSD::_collect_metadata(map<string,string> *pm)
     osdspec_affinity = "";
   }
   (*pm)["osdspec_affinity"] = osdspec_affinity;
+  string ceph_version_when_created;
+  r = store->read_meta("ceph_version_when_created", &ceph_version_when_created);
+  if (r <0 || ceph_version_when_created.empty()) {
+    ceph_version_when_created = "";
+  }
+  (*pm)["ceph_version_when_created"] = ceph_version_when_created;
+  string created_at;
+  r = store->read_meta("created_at", &created_at);
+  if (r < 0 || created_at.empty()) {
+    created_at = "";
+  }
+  (*pm)["created_at"] = created_at;
   store->collect_metadata(pm);
 
   collect_sys_info(pm, cct);
@@ -8970,25 +8995,9 @@ void OSD::handle_fast_pg_create(MOSDPGCreate2 *m)
     utime_t created_stamp = p.second.second;
     auto q = m->pg_extra.find(pgid);
     if (q == m->pg_extra.end()) {
-      dout(20) << __func__ << " " << pgid << " e" << created
-	       << "@" << created_stamp
-	       << " (no history or past_intervals)" << dendl;
-      // pre-octopus ... no pg history.  this can be removed in Q release.
-      enqueue_peering_evt(
-	pgid,
-	PGPeeringEventRef(
-	  std::make_shared<PGPeeringEvent>(
-	    m->epoch,
-	    m->epoch,
-	    NullEvt(),
-	    true,
-	    new PGCreateInfo(
-	      pgid,
-	      created,
-	      pg_history_t(created, created_stamp),
-	      PastIntervals(),
-	      true)
-	    )));
+      clog->error() << __func__ << " " << pgid << " e" << created
+                    << "@" << created_stamp << " with no history or past_intervals"
+                    << ", this should be impossible after octopus.  Ignoring.";
     } else {
       dout(20) << __func__ << " " << pgid << " e" << created
 	       << "@" << created_stamp

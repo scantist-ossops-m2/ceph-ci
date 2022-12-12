@@ -1043,7 +1043,7 @@ class Module(MgrModule):
         pg_summary = self.get('pg_summary')
 
         for pool in pg_summary['by_pool']:
-            num_by_state = defaultdict(int)  # type: DefaultDict[str, int]
+            num_by_state: DefaultDict[str, int] = defaultdict(int)
 
             for state_name, count in pg_summary['by_pool'][pool].items():
                 for state in state_name.split('+'):
@@ -1072,8 +1072,9 @@ class Module(MgrModule):
         for server in self.list_servers():
             host = cast(str, server.get('hostname', ''))
             for service in cast(List[ServiceInfoT], server.get('services', [])):
-                ret.update({(service['id'], service['type']): (
-                    host, service['ceph_version'], service.get('name', ''))})
+                ret.update({(service['id'], service['type']): (host,
+                                                               service.get('ceph_version', 'unknown'),
+                                                               service.get('name', ''))})
         return ret
 
     @profile_method()

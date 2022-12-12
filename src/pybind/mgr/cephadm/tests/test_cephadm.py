@@ -404,7 +404,8 @@ class TestCephadm(object):
         ]
     )
     @mock.patch("cephadm.serve.CephadmServe._run_cephadm", _run_cephadm('{}'))
-    def test_daemon_check(self, cephadm_module: CephadmOrchestrator, action):
+    @mock.patch("cephadm.module.HostCache.save_host")
+    def test_daemon_check(self, _save_host, cephadm_module: CephadmOrchestrator, action):
         with with_host(cephadm_module, 'test'):
             with with_service(cephadm_module, ServiceSpec(service_type='grafana'), CephadmOrchestrator.apply_grafana, 'test') as d_names:
                 [daemon_name] = d_names
@@ -416,6 +417,7 @@ class TestCephadm(object):
 
                 CephadmServe(cephadm_module)._check_daemons()
 
+                assert _save_host.called_with('test')
                 assert cephadm_module.cache.get_scheduled_daemon_action('test', daemon_name) is None
 
     @mock.patch("cephadm.serve.CephadmServe._run_cephadm")
@@ -1214,6 +1216,7 @@ class TestCephadm(object):
             def __init__(self, c: str = 'a'):
                 # using 1015 here makes the serialized string exactly 1024 bytes if c is one char
                 self.content = {c: c * 1015}
+                self.path = 'dev/vdc'
 
             def to_json(self):
                 return self.content
@@ -1741,7 +1744,7 @@ class TestCephadm(object):
             cephadm_module.config_notify()
             assert cephadm_module.manage_etc_ceph_ceph_conf is True
 
-            CephadmServe(cephadm_module)._refresh_hosts_and_daemons()
+            CephadmServe(cephadm_module)._write_all_client_files()
             # Make sure both ceph conf locations (default and per fsid) are called
             _write_file.assert_has_calls([mock.call('test', '/etc/ceph/ceph.conf', b'',
                                           0o644, 0, 0, None),
@@ -1755,7 +1758,7 @@ class TestCephadm(object):
 
             # set extra config and expect that we deploy another ceph.conf
             cephadm_module._set_extra_ceph_conf('[mon]\nk=v')
-            CephadmServe(cephadm_module)._refresh_hosts_and_daemons()
+            CephadmServe(cephadm_module)._write_all_client_files()
             _write_file.assert_has_calls([mock.call('test',
                                                     '/etc/ceph/ceph.conf',
                                                     b'\n\n[mon]\nk=v\n', 0o644, 0, 0, None),
@@ -1777,7 +1780,7 @@ class TestCephadm(object):
             f2_before_digest = cephadm_module.cache.get_host_client_files(
                 'test')['/var/lib/ceph/fsid/config/ceph.conf'][0]
             cephadm_module._set_extra_ceph_conf('[mon]\nk2=v2')
-            CephadmServe(cephadm_module)._refresh_hosts_and_daemons()
+            CephadmServe(cephadm_module)._write_all_client_files()
             f1_after_digest = cephadm_module.cache.get_host_client_files('test')[
                 '/etc/ceph/ceph.conf'][0]
             f2_after_digest = cephadm_module.cache.get_host_client_files(
