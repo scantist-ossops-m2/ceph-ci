@@ -459,6 +459,11 @@
   (``auth_client_required=cephx`` and ``ms_mon_client_mode=secure``).
   If you have cephx authentication disabled on your cluster, you may
   need to adjust these settings for RGW.
+* The RGW policy parser can reject unknown principals. If you are
+  mirroring policies between RGW and AWS, you may wish to set
+  "rgw policy reject invalid principals" to "false". Otherwise,
+  you might be happier setting it true. This affects only newly set
+  policies, not policies that are already in place.
 * RGW's default backend for `rgw_enable_ops_log` changed from RADOS to file.
   The default value of `rgw_ops_log_rados` is now false, and `rgw_ops_log_file_path`
   defaults to "/var/log/ceph/ops-log-$cluster-$name.log".
