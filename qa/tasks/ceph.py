@@ -28,6 +28,7 @@ from teuthology import misc as teuthology
 from teuthology import contextutil
 from teuthology import exceptions
 from teuthology.orchestra import run
+from teuthology.util.xml_scanner import ValgrindScanner
 from tasks import ceph_client as cclient
 from teuthology.orchestra.daemon import DaemonGroup
 from tasks.daemonwatchdog import DaemonWatchdog
@@ -353,6 +354,7 @@ def valgrind_post(ctx, config):
                     continue
                 log.error('saw valgrind issue %s in %s', kind, file)
                 valgrind_exception = Exception('saw valgrind issues')
+                ValgrindScanner(client=remote.ssh).generate_yaml_summary()
 
         if config.get('expect_valgrind_errors'):
             if not valgrind_exception:
