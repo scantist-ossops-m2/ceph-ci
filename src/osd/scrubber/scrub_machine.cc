@@ -104,6 +104,14 @@ sc::result NotActive::react(const StartScrub&)
   return transit<ReservingReplicas>();
 }
 
+sc::result NotActive::react(const AfterRepairScrub&)
+{
+  dout(10) << "NotActive::react(const AfterRepairScrub&)" << dendl;
+  DECLARE_LOCALS;
+  scrbr->set_scrub_begin_time();
+  return transit<ReservingReplicas>();
+}
+
 // ----------------------- ReservingReplicas ---------------------------------
 
 ReservingReplicas::ReservingReplicas(my_context ctx) : my_base(ctx)
@@ -433,6 +441,15 @@ sc::result WaitReplicas::react(const GotReplicas&)
   } else {
     return discard_event();
   }
+}
+
+sc::result WaitReplicas::react(const DigestUpdate&)
+{
+  DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
+  std::string warn_msg = "WaitReplicas::react(const DigestUpdate&): Unexpected DigestUpdate event";
+  dout(10) << warn_msg << dendl;
+  scrbr->log_cluster_warning(warn_msg);
+  return discard_event();
 }
 
 // ----------------------- WaitDigestUpdate -----------------------------------

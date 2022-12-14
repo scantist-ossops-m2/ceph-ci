@@ -17,9 +17,8 @@ export class ServicesPageHelper extends PageHelper {
   };
 
   serviceDetailColumnIndex = {
-    hostname: 1,
-    daemonType: 2,
-    status: 8
+    daemonName: 2,
+    status: 4
   };
 
   check_for_service() {
@@ -40,19 +39,23 @@ export class ServicesPageHelper extends PageHelper {
   addService(
     serviceType: string,
     exist?: boolean,
-    count = '1',
+    count = 1,
     snmpVersion?: string,
-    snmpPrivProtocol?: boolean
+    snmpPrivProtocol?: boolean,
+    unmanaged = false
   ) {
     cy.get(`${this.pages.create.id}`).within(() => {
       this.selectServiceType(serviceType);
       switch (serviceType) {
         case 'rgw':
           cy.get('#service_id').type('foo');
-          cy.get('#count').type(count);
+          unmanaged ? cy.get('label[for=unmanaged]').click() : cy.get('#count').type(String(count));
           break;
 
         case 'ingress':
+          if (unmanaged) {
+            cy.get('label[for=unmanaged]').click();
+          }
           this.selectOption('backend_service', 'rgw.foo');
           cy.get('#service_id').should('have.value', 'rgw.foo');
           cy.get('#virtual_ip').type('192.168.100.1/24');
@@ -62,7 +65,7 @@ export class ServicesPageHelper extends PageHelper {
 
         case 'nfs':
           cy.get('#service_id').type('testnfs');
-          cy.get('#count').type(count);
+          unmanaged ? cy.get('label[for=unmanaged]').click() : cy.get('#count').type(String(count));
           break;
 
         case 'snmp-gateway':
@@ -86,7 +89,7 @@ export class ServicesPageHelper extends PageHelper {
 
         default:
           cy.get('#service_id').type('test');
-          cy.get('#count').type(count);
+          unmanaged ? cy.get('label[for=unmanaged]').click() : cy.get('#count').type(String(count));
           break;
       }
       if (serviceType === 'snmp-gateway') {
@@ -114,14 +117,28 @@ export class ServicesPageHelper extends PageHelper {
   }
 
   checkServiceStatus(daemon: string, expectedStatus = 'running') {
-    cy.get('cd-service-daemon-list').within(() => {
-      this.getTableCell(this.serviceDetailColumnIndex.daemonType, daemon)
-        .parent()
-        .find(`datatable-body-cell:nth-child(${this.serviceDetailColumnIndex.status}) .badge`)
-        .should(($ele) => {
-          const status = $ele.toArray().map((v) => v.innerText);
-          expect(status).to.include(expectedStatus);
-        });
+    let daemonNameIndex = this.serviceDetailColumnIndex.daemonName;
+    let statusIndex = this.serviceDetailColumnIndex.status;
+
+    // since hostname row is hidden from the hosts details table,
+    // we'll need to manually override the indexes when this check is being
+    // done for the daemons in host details page. So we'll get the url and
+    // verify if the current page is not the services index page
+    cy.url().then((url) => {
+      if (!url.includes(pages.index.url)) {
+        daemonNameIndex = 1;
+        statusIndex = 3;
+      }
+
+      cy.get('cd-service-daemon-list').within(() => {
+        this.getTableCell(daemonNameIndex, daemon, true)
+          .parent()
+          .find(`datatable-body-cell:nth-child(${statusIndex}) .badge`)
+          .should(($ele) => {
+            const status = $ele.toArray().map((v) => v.innerText);
+            expect(status).to.include(expectedStatus);
+          });
+      });
     });
   }
 
@@ -144,6 +161,18 @@ export class ServicesPageHelper extends PageHelper {
         expect(services).to.not.include(serviceName);
       }
     });
+  }
+
+  isUnmanaged(serviceName: string, unmanaged: boolean) {
+    this.getTableCell(this.columnIndex.service_name, serviceName)
+      .parent()
+      .find(`datatable-body-cell:nth-child(${this.columnIndex.placement})`)
+      .should(($ele) => {
+        const placement = $ele.text().split(';');
+        unmanaged
+          ? expect(placement).to.include('unmanaged')
+          : expect(placement).to.not.include('unmanaged');
+      });
   }
 
   deleteService(serviceName: string) {

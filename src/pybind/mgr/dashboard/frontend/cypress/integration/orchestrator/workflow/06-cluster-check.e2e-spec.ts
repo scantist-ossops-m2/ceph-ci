@@ -1,6 +1,8 @@
-import { CreateClusterWizardHelper } from 'cypress/integration/cluster/create-cluster.po';
-import { HostsPageHelper } from 'cypress/integration/cluster/hosts.po';
-import { ServicesPageHelper } from 'cypress/integration/cluster/services.po';
+/* tslint:disable*/
+import { CreateClusterWizardHelper } from '../../cluster/create-cluster.po';
+import { HostsPageHelper } from '../../cluster/hosts.po';
+import { ServicesPageHelper } from '../../cluster/services.po';
+/* tslint:enable*/
 
 describe('when cluster creation is completed', () => {
   const createCluster = new CreateClusterWizardHelper();
@@ -26,6 +28,22 @@ describe('when cluster creation is completed', () => {
   describe('Hosts page', () => {
     beforeEach(() => {
       hosts.navigateTo();
+    });
+
+    it('should add one more host', () => {
+      hosts.navigateTo('add');
+      hosts.add(hostnames[3]);
+      hosts.checkExist(hostnames[3], true);
+    });
+
+    it('should check if monitoring stacks are running on the root host', { retries: 2 }, () => {
+      const monitoringStack = ['alertmanager', 'grafana', 'node-exporter', 'prometheus'];
+      hosts.clickTab('cd-host-details', 'ceph-node-00', 'Daemons');
+      for (const daemon of monitoringStack) {
+        cy.get('cd-host-details').within(() => {
+          services.checkServiceStatus(daemon);
+        });
+      }
     });
 
     it('should have removed "_no_schedule" label', () => {

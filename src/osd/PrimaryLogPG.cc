@@ -3452,6 +3452,12 @@ int PrimaryLogPG::get_manifest_ref_count(ObjectContextRef obc, std::string& fp_o
     if (osdmap->in_removed_snaps_queue(info.pgid.pgid.pool(), *p)) {
       return -EBUSY;
     }
+    if (is_unreadable_object(clone_oid)) {
+      dout(10) << __func__ << ": " << clone_oid
+	       << " is unreadable. Need to wait for recovery" << dendl;
+      wait_for_unreadable_object(clone_oid, op);
+      return -EAGAIN;
+    }
     ObjectContextRef clone_obc = get_object_context(clone_oid, false);
     if (!clone_obc) {
       break;
@@ -7108,7 +7114,11 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 	  goto fail;
 	}
 	pg_t raw_pg;
-	get_osdmap()->object_locator_to_pg(target_name, target_oloc, raw_pg);
+	result = get_osdmap()->object_locator_to_pg(target_name, target_oloc, raw_pg);
+	if (result < 0) {
+	  dout(5) << " pool information is invalid: " << result << dendl;
+	  break;
+	}
 	hobject_t target(target_name, target_oloc.key, target_snapid,
 		raw_pg.ps(), raw_pg.pool(),
 		target_oloc.nspace);
@@ -7257,7 +7267,11 @@ int PrimaryLogPG::do_osd_ops(OpContext *ctx, vector<OSDOp>& ops)
 
 	pg_t raw_pg;
 	chunk_info_t chunk_info;
-	get_osdmap()->object_locator_to_pg(tgt_name, tgt_oloc, raw_pg);
+	result = get_osdmap()->object_locator_to_pg(tgt_name, tgt_oloc, raw_pg);
+	if (result < 0) {
+	  dout(5) << " pool information is invalid: " << result << dendl;
+	  break;
+	}
 	hobject_t target(tgt_name, tgt_oloc.key, snapid_t(),
 			 raw_pg.ps(), raw_pg.pool(),
 			 tgt_oloc.nspace);
@@ -10474,7 +10488,11 @@ int PrimaryLogPG::start_dedup(OpRequestRef op, ObjectContextRef obc)
   if (pool.info.get_fingerprint_type() == pg_pool_t::TYPE_FINGERPRINT_NONE) {
     dout(0) << " fingerprint algorithm is not set " << dendl;
     return -EINVAL;
-  } 
+  }
+  if (pool.info.get_dedup_tier() <= 0) {
+    dout(10) << " dedup tier is not set " << dendl;
+    return -EINVAL;
+  }
 
   /*
    * The operations to make dedup chunks are tracked by a ManifestOp.
@@ -10579,7 +10597,10 @@ int PrimaryLogPG::do_cdc(const object_info_t& oi,
   for (auto p : cdc_chunks) {
     bufferlist chunk;
     chunk.substr_of(bl, p.first, p.second);
-    hobject_t target = get_fpoid_from_chunk(oi.soid, chunk);
+    auto [ret, target] = get_fpoid_from_chunk(oi.soid, chunk);
+    if (ret < 0) {
+      return ret;
+    }
     chunks[p.first] = std::move(chunk);
     chunk_map[p.first] = chunk_info_t(0, p.second, target);
     total_length += p.second;
@@ -10587,11 +10608,12 @@ int PrimaryLogPG::do_cdc(const object_info_t& oi,
   return total_length;
 }
 
-hobject_t PrimaryLogPG::get_fpoid_from_chunk(const hobject_t soid, bufferlist& chunk)
+std::pair<int, hobject_t> PrimaryLogPG::get_fpoid_from_chunk(
+  const hobject_t soid, bufferlist& chunk)
 {
   pg_pool_t::fingerprint_t fp_algo = pool.info.get_fingerprint_type();
   if (fp_algo == pg_pool_t::TYPE_FINGERPRINT_NONE) {
-    return hobject_t();
+    return make_pair(-EINVAL, hobject_t());
   }
   object_t fp_oid = [&fp_algo, &chunk]() -> string {
     switch (fp_algo) {
@@ -10610,11 +10632,16 @@ hobject_t PrimaryLogPG::get_fpoid_from_chunk(const hobject_t soid, bufferlist& c
   pg_t raw_pg;
   object_locator_t oloc(soid);
   oloc.pool = pool.info.get_dedup_tier();
-  get_osdmap()->object_locator_to_pg(fp_oid, oloc, raw_pg);
+  // check if dedup_tier isn't set
+  ceph_assert(oloc.pool > 0);
+  int ret = get_osdmap()->object_locator_to_pg(fp_oid, oloc, raw_pg);
+  if (ret < 0) {
+    return make_pair(ret, hobject_t());
+  }
   hobject_t target(fp_oid, oloc.key, snapid_t(),
 		    raw_pg.ps(), raw_pg.pool(),
 		    oloc.nspace);
-  return target;
+  return make_pair(0, target);
 }
 
 int PrimaryLogPG::finish_set_dedup(hobject_t oid, int r, ceph_tid_t tid, uint64_t offset)
