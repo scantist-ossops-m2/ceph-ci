@@ -320,6 +320,8 @@ def lsblk_all(device='', columns=None, abspath=False):
         base_command.append('-p')
     base_command.append('-o')
     base_command.append(','.join(columns))
+    if device:
+        base_command.append(device)
 
     out, err, rc = process.call(base_command)
 
@@ -328,17 +330,14 @@ def lsblk_all(device='', columns=None, abspath=False):
 
     result = []
 
+    if device:
+        return _lsblk_parser(' '.join(out))
+
     for line in out:
         result.append(_lsblk_parser(line))
 
-    if not device:
-        return result
+    return result
 
-    for dev in result:
-        if dev['NAME'] == os.path.basename(device):
-            return dev
-
-    return {}
 
 def is_device(dev):
     """
