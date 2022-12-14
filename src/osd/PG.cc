@@ -191,6 +191,7 @@ PG::PG(OSDService *o, OSDMapRef curmap,
   cct(o->cct),
   osdriver(osd->store, coll_t(), OSD::make_snapmapper_oid()),
   snap_mapper(
+    pg_id,
     cct,
     &osdriver,
     p.ps(),
