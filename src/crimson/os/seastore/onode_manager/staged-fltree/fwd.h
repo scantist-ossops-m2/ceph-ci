@@ -189,3 +189,10 @@ void reset_ptr(PtrType& ptr, const char* origin_base,
 }
 
 }
+
+#if FMT_VERSION >= 90000
+template<>
+struct fmt::formatter<crimson::os::seastore::onode::tree_stats_t> : fmt::ostream_formatter {};
+template<>
+struct fmt::formatter<rados::cls::fifo::part_header> : fmt::ostream_formatter {};
+#endif
