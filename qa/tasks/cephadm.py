@@ -304,8 +304,10 @@ def ceph_log(ctx, config):
             """
             args = [
                 'sudo',
-                'egrep', pattern,
-                '/var/log/ceph/{fsid}/ceph.log'.format(
+                'egrep', '-r',
+                '--include=ceph-mon.*.log',
+                pattern,
+                '/var/log/ceph/{fsid}/'.format(
                     fsid=fsid),
             ]
             if excludes:
