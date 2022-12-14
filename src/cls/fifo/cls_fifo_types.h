@@ -522,3 +522,8 @@ inline std::ostream& operator <<(std::ostream& m, const part_header& p) {
 	   << "max_time: " << p.max_time;
 }
 } // namespace rados::cls::fifo
+
+#if FMT_VERSION >= 90000
+template<>
+struct fmt::formatter<rados::cls::fifo::info> : fmt::ostream_formatter {};
+#endif
