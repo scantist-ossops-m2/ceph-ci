@@ -3638,7 +3638,7 @@ options:
   type: size
   level: advanced
   desc: Cost for scrub operations in work queue
-  default: 50_M
+  default: 2_M
   with_legacy: true
 # set requested scrub priority higher than scrub priority to make the
 # requested scrubs jump the queue of scheduled scrubs
