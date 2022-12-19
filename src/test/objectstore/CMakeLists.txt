@@ -37,13 +37,6 @@ target_link_libraries(ceph_test_keyvaluedb
 install(TARGETS ceph_test_keyvaluedb
   DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# unittest_chain_xattr
-add_executable(unittest_chain_xattr
-  chain_xattr.cc
-  )
-add_ceph_unittest(unittest_chain_xattr)
-target_link_libraries(unittest_chain_xattr os global)
-
 # unittest_rocksdb_option
 add_executable(unittest_rocksdb_option
   TestRocksdbOptionParse.cc
