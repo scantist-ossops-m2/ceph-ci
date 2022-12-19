@@ -51,23 +51,6 @@ target_link_libraries(ceph_test_filestore_idempotent
   ${CMAKE_DL_LIBS}
   )
 
-# ceph_test_filestore_idempotent_sequence
-add_executable(ceph_test_filestore_idempotent_sequence
-  test_idempotent_sequence.cc
-  DeterministicOpSequence.cc
-  TestObjectStoreState.cc
-  FileStoreDiff.cc
-  )
-target_link_libraries(ceph_test_filestore_idempotent_sequence
-  os
-  global
-  ${EXTRALIBS}
-  ${BLKID_LIBRARIES}
-  ${CMAKE_DL_LIBS}
-  )
-install(TARGETS ceph_test_filestore_idempotent_sequence
-  DESTINATION ${CMAKE_INSTALL_BINDIR})
-
 # unittest_chain_xattr
 add_executable(unittest_chain_xattr
   chain_xattr.cc
