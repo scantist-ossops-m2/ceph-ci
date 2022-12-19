@@ -441,24 +441,6 @@ install(TARGETS
   ceph_perf_local
   DESTINATION bin)
 
-# ceph_test_filejournal
-add_executable(ceph_test_filejournal
-  test_filejournal.cc
-  )
-target_link_libraries(ceph_test_filejournal
-  os
-  ceph-common
-  ${UNITTEST_LIBS}
-  global
-  ${EXTRALIBS}
-  ${BLKID_LIBRARIES}
-  ${CMAKE_DL_LIBS}
-  ${EXTRALIBS}
-  )
-install(TARGETS
-  ceph_test_filejournal
-  DESTINATION ${CMAKE_INSTALL_BINDIR})
-
 # ceph_test_keys
 add_executable(ceph_test_keys
   testkeys.cc
