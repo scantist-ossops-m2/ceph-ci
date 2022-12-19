@@ -59,7 +59,6 @@ if(NOT WIN32)
   add_subdirectory(journal)
 
   add_subdirectory(erasure-code)
-  add_subdirectory(filestore)
   add_subdirectory(fs)
   add_subdirectory(libcephfs)
   add_subdirectory(libcephsqlite)
