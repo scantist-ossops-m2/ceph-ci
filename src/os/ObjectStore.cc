@@ -17,9 +17,6 @@
 #include "common/Formatter.h"
 #include "common/safe_io.h"
 
-#ifndef  WITH_SEASTAR
-#include "filestore/FileStore.h"
-#endif
 #include "memstore/MemStore.h"
 #if defined(WITH_BLUESTORE)
 #include "bluestore/BlueStore.h"
