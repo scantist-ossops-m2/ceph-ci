@@ -9,11 +9,11 @@ import sys
 from mgr_module import MgrModule, CLICommand, HandleCommandResult, Option
 import orchestrator
 
-from ceph.deployment.service_spec import RGWSpec, PlacementSpec, SpecValidationError  # type: ignore
+from ceph.deployment.service_spec import RGWSpec, PlacementSpec, SpecValidationError
 from typing import Any, Optional, Sequence, Iterator, List, Callable, TypeVar, cast, Dict, Tuple, Union
 
-from ceph.rgw.types import RGWAMException, RGWAMEnvMgr, RealmToken  # type: ignore
-from ceph.rgw.rgwam_core import EnvArgs, RGWAM  # type: ignore
+from ceph.rgw.types import RGWAMException, RGWAMEnvMgr, RealmToken
+from ceph.rgw.rgwam_core import EnvArgs, RGWAM
 from orchestrator import OrchestratorClientMixin, OrchestratorError, DaemonDescription, OrchResult
 
 
