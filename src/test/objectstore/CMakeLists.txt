@@ -37,20 +37,6 @@ target_link_libraries(ceph_test_keyvaluedb
 install(TARGETS ceph_test_keyvaluedb
   DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# ceph_test_filestore_idempotent
-add_executable(ceph_test_filestore_idempotent
-  test_idempotent.cc
-  FileStoreTracker.cc
-  ${CMAKE_SOURCE_DIR}/src/test/common/ObjectContents.cc
-  )
-target_link_libraries(ceph_test_filestore_idempotent
-  os
-  global
-  ${EXTRALIBS}
-  ${BLKID_LIBRARIES}
-  ${CMAKE_DL_LIBS}
-  )
-
 # unittest_chain_xattr
 add_executable(unittest_chain_xattr
   chain_xattr.cc
