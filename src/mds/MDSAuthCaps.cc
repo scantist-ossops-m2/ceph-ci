@@ -391,9 +391,7 @@ ostream &operator<<(ostream &out, const MDSCapMatch &match)
   if (!match.fs_name.empty()) {
     out << " fsname=" << match.fs_name;
   }
-  if (match.path.length()) {
-    out << " path=\"/" << match.path << "\"";
-  }
+  out << " path=\"/" << match.path << "\"";
   if (match.root_squash) {
     out << " root_squash";
   }
@@ -467,3 +465,9 @@ ostream &operator<<(ostream &out, const MDSAuthCaps &cap)
   return out;
 }
 
+ostream &operator<<(ostream &out, const MDSCapAuth &auth)
+{
+  out << "MDSCapAuth(" << auth.match << " readable="
+      << auth.readable << " writeable=" << auth.writeable << ")";
+  return out;
+}
