@@ -570,6 +570,10 @@ class Filesystem(MDSCluster):
         a = map(lambda x: str(x).lower(), args)
         self.mon_manager.raw_cluster_cmd("fs", "flag", "set", var, *a)
 
+    def set_config(self, opt, val, rank=0, status=None):
+        command = ["config", "set", opt, val]
+        self.rank_asok(command, rank, status=status)
+
     def set_allow_multifs(self, yes=True):
         self.set_flag("enable_multiple", yes)
 
@@ -1123,6 +1127,36 @@ class Filesystem(MDSCluster):
 
         return result
 
+    def wait_for_death(self, rank=0, timeout=None, status=None):
+        """
+        Wait until rank fails and cluster is healthy.
+        :return: status
+        """
+
+        if timeout is None:
+            timeout = DAEMON_WAIT_TIMEOUT
+
+        if status is None:
+            status = self.status()
+
+        rinfo = self.get_rank(rank=rank, status=status)
+        elapsed = 0
+        while True:
+            info = self.get_rank(rank=rank, status=status)
+            if rinfo['gid'] != info['gid']:
+                log.info(f"mds.{rinfo['name']}:{rinfo['gid']} failed")
+                break
+            time.sleep(1)
+            elapsed += 1
+
+            if elapsed > timeout:
+                log.debug("status = {0}".format(status))
+                raise RuntimeError("Timed out waiting for rank to fail")
+
+            status = self.status()
+        return self.wait_for_daemons(timeout=timeout-elapsed, status=status)
+
+
     def wait_for_daemons(self, timeout=None, skip_max_mds_check=False, status=None):
         """
         Wait until all daemons are healthy
@@ -1246,11 +1280,11 @@ class Filesystem(MDSCluster):
             out.append((rank, f(perf)))
         return out
 
-    def read_cache(self, path, depth=None):
+    def read_cache(self, path, depth=None, rank=0):
         cmd = ["dump", "tree", path]
         if depth is not None:
             cmd.append(depth.__str__())
-        result = self.mds_asok(cmd)
+        result = self.rank_asok(cmd, rank=rank)
         if len(result) == 0:
             raise RuntimeError("Path not found in cache: {0}".format(path))
 

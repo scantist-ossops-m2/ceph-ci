@@ -402,10 +402,7 @@ public:
   void split(int bits, std::vector<CDir*>* subs, MDSContext::vec& waiters, bool replay);
   void merge(const std::vector<CDir*>& subs, MDSContext::vec& waiters, bool replay);
 
-  bool should_split() const {
-    return g_conf()->mds_bal_split_size > 0 &&
-           (int)get_frag_size() > g_conf()->mds_bal_split_size;
-  }
+  bool should_split() const;
   bool should_split_fast() const;
   bool should_merge() const;
 
