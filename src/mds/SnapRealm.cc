@@ -53,6 +53,8 @@ ostream& operator<<(ostream& out, const SnapRealm& realm)
 
   if (realm.srnode.is_parent_global())
     out << " global ";
+  out << " last_modified " << realm.srnode.last_modified
+      << " change_attr " << realm.srnode.change_attr;
   out << " " << &realm << ")";
   return out;
 }
@@ -61,6 +63,9 @@ SnapRealm::SnapRealm(MDCache *c, CInode *in) :
     mdcache(c), inode(in), inodes_with_caps(member_offset(CInode, item_caps))
 {
   global = (inode->ino() == CEPH_INO_GLOBAL_SNAPREALM);
+  if (inode->ino() == CEPH_INO_ROOT) {
+    srnode.last_modified = in->get_inode()->mtime;
+  }
 }
 
 /*
@@ -400,7 +405,8 @@ void SnapRealm::build_snap_trace() const
     return;
   }
 
-  SnapRealmInfo info(inode->ino(), srnode.created, srnode.seq, srnode.current_parent_since);
+  SnapRealmInfo info(inode->ino(), srnode.created, srnode.seq, srnode.current_parent_since,
+                     srnode.last_modified, srnode.change_attr);
   if (parent) {
     info.h.parent = parent->inode->ino();
 
