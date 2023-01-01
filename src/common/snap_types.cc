@@ -12,6 +12,8 @@ void SnapRealmInfo::encode(ceph::buffer::list& bl) const
   encode(h, bl);
   ceph::encode_nohead(my_snaps, bl);
   ceph::encode_nohead(prior_parent_snaps, bl);
+  encode(last_modified, bl);
+  encode(change_attr, bl);
 }
 
 void SnapRealmInfo::decode(ceph::buffer::list::const_iterator& bl)
@@ -20,6 +22,10 @@ void SnapRealmInfo::decode(ceph::buffer::list::const_iterator& bl)
   decode(h, bl);
   ceph::decode_nohead(h.num_snaps, my_snaps, bl);
   ceph::decode_nohead(h.num_prior_parent_snaps, prior_parent_snaps, bl);
+  if (!bl.end()) {
+    decode(last_modified, bl);
+    decode(change_attr, bl);
+  }
 }
 
 void SnapRealmInfo::dump(ceph::Formatter *f) const
@@ -29,6 +35,8 @@ void SnapRealmInfo::dump(ceph::Formatter *f) const
   f->dump_unsigned("seq", seq());
   f->dump_unsigned("parent_since", parent_since());
   f->dump_unsigned("created", created());
+  f->dump_stream("last_modified") << last_modified;
+  f->dump_unsigned("change_attr", change_attr);
 
   f->open_array_section("snaps");
   for (auto p = my_snaps.begin(); p != my_snaps.end(); ++p)

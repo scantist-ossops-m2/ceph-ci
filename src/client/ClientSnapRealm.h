@@ -23,6 +23,8 @@ struct SnapRealm {
 
   SnapRealm *pparent;
   std::set<SnapRealm*> pchildren;
+  utime_t last_modified;
+  uint64_t change_attr;
 
 private:
   SnapContext cached_snap_context;  // my_snaps + parent snaps + past_parent_snaps
@@ -54,6 +56,8 @@ inline std::ostream& operator<<(std::ostream& out, const SnapRealm& r) {
 	     << " parent=" << r.parent
 	     << " my_snaps=" << r.my_snaps
 	     << " cached_snapc=" << r.cached_snap_context
+	     << " last_modified=" << r.last_modified
+	     << " change_attr=" << r.change_attr
 	     << ")";
 }
 
