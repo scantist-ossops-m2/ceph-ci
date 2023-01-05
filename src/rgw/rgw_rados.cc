@@ -116,47 +116,6 @@ static string default_storage_extra_pool_suffix = "rgw.buckets.non-ec";
 static RGWObjCategory main_category = RGWObjCategory::Main;
 #define RGW_USAGE_OBJ_PREFIX "usage."
 
-
-// returns true on success, false on failure
-static bool rgw_get_obj_data_pool(const RGWZoneGroup& zonegroup, const RGWZoneParams& zone_params,
-                                  const rgw_placement_rule& head_placement_rule,
-                                  const rgw_obj& obj, rgw_pool *pool)
-{
-  if (!zone_params.get_head_data_pool(head_placement_rule, obj, pool)) {
-    RGWZonePlacementInfo placement;
-    if (!zone_params.get_placement(zonegroup.default_placement.name, &placement)) {
-      return false;
-    }
-
-    if (!obj.in_extra_data) {
-      *pool = placement.get_data_pool(zonegroup.default_placement.storage_class);
-    } else {
-      *pool = placement.get_data_extra_pool();
-    }
-  }
-
-  return true;
-}
-
-static bool rgw_obj_to_raw(const RGWZoneGroup& zonegroup, const RGWZoneParams& zone_params,
-                           const rgw_placement_rule& head_placement_rule,
-                           const rgw_obj& obj, rgw_raw_obj *raw_obj)
-{
-  get_obj_bucket_and_oid_loc(obj, raw_obj->oid, raw_obj->loc);
-
-  return rgw_get_obj_data_pool(zonegroup, zone_params, head_placement_rule, obj, &raw_obj->pool);
-}
-
-rgw_raw_obj rgw_obj_select::get_raw_obj(const RGWZoneGroup& zonegroup, const RGWZoneParams& zone_params) const
-{
-  if (!is_raw) {
-    rgw_raw_obj r;
-    rgw_obj_to_raw(zonegroup, zone_params, placement_rule, obj, &r);
-    return r;
-  }
-  return raw_obj;
-}
-
 rgw_raw_obj rgw_obj_select::get_raw_obj(rgw::sal::RadosStore* store) const
 {
   if (!is_raw) {
@@ -261,15 +220,6 @@ void RGWObjectCtx::invalidate(const rgw_obj& obj) {
     sm.state.prefetch_data = prefetch_data;
     sm.state.compressed = compressed;
   }
-}
-
-void RGWObjVersionTracker::generate_new_write_ver(CephContext* cct)
-{
-  static constexpr auto TAG_LEN = 24;
-  write_version.ver = 1;
-
-  write_version.tag.clear();
-  append_rand_alpha(cct, write_version.tag, write_version.tag, TAG_LEN);
 }
 
 class RGWMetaNotifierManager : public RGWCoroutinesManager {
@@ -934,6 +884,7 @@ void RGWIndexCompletionManager::process()
 				 "BACKTRACE: " << __func__ << ": " << ClibBackTrace(1) << dendl_bitx;
 
 			       librados::ObjectWriteOperation o;
+			       o.assert_exists();
 			       cls_rgw_guard_bucket_resharding(o, -ERR_BUSY_RESHARDING);
 			       cls_rgw_bucket_complete_op(o, c->op, c->tag, c->ver, c->key, c->dir_meta, &c->remove_objs,
 							  c->log_op, c->bilog_op, &c->zones_trace);
@@ -2387,12 +2338,6 @@ int RGWRados::create_bucket(const RGWUserInfo& owner, rgw_bucket& bucket,
   /* this is highly unlikely */
   ldpp_dout(dpp, 0) << "ERROR: could not create bucket, continuously raced with bucket creation and removal" << dendl;
   return -ENOENT;
-}
-
-// returns true on success, false on failure
-bool RGWRados::get_obj_data_pool(const rgw_placement_rule& placement_rule, const rgw_obj& obj, rgw_pool *pool)
-{
-  return rgw_get_obj_data_pool(svc.zone->get_zonegroup(), svc.zone->get_zone_params(), placement_rule, obj, pool);
 }
 
 bool RGWRados::obj_to_raw(const rgw_placement_rule& placement_rule, const rgw_obj& obj, rgw_raw_obj *raw_obj)
@@ -5076,10 +5021,19 @@ int RGWRados::bucket_set_reshard(const DoutPrefixProvider *dpp, const RGWBucketI
 
   int r = svc.bi_rados->open_bucket_index(dpp, bucket_info, std::nullopt, bucket_info.layout.current_index, &index_pool, &bucket_objs, nullptr);
   if (r < 0) {
+    ldpp_dout(dpp, 0) << "ERROR: " << __func__ <<
+      ": unable to open bucket index, r=" << r << " (" <<
+      cpp_strerror(-r) << ")" << dendl;
     return r;
   }
 
-  return CLSRGWIssueSetBucketResharding(index_pool.ioctx(), bucket_objs, entry, cct->_conf->rgw_bucket_index_max_aio)();
+  r = CLSRGWIssueSetBucketResharding(index_pool.ioctx(), bucket_objs, entry, cct->_conf->rgw_bucket_index_max_aio)();
+  if (r < 0) {
+    ldpp_dout(dpp, 0) << "ERROR: " << __func__ <<
+      ": unable to issue set bucket resharding, r=" << r << " (" <<
+      cpp_strerror(-r) << ")" << dendl;
+  }
+  return r;
 }
 
 int RGWRados::defer_gc(const DoutPrefixProvider *dpp, RGWObjectCtx* rctx, RGWBucketInfo& bucket_info, rgw::sal::Object* obj, optional_yield y)
@@ -6219,23 +6173,29 @@ int RGWRados::Bucket::UpdateIndex::guard_reshard(const DoutPrefixProvider *dpp, 
         obj_instance.key << ". ret=" << ret << dendl;
       return ret;
     }
+
     r = call(bs);
     if (r != -ERR_BUSY_RESHARDING) {
       break;
     }
-    ldpp_dout(dpp, 0) << "NOTICE: resharding operation on bucket index detected, blocking. obj=" << 
+
+    ldpp_dout(dpp, 10) <<
+      "NOTICE: resharding operation on bucket index detected, blocking. obj=" << 
       obj_instance.key << dendl;
+
     r = store->block_while_resharding(bs, obj_instance, target->bucket_info, null_yield, dpp);
     if (r == -ERR_BUSY_RESHARDING) {
-      ldpp_dout(dpp, 0) << "ERROR: block_while_resharding() still busy. obj=" <<
+      ldpp_dout(dpp, 10) << __func__ <<
+	" NOTICE: block_while_resharding() still busy. obj=" <<
         obj_instance.key << dendl;
       continue;
-    }
-    if (r < 0) {
-      ldpp_dout(dpp, 0) << "ERROR: block_while_resharding() failed. obj=" << 
-        obj_instance.key << ". ret=" << r << dendl;
+    } else if (r < 0) {
+      ldpp_dout(dpp, 0) << __func__ <<
+	" ERROR: block_while_resharding() failed. obj=" <<
+        obj_instance.key << ". ret=" << cpp_strerror(-r) << dendl;
       return r;
     }
+
     ldpp_dout(dpp, 20) << "reshard completion identified. obj=" << obj_instance.key << dendl;
     i = 0; /* resharding is finished, make sure we can retry */
     invalidate_bs();
@@ -6243,7 +6203,7 @@ int RGWRados::Bucket::UpdateIndex::guard_reshard(const DoutPrefixProvider *dpp, 
 
   if (r < 0) {
     ldpp_dout(dpp, 0) << "ERROR: bucket shard callback failed. obj=" << 
-      obj_instance.key << ". ret=" << r << dendl;
+      obj_instance.key << ". ret=" << cpp_strerror(-r) << dendl;
     return r;
   }
 
@@ -6382,7 +6342,13 @@ int RGWRados::Bucket::UpdateIndex::cancel(const DoutPrefixProvider *dpp,
   return ret;
 }
 
-int RGWRados::Object::Read::read(int64_t ofs, int64_t end, bufferlist& bl, optional_yield y, const DoutPrefixProvider *dpp)
+/*
+ * Read up through index `end` inclusive. Number of bytes read is up
+ * to `end - ofs + 1`.
+ */
+int RGWRados::Object::Read::read(int64_t ofs, int64_t end,
+				 bufferlist& bl, optional_yield y,
+				 const DoutPrefixProvider *dpp)
 {
   RGWRados *store = source->get_store();
 
@@ -6832,28 +6798,42 @@ int RGWRados::guard_reshard(const DoutPrefixProvider *dpp,
       ldpp_dout(dpp, 5) << "bs.init() returned ret=" << r << dendl;
       return r;
     }
+
     r = call(bs);
     if (r != -ERR_BUSY_RESHARDING) {
       break;
     }
-    ldpp_dout(dpp, 0) << "NOTICE: resharding operation on bucket index detected, blocking" << dendl;
+
+    ldpp_dout(dpp, 10) <<
+      "NOTICE: resharding operation on bucket index detected, blocking. obj=" <<
+      obj_instance.key << dendl;
+
     r = block_while_resharding(bs, obj_instance, bucket_info, null_yield, dpp);
     if (r == -ERR_BUSY_RESHARDING) {
+      ldpp_dout(dpp, 10) << __func__ <<
+	" NOTICE: block_while_resharding() still busy. obj=" <<
+        obj_instance.key << dendl;
       continue;
-    }
-    if (r < 0) {
+    } else if (r < 0) {
+      ldpp_dout(dpp, 0) << __func__ <<
+	" ERROR: block_while_resharding() failed. obj=" <<
+        obj_instance.key << ". ret=" << cpp_strerror(-r) << dendl;
       return r;
     }
+
     ldpp_dout(dpp, 20) << "reshard completion identified" << dendl;
     i = 0; /* resharding is finished, make sure we can retry */
   } // for loop
 
   if (r < 0) {
+    ldpp_dout(dpp, 0) << "ERROR: bucket shard callback failed. obj=" << 
+      obj_instance.key << ". ret=" << cpp_strerror(-r) << dendl;
     return r;
   }
 
   return 0;
 }
+
 
 int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
                                      const rgw_obj& obj_instance,
@@ -6875,34 +6855,43 @@ int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
   // error code
   auto fetch_new_bucket_info =
     [this, bs, &obj_instance, &bucket_info, &bucket_attrs, &y, dpp](const std::string& log_tag) -> int {
-      int ret = get_bucket_info(&svc, bs->bucket.tenant, bs->bucket.name,
-           bucket_info, nullptr, y, dpp, &bucket_attrs);
-      if (ret < 0) {
-	ldpp_dout(dpp, 0) << __func__ <<
-	  " ERROR: failed to refresh bucket info after reshard at " <<
-	  log_tag << ": " << cpp_strerror(-ret) << dendl;
-	return ret;
-      }
-      ret = bs->init(dpp, bucket_info, obj_instance);
-      if (ret < 0) {
-	ldpp_dout(dpp, 0) << __func__ <<
-	  " ERROR: failed to refresh bucket shard generation after reshard at " <<
-	  log_tag << ": " << cpp_strerror(-ret) << dendl;
-	return ret;
-      }
-      const auto gen = bucket_info.layout.logs.empty() ? -1 : bucket_info.layout.logs.back().gen;
-      ldpp_dout(dpp, 20) << __func__ << 
-        " INFO: refreshed bucket info after reshard at " <<
-	log_tag << ". new shard_id=" << bs->shard_id << ". gen=" << gen << dendl;
-      return 0;
-    };
+    int ret = get_bucket_info(&svc, bs->bucket.tenant, bs->bucket.name,
+			      bucket_info, nullptr, y, dpp, &bucket_attrs);
+    if (ret < 0) {
+      ldpp_dout(dpp, 0) << __func__ <<
+	" ERROR: failed to refresh bucket info after reshard at " <<
+	log_tag << ": " << cpp_strerror(-ret) << dendl;
+      return ret;
+    }
+
+    ret = bs->init(dpp, bucket_info, obj_instance);
+    if (ret < 0) {
+      ldpp_dout(dpp, 0) << __func__ <<
+	" ERROR: failed to refresh bucket shard generation after reshard at " <<
+	log_tag << ": " << cpp_strerror(-ret) << dendl;
+      return ret;
+    }
+
+    const auto gen = bucket_info.layout.logs.empty() ? -1 : bucket_info.layout.logs.back().gen;
+    ldpp_dout(dpp, 20) << __func__ <<
+      " INFO: refreshed bucket info after reshard at " <<
+      log_tag << ". new shard_id=" << bs->shard_id << ". gen=" << gen << dendl;
+
+    return 0;
+  }; // lambda fetch_new_bucket_info
 
   constexpr int num_retries = 10;
   for (int i = 1; i <= num_retries; i++) { // nb: 1-based for loop
     auto& ref = bs->bucket_obj.get_ref();
     ret = cls_rgw_get_bucket_resharding(ref.pool.ioctx(), ref.obj.oid, &entry);
     if (ret == -ENOENT) {
-      return fetch_new_bucket_info("get_bucket_resharding_failed");
+      ret = fetch_new_bucket_info("get_bucket_resharding_failed");
+      if (ret < 0) {
+	ldpp_dout(dpp, 0) << "ERROR: " << __func__ <<
+	  " failed to refresh bucket info after reshard when get bucket "
+	  "resharding failed, error: " << cpp_strerror(-ret) << dendl;
+	return ret;
+      }
     } else if (ret < 0) {
       ldpp_dout(dpp, 0) << __func__ <<
 	" ERROR: failed to get bucket resharding : " << cpp_strerror(-ret) <<
@@ -6911,7 +6900,13 @@ int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
     }
 
     if (!entry.resharding_in_progress()) {
-      return fetch_new_bucket_info("get_bucket_resharding_succeeded");
+      ret = fetch_new_bucket_info("get_bucket_resharding_succeeded");
+      if (ret < 0) {
+	ldpp_dout(dpp, 0) << "ERROR: " << __func__ <<
+	  " failed to refresh bucket info after reshard when get bucket "
+	  "resharding succeeded, error: " << cpp_strerror(-ret) << dendl;
+	return ret;
+      }
     }
 
     ldpp_dout(dpp, 20) << __func__ << " NOTICE: reshard still in progress; " <<
@@ -6934,7 +6929,9 @@ int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
       std::string bucket_id = b.get_key();
       RGWBucketReshardLock reshard_lock(this->store, bucket_info, true);
       ret = reshard_lock.lock(dpp);
-      if (ret < 0) {
+      if (ret == -ENOENT) {
+	continue;
+      } else if (ret < 0) {
 	ldpp_dout(dpp, 20) << __func__ <<
 	  " ERROR: failed to take reshard lock for bucket " <<
 	  bucket_id << "; expected if resharding underway" << dendl;
@@ -6953,14 +6950,21 @@ int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
 	    bucket_id << dendl;
           continue; // try again
         }
+
 	ret = RGWBucketReshard::clear_resharding(this->store, bucket_info, bucket_attrs, dpp);
-	if (ret < 0) {
-	  reshard_lock.unlock();
+	reshard_lock.unlock();
+	if (ret == -ENOENT) {
+	  ldpp_dout(dpp, 5) << __func__ <<
+	    " INFO: no need to reset reshard flags; old shards apparently"
+	    " removed after successful resharding of bucket " <<
+	    bucket_id << dendl;
+	  continue; // immediately test again
+	} else if (ret < 0) {
 	  ldpp_dout(dpp, 0) << __func__ <<
 	    " ERROR: failed to clear resharding flags for bucket " <<
-	    bucket_id << dendl;
+	    bucket_id << ", " << cpp_strerror(-ret) << dendl;
+	  // wait and then test again
 	} else {
-	  reshard_lock.unlock();
 	  ldpp_dout(dpp, 5) << __func__ <<
 	    " INFO: apparently successfully cleared resharding flags for "
 	    "bucket " << bucket_id << dendl;
@@ -7009,6 +7013,7 @@ int RGWRados::bucket_index_link_olh(const DoutPrefixProvider *dpp, RGWBucketInfo
 		      cls_rgw_obj_key key(obj_instance.key.get_index_key_name(), obj_instance.key.instance);
 		      auto& ref = bs->bucket_obj.get_ref();
 		      librados::ObjectWriteOperation op;
+		      op.assert_exists(); // bucket index shard must exist
 		      cls_rgw_guard_bucket_resharding(op, -ERR_BUSY_RESHARDING);
 		      cls_rgw_bucket_link_olh(op, key, olh_state.olh_tag,
                                               delete_marker, op_tag, meta, olh_epoch,
@@ -7057,6 +7062,7 @@ int RGWRados::bucket_index_unlink_instance(const DoutPrefixProvider *dpp,
 		    [&](BucketShard *bs) -> int {
 		      auto& ref = bs->bucket_obj.get_ref();
 		      librados::ObjectWriteOperation op;
+		      op.assert_exists(); // bucket index shard must exist
 		      cls_rgw_guard_bucket_resharding(op, -ERR_BUSY_RESHARDING);
 		      cls_rgw_bucket_unlink_instance(op, key, op_tag,
 						     olh_tag, olh_epoch, svc.zone->get_zone().log_data, zones_trace);
@@ -7205,6 +7211,7 @@ int RGWRados::bucket_index_trim_olh_log(const DoutPrefixProvider *dpp,
   ret = guard_reshard(dpp, &bs, obj_instance, bucket_info,
 		      [&](BucketShard *pbs) -> int {
 			ObjectWriteOperation op;
+			op.assert_exists(); // bucket index shard must exist
 			cls_rgw_guard_bucket_resharding(op, -ERR_BUSY_RESHARDING);
 			cls_rgw_trim_olh_log(op, key, ver, olh_tag);
                         return pbs->bucket_obj.operate(dpp, &op, null_yield);
@@ -7237,6 +7244,7 @@ int RGWRados::bucket_index_clear_olh(const DoutPrefixProvider *dpp,
   int ret = guard_reshard(dpp, &bs, obj_instance, bucket_info,
 			  [&](BucketShard *pbs) -> int {
 			    ObjectWriteOperation op;
+			    op.assert_exists(); // bucket index shard must exist
 			    auto& ref = pbs->bucket_obj.get_ref();
 			    cls_rgw_guard_bucket_resharding(op, -ERR_BUSY_RESHARDING);
 			    cls_rgw_clear_olh(op, key, olh_tag);
@@ -8426,6 +8434,8 @@ int RGWRados::cls_obj_prepare_op(const DoutPrefixProvider *dpp, BucketShard& bs,
   zones_trace.insert(svc.zone->get_zone().id, bs.bucket.get_key());
 
   ObjectWriteOperation o;
+  o.assert_exists(); // bucket index shard must exist
+
   cls_rgw_obj_key key(obj.key.get_index_key_name(), obj.key.instance);
   cls_rgw_guard_bucket_resharding(o, -ERR_BUSY_RESHARDING);
   cls_rgw_bucket_prepare_op(o, op, tag, key, obj.key.get_loc(), svc.zone->get_zone().log_data, bilog_flags, zones_trace);
@@ -8446,6 +8456,8 @@ int RGWRados::cls_obj_complete_op(BucketShard& bs, const rgw_obj& obj, RGWModify
   ldout_bitx_c(bitx, cct, 25) << "BACKTRACE: " << __func__ << ": " << ClibBackTrace(0) << dendl_bitx;
 
   ObjectWriteOperation o;
+  o.assert_exists(); // bucket index shard must exist
+
   rgw_bucket_dir_entry_meta dir_meta;
   dir_meta = ent.meta;
   dir_meta.category = category;

@@ -737,8 +737,7 @@ int Image<I>::snap_set(I *ictx,
   std::string name(snap_name == nullptr ? "" : snap_name);
   if (!name.empty()) {
     std::shared_lock image_locker{ictx->image_lock};
-    snap_id = ictx->get_snap_id(cls::rbd::UserSnapshotNamespace{},
-                                snap_name);
+    snap_id = ictx->get_snap_id(snap_namespace, snap_name);
     if (snap_id == CEPH_NOSNAP) {
       return -ENOENT;
     }
@@ -959,11 +958,6 @@ template <typename I>
 int Image<I>::encryption_format(I* ictx, encryption_format_t format,
                                 encryption_options_t opts, size_t opts_size,
                                 bool c_api) {
-  if (ictx->parent != nullptr) {
-    lderr(ictx->cct) << "cannot format a cloned image" << dendl;
-    return -ENOTSUP;
-  }
-
   crypto::EncryptionFormat<I>* result_format;
   auto r = util::create_encryption_format(
           ictx->cct, format, opts, opts_size, c_api, &result_format);
@@ -980,20 +974,25 @@ int Image<I>::encryption_format(I* ictx, encryption_format_t format,
 }
 
 template <typename I>
-int Image<I>::encryption_load(I* ictx, encryption_format_t format,
-                              encryption_options_t opts, size_t opts_size,
-                              bool c_api) {
-  crypto::EncryptionFormat<I>* result_format;
-  auto r = util::create_encryption_format(
-          ictx->cct, format, opts, opts_size, c_api, &result_format);
-  if (r != 0) {
-    return r;
+int Image<I>::encryption_load(I* ictx, const encryption_spec_t *specs,
+                              size_t spec_count, bool c_api) {
+  std::vector<std::unique_ptr<crypto::EncryptionFormat<I>>> formats;
+
+  for (size_t i = 0; i < spec_count; ++i) {
+    crypto::EncryptionFormat<I>* result_format;
+    auto r = util::create_encryption_format(
+            ictx->cct, specs[i].format, specs[i].opts, specs[i].opts_size,
+            c_api, &result_format);
+    if (r != 0) {
+      return r;
+    }
+
+    formats.emplace_back(result_format);
   }
 
   C_SaferCond cond;
   auto req = librbd::crypto::LoadRequest<I>::create(
-          ictx, std::unique_ptr<crypto::EncryptionFormat<I>>(result_format),
-          &cond);
+          ictx, std::move(formats), &cond);
   req->send();
   return cond.wait();
 }

@@ -4,6 +4,7 @@
 #include "segment_allocator.h"
 
 #include <fmt/format.h>
+#include <fmt/os.h>
 
 #include "crimson/os/seastore/logging.h"
 #include "crimson/os/seastore/async_cleaner.h"
@@ -15,7 +16,7 @@ namespace crimson::os::seastore::journal {
 SegmentAllocator::SegmentAllocator(
   JournalTrimmer *trimmer,
   data_category_t category,
-  reclaim_gen_t gen,
+  rewrite_gen_t gen,
   SegmentProvider &sp,
   SegmentSeqAllocator &ssa)
   : print_name{fmt::format("{}_G{}", category, gen)},
@@ -174,7 +175,7 @@ SegmentAllocator::write(ceph::bufferlist&& to_write)
 
   auto write_result = write_result_t{
     write_start_seq,
-    static_cast<seastore_off_t>(write_length)
+    write_length
   };
   written_to += write_length;
   segment_provider.update_segment_avail_bytes(
@@ -331,7 +332,7 @@ RecordBatch::encode_batch(
   submitting_mdlength = gsize.get_mdlength();
   auto bl = encode_records(pending, committed_to, segment_nonce);
   // Note: pending is cleared here
-  assert(bl.length() == (std::size_t)submitting_length);
+  assert(bl.length() == submitting_length);
   return std::make_pair(bl, gsize);
 }
 

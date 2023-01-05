@@ -8,6 +8,7 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/range/join.hpp>
 #include <fmt/format.h>
+#include <fmt/os.h>
 #include <fmt/ostream.h>
 #include <seastar/core/timer.hh>
 
@@ -75,6 +76,7 @@ using crimson::os::FuturizedStore;
 namespace crimson::osd {
 
 OSD::OSD(int id, uint32_t nonce,
+	 seastar::abort_source& abort_source,
          crimson::os::FuturizedStore& store,
          crimson::net::MessengerRef cluster_msgr,
          crimson::net::MessengerRef public_msgr,
@@ -82,6 +84,7 @@ OSD::OSD(int id, uint32_t nonce,
          crimson::net::MessengerRef hb_back_msgr)
   : whoami{id},
     nonce{nonce},
+    abort_source{abort_source},
     // do this in background
     beacon_timer{[this] { (void)send_beacon(); }},
     cluster_msgr{cluster_msgr},
@@ -376,7 +379,7 @@ seastar::future<> OSD::start()
     );
   }).then([this](OSDSuperblock&& sb) {
     superblock = std::move(sb);
-    pg_shard_manager.set_superblock(sb);
+    pg_shard_manager.set_superblock(superblock);
     return pg_shard_manager.get_local_map(superblock.current_epoch);
   }).then([this](OSDMapService::local_cached_map_t&& map) {
     osdmap = make_local_shared_foreign(OSDMapService::local_cached_map_t(map));
@@ -442,11 +445,8 @@ seastar::future<> OSD::start()
         replace_unknown_addrs(cluster_msgr->get_myaddrs(),
                               public_msgr->get_myaddrs()); changed) {
       logger().debug("replacing unkwnown addrs of cluster messenger");
-      return cluster_msgr->set_myaddrs(addrs);
-    } else {
-      return seastar::now();
+      cluster_msgr->set_myaddrs(addrs);
     }
-  }).then([this] {
     return heartbeat->start(pick_addresses(CEPH_PICK_ADDRESS_PUBLIC),
                             pick_addresses(CEPH_PICK_ADDRESS_CLUSTER));
   }).then([this] {
@@ -615,6 +615,8 @@ seastar::future<> OSD::start_asok_admin()
     asok->register_command(
       make_asok_hook<DumpSlowestHistoricOpsHook>(
 	std::as_const(get_shard_services().get_registry())));
+    asok->register_command(
+      make_asok_hook<DumpRecoveryReservationsHook>(get_shard_services()));
   });
 }
 
@@ -1164,9 +1166,8 @@ seastar::future<> OSD::restart()
 
 seastar::future<> OSD::shutdown()
 {
-  // TODO
-  superblock.mounted = boot_epoch;
-  superblock.clean_thru = osdmap->get_epoch();
+  logger().info("shutting down per osdmap");
+  abort_source.request_abort();
   return seastar::now();
 }
 
@@ -1225,7 +1226,6 @@ seastar::future<> OSD::handle_peering_op(
 
 seastar::future<> OSD::check_osdmap_features()
 {
-  heartbeat->set_require_authorizer(true);
   return store.write_meta("require_osd_release",
                           stringify((int)osdmap->require_osd_release));
 }

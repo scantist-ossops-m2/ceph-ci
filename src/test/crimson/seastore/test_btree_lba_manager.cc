@@ -75,7 +75,7 @@ struct btree_test_base :
     segment_seq_t seq,
     segment_type_t type,
     data_category_t,
-    reclaim_gen_t
+    rewrite_gen_t
   ) final {
     auto ret = next;
     next = segment_id_t{
@@ -415,7 +415,7 @@ struct btree_lba_manager_test : btree_test_base {
     );
   }
 
-  seastore_off_t next_off = 0;
+  device_off_t next_off = 0;
   paddr_t get_paddr() {
     next_off += block_size;
     return make_fake_paddr(next_off);

@@ -1092,24 +1092,24 @@ namespace {
 
     std::optional<std::string> next;
 
-    void process_entry(crimson::os::FuturizedStore::OmapIteratorRef &p) {
-      if (p->key()[0] == '_')
+    void process_entry(const auto& key, const auto& value) {
+      if (key[0] == '_')
         return;
       //Copy ceph::buffer::list before creating iterator
-      auto bl = p->value();
+      auto bl = value;
       auto bp = bl.cbegin();
-      if (p->key() == "divergent_priors") {
+      if (key == "divergent_priors") {
         decode(divergent_priors, bp);
         ldpp_dout(dpp, 20) << "read_log_and_missing " << divergent_priors.size()
                            << " divergent_priors" << dendl;
         ceph_assert("crimson shouldn't have had divergent_priors" == 0);
-      } else if (p->key() == "can_rollback_to") {
+      } else if (key == "can_rollback_to") {
         decode(on_disk_can_rollback_to, bp);
-      } else if (p->key() == "rollback_info_trimmed_to") {
+      } else if (key == "rollback_info_trimmed_to") {
         decode(on_disk_rollback_info_trimmed_to, bp);
-      } else if (p->key() == "may_include_deletes_in_missing") {
+      } else if (key == "may_include_deletes_in_missing") {
         missing.may_include_deletes = true;
-      } else if (p->key().substr(0, 7) == std::string("missing")) {
+      } else if (key.substr(0, 7) == std::string("missing")) {
         hobject_t oid;
         pg_missing_item item;
         decode(oid, bp);
@@ -1118,7 +1118,7 @@ namespace {
           ceph_assert(missing.may_include_deletes);
         }
         missing.add(oid, std::move(item));
-      } else if (p->key().substr(0, 4) == std::string("dup_")) {
+      } else if (key.substr(0, 4) == std::string("dup_")) {
         pg_log_dup_t dup;
         decode(dup, bp);
         if (!dups.empty()) {
@@ -1146,26 +1146,41 @@ namespace {
       on_disk_can_rollback_to = info.last_update;
       missing.may_include_deletes = false;
 
-      return store.get_omap_iterator(ch, pgmeta_oid).then([this](auto iter) {
-        return seastar::do_until([iter] { return !iter->valid(); },
-                                 [iter, this]() mutable {
-          process_entry(iter);
-          return iter->next();
+      return seastar::do_with(
+        std::move(ch),
+        std::move(pgmeta_oid),
+        std::make_optional<std::string>(),
+        [this](crimson::os::CollectionRef &ch,
+               ghobject_t &pgmeta_oid,
+               std::optional<std::string> &start) {
+          return seastar::repeat([this, &ch, &pgmeta_oid, &start]() {
+            return store.omap_get_values(
+              ch, pgmeta_oid, start
+            ).safe_then([this, &start](const auto& ret) {
+              const auto& [done, kvs] = ret;
+              for (const auto& [key, value] : kvs) {
+                process_entry(key, value);
+                start = key;
+              }
+              return seastar::make_ready_future<seastar::stop_iteration>(
+                done ? seastar::stop_iteration::yes : seastar::stop_iteration::no
+              );
+            }, crimson::os::FuturizedStore::read_errorator::assert_all{});
+          }).then([this] {
+            if (info.pgid.is_no_shard()) {
+              // replicated pool pg does not persist this key
+              assert(on_disk_rollback_info_trimmed_to == eversion_t());
+              on_disk_rollback_info_trimmed_to = info.last_update;
+            }
+            log = PGLog::IndexedLog(
+                 info.last_update,
+                 info.log_tail,
+                 on_disk_can_rollback_to,
+                 on_disk_rollback_info_trimmed_to,
+                 std::move(entries),
+                 std::move(dups));
+          });
         });
-      }).then([this] {
-        if (info.pgid.is_no_shard()) {
-          // replicated pool pg does not persist this key
-          assert(on_disk_rollback_info_trimmed_to == eversion_t());
-          on_disk_rollback_info_trimmed_to = info.last_update;
-        }
-        log = PGLog::IndexedLog(
-             info.last_update,
-             info.log_tail,
-             on_disk_can_rollback_to,
-             on_disk_rollback_info_trimmed_to,
-             std::move(entries),
-             std::move(dups));
-      });
     }
   };
 }

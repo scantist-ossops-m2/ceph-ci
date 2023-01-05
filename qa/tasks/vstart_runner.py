@@ -606,7 +606,7 @@ class LocalCephFSMount():
         # Load the asok path from ceph.conf as vstart.sh now puts admin sockets
         # in a tmpdir. All of the paths are the same, so no need to select
         # based off of the service type.
-        d = "./out"
+        d = "./asok"
         with open(self.config_path) as f:
             for line in f:
                 asok_conf = re.search("^\s*admin\s+socket\s*=\s*(.*?)[^/]+$", line)
@@ -1069,7 +1069,10 @@ class LogRotate():
 
 def teardown_cluster():
     log.info('\ntearing down the cluster...')
-    remote.run(args=[os.path.join(SRC_PREFIX, "stop.sh")], timeout=60)
+    try:
+        remote.run(args=[os.path.join(SRC_PREFIX, "stop.sh")], timeout=60)
+    except CommandFailedError as e:
+        log.error('stop.sh failed: %s', e)
     log.info('\nceph cluster torn down')
     remote.run(args=['rm', '-rf', './dev', './out'])
 
