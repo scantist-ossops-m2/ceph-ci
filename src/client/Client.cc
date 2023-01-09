@@ -2364,6 +2364,17 @@ void Client::handle_client_session(const MConstRef<MClientSession>& m)
       session->mds_metric_flags = std::move(m->metric_spec.metric_flags);
       cap_auths = std::move(m->cap_auths);
 
+      /*
+       * Just force the session to be readonly if root_sqaush is enabled
+       * and the MDS doesn't support CEPHFS_FEATURE_MDS_AUTH_CAPS_CHECK.
+       */
+      if (root_squash_in_cap_auths() &&
+          !session->mds_features.test(CEPHFS_FEATURE_MDS_AUTH_CAPS_CHECK)) {
+        ldout(cct, 10) << " close the session, root_squash enabled with old MDS"
+                       << dendl;
+        force_session_readonly(session.get());
+      }
+
       renew_caps(session.get());
       session->state = MetaSession::STATE_OPEN;
       if (is_unmounting())
@@ -2371,6 +2382,7 @@ void Client::handle_client_session(const MConstRef<MClientSession>& m)
       else
 	connect_mds_targets(from);
       signal_context_list(session->waiting_for_open);
+
       break;
     }
 
