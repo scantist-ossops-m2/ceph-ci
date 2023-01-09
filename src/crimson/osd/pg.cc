@@ -327,6 +327,7 @@ void PG::on_activate_complete()
   }
   publish_stats_to_osd();
   backend->on_activate_complete();
+  recovery_handler->on_activate_complete();
 }
 
 void PG::prepare_write(pg_info_t &info,
