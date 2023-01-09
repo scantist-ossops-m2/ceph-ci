@@ -546,6 +546,14 @@ public:
 
   // cephx mds auth caps checking
   int mds_check_access(Inode *in, const UserPerm& perms, int mask);
+  bool root_squash_in_cap_auths() const {
+    for (auto& s: cap_auths) {
+      if (s.match.root_squash) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   // Inode permission checking
   int inode_permission(Inode *in, const UserPerm& perms, unsigned want);
