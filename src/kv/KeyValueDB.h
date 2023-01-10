@@ -322,7 +322,7 @@ public:
   };
 
   virtual WholeSpaceIterator get_wholespace_iterator(IteratorOpts opts = 0) = 0;
-  virtual Iterator get_iterator(const std::string &prefix, IteratorOpts opts = 0, IteratorBounds bounds = IteratorBounds()) {
+  virtual Iterator get_iterator(const std::string &prefix, IteratorOpts opts = 0, IteratorBounds bounds = IteratorBounds(), uint64_t max_skippable_keys = 0) {
     return std::make_shared<PrefixIteratorImpl>(
       prefix,
       get_wholespace_iterator(opts));

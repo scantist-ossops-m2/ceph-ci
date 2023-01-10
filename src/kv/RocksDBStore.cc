@@ -81,6 +81,15 @@ static rocksdb::SliceParts prepare_sliceparts(const bufferlist &bl,
   return rocksdb::SliceParts(slices->data(), slices->size());
 }
 
+static int iter_status(rocksdb::Iterator& it) {
+  if (it.status().IsIncomplete()) {
+    return -ECANCELED;
+  } else if (it.status().ok()) {
+    return 0;
+  } else {
+    return -1;
+  }
+}
 
 //
 // One of these for the default rocksdb column family, routing each prefix
@@ -2250,7 +2259,8 @@ public:
   explicit CFIteratorImpl(const RocksDBStore* db,
                           const std::string& p,
                           rocksdb::ColumnFamilyHandle* cf,
-                          KeyValueDB::IteratorBounds bounds_)
+                          KeyValueDB::IteratorBounds bounds_,
+                          uint64_t max_skippable_keys)
     : prefix(p), bounds(std::move(bounds_)),
       iterate_lower_bound(make_slice(bounds.lower_bound)),
       iterate_upper_bound(make_slice(bounds.upper_bound))
@@ -2264,6 +2274,7 @@ public:
           options.iterate_upper_bound = &iterate_upper_bound;
         }
       }
+      options.max_skippable_internal_keys = max_skippable_keys; 
       dbiter = db->db->NewIterator(options, cf);
   }
   ~CFIteratorImpl() {
@@ -2272,35 +2283,35 @@ public:
 
   int seek_to_first() override {
     dbiter->SeekToFirst();
-    return dbiter->status().ok() ? 0 : -1;
+    return status();
   }
   int seek_to_last() override {
     dbiter->SeekToLast();
-    return dbiter->status().ok() ? 0 : -1;
+    return status();
   }
   int upper_bound(const string &after) override {
     lower_bound(after);
     if (valid() && (key() == after)) {
       next();
     }
-    return dbiter->status().ok() ? 0 : -1;
+    return status();
   }
   int lower_bound(const string &to) override {
     rocksdb::Slice slice_bound(to);
     dbiter->Seek(slice_bound);
-    return dbiter->status().ok() ? 0 : -1;
+    return status();
   }
   int next() override {
     if (valid()) {
       dbiter->Next();
     }
-    return dbiter->status().ok() ? 0 : -1;
+    return status();
   }
   int prev() override {
     if (valid()) {
       dbiter->Prev();
     }
-    return dbiter->status().ok() ? 0 : -1;
+    return status();
   }
   bool valid() override {
     return dbiter->Valid();
@@ -2319,7 +2330,7 @@ public:
     return bufferptr(val.data(), val.size());
   }
   int status() override {
-    return dbiter->status().ok() ? 0 : -1;
+    return iter_status(*dbiter);
   }
 };
 
@@ -2805,7 +2816,8 @@ public:
   explicit ShardMergeIteratorImpl(const RocksDBStore* db,
 				  const std::string& prefix,
 				  const std::vector<rocksdb::ColumnFamilyHandle*>& shards,
-                  KeyValueDB::IteratorBounds bounds_)
+                                  KeyValueDB::IteratorBounds bounds_,
+                                  const uint64_t max_skippable_keys)
     : db(db), keyless(db->comparator), prefix(prefix), bounds(std::move(bounds_)),
       iterate_lower_bound(make_slice(bounds.lower_bound)),
       iterate_upper_bound(make_slice(bounds.upper_bound))
@@ -2820,6 +2832,7 @@ public:
         options.iterate_upper_bound = &iterate_upper_bound;
       }
     }
+    options.max_skippable_internal_keys = max_skippable_keys; 
     for (auto& s : shards) {
       iters.push_back(db->db->NewIterator(options, s));
     }
@@ -2832,8 +2845,9 @@ public:
   int seek_to_first() override {
     for (auto& it : iters) {
       it->SeekToFirst();
-      if (!it->status().ok()) {
-	return -1;
+      int r = iter_status(*it);
+      if (r < 0) {
+	return r;
       }
     }
     //all iterators seeked, sort
@@ -2843,8 +2857,9 @@ public:
   int seek_to_last() override {
     for (auto& it : iters) {
       it->SeekToLast();
-      if (!it->status().ok()) {
-	return -1;
+      int r = iter_status(*it);
+      if (r < 0) {
+	return r;
       }
     }
     for (size_t i = 1; i < iters.size(); i++) {
@@ -2867,7 +2882,7 @@ public:
       }
     }
     //no need to sort, as at most 1 iterator is valid now
-    return 0;
+    return status();
   }
   int upper_bound(const string &after) override {
     rocksdb::Slice slice_bound(after);
@@ -2876,8 +2891,9 @@ public:
       if (it->Valid() && it->key() == after) {
 	it->Next();
       }
-      if (!it->status().ok()) {
-	return -1;
+      int r = iter_status(*it);
+      if (r < 0) {
+	return r;
       }
     }
     std::sort(iters.begin(), iters.end(), keyless);
@@ -2887,30 +2903,31 @@ public:
     rocksdb::Slice slice_bound(to);
     for (auto& it : iters) {
       it->Seek(slice_bound);
-      if (!it->status().ok()) {
-	return -1;
+      int r = iter_status(*it);
+      if (r < 0) {
+	return r;
       }
     }
     std::sort(iters.begin(), iters.end(), keyless);
     return 0;
   }
   int next() override {
-    int r = -1;
     if (iters[0]->Valid()) {
       iters[0]->Next();
-      if (iters[0]->status().ok()) {
-	r = 0;
-	//bubble up
-	for (size_t i = 0; i < iters.size() - 1; i++) {
-	  if (keyless(iters[i], iters[i + 1])) {
-	    //matches, fixed
-	    break;
-	  }
-	  std::swap(iters[i], iters[i + 1]);
-	}
+      int r = iter_status(*iters[0]);
+      if (r < 0) {
+        return r;
+      }
+      //bubble up
+      for (size_t i = 0; i < iters.size() - 1; i++) {
+        if (keyless(iters[i], iters[i + 1])) {
+          //matches, fixed
+          break;
+        }
+        std::swap(iters[i], iters[i + 1]);
       }
     }
-    return r;
+    return 0;
   }
   // iters are sorted, so
   // a[0] < b[0] < c[0] < d[0]
@@ -2941,6 +2958,10 @@ public:
 	  prev_done.push_back(it);
 	}
       }
+      int r = iter_status(*it);
+      if (r < 0) {
+        return r;
+      }
     }
     if (prev_done.size() == 0) {
       /* there is no previous element */
@@ -2955,9 +2976,17 @@ public:
     for (size_t i = 1; i < prev_done.size(); i++) {
       if (keyless(highest, prev_done[i])) {
 	highest->Next();
+        int r = iter_status(*highest);
+        if (r < 0) {
+          return r;
+        }
 	highest = prev_done[i];
       } else {
 	prev_done[i]->Next();
+        int r = iter_status(*prev_done[i]);
+        if (r < 0) {
+          return r;
+        }
       }
     }
     //4
@@ -2972,7 +3001,7 @@ public:
     return 0;
   }
   bool valid() override {
-    return iters[0]->Valid();
+    return status() == 0 && iters[0]->Valid();
   }
   string key() override {
     return iters[0]->key().ToString();
@@ -2988,11 +3017,17 @@ public:
     return bufferptr(val.data(), val.size());
   }
   int status() override {
-    return iters[0]->status().ok() ? 0 : -1;
+    for (auto& iter : iters) {
+      int r = iter_status(*iter);
+      if (r < 0) {
+        return r;
+      }
+    }
+    return 0;
   }
 };
 
-KeyValueDB::Iterator RocksDBStore::get_iterator(const std::string& prefix, IteratorOpts opts, IteratorBounds bounds)
+KeyValueDB::Iterator RocksDBStore::get_iterator(const std::string& prefix, IteratorOpts opts, IteratorBounds bounds, uint64_t max_skippable_keys)
 {
   auto cf_it = cf_handles.find(prefix);
   if (cf_it != cf_handles.end()) {
@@ -3007,13 +3042,15 @@ KeyValueDB::Iterator RocksDBStore::get_iterator(const std::string& prefix, Itera
               this,
               prefix,
               cf,
-              std::move(bounds));
+              std::move(bounds),
+              max_skippable_keys);
     } else {
       return std::make_shared<ShardMergeIteratorImpl>(
         this,
         prefix,
         cf_it->second.handles,
-        std::move(bounds));
+        std::move(bounds),
+        max_skippable_keys);
     }
   } else {
     return KeyValueDB::get_iterator(prefix, opts);

@@ -496,7 +496,8 @@ public:
   int collection_list(
     CollectionHandle &c, const ghobject_t& start, const ghobject_t& end,
     int max,
-    std::vector<ghobject_t> *ls, ghobject_t *next) override;
+    std::vector<ghobject_t> *ls, ghobject_t *next,
+    uint64_t max_skippable_keys = 0) override;
 
   using ObjectStore::omap_get;
   int omap_get(

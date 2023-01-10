@@ -1426,7 +1426,7 @@ int KStore::collection_bits(CollectionHandle& ch)
 
 int KStore::collection_list(
   CollectionHandle &c_, const ghobject_t& start, const ghobject_t& end, int max,
-  vector<ghobject_t> *ls, ghobject_t *pnext)
+  vector<ghobject_t> *ls, ghobject_t *pnext, uint64_t max_skippable_keys)
 
 {
   Collection *c = static_cast<Collection*>(c_.get());

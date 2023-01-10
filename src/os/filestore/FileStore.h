@@ -711,7 +711,8 @@ public:
   int collection_bits(CollectionHandle& c) override;
   int collection_list(CollectionHandle& c,
 		      const ghobject_t& start, const ghobject_t& end, int max,
-		      std::vector<ghobject_t> *ls, ghobject_t *next) override {
+		      std::vector<ghobject_t> *ls, ghobject_t *next,
+                      uint64_t max_skippable_keys = 0) override {
     c->flush();
     return collection_list(c->cid, start, end, max, ls, next);
   }

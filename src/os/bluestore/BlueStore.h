@@ -2567,7 +2567,8 @@ private:
 
   int _collection_list(
     Collection *c, const ghobject_t& start, const ghobject_t& end,
-    int max, bool legacy, std::vector<ghobject_t> *ls, ghobject_t *next);
+    int max, bool legacy, std::vector<ghobject_t> *ls, ghobject_t *next,
+    uint64_t max_skippable_keys = 0);
 
   template <typename T, typename F>
   T select_option(const std::string& opt_name, T val1, F f) {
@@ -2882,7 +2883,8 @@ public:
 		      const ghobject_t& start,
 		      const ghobject_t& end,
 		      int max,
-		      std::vector<ghobject_t> *ls, ghobject_t *next) override;
+		      std::vector<ghobject_t> *ls, ghobject_t *next,
+                      uint64_t max_skippable_keys = 0) override;
 
   int collection_list_legacy(CollectionHandle &c,
                              const ghobject_t& start,
