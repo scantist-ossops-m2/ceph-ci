@@ -18,6 +18,7 @@
              [attr.aria-invalid]="username.invalid"
              aria-labelledby="username"
              class="form-control pl-4"
+             placeholder="Username"
              required
              autofocus>
       <div class="invalid-feedback pl-4"
@@ -41,6 +42,7 @@
                  [attr.aria-invalid]="password.invalid"
                  aria-labelledby="password"
                  class="form-control pl-4"
+                 placeholder="Password"
                  required>
           <div class="invalid-feedback pl-4"
                *ngIf="(loginForm.submitted || password.dirty) && password.invalid"
@@ -55,10 +57,13 @@
       </div>
     </div>
 
-    <input type="submit"
-           class="btn btn-accent px-5 py-2"
-           [disabled]="loginForm.invalid"
-           value="Log in"
-           i18n-value>
+    <div class="login-buttons">
+      <input type="submit"
+             class="btn btn-accent px-5 py-2"
+             [disabled]="loginForm.invalid"
+             value="Log in"
+             i18n-value>
+      <i [ngClass]="{'btn-arrow': true, 'btn-arrow-disabled': loginForm.invalid}"></i>
+    </div>
   </form>
 </div>
