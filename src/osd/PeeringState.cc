@@ -636,7 +636,7 @@ void PeeringState::start_peering_interval(
     psdout(10) << __func__ << ": check_new_interval output: "
 	       << debug.str() << dendl;
     if (new_interval) {
-      if (osdmap->get_epoch() == pl->oldest_stored_osdmap() &&
+      if (osdmap->get_epoch() == pl->max_oldest_stored_osdmap() &&
 	  info.history.last_epoch_clean < osdmap->get_epoch()) {
 	psdout(10) << " map gap, clearing past_intervals and faking" << dendl;
 	// our information is incomplete and useless; someone else was clean
@@ -930,7 +930,9 @@ static pair<epoch_t, epoch_t> get_required_past_interval_bounds(
 
 void PeeringState::check_past_interval_bounds() const
 {
-  auto oldest_epoch = pl->oldest_stored_osdmap();
+  // a specific OSD's oldest_map can lag for a while, therfore
+  // use the maximum MOSDMap.oldest_map received with peers.
+  auto oldest_epoch = pl->max_oldest_stored_osdmap();
   auto rpib = get_required_past_interval_bounds(
     info,
     oldest_epoch);
