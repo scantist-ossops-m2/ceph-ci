@@ -652,9 +652,9 @@ public:
 
   virtual bool valid() const = 0;
   virtual const ghobject_t &oid() const = 0;
-  virtual void lower_bound(const ghobject_t &oid) = 0;
-  virtual void upper_bound(const ghobject_t &oid) = 0;
-  virtual void next() = 0;
+  virtual int lower_bound(const ghobject_t &oid) = 0;
+  virtual int upper_bound(const ghobject_t &oid) = 0;
+  virtual int next() = 0;
 
   virtual int cmp(const ghobject_t &oid) const = 0;
 
@@ -686,27 +686,27 @@ public:
     return m_oid;
   }
 
-  void lower_bound(const ghobject_t &oid) override {
+  int lower_bound(const ghobject_t &oid) override {
     string key;
     get_object_key(m_cct, oid, &key);
 
     m_it->lower_bound(key);
-    get_oid();
+    return get_oid();
   }
 
-  void upper_bound(const ghobject_t &oid) override {
+  int upper_bound(const ghobject_t &oid) override {
     string key;
     get_object_key(m_cct, oid, &key);
 
     m_it->upper_bound(key);
-    get_oid();
+    return get_oid();
   }
 
-  void next() override {
+  int next() override {
     ceph_assert(valid());
 
     m_it->next();
-    get_oid();
+    return get_oid();
   }
 
   int cmp(const ghobject_t &oid) const override {
@@ -722,17 +722,18 @@ private:
   CephContext *m_cct;
   ghobject_t m_oid;
 
-  void get_oid() {
+  int get_oid() {
     m_oid = ghobject_t();
     while (m_it->valid() && is_extent_shard_key(m_it->key())) {
       m_it->next();
     }
     if (!valid()) {
-      return;
+      return m_it->status();
     }
 
     int r = get_key_object(m_it->key(), &m_oid);
     ceph_assert(r == 0);
+    return 0;
   }
 };
 
@@ -752,43 +753,59 @@ public:
     return m_chunk_iter->first;
   }
 
-  void lower_bound(const ghobject_t &oid) override {
+  int lower_bound(const ghobject_t &oid) override {
     std::string key;
     _key_encode_prefix(oid, &key);
 
     m_it->lower_bound(key);
     m_chunk_iter = m_chunk.end();
-    if (!get_next_chunk()) {
-      return;
+    int r = get_next_chunk();
+    if (r <= 0) {
+      return r;
     }
 
     if (this->oid().shard_id != oid.shard_id ||
         this->oid().hobj.pool != oid.hobj.pool ||
         this->oid().hobj.get_bitwise_key_u32() != oid.hobj.get_bitwise_key_u32()) {
-      return;
+      return 0;
     }
 
     m_chunk_iter = m_chunk.lower_bound(oid);
     if (m_chunk_iter == m_chunk.end()) {
-      get_next_chunk();
+      r = get_next_chunk();
+      if (r < 0) {
+        return r;
+      }
     }
+    return 0;
   }
 
-  void upper_bound(const ghobject_t &oid) override {
-    lower_bound(oid);
+  int upper_bound(const ghobject_t &oid) override {
+    int r = lower_bound(oid);
+    if (r < 0) {
+      return r;
+    }
 
     if (valid() && this->oid() == oid) {
-      next();
+      r = next();
+      if (r < 0) {
+        return r;
+      }
     }
+    return 0;
   }
 
-  void next() override {
+  int next() override {
     ceph_assert(valid());
 
     m_chunk_iter++;
     if (m_chunk_iter == m_chunk.end()) {
-      get_next_chunk();
+      int r = get_next_chunk();
+      if (r < 0) {
+        return r;
+      }
     }
+    return 0;
   }
 
   int cmp(const ghobject_t &oid) const override {
@@ -807,13 +824,13 @@ private:
   std::map<ghobject_t, std::string> m_chunk;
   std::map<ghobject_t, std::string>::iterator m_chunk_iter;
 
-  bool get_next_chunk() {
+  int get_next_chunk() {
     while (m_it->valid() && is_extent_shard_key(m_it->key())) {
       m_it->next();
     }
 
     if (!m_it->valid()) {
-      return false;
+      return m_it->status();
     }
 
     ghobject_t oid;
@@ -829,6 +846,10 @@ private:
       } while (m_it->valid() && is_extent_shard_key(m_it->key()));
 
       if (!m_it->valid()) {
+        r = m_it->status();
+        if (r < 0) {
+          return r; 
+        }
         break;
       }
 
@@ -844,7 +865,7 @@ private:
     }
 
     m_chunk_iter = m_chunk.begin();
-    return true;
+    return m_chunk.size();
   }
 };
 
@@ -10782,7 +10803,7 @@ int BlueStore::collection_bits(CollectionHandle& ch)
 
 int BlueStore::collection_list(
   CollectionHandle &c_, const ghobject_t& start, const ghobject_t& end, int max,
-  vector<ghobject_t> *ls, ghobject_t *pnext)
+  vector<ghobject_t> *ls, ghobject_t *pnext, uint64_t max_skippable_keys)
 {
   Collection *c = static_cast<Collection *>(c_.get());
   c->flush();
@@ -10791,7 +10812,7 @@ int BlueStore::collection_list(
   int r;
   {
     std::shared_lock l(c->lock);
-    r = _collection_list(c, start, end, max, false, ls, pnext);
+    r = _collection_list(c, start, end, max, false, ls, pnext, max_skippable_keys);
   }
 
   dout(10) << __func__ << " " << c->cid
@@ -10824,7 +10845,7 @@ int BlueStore::collection_list_legacy(
 
 int BlueStore::_collection_list(
   Collection *c, const ghobject_t& start, const ghobject_t& end, int max,
-  bool legacy, vector<ghobject_t> *ls, ghobject_t *pnext)
+  bool legacy, vector<ghobject_t> *ls, ghobject_t *pnext, uint64_t max_skippable_keys)
 {
 
   if (!c->exists)
@@ -10871,15 +10892,17 @@ int BlueStore::_collection_list(
     << " start " << start << dendl;
   if (legacy) {
     it = std::make_unique<SimpleCollectionListIterator>(
-      cct, db->get_iterator(PREFIX_OBJ));
+      cct, db->get_iterator(PREFIX_OBJ, 0, KeyValueDB::IteratorBounds(), max_skippable_keys));
   } else {
     it = std::make_unique<SortedCollectionListIterator>(
-      db->get_iterator(PREFIX_OBJ));
+      db->get_iterator(PREFIX_OBJ, 0, KeyValueDB::IteratorBounds(), max_skippable_keys));
   }
   if (start == ghobject_t() ||
     start.hobj == hobject_t() ||
     start == c->cid.get_min_hobj()) {
-    it->upper_bound(coll_range_temp_start);
+    if (it->upper_bound(coll_range_temp_start) == -ECANCELED) {
+      return -ECANCELED;
+    }
     temp = true;
   } else {
     if (start.hobj.is_temp()) {
@@ -10890,7 +10913,9 @@ int BlueStore::_collection_list(
       ceph_assert(start >= coll_range_start && start < coll_range_end);
     }
     dout(20) << __func__ << " temp=" << (int)temp << dendl;
-    it->lower_bound(start);
+    if (it->lower_bound(start) == -ECANCELED) {
+      return -ECANCELED;
+    }
   }
   if (end.hobj.is_max()) {
     pend = temp ? coll_range_temp_end : coll_range_end;
@@ -10923,7 +10948,9 @@ int BlueStore::_collection_list(
 	}
 	dout(30) << __func__ << " switch to non-temp namespace" << dendl;
 	temp = false;
-	it->upper_bound(coll_range_start);
+	if (it->upper_bound(coll_range_start) == -ECANCELED) {
+          return -ECANCELED;
+        }
         if (end.hobj.is_max())
           pend = coll_range_end;
         else
@@ -10944,7 +10971,9 @@ int BlueStore::_collection_list(
       return 0;
     }
     ls->push_back(it->oid());
-    it->next();
+    if (it->next() == -ECANCELED) {
+      return -ECANCELED;
+    }
   }
   *pnext = ghobject_t::get_max();
   return 0;
@@ -13134,8 +13163,9 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
       {
         const coll_t &cid = i.get_cid(op->cid);
 	r = _remove_collection(txc, cid, &c);
-	if (!r)
+	if (!r) {
 	  continue;
+        }
       }
       break;
 

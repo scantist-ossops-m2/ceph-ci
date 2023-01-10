@@ -764,6 +764,8 @@ OPTION(osd_op_history_duration, OPT_U32) // Oldest completed op to track
 OPTION(osd_op_history_slow_op_size, OPT_U32)           // Max number of slow ops to track
 OPTION(osd_op_history_slow_op_threshold, OPT_DOUBLE) // track the op if over this threshold
 OPTION(osd_target_transaction_size, OPT_INT)     // to adjust various transactions that batch smaller items
+OPTION(osd_rocksdb_max_skippable_keys, OPT_U64)
+OPTION(osd_delete_compaction_sleep, OPT_FLOAT)
 OPTION(osd_failsafe_full_ratio, OPT_FLOAT) // what % full makes an OSD "full" (failsafe)
 OPTION(osd_fast_shutdown, OPT_BOOL)
 OPTION(osd_fast_shutdown_notify_mon, OPT_BOOL) // tell mon the OSD is shutting down on osd_fast_shutdown

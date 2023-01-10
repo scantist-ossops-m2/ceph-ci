@@ -2560,6 +2560,12 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
 
   {
     float osd_delete_sleep = osd->osd->get_osd_delete_sleep();
+    // if we need sleep and we're at the beginning of the iteration, then
+    // we're waiting on tombstones to clear and want to sleep longer   
+    if (delete_needs_compaction_sleep) {
+      osd_delete_sleep = cct->_conf->osd_delete_compaction_sleep;
+      dout(1) << __func__ << " PG " << info.pgid << " delete sleeping for " << (int) osd_delete_sleep << " seconds to wait for tombstone compaction" << dendl;
+    }
     if (osd_delete_sleep > 0 && delete_needs_sleep) {
       epoch_t e = get_osdmap()->get_epoch();
       PGRef pgref(this);
@@ -2569,6 +2575,7 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
 	         << ", re-queuing delete" << dendl;
         std::scoped_lock locker{*this};
         delete_needs_sleep = false;
+        delete_needs_compaction_sleep = false;
         if (!pg_has_reset_since(e)) {
           osd->queue_for_pg_delete(get_pgid(), e);
         }
@@ -2586,43 +2593,34 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
 
   delete_needs_sleep = true;
 
-  ghobject_t next;
+  ghobject_t next = _next;
 
   vector<ghobject_t> olist;
   int max = std::min(osd->store->get_ideal_list_max(),
 		     (int)cct->_conf->osd_target_transaction_size);
+  uint64_t max_skippable_keys = cct->_conf->osd_rocksdb_max_skippable_keys;
 
-  osd->store->collection_list(
+list:
+  auto start = mono_clock::now();
+  int r = osd->store->collection_list(
     ch,
     _next,
     ghobject_t::get_max(),
     max,
     &olist,
-    &next);
+    &next,
+    max_skippable_keys);
+  dout(1) << __func__ << " PG " << info.pgid << "delete collection_list latency: " << mono_clock::now() -start << " start: " << _next << dendl;
   dout(20) << __func__ << " " << olist << dendl;
-
-  // make sure we've removed everything
-  // by one more listing from the beginning
-  if (_next != ghobject_t() && olist.empty()) {
-    next = ghobject_t();
-    osd->store->collection_list(
-      ch,
-      next,
-      ghobject_t::get_max(),
-      max,
-      &olist,
-      &next);
-    if (!olist.empty()) {
-      for (auto& oid : olist) {
-        if (oid == pgmeta_oid) {
-          dout(20) << __func__ << " removing pgmeta object " << oid << dendl;
-        } else {
-          dout(0) << __func__ << " additional unexpected onode"
-                  <<" new onode has appeared since PG removal started"
-                  << oid << dendl;
-        }
-      }
-    }
+  if (r < 0) {
+    delete_needs_compaction_sleep = true;
+    dout(1) << __func__ << " PG " << info.pgid << " delete collection list exceeded max skippable keys: " << r << dendl;
+  } else if(_next != ghobject_t() && olist.empty()) {
+    dout(1) << __func__ << " PG " << info.pgid << " delete doing final keyspace iteration to check for new objects" << dendl;
+    // make sure we've removed everything
+    // by one more listing from the beginning
+    _next = ghobject_t();
+    goto list;
   }
 
   OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
@@ -2643,7 +2641,7 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     ++num;
   }
   bool running = true;
-  if (num) {
+  if (num || delete_needs_compaction_sleep) {
     dout(20) << __func__ << " deleting " << num << " objects" << dendl;
     Context *fin = new C_DeleteMore(this, get_osdmap_epoch());
     t.register_on_commit(fin);
@@ -2651,6 +2649,7 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     if (cct->_conf->osd_inject_failure_on_pg_removal) {
       _exit(1);
     }
+    dout(1) << __func__ << " finalizing deletion of PG " << info.pgid << dendl;
 
     // final flush here to ensure completions drop refs.  Of particular concern
     // are the SnapMapper ContainerContexts.

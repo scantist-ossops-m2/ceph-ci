@@ -667,12 +667,14 @@ public:
    * @param seq return no objects with snap < seq
    * @param ls [out] result
    * @param next [out] next item sorts >= this value
+   * @param max_skippable_keys the maximum number of internal keys that can be skipped before the iterator fails as incomplete 
    * @return zero on success, or negative error
    */
   virtual int collection_list(CollectionHandle &c,
 			      const ghobject_t& start, const ghobject_t& end,
 			      int max,
-			      std::vector<ghobject_t> *ls, ghobject_t *next) = 0;
+			      std::vector<ghobject_t> *ls, ghobject_t *next,
+                              uint64_t max_skippable_keys = 0) = 0;
 
   virtual int collection_list_legacy(CollectionHandle &c,
                                      const ghobject_t& start,

@@ -3778,6 +3778,15 @@ std::vector<Option> get_global_options() {
     .set_default(30)
     .set_description(""),
 
+    Option("osd_rocksdb_max_skippable_keys", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(0)
+    .set_description(""),
+
+    Option("osd_delete_compaction_sleep", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
+    .set_default(30)
+    .set_flag(Option::FLAG_RUNTIME)
+    .set_description("Time in seconds to sleep before next removal transaction when iterations are timing out"),
+
     Option("osd_delete_sleep", Option::TYPE_FLOAT, Option::LEVEL_ADVANCED)
     .set_default(0)
     .set_flag(Option::FLAG_RUNTIME)

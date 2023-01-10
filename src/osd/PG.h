@@ -1206,6 +1206,7 @@ public:
   int pg_stat_adjust(osd_stat_t *new_stat);
 protected:
   bool delete_needs_sleep = false;
+  bool delete_needs_compaction_sleep = false;
 
 protected:
   bool state_test(uint64_t m) const { return recovery_state.state_test(m); }
