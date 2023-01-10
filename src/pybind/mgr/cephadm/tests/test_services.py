@@ -1116,7 +1116,7 @@ class TestIngressService:
                                 '\nfrontend stats\n    '
                                 'mode http\n    '
                                 'bind 1.2.3.4:8999\n    '
-                                'bind localhost:8999\n    '
+                                'bind 1::4:8999\n    '
                                 'stats enable\n    '
                                 'stats uri /stats\n    '
                                 'stats refresh 10s\n    '
