@@ -197,6 +197,7 @@ Requires:       ceph-mon = %{_epoch_prefix}%{version}-%{release}
 Requires(post):	binutils
 %if 0%{with cephfs_java}
 BuildRequires:	java-devel
+BuildRequires:  java-headless
 BuildRequires:	jpackage-utils
 BuildRequires:	sharutils
 %endif
