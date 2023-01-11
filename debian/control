@@ -1187,23 +1187,6 @@ Description: Python 3 utility libraries for Ceph
  This package contains data structures, classes and functions used by Ceph.
  It also contains utilities used for the cephadm orchestrator.
 
-Package: libcephfs-java
-Section: java
-Architecture: all
-Depends: libcephfs-jni (= ${binary:Version}),
-         ${java:Depends},
-         ${misc:Depends},
-Description: Java libraries for the Ceph File System
-
-Package: libcephfs-jni
-Architecture: linux-any
-Section: java
-Depends: libcephfs2 (= ${binary:Version}),
-         ${java:Depends},
-         ${misc:Depends},
-         ${shlibs:Depends},
-Description: Java Native Interface library for CephFS Java bindings
-
 Package: rados-objclass-dev
 Architecture: linux-any
 Section: libdevel
