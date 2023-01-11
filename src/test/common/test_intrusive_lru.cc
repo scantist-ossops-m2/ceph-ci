@@ -146,3 +146,45 @@ TEST(LRU, eviction_live_ref) {
     }
   }
 }
+
+TEST(LRU, clear_range) {
+  LRUTest cache;
+  unsigned int keys[] = {1,2,3,4,5};
+  int values[] = {1,2,3,4,5};
+  const unsigned SIZE = 100;
+  cache.set_target_size(SIZE);
+  for (auto k : keys) {
+    for (auto v : values) {
+      auto [ref, existed] = cache.add(keys[k], values[v]);
+    }
+  }
+  cache.clear_range(1,3);
+  // Should not exists:
+  {
+    auto [ref, existed] = cache.add(1, 4);
+    ASSERT_FALSE(existed);
+  }
+  {
+    auto [ref, existed] = cache.add(2, 4);
+    ASSERT_FALSE(existed);
+  }
+  {
+    auto [ref, existed] = cache.add(3, 4);
+    ASSERT_FALSE(existed);
+  }
+  // Should exists:
+  {
+    auto [ref, existed] = cache.add(4, 4);
+    ASSERT_TRUE(existed);
+  }
+  {
+    auto [ref, existed] = cache.add(5, 4);
+    ASSERT_TRUE(existed);
+  }
+  // Test out of bound deletion:
+  {
+    cache.clear_range(4,8);
+    auto [ref, existed] = cache.add(4, 4);
+    ASSERT_FALSE(existed);
+  }
+}
