@@ -1355,7 +1355,7 @@ cmake .. \
 %if 0%{with cephfs_java}
     -DJAVA_HOME=%{java_home} \
     -DJAVA_LIB_INSTALL_DIR=%{_jnidir} \
-    -DWITH_CEPHFS_JAVA:BOOL=ON \
+    -DWITH_CEPHFS_JAVA:BOOL=OFF \
 %endif
 %if 0%{with selinux}
     -DWITH_SELINUX:BOOL=ON \
