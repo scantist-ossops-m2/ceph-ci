@@ -620,10 +620,13 @@ flushjournal_out:
   if (r < 0) {
     derr << "Failed to pick public address." << dendl;
     forker.exit(1);
+  } else {
+    dout(10) << "picked public addrs " << public_addrs << dendl;
   }
   r = pick_addresses(g_ceph_context, CEPH_PICK_ADDRESS_PUBLIC_BIND, &public_bind_addrs,
 		     iface_preferred_numa_node);
   if (r == -ENOENT) {
+    dout(10) << "there is no public_bind_addrs, defaulting to public_addrs" << dendl;
     public_bind_addrs = public_addrs;
   } else if (r < 0) {
     derr << "Failed to pick public_bind address." << dendl;
@@ -636,12 +639,15 @@ flushjournal_out:
     forker.exit(1);
   }
 
-  if (ms_public->bindv(public_bind_addrs) < 0)
+  if (r = ms_public->bindv(public_bind_addrs); r < 0) {
+    derr << "Failed to bindv for "<< public_bind_addrs << dendl;
     forker.exit(1);
+  }
 
   // if the public and public bind addr are different set the msgr addr
   // to the public one, now that the bind is complete.
   if (public_addrs != public_bind_addrs) {
+    dout(10) << "setting ms_public's addrs to " << public_addrs << dendl;
     ms_public->set_addrs(public_addrs);
   }
 
