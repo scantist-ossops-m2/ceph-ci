@@ -144,3 +144,16 @@ class TestQuota(CephFSTestCase):
         self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes", "2Ti")
         self.assertEqual(self.mount_a.getfattr(
             "./subdir", "ceph.quota.max_bytes"), "2199023255552")
+
+    def test_human_readable_quota_invalid_values(self):
+        """
+        test invalid values for ceph.quota.max_bytes
+        """
+
+        self.mount_a.run_shell(["mkdir", "subdir"])
+
+        invalid_values = ["10A", "1y00Ki", "af00", "G", "", " ", "-1t", "-1"]
+        for invalid_value in invalid_values:
+            with self.assertRaises(CommandFailedError):
+                self.mount_a.setfattr("./subdir", "ceph.quota.max_bytes",
+                                      invalid_value)
