@@ -662,7 +662,7 @@ flushjournal_out:
     ms_hb_front_server->set_socket_priority(SOCKET_PRIORITY_MIN_DELAY);
   }
 
-  entity_addrvec_t hb_front_addrs = public_addrs;
+  entity_addrvec_t hb_front_addrs = public_bind_addrs;
   for (auto& a : hb_front_addrs.v) {
     a.set_port(0);
   }
