@@ -446,3 +446,191 @@ cd-create-cluster {
   background-color: colors.$blue-60;
   color: colors.$white;
 }
+/* stylelint-disable */ //Set the carbon theme to g100 (darkest)
+$carbon--theme: $carbon--theme--g100;
+@include carbon--theme();
+/* stylelint-enable */
+cd-navigation {
+  .cd-navbar-top {
+    .fa-bell::before {
+      content: url('../assets/ibm/notification.svg') !important;
+    }
+
+    .fa-question-circle-o::before {
+      content: url('../assets/ibm/help.svg') !important;
+    }
+
+    .fa-cog::before {
+      content: url('../assets/ibm/userSettings.svg') !important;
+    }
+
+    .fa-user::before {
+      content: url('../assets/ibm/userAvatar.svg') !important;
+    }
+
+    .dropdown .dropdown-menu {
+      background-color: $background !important;
+      border-radius: 0 !important;
+
+      .dropdown-item {
+        color: $text-primary;
+      }
+
+      a:hover,
+      button:hover {
+        background-color: $background-hover !important;
+        color: $text-primary !important;
+      }
+
+      .fa-lock::before {
+        content: none !important;
+      }
+
+      .fa-sign-out::before {
+        content: url('../assets/ibm/logout.svg') !important;
+        margin-right: -1rem !important;
+      }
+    }
+
+    .dropdown-toggle::after {
+      content: none !important;
+    }
+
+    .cd-navbar-brand {
+      height: 3rem !important;
+    }
+
+    .fa-bars::before {
+      font-size: 1.25rem !important;
+    }
+
+    a img {
+      display: none !important;
+    }
+
+    .navbar-brand::before {
+      content: 'IBM Storage Ceph' !important;
+    }
+
+    ul {
+      .nav-item {
+        .fa::before {
+          font-size: 1.25rem !important;
+        }
+      }
+    }
+  }
+
+  .wrapper {
+    #sidebar {
+      .simplebar-content-wrapper {
+        background-color: $background !important;
+
+        ul ul a {
+          background-color: $background !important;
+        }
+
+        a:hover,
+        li:hover {
+          background-color: $background-hover !important;
+          color: $text-primary !important;
+        }
+
+        a:focus,
+        li:focus {
+          border: 2px solid $focus !important;
+        }
+
+        a:active,
+        li:active {
+          background-color: $background-active !important;
+          color: $text-primary !important;
+        }
+      }
+    }
+
+    a.dropdown-toggle {
+      &[aria-expanded='true']::after {
+        transform: rotate(-90deg) !important;
+      }
+    }
+  }
+}
+
+cd-notifications-sidebar {
+  .card {
+    background-color: $background !important;
+    border-radius: 0 !important;
+    color: $text-primary !important;
+
+    .card-header {
+      background-color: $background !important;
+
+      .float-right {
+        pointer-events: none !important;
+
+        .fa-times::before {
+          content: none !important;
+        }
+      }
+    }
+
+    .card-body {
+      .btn-light {
+        background-color: $background !important;
+        color: $text-primary !important;
+      }
+
+      .fa-trash-o::before {
+        color: $text-primary !important;
+      }
+    }
+
+    .simplebar-vertical {
+      .simplebar-scrollbar::before {
+        background-color: $text-primary !important;
+      }
+    }
+
+    p {
+      color: $text-secondary !important;
+    }
+
+    .border-danger {
+      border-color: $support-error !important;
+    }
+
+    .border-info {
+      border-color: $support-info !important;
+    }
+
+    .border-success {
+      border-color: $support-success !important;
+    }
+  }
+}
+
+cd-identity {
+  .dropdown-item:not(.disabled) {
+    align-items: center !important;
+    display: flex !important;
+    flex-direction: row-reverse !important;
+    justify-content: space-between !important;
+  }
+
+  .dropdown-item:last-child {
+    span {
+      visibility: hidden !important;
+    }
+
+    &::after {
+      content: 'Logout' !important;
+      visibility: visible !important;
+    }
+  }
+
+  button:hover {
+    background-color: $background-hover !important;
+    color: $text-primary !important;
+  }
+}
