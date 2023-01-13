@@ -5584,7 +5584,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
         if (acked != i->second.ping_history.end()) {
           int &unacknowledged = acked->second.second;
           if (con == i->second.con_back) {
-            dout(25) << "handle_osd_ping got reply from osd." << from
+            dout(20) << "handle_osd_ping got reply from osd." << from
                      << " first_tx " << i->second.first_tx
                      << " last_tx " << i->second.last_tx
                      << " last_rx_back " << i->second.last_rx_back
@@ -5601,7 +5601,7 @@ void OSD::handle_osd_ping(MOSDPing *m)
               --unacknowledged;
             }
           } else if (con == i->second.con_front) {
-            dout(25) << "handle_osd_ping got reply from osd." << from
+            dout(20) << "handle_osd_ping got reply from osd." << from
                      << " first_tx " << i->second.first_tx
                      << " last_tx " << i->second.last_tx
                      << " last_rx_back " << i->second.last_rx_back
@@ -5611,11 +5611,17 @@ void OSD::handle_osd_ping(MOSDPing *m)
             i->second.last_rx_front = now;
             ceph_assert(unacknowledged > 0);
             --unacknowledged;
+          } else {
+            dout(20) << "handle_osd_ping con mismatch"
+                     << " con=" << con
+                     << " i->second.con_back=" << i->second.con_back
+                     << " i->second.con_front=" << i->second.con_front
+                     << dendl;
           }
 
           if (unacknowledged == 0) {
             // succeeded in getting all replies
-            dout(25) << "handle_osd_ping got all replies from osd." << from
+            dout(20) << "handle_osd_ping got all replies from osd." << from
                      << " , erase pending ping(sent at " << m->ping_stamp << ")"
                      << " and older pending ping(s)"
                      << dendl;
@@ -5773,6 +5779,8 @@ void OSD::handle_osd_ping(MOSDPing *m)
                    << "and ignore"
                    << dendl;
         }
+      } else {
+        dout(10) << "handle_osd_ping can't find " << from << " in peermap" << dendl;
       }
 
       if (m->map_epoch &&
@@ -5844,12 +5852,12 @@ void OSD::heartbeat_check()
        ++p) {
 
     if (p->second.first_tx == utime_t()) {
-      dout(25) << "heartbeat_check we haven't sent ping to osd." << p->first
+      dout(20) << "heartbeat_check we haven't sent ping to osd." << p->first
                << " yet, skipping" << dendl;
       continue;
     }
 
-    dout(25) << "heartbeat_check osd." << p->first
+    dout(20) << "heartbeat_check osd." << p->first
 	     << " first_tx " << p->second.first_tx
 	     << " last_tx " << p->second.last_tx
 	     << " last_rx_back " << p->second.last_rx_back
