@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 
 from setuptools import setup
+from distutils.command.install import INSTALL_SCHEMES
 
 __version__ = '0.0.1'
+
+for scheme in INSTALL_SCHEMES.values():
+    scheme['purelib'] = scheme['scripts']
 
 setup(
     name='cephfs-top',
     version=__version__,
     description='top(1) like utility for Ceph Filesystem',
     keywords='cephfs, top',
-    scripts=['cephfs-top'],
+    scripts=['cephfs-top', 'fstopbase.py'],
     install_requires=[
         'rados',
     ],
