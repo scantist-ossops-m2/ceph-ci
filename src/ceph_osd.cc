@@ -662,12 +662,20 @@ flushjournal_out:
     ms_hb_front_server->set_socket_priority(SOCKET_PRIORITY_MIN_DELAY);
   }
 
-  entity_addrvec_t hb_front_addrs = public_bind_addrs;
+  entity_addrvec_t hb_front_bind_addrs = public_bind_addrs;
+  for (auto& a : hb_front_bind_addrs.v) {
+    a.set_port(0);
+  }
+  entity_addrvec_t hb_front_addrs = public_addrs;
   for (auto& a : hb_front_addrs.v) {
     a.set_port(0);
   }
-  if (ms_hb_front_server->bindv(hb_front_addrs) < 0)
+  if (ms_hb_front_server->bindv(hb_front_bind_addrs) < 0)
     forker.exit(1);
+  if (hb_front_addrs != public_bind_addrs) {
+    dout(10) << "setting ms_hb_front_server's addrs to " << public_addrs << dendl;
+    ms_public->set_addrs(hb_front_addrs);
+  }
   if (ms_hb_front_client->client_bind(hb_front_addrs.front()) < 0)
     forker.exit(1);
 
