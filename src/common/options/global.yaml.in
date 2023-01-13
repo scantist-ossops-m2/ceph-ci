@@ -2790,6 +2790,11 @@ options:
   level: advanced
   default: false
   with_legacy: true
+- name: osd_heartbeat_check_enable
+  desc: Whether to check for non-responding peers and report them
+  type: bool
+  level: dev
+  default: true
 - name: osd_heartbeat_interval
   type: int
   level: dev

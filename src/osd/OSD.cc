@@ -5830,6 +5830,11 @@ void OSD::heartbeat_entry()
 
 void OSD::heartbeat_check()
 {
+  if (!cct->_conf.get_val<bool>("osd_heartbeat_check_enable")) {
+    dout(20) << "heartbeat_check disabled, exiting!" << dendl;
+    return;
+  }
+
   ceph_assert(ceph_mutex_is_locked(heartbeat_lock));
   utime_t now = ceph_clock_now();
 
