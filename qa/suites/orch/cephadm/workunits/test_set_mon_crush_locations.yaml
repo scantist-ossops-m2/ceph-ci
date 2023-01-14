@@ -1,0 +1,38 @@
+roles:
+- - host.a
+  - osd.0
+  - mon.a
+  - mgr.a
+- - host.b
+  - osd.1
+  - mon.b
+  - mgr.b
+- - host.c
+  - osd.2
+  - mon.c
+tasks:
+- install:
+- cephadm:
+- cephadm.apply:
+    specs:
+      - service_type: mon
+        service_id: foo
+        placement:
+          count: 3
+        spec:
+          crush_locations:
+            host.a:
+              - datacenter=a
+            host.b:
+              - datacenter=b
+              - rack=2
+            host.c:
+              - datacenter=a
+              - rack=3
+- cephadm.shell:
+  - ceph orch ps --refresh
+  - sleep 180
+  - ceph mon dump --format json
+  - ceph mon dump --format json | jq -e '.mons | .[] | select(.name == "host.a") | .crush_location == "{datacenter=a}"'
+  - ceph mon dump --format json | jq -e '.mons | .[] | select(.name == "host.b") | .crush_location == "{datacenter=b,rack=2}"'
+  - ceph mon dump --format json | jq -e '.mons | .[] | select(.name == "host.c") | .crush_location == "{datacenter=a,rack=3}"'
