@@ -3088,9 +3088,15 @@ BlueStore::Blob* BlueStore::ExtentMap::find_mergable_companion(
   return result;
 }
 
+
 void BlueStore::ExtentMap::reblob_extents(uint32_t blob_start, uint32_t blob_end,
 					  BlobRef from_blob, BlobRef to_blob)
 {
+  if (from_blob->is_spanning()) {
+    dout(20) << __func__ << " removing spanning blob" << dendl;
+    spanning_blob_map.erase(from_blob->id);
+    from_blob->id = -1;
+  }
   auto prev = extent_map.end();
   for (auto ep = seek_lextent(blob_start); ep != extent_map.end();) {
     auto& e = *ep;
@@ -3194,6 +3200,8 @@ void BlueStore::ExtentMap::make_range_shared(
   }
   if (src_dirty) {
     oldo->extent_map.dirty_range(dirty_range_begin,
+      dirty_range_end - dirty_range_begin);
+    oldo->extent_map.request_reshard(dirty_range_begin,
       dirty_range_end - dirty_range_begin);
     txc->write_onode(oldo);
   }
@@ -18408,7 +18416,7 @@ void BlueStore::_record_onode(OnodeRef& o, KeyValueDB::Transaction &txn)
 {
   // finalize extent_map shards
   o->extent_map.update(txn, false);
-  if (o->extent_map.needs_reshard()) {
+  if (false && o->extent_map.needs_reshard()) {
     o->extent_map.reshard(db, txn);
     o->extent_map.update(txn, true);
     if (o->extent_map.needs_reshard()) {
