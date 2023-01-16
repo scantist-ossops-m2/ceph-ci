@@ -241,7 +241,8 @@ class IngressService(CephService):
                 if d.daemon_type == 'haproxy':
                     assert d.ports
                     port = d.ports[1]   # monitoring port
-                    script = f'/usr/bin/curl {build_url(scheme="http", host=d.ip or "localhost", port=port)}/health'
+                    host_ip = d.ip or self.mgr.inventory.get_addr(d.hostname)
+                    script = f'/usr/bin/curl {build_url(scheme="http", host=host_ip, port=port)}/health'
         assert script
 
         states = []
