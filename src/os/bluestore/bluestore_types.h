@@ -395,7 +395,8 @@ struct bluestore_blob_use_tracker_t {
   void split(
     uint32_t blob_offset,
     bluestore_blob_use_tracker_t* r);
-
+  void dup(const bluestore_blob_use_tracker_t& from,
+	   uint32_t start, uint32_t len);
   bool equal(
     const bluestore_blob_use_tracker_t& other) const;
     
@@ -482,6 +483,8 @@ public:
   ceph::buffer::ptr csum_data;                ///< opaque std::vector of csum data
 
   bluestore_blob_t(uint32_t f = 0) : flags(f) {}
+
+  void dup(const bluestore_blob_t& from);
 
   const PExtentVector& get_extents() const {
     return extents;
@@ -882,6 +885,7 @@ public:
       csum_data = ceph::buffer::ptr(t.c_str(),
 			    get_logical_length() / get_csum_chunk_size() *
 			    get_csum_value_size());
+      csum_data.reassign_to_mempool(mempool::mempool_bluestore_cache_other);
     }
   }
   void add_tail(uint32_t new_len) {
@@ -900,6 +904,7 @@ public:
 	get_csum_value_size() * logical_length / get_csum_chunk_size());
       csum_data.copy_in(0, t.length(), t.c_str());
       csum_data.zero(t.length(), csum_data.length() - t.length());
+      csum_data.reassign_to_mempool(mempool::mempool_bluestore_cache_other);
     }
   }
   uint32_t get_release_size(uint32_t min_alloc_size) const {
