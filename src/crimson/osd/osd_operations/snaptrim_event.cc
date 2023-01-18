@@ -496,11 +496,11 @@ SnapTrimObjSubEvent::with_pg(
     // end of commonality
     // with_cone_obc lock both clone's and head's obcs
     return pg->obc_loader.with_clone_obc<RWState::RWWRITE>(coid, [this](auto clone_obc) {
-      logger().debug("{}: got clone_obc={}", *this, clone_obc);
+      logger().debug("{}: got clone_obc={}", *this, fmt::ptr(clone_obc.get()));
       return enter_stage<interruptor>(
         pp().process
       ).then_interruptible([this, clone_obc=std::move(clone_obc)]() mutable {
-        logger().debug("{}: processing clone_obc={}", *this, clone_obc);
+        logger().debug("{}: processing clone_obc={}", *this, fmt::ptr(clone_obc.get()));
         return remove_or_update(
           clone_obc, clone_obc->head
         ).safe_then_unpack_interruptible([clone_obc, this]
