@@ -6,6 +6,7 @@ from ceph_volume.util import prepare as prepare_utils
 from ceph_volume.util import encryption as encryption_utils
 from ceph_volume.util import system, disk
 from ceph_volume.util.arg_validators import exclude_group_options
+from ceph_volume.util.device import validate_devices
 from ceph_volume import conf, decorators, terminal
 from ceph_volume.api import lvm as api
 from .common import prepare_parser, rollback_osd
@@ -243,7 +244,9 @@ class Prepare(object):
             lv = api.get_single_lv(filters={'lv_name': lvname,
                                             'vg_name': vgname})
         except ValueError:
-            lv = None
+            lv = api.get_single_lv(filters={'lv_path': api.get_lv_path_from_mapper(self.args.data)})
+            if not lv:
+                lv = None
 
         if api.is_ceph_device(lv):
             logger.info("device {} is already used".format(self.args.data))
@@ -357,7 +360,9 @@ class Prepare(object):
                 block_lv = api.get_single_lv(filters={'lv_name': lv_name,
                                                       'vg_name': vg_name})
             except ValueError:
-                block_lv = None
+                block_lv = api.get_single_lv(filters={'lv_path': api.get_lv_path_from_mapper(self.args.data)})
+                if not block_lv:
+                    block_lv = None
 
             if not block_lv:
                 block_lv = self.prepare_data_device('block', osd_fsid)
@@ -429,6 +434,9 @@ class Prepare(object):
             return
         exclude_group_options(parser, argv=self.argv, groups=['filestore', 'bluestore'])
         self.args = parser.parse_args(self.argv)
+
+        validate_devices(self.args, as_string=True)
+
         # the unfortunate mix of one superset for both filestore and bluestore
         # makes this validation cumbersome
         if self.args.filestore:
