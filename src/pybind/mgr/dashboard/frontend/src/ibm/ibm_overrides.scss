@@ -29,6 +29,65 @@ cd-workbench-layout {
   }
 }
 
+.btn-primary,
+.btn-accent,
+.btn-accent.dropdown-toggle {
+  background-color: #0f62fe !important;
+  border-radius: 0 !important;
+
+  &:focus {
+    box-shadow:rgba(#0f62fe, 0.5)
+  }
+}
+
+.text-success {
+  color: $support-02 !important;
+}
+
+.text-warning {
+  color: $support-03 !important;
+}
+
+.text-danger {
+  color: $support-01 !important;
+}
+.text-info {
+  color: $support-04 !important;
+}
+
+.badge {
+  font-weight: 400 !important;
+}
+
+.badge-success {
+  background-color: $support-02 !important;
+  color: vv.$white !important;
+  font-weight: 400 !important;
+}
+
+.badge-warning {
+  background-color: $support-03 !important;
+  color: vv.$white !important;
+  font-weight: 400 !important;
+}
+
+.badge-danger {
+  background-color: $support-01 !important;
+  color: vv.$white !important;
+  font-weight: 400 !important;
+}
+.badge-info {
+  background-color: $support-04 !important;
+  color: vv.$white !important;
+  font-weight: 400 !important;
+}
+
+.badge-background-primary {
+  background-color: #0f62fe !important;
+  color: vv.$white !important;
+  font-weight: 400 !important;
+}
+
 // About modal branding
 cd-about {
   .about-container {
@@ -122,28 +181,21 @@ cd-about {
     padding: 0 !important;
 
     .text-left {
-      position: relative;
-      visibility: hidden;
-    }
+      display: flex;
 
-    // IBM Licence text
-    .text-left::after {
-      content: 'Licenced materials - Property of IBM Corp. and IBM Storage Ceph are trademark or registered trademarks of International Business Machine.';
-      line-height: 1rem;
-      margin-left: -89.8%;
-      position: absolute;
-      visibility: visible;
-      width: 60%;
-    }
-  }
+      .copyright {
+        display: flex;
+        margin-left: 2.3rem;
+        margin-top: 4.5rem !important;
+        width: 100%;
+      }
 
-  // IBM Copyright text
-  .modal-footer::after {
-    content: 'Copyright IBM corporation 1994, 2022';
-    margin-left: 40px;
-    margin-top: 3rem;
-    position: absolute;
-    visibility: visible;
+      .licence {
+        line-height: 1.2rem;
+        margin-left: -49.5rem !important;
+        width: 62%;
+      }
+    }
   }
 }
 
@@ -196,7 +248,7 @@ cd-create-cluster {
 
   h3::after {
     color: $bg-text-color !important;
-    content: 'Welcome to IBM Storage Ceph Dashboard';
+    content: 'Welcome to IBM Storage Ceph';
     font-size: unset !important;
     margin-left: -124%;
     position: absolute;
@@ -353,6 +405,7 @@ cd-create-cluster {
 
             .login-buttons {
               height: 64px;
+              margin-top: 40px;
             }
 
             .btn-accent {
@@ -360,12 +413,10 @@ cd-create-cluster {
               color: colors.$gray-60;
               height: 100%;
               margin: 0;
+              margin-left: 50%;
               padding: 1rem !important;
               text-align: left;
-
-              &::after {
-                content: url('../assets/ibm/arrow--right.svg');
-              }
+              width: 50%;
 
               &:disabled {
                 background-color: colors.$gray-30 !important;
@@ -598,14 +649,26 @@ cd-notifications-sidebar {
 
     .border-danger {
       border-color: $support-error !important;
+
+      .fa-circle {
+        color: $support-error !important;
+      }
     }
 
     .border-info {
       border-color: $support-info !important;
+
+      .fa-circle {
+        color: $support-info !important;
+      }
     }
 
     .border-success {
       border-color: $support-success !important;
+
+      .fa-circle {
+        color: $support-success !important;
+      }
     }
   }
 }
@@ -632,5 +695,13 @@ cd-identity {
   button:hover {
     background-color: $background-hover !important;
     color: $text-primary !important;
+  }
+}
+
+cd-error {
+  .blank-page {
+    .fa-wrench {
+      color: $support-04 !important;
+    }
   }
 }
