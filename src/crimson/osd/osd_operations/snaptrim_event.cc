@@ -73,7 +73,7 @@ void SnapTrimEvent::dump_detail(Formatter *f) const
 SnapTrimEvent::snap_trim_ertr::future<seastar::stop_iteration>
 SnapTrimEvent::start()
 {
-  logger().debug("{}: start", *this, __func__);
+  logger().debug("{}: {}", *this, __func__);
   return with_pg(
     pg->get_shard_services(), pg
   ).finally([ref=IRef{this}, this] {
