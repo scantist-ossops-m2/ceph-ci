@@ -199,3 +199,7 @@ public:
 };
 
 } // namespace crimson::osd
+
+#if FMT_VERSION >= 90000
+template <> struct fmt::formatter<crimson::osd::SnapTrimEvent> : fmt::ostream_formatter {};
+#endif
