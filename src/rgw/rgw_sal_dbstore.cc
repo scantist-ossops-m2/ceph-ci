@@ -321,13 +321,11 @@ namespace rgw::sal {
     return 0;
   }
 
-  int DBBucket::chown(const DoutPrefixProvider *dpp, User* new_user, User* old_user, optional_yield y, const std::string* marker)
+  int DBBucket::chown(const DoutPrefixProvider *dpp, User& new_user, optional_yield y)
   {
     int ret;
 
-    ret = store->getDB()->update_bucket(dpp, "owner", info, false, &(new_user->get_id()), nullptr, nullptr, nullptr);
-
-    /* XXX: Update policies of all the bucket->objects with new user */
+    ret = store->getDB()->update_bucket(dpp, "owner", info, false, &(new_user.get_id()), nullptr, nullptr, nullptr);
     return ret;
   }
 
@@ -720,6 +718,11 @@ namespace rgw::sal {
     DB::Object op_target(store->getDB(),
         get_bucket()->get_info(), get_obj());
     return op_target.obj_omap_set_val_by_key(dpp, key, val, must_exist);
+  }
+
+  int DBObject::chown(User& new_user, const DoutPrefixProvider* dpp, optional_yield y)
+  {
+    return 0;
   }
 
   std::unique_ptr<MPSerializer> DBObject::get_serializer(const DoutPrefixProvider *dpp,
@@ -1826,7 +1829,8 @@ namespace rgw::sal {
 
   std::unique_ptr<Notification> DBStore::get_notification(
     rgw::sal::Object* obj, rgw::sal::Object* src_obj, req_state* s,
-    rgw::notify::EventType event_type, const std::string* object_name)
+    rgw::notify::EventType event_type, optional_yield y,
+    const std::string* object_name)
   {
     return std::make_unique<DBNotification>(obj, src_obj, event_type);
   }

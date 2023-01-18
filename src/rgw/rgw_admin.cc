@@ -35,7 +35,6 @@ extern "C" {
 #include "include/str_list.h"
 
 #include "rgw_user.h"
-#include "rgw_bucket.h"
 #include "rgw_otp.h"
 #include "rgw_rados.h"
 #include "rgw_acl.h"
@@ -71,6 +70,8 @@ extern "C" {
 #include "services/svc_meta_be_otp.h"
 #include "services/svc_user.h"
 #include "services/svc_zone.h"
+
+#include "driver/rados/rgw_bucket.h"
 
 #define dout_context g_ceph_context
 
@@ -6783,7 +6784,10 @@ int main(int argc, const char **argv)
       }
       bufferlist bl = bufferlist::static_from_string(assume_role_doc);
       try {
-        const rgw::IAM::Policy p(g_ceph_context, tenant, bl);
+        const rgw::IAM::Policy p(
+	  g_ceph_context, tenant, bl,
+	  g_ceph_context->_conf.get_val<bool>(
+	    "rgw_policy_reject_invalid_principals"));
       } catch (rgw::IAM::PolicyParseException& e) {
         cerr << "failed to parse policy: " << e.what() << std::endl;
         return -EINVAL;
@@ -6838,7 +6842,9 @@ int main(int argc, const char **argv)
 
       bufferlist bl = bufferlist::static_from_string(assume_role_doc);
       try {
-        const rgw::IAM::Policy p(g_ceph_context, tenant, bl);
+        const rgw::IAM::Policy p(g_ceph_context, tenant, bl,
+				 g_ceph_context->_conf.get_val<bool>(
+				   "rgw_policy_reject_invalid_principals"));
       } catch (rgw::IAM::PolicyParseException& e) {
         cerr << "failed to parse policy: " << e.what() << std::endl;
         return -EINVAL;
@@ -6896,7 +6902,9 @@ int main(int argc, const char **argv)
         bl = bufferlist::static_from_string(perm_policy_doc);
       }
       try {
-        const rgw::IAM::Policy p(g_ceph_context, tenant, bl);
+        const rgw::IAM::Policy p(g_ceph_context, tenant, bl,
+				 g_ceph_context->_conf.get_val<bool>(
+				   "rgw_policy_reject_invalid_principals"));
       } catch (rgw::IAM::PolicyParseException& e) {
         cerr << "failed to parse perm policy: " << e.what() << std::endl;
         return -EINVAL;
@@ -8597,7 +8605,7 @@ next:
   }
 
   if (opt_cmd == OPT::USER_CHECK) {
-    check_bad_user_bucket_mapping(driver, user.get(), fix, null_yield, dpp());
+    check_bad_user_bucket_mapping(driver, *user.get(), fix, null_yield, dpp());
   }
 
   if (opt_cmd == OPT::USER_STATS) {
@@ -10299,7 +10307,7 @@ next:
 
     list<rados::cls::otp::otp_info_t> result;
     int ret = static_cast<rgw::sal::RadosStore*>(driver)->svc()->cls->mfa.list_mfa(dpp(), user->get_id(), &result, null_yield);
-    if (ret < 0) {
+    if (ret < 0 && ret != -ENOENT) {
       cerr << "MFA listing failed, error: " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
@@ -10440,7 +10448,7 @@ next:
 
       auto b = ps.get_bucket(bucket->get_key());
       ret = b->get_topics(&result);
-      if (ret < 0) {
+      if (ret < 0 && ret != -ENOENT) {
         cerr << "ERROR: could not get topics: " << cpp_strerror(-ret) << std::endl;
         return -ret;
       }
@@ -10448,7 +10456,7 @@ next:
     } else {
       rgw_pubsub_topics result;
       int ret = ps.get_topics(&result);
-      if (ret < 0) {
+      if (ret < 0 && ret != -ENOENT) {
         cerr << "ERROR: could not get topics: " << cpp_strerror(-ret) << std::endl;
         return -ret;
       }

@@ -1765,7 +1765,11 @@ void RGWListBucket_ObjStore_S3::send_common_response()
   s->formatter->dump_string("Prefix", prefix);
   s->formatter->dump_int("MaxKeys", max);
   if (!delimiter.empty()) {
-    s->formatter->dump_string("Delimiter", delimiter);
+    if (encode_key) {
+      s->formatter->dump_string("Delimiter", url_encode(delimiter, false));
+    } else {
+      s->formatter->dump_string("Delimiter", delimiter);
+    }
   }
   s->formatter->dump_string("IsTruncated", (max && is_truncated ? "true"
               : "false"));
@@ -2872,7 +2876,7 @@ int RGWPostObj_ObjStore_S3::get_params(optional_yield y)
     return -EINVAL;
   }
 
-  s->object = driver->get_object(rgw_obj_key(object_str));
+  s->object = s->bucket->get_object(rgw_obj_key(object_str));
 
   rebuild_key(s->object.get());
 
@@ -4873,9 +4877,11 @@ int RGWHandler_REST_S3::postauth_init(optional_yield y)
 {
   struct req_init_state *t = &s->init_state;
 
-  rgw_parse_url_bucket(t->url_bucket, s->user->get_tenant(),
-		      s->bucket_tenant, s->bucket_name);
-
+  int ret = rgw_parse_url_bucket(t->url_bucket, s->user->get_tenant(),
+                                 s->bucket_tenant, s->bucket_name);
+  if (ret) {
+    return ret;
+  }
   if (s->auth.identity->get_identity_type() == TYPE_ROLE) {
     s->bucket_tenant = s->auth.identity->get_role_tenant();
   }
@@ -4883,7 +4889,6 @@ int RGWHandler_REST_S3::postauth_init(optional_yield y)
   ldpp_dout(s, 10) << "s->object=" << s->object
            << " s->bucket=" << rgw_make_bucket_entry_name(s->bucket_tenant, s->bucket_name) << dendl;
 
-  int ret;
   ret = rgw_validate_tenant_name(s->bucket_tenant);
   if (ret)
     return ret;
@@ -4900,8 +4905,11 @@ int RGWHandler_REST_S3::postauth_init(optional_yield y)
     } else {
       auth_tenant = s->user->get_tenant();
     }
-    rgw_parse_url_bucket(t->src_bucket, auth_tenant,
-			s->src_tenant_name, s->src_bucket_name);
+    ret = rgw_parse_url_bucket(t->src_bucket, auth_tenant,
+                               s->src_tenant_name, s->src_bucket_name);
+    if (ret) {
+      return ret;
+    }
     ret = rgw_validate_tenant_name(s->src_tenant_name);
     if (ret)
       return ret;

@@ -321,7 +321,9 @@ if(NOT TARGET RapidJSON::RapidJSON)
 endif()
 
 option(WITH_FMT_HEADER_ONLY "use header-only version of fmt library" OFF)
-find_package(fmt 7.0.0 QUIET)
+set(WITH_FMT_VERSION "7.0.0" CACHE
+  STRING "build with fmt version")
+find_package(fmt ${WITH_FMT_VERSION} QUIET)
 if(fmt_FOUND)
   include_directories(SYSTEM "${fmt_INCLUDE_DIR}")
 else()

@@ -12,6 +12,15 @@ options:
   services:
   - rgw
   with_legacy: true
+# An user can have up to 100 IAM user policies.
+- name: rgw_user_policies_max_num
+  type: int
+  level: advanced
+  desc: Max number of IAM user policies on a single user
+  default: 100
+  services:
+  - rgw
+  with_legacy: true
 # According to AWS S3(http://docs.aws.amazon.com/AmazonS3/latest/dev/cors.html),
 # An cors can have up to 100 rules.
 - name: rgw_cors_rules_max_num
@@ -3699,5 +3708,16 @@ options:
   level: advanced
   desc: DAOS Pool to use
   default: tank
+  services:
+  - rgw
+- name: rgw_policy_reject_invalid_principals
+  type: bool
+  level: basic
+  desc: Whether to reject policies with invalid principals
+  long_desc: If true, policies with invalid principals will be
+    rejected. We don't support Canonical User identifiers or some
+    other form of policies that Amazon does, so if you are mirroring
+    policies between RGW and AWS, you may wish to set this to false.
+  default: true
   services:
   - rgw

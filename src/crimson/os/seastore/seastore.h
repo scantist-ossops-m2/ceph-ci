@@ -55,6 +55,7 @@ struct col_obj_ranges_t {
   ghobject_t obj_end;
 };
 
+using coll_core_t = FuturizedStore::coll_core_t;
 class SeaStore final : public FuturizedStore {
 public:
   class MDStore {
@@ -145,7 +146,7 @@ public:
 
   seastar::future<CollectionRef> create_new_collection(const coll_t& cid) final;
   seastar::future<CollectionRef> open_collection(const coll_t& cid) final;
-  seastar::future<std::vector<coll_t>> list_collections() final;
+  seastar::future<std::vector<coll_core_t>> list_collections() final;
 
   seastar::future<> do_transaction_no_callbacks(
     CollectionRef ch,
@@ -311,21 +312,16 @@ private:
     omap_root_t &&root,
     const omap_keys_t &keys) const;
 
-  using _omap_list_bare_ret = OMapManager::omap_list_bare_ret;
-  using _omap_list_ret = OMapManager::omap_list_ret;
-  _omap_list_ret _omap_list(
+  friend class SeaStoreOmapIterator;
+
+  using omap_list_bare_ret = OMapManager::omap_list_bare_ret;
+  using omap_list_ret = OMapManager::omap_list_ret;
+  omap_list_ret omap_list(
     Onode &onode,
     const omap_root_le_t& omap_root,
     Transaction& t,
     const std::optional<std::string>& start,
     OMapManager::omap_list_config_t config) const;
-
-  friend class SeaStoreOmapIterator;
-  omap_get_values_ret_t omap_list(
-    CollectionRef ch,
-    const ghobject_t &oid,
-    const std::optional<std::string> &_start,
-    OMapManager::omap_list_config_t config);
 
   void init_managers();
 

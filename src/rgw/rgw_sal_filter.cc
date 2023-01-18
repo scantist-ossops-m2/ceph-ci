@@ -275,12 +275,12 @@ std::unique_ptr<Completions> FilterDriver::get_completions(void)
 
 std::unique_ptr<Notification> FilterDriver::get_notification(rgw::sal::Object* obj,
 				rgw::sal::Object* src_obj, req_state* s,
-				rgw::notify::EventType event_type,
+				rgw::notify::EventType event_type, optional_yield y,
 				const std::string* object_name)
 {
   std::unique_ptr<Notification> n = next->get_notification(nextObject(obj),
 							   nextObject(src_obj),
-							   s, event_type,
+							   s, event_type, y,
 							   object_name);
   return std::make_unique<FilterNotification>(std::move(n));
 }
@@ -542,16 +542,6 @@ CephContext* FilterDriver::ctx(void)
   return next->ctx();
 }
 
-const std::string& FilterDriver::get_luarocks_path() const
-{
-  return next->get_luarocks_path();
-}
-
-void FilterDriver::set_luarocks_path(const std::string& path)
-{
-  next->set_luarocks_path(path);
-}
-
 int FilterUser::list_buckets(const DoutPrefixProvider* dpp, const std::string& marker,
 			     const std::string& end_marker, uint64_t max,
 			     bool need_stats, BucketList &buckets, optional_yield y)
@@ -741,11 +731,9 @@ int FilterBucket::check_bucket_shards(const DoutPrefixProvider* dpp)
   return next->check_bucket_shards(dpp);
 }
 
-int FilterBucket::chown(const DoutPrefixProvider* dpp, User* new_user,
-			User* old_user, optional_yield y,
-			const std::string* marker)
+int FilterBucket::chown(const DoutPrefixProvider* dpp, User& new_user, optional_yield y)
 {
-  return next->chown(dpp, new_user, old_user, y, marker);
+  return next->chown(dpp, new_user, y);
 }
 
 int FilterBucket::put_info(const DoutPrefixProvider* dpp, bool exclusive,
@@ -1063,6 +1051,11 @@ int FilterObject::omap_set_val_by_key(const DoutPrefixProvider *dpp,
 				      bool must_exist, optional_yield y)
 {
   return next->omap_set_val_by_key(dpp, key, val, must_exist, y);
+}
+
+int FilterObject::chown(User& new_user, const DoutPrefixProvider* dpp, optional_yield y)
+{
+  return next->chown(new_user, dpp, y);
 }
 
 int FilterObject::FilterReadOp::prepare(optional_yield y, const DoutPrefixProvider* dpp)

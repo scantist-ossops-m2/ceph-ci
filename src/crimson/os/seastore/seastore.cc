@@ -607,9 +607,10 @@ seastar::future<CollectionRef> SeaStore::open_collection(const coll_t& cid)
 {
   LOG_PREFIX(SeaStore::open_collection);
   DEBUG("{}", cid);
-  return list_collections().then([cid, this] (auto colls) {
-    if (auto found = std::find(colls.begin(), colls.end(), cid);
-	found != colls.end()) {
+  return list_collections().then([cid, this] (auto colls_cores) {
+    if (auto found = std::find(colls_cores.begin(), colls_cores.end(),
+        std::make_pair(cid, NULL_CORE));
+      found != colls_cores.end()) {
       return seastar::make_ready_future<CollectionRef>(_get_collection(cid));
     } else {
       return seastar::make_ready_future<CollectionRef>();
@@ -617,10 +618,10 @@ seastar::future<CollectionRef> SeaStore::open_collection(const coll_t& cid)
   });
 }
 
-seastar::future<std::vector<coll_t>> SeaStore::list_collections()
+seastar::future<std::vector<coll_core_t>> SeaStore::list_collections()
 {
   return seastar::do_with(
-    std::vector<coll_t>(),
+    std::vector<coll_core_t>(),
     [this](auto &ret) {
       return repeat_eagain([this, &ret] {
         return transaction_manager->with_transaction_intr(
@@ -635,11 +636,11 @@ seastar::future<std::vector<coll_t>> SeaStore::list_collections()
             ret.resize(colls.size());
             std::transform(
               colls.begin(), colls.end(), ret.begin(),
-              [](auto p) { return p.first; });
+              [](auto p) { return std::make_pair(p.first, NULL_CORE); });
           });
         });
       }).safe_then([&ret] {
-        return seastar::make_ready_future<std::vector<coll_t>>(ret);
+        return seastar::make_ready_future<std::vector<coll_core_t>>(ret);
       });
     }
   ).handle_error(
@@ -767,8 +768,8 @@ SeaStore::get_attrs_ertr::future<SeaStore::attrs_t> SeaStore::get_attrs(
     op_type_t::GET_ATTRS,
     [=, this](auto &t, auto& onode) {
       auto& layout = onode.get_layout();
-      return _omap_list(onode, layout.xattr_root, t, std::nullopt,
-        OMapManager::omap_list_config_t::with_inclusive(false)
+      return omap_list(onode, layout.xattr_root, t, std::nullopt,
+        OMapManager::omap_list_config_t().with_inclusive(false, false)
       ).si_then([&layout](auto p) {
         auto& attrs = std::get<1>(p);
         ceph::bufferlist bl;
@@ -912,7 +913,7 @@ SeaStore::_omap_get_values_ret SeaStore::_omap_get_values(
   );
 }
 
-SeaStore::_omap_list_ret SeaStore::_omap_list(
+SeaStore::omap_list_ret SeaStore::omap_list(
   Onode &onode,
   const omap_root_le_t& omap_root,
   Transaction& t,
@@ -922,7 +923,7 @@ SeaStore::_omap_list_ret SeaStore::_omap_list(
   auto root = omap_root.get(
     onode.get_metadata_hint(device->get_block_size()));
   if (root.is_null()) {
-    return seastar::make_ready_future<_omap_list_bare_ret>(
+    return seastar::make_ready_future<omap_list_bare_ret>(
       true, omap_values_t{}
     );
   }
@@ -930,19 +931,19 @@ SeaStore::_omap_list_ret SeaStore::_omap_list(
     BtreeOMapManager(*transaction_manager),
     root,
     start,
-    [&t, config](auto &manager, auto& root, auto& start) {
-      return manager.omap_list(root, t, start, config);
-    });
+    std::optional<std::string>(std::nullopt),
+    [&t, config](auto &manager, auto &root, auto &start, auto &end) {
+      return manager.omap_list(root, t, start, end, config);
+  });
 }
 
-SeaStore::omap_get_values_ret_t SeaStore::omap_list(
+SeaStore::omap_get_values_ret_t SeaStore::omap_get_values(
   CollectionRef ch,
   const ghobject_t &oid,
-  const std::optional<string> &start,
-  OMapManager::omap_list_config_t config)
+  const std::optional<string> &start)
 {
   auto c = static_cast<SeastoreCollection*>(ch.get());
-  LOG_PREFIX(SeaStore::omap_list);
+  LOG_PREFIX(SeaStore::omap_get_values);
   DEBUG("{} {}", c->get_cid(), oid);
   using ret_bare_t = std::tuple<bool, SeaStore::omap_values_t>;
   return repeat_with_onode<ret_bare_t>(
@@ -951,25 +952,13 @@ SeaStore::omap_get_values_ret_t SeaStore::omap_list(
     Transaction::src_t::READ,
     "omap_list",
     op_type_t::OMAP_LIST,
-    [this, config, &start](auto &t, auto &onode) {
-      return _omap_list(
+    [this, start](auto &t, auto &onode) {
+      return omap_list(
 	onode,
 	onode.get_layout().omap_root,
-	t, start, config
-      );
-    });
-}
-
-SeaStore::omap_get_values_ret_t SeaStore::omap_get_values(
-  CollectionRef ch,
-  const ghobject_t &oid,
-  const std::optional<string> &start)
-{
-  return seastar::do_with(oid, start,
-			  [this, ch=std::move(ch)](auto& oid, auto& start) {
-    return omap_list(
-      ch, oid, start,
-      OMapManager::omap_list_config_t::with_inclusive(false));
+	t,
+	start,
+	OMapManager::omap_list_config_t().with_inclusive(false, false));
   });
 }
 
@@ -1490,8 +1479,43 @@ SeaStore::tm_ret SeaStore::_omap_rmkeyrange(
 {
   LOG_PREFIX(SeaStore::_omap_rmkeyrange);
   DEBUGT("{} first={} last={}", *ctx.transaction, *onode, first, last);
-  assert(0 == "not supported yet");
-  return tm_iertr::now();
+  if (first > last) {
+    ERRORT("range error, first: {} > last:{}", *ctx.transaction, first, last);
+    ceph_abort();
+  }
+  auto omap_root = onode->get_layout().omap_root.get(
+    onode->get_metadata_hint(device->get_block_size()));
+  if (omap_root.is_null()) {
+    return seastar::now();
+  } else {
+    return seastar::do_with(
+      BtreeOMapManager(*transaction_manager),
+      onode->get_layout().omap_root.get(
+        onode->get_metadata_hint(device->get_block_size())),
+      std::move(first),
+      std::move(last),
+      [&ctx, &onode](
+	auto &omap_manager,
+	auto &omap_root,
+	auto &first,
+	auto &last) {
+      auto config = OMapManager::omap_list_config_t()
+	.with_inclusive(true, false)
+	.without_max();
+      return omap_manager.omap_rm_key_range(
+	omap_root,
+	*ctx.transaction,
+	first,
+	last,
+	config
+      ).si_then([&] {
+        if (omap_root.must_update()) {
+          onode->get_mutable_layout(*ctx.transaction
+          ).omap_root.update(omap_root);
+        }
+      });
+    });
+  }
 }
 
 SeaStore::tm_ret SeaStore::_truncate(

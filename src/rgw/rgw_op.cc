@@ -47,6 +47,7 @@
 #include "rgw_putobj_processor.h"
 #include "rgw_crypt.h"
 #include "rgw_perf_counters.h"
+#include "rgw_process_env.h"
 #include "rgw_notify.h"
 #include "rgw_notify_event_type.h"
 #include "rgw_sal.h"
@@ -293,7 +294,7 @@ static boost::optional<Policy> get_iam_policy_from_attr(CephContext* cct,
 							const string& tenant) {
   auto i = attrs.find(RGW_ATTR_IAM_POLICY);
   if (i != attrs.end()) {
-    return Policy(cct, tenant, i->second);
+    return Policy(cct, tenant, i->second, false);
   } else {
     return none;
   }
@@ -326,7 +327,7 @@ vector<Policy> get_iam_user_policy_from_attr(CephContext* cct,
    decode(policy_map, out_bl);
    for (auto& it : policy_map) {
      bufferlist bl = bufferlist::static_from_string(it.second);
-     Policy p(cct, tenant, bl);
+     Policy p(cct, tenant, bl, false);
      policies.push_back(std::move(p));
    }
   }
@@ -2087,7 +2088,7 @@ int RGWGetObj::get_data_cb(bufferlist& bl, off_t bl_ofs, off_t bl_len)
 
 int RGWGetObj::get_lua_filter(std::unique_ptr<RGWGetObj_Filter>* filter, RGWGetObj_Filter* cb) {
   std::string script;
-  const auto rc = rgw::lua::read_script(s, s->lua_manager, s->bucket_tenant, s->yield, rgw::lua::context::getData, script);
+  const auto rc = rgw::lua::read_script(s, s->penv.lua.manager.get(), s->bucket_tenant, s->yield, rgw::lua::context::getData, script);
   if (rc == -ENOENT) {
     // no script, nothing to do
     return 0;
@@ -3874,7 +3875,7 @@ static CompressorRef get_compressor_plugin(const req_state *s,
 
 int RGWPutObj::get_lua_filter(std::unique_ptr<rgw::sal::DataProcessor>* filter, rgw::sal::DataProcessor* cb) {
   std::string script;
-  const auto rc = rgw::lua::read_script(s, s->lua_manager, s->bucket_tenant, s->yield, rgw::lua::context::putData, script);
+  const auto rc = rgw::lua::read_script(s, s->penv.lua.manager.get(), s->bucket_tenant, s->yield, rgw::lua::context::putData, script);
   if (rc == -ENOENT) {
     // no script, nothing to do
     return 0;
@@ -3969,7 +3970,7 @@ void RGWPutObj::execute(optional_yield y)
   std::unique_ptr<rgw::sal::Notification> res
 		     = driver->get_notification(
 		       s->object.get(), s->src_object.get(), s,
-		       rgw::notify::ObjectCreatedPut);
+		       rgw::notify::ObjectCreatedPut, y);
   if(!multipart) {
     op_ret = res->publish_reserve(this, obj_tags.get());
     if (op_ret < 0) {
@@ -4377,7 +4378,7 @@ void RGWPostObj::execute(optional_yield y)
 
   // make reservation for notification if needed
   std::unique_ptr<rgw::sal::Notification> res
-    = driver->get_notification(s->object.get(), s->src_object.get(), s, rgw::notify::ObjectCreatedPost);
+    = driver->get_notification(s->object.get(), s->src_object.get(), s, rgw::notify::ObjectCreatedPost, y);
   op_ret = res->publish_reserve(this);
   if (op_ret < 0) {
     return;
@@ -5062,7 +5063,7 @@ void RGWDeleteObj::execute(optional_yield y)
       rgw::notify::ObjectRemovedDelete;
     std::unique_ptr<rgw::sal::Notification> res
       = driver->get_notification(s->object.get(), s->src_object.get(), s,
-				event_type);
+				event_type, y);
     op_ret = res->publish_reserve(this);
     if (op_ret < 0) {
       return;
@@ -5466,7 +5467,7 @@ void RGWCopyObj::execute(optional_yield y)
   std::unique_ptr<rgw::sal::Notification> res
 				   = driver->get_notification(
 				     s->object.get(), s->src_object.get(),
-				     s, rgw::notify::ObjectCreatedCopy);
+				     s, rgw::notify::ObjectCreatedCopy, y);
   op_ret = res->publish_reserve(this);
   if (op_ret < 0) {
     return;
@@ -6430,7 +6431,7 @@ void RGWCompleteMultipart::execute(optional_yield y)
 
   // make reservation for notification if needed
   std::unique_ptr<rgw::sal::Notification> res
-    = driver->get_notification(meta_obj.get(), nullptr, s, rgw::notify::ObjectCreatedCompleteMultipartUpload, &s->object->get_name());
+    = driver->get_notification(meta_obj.get(), nullptr, s, rgw::notify::ObjectCreatedCompleteMultipartUpload, y, &s->object->get_name());
   op_ret = res->publish_reserve(this);
   if (op_ret < 0) {
     return;
@@ -6964,7 +6965,7 @@ void RGWDeleteMultiObj::handle_individual_object(const rgw_obj_key& o, optional_
                           rgw::notify::ObjectRemovedDeleteMarkerCreated :
                           rgw::notify::ObjectRemovedDelete;
   std::unique_ptr<rgw::sal::Notification> res
-          = driver->get_notification(obj.get(), s->src_object.get(), s, event_type);
+          = driver->get_notification(obj.get(), s->src_object.get(), s, event_type, y);
   op_ret = res->publish_reserve(this);
   if (op_ret < 0) {
     send_partial_response(o, false, "", op_ret, formatter_flush_cond);
@@ -7080,9 +7081,11 @@ void RGWDeleteMultiObj::execute(optional_yield y)
       handle_individual_object(obj_key, y, &*formatter_flush_cond);
     }
   }
-  wait_flush(y, &*formatter_flush_cond, [this, n=multi_delete->objects.size()] {
-    return n == ops_log_entries.size();
-  });
+  if (formatter_flush_cond) {
+    wait_flush(y, &*formatter_flush_cond, [this, n=multi_delete->objects.size()] {
+      return n == ops_log_entries.size();
+    });
+  }
 
   /*  set the return code to zero, errors at this point will be
   dumped to the response */
@@ -8114,7 +8117,9 @@ void RGWPutBucketPolicy::execute(optional_yield y)
   }
 
   try {
-    const Policy p(s->cct, s->bucket_tenant, data);
+    const Policy p(
+      s->cct, s->bucket_tenant, data,
+      s->cct->_conf.get_val<bool>("rgw_policy_reject_invalid_principals"));
     rgw::sal::Attrs attrs(s->bucket_attrs);
     if (s->bucket_access_conf &&
         s->bucket_access_conf->block_public_policy() &&
@@ -8130,8 +8135,9 @@ void RGWPutBucketPolicy::execute(optional_yield y)
 	return op_ret;
       });
   } catch (rgw::IAM::PolicyParseException& e) {
-    ldpp_dout(this, 20) << "failed to parse policy: " << e.what() << dendl;
+    ldpp_dout(this, 5) << "failed to parse policy: " << e.what() << dendl;
     op_ret = -EINVAL;
+    s->err.message = e.what();
   }
 }
 
