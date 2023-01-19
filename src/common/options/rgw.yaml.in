@@ -3719,5 +3719,13 @@ options:
     other form of policies that Amazon does, so if you are mirroring
     policies between RGW and AWS, you may wish to set this to false.
   default: true
+- name: rgw_perf_counters_cache
+  type: bool
+  level: dev
+  default: false
+  desc: If set to true, rgw creates labeled perf counters and stores them in it's perf counters cache. The size of this cache and whether or not there is eviction can be configured as well globall.y
+  see_also:
+  - labeled_perfcounters_cache_size
+  - labeled_perfcounters_cache_eviction
   services:
   - rgw
