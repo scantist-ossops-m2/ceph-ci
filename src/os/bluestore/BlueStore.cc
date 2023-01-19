@@ -2422,7 +2422,7 @@ bool BlueStore::Blob::can_reuse_blob(uint32_t min_alloc_size,
 void BlueStore::Blob::sanitize_buffers(CephContext* cct, BufferCacheShard* cache)
 {
   dout(25) << __func__ << " input " << *this << " bc=" << bc << dendl;
-  const PExtentVector& extents = get_blob().extents;
+  const PExtentVector& extents = get_blob().get_extents();
   uint32_t epos = 0;
   auto e = extents.begin();
   auto b = bc.buffer_map.begin();
@@ -2700,8 +2700,8 @@ void BlueStore::Blob::copy_extents(
     ceph_assert(pos + len <= it->length); // post_len should be single au, and we do not split
     return it->offset + pos;
   };
-  PExtentVector& exfrom = from.blob.extents;
-  PExtentVector& exto = blob.extents;
+  const PExtentVector& exfrom = from.blob.get_extents();
+  PExtentVector& exto = blob.dirty_extents();
   dout(20) << __func__ << " 0x" << std::hex << start << " "
 	   << pre_len << "/" << main_len << "/" << post_len << std::dec << dendl;
 
@@ -2741,7 +2741,7 @@ void BlueStore::Blob::copy_extents_over_empty(
   dout(20) << __func__ << " to=" << *this << " from=" << from
 	   << "[0x" << std::hex << start << "~" << len << std::dec << "]" << dendl;
   uint32_t padding;
-  auto& exto = blob.extents;
+  auto& exto = blob.dirty_extents();
   auto ito = exto.begin();
   PExtentVector::iterator prev = exto.end();
   uint32_t sto = start;
@@ -2787,7 +2787,7 @@ void BlueStore::Blob::copy_extents_over_empty(
     }
   }
 
-  auto& exfrom = from.blob.extents;
+  const auto& exfrom = from.blob.get_extents();
   auto itf = exfrom.begin();
   uint32_t sf = start;
   while (itf != exfrom.end() && sf >= itf->length) {
@@ -2929,10 +2929,10 @@ uint32_t BlueStore::Blob::merge_blob(CephContext* cct, Blob* blob_to_dissolve)
       skip_empty(src_extents, src_it, src_pos);
     }
   }
-  if (pos < dst_blob.logical_length) {
+  if (pos < dst_blob.get_logical_length()) {
     // this is a candidate for improvement;
     // instead of artifically add extents, trim blob
-    tmp_extents.emplace_back(bluestore_pextent_t::INVALID_OFFSET, dst_blob.logical_length - pos);
+    tmp_extents.emplace_back(bluestore_pextent_t::INVALID_OFFSET, dst_blob.get_logical_length() - pos);
   }
   // now apply freshly merged tmp_extents into dst blob
   dst_blob.dirty_extents().swap(tmp_extents);
@@ -2956,7 +2956,7 @@ uint32_t BlueStore::Blob::merge_blob(CephContext* cct, Blob* blob_to_dissolve)
     dst->bc.writing.insert(wrt_dst_it, buf);
   }
   dout(20) << __func__ << " result=" << *dst << dendl;
-  return dst_blob.logical_length;
+  return dst_blob.get_logical_length();
 }
 
 #undef dout_context
