@@ -12,4 +12,3 @@ overrides:
       osd:
         osd objectstore: filestore
         osd sloppy crc: true
-
