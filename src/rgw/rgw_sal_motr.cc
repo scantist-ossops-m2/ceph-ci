@@ -619,11 +619,9 @@ int MotrBucket::check_bucket_shards(const DoutPrefixProvider *dpp)
   return 0;
 }
 
-int MotrBucket::chown(const DoutPrefixProvider *dpp, User* new_user, User* old_user, optional_yield y, const std::string* marker)
+int MotrBucket::chown(const DoutPrefixProvider *dpp, User& new_user, optional_yield y)
 {
   // TODO: update bucket with new owner
-
-  /* XXX: Update policies of all the bucket->objects with new user */
   return 0;
 }
 
@@ -1102,6 +1100,11 @@ int MotrObject::omap_get_vals_by_keys(const DoutPrefixProvider *dpp, const std::
 
 int MotrObject::omap_set_val_by_key(const DoutPrefixProvider *dpp, const std::string& key, bufferlist& val,
     bool must_exist, optional_yield y)
+{
+  return 0;
+}
+
+int MotrObject::chown(User& new_user, const DoutPrefixProvider* dpp, optional_yield y)
 {
   return 0;
 }
@@ -2972,7 +2975,7 @@ std::unique_ptr<Completions> MotrStore::get_completions(void)
 }
 
 std::unique_ptr<Notification> MotrStore::get_notification(Object* obj, Object* src_obj, req_state* s,
-    rgw::notify::EventType event_type, const string* object_name)
+    rgw::notify::EventType event_type, optional_yield y, const string* object_name)
 {
   return std::make_unique<MotrNotification>(obj, src_obj, event_type);
 }

@@ -167,6 +167,14 @@ def execute(*args, **kwargs):
     return result
 
 
+def ps_execute(*args, **kwargs):
+    # Disable PS progress bar, causes issues when invoked remotely.
+    prefix = "$global:ProgressPreference = 'SilentlyContinue' ; "
+    return execute(
+        "powershell.exe", "-NonInteractive",
+        "-Command", prefix, *args, **kwargs)
+
+
 def array_stats(array: list):
     mean = sum(array) / len(array) if len(array) else 0
     variance = (sum((i - mean) ** 2 for i in array) / len(array)
@@ -327,16 +335,14 @@ class RbdImage(object):
     @Tracer.trace
     @retry_decorator(additional_details="couldn't clear disk read-only flag")
     def set_writable(self):
-        execute(
-            "powershell.exe", "-command",
+        ps_execute(
             "Set-Disk", "-Number", str(self.disk_number),
             "-IsReadOnly", "$false")
 
     @Tracer.trace
     @retry_decorator(additional_details="couldn't bring the disk online")
     def set_online(self):
-        execute(
-            "powershell.exe", "-command",
+        ps_execute(
             "Set-Disk", "-Number", str(self.disk_number),
             "-IsOffline", "$false")
 
@@ -374,23 +380,32 @@ class RbdImage(object):
             self.remove()
 
     @Tracer.trace
-    def init_fs(self):
-        if not self.mapped:
-            raise CephTestException("Unable to create fs, image not mapped.")
+    @retry_decorator()
+    def _init_disk(self):
+        cmd = f"Get-Disk -Number {self.disk_number} | Initialize-Disk"
+        ps_execute(cmd)
 
-        cmd = ("powershell.exe", "-command",
-               f"Get-Disk -Number {self.disk_number} | "
-               "Initialize-Disk -PassThru | "
-               "New-Partition -AssignDriveLetter -UseMaximumSize | "
-               "Format-Volume -Force -Confirm:$false")
-        execute(*cmd)
+    @Tracer.trace
+    @retry_decorator()
+    def _create_partition(self):
+        cmd = (f"Get-Disk -Number {self.disk_number} | "
+               "New-Partition -AssignDriveLetter -UseMaximumSize")
+        ps_execute(cmd)
 
-        # Retrieve the drive letter.
+    @Tracer.trace
+    @retry_decorator()
+    def _format_volume(self):
         cmd = (
-            "powershell.exe", "-command",
             f"(Get-Partition -DiskNumber {self.disk_number}"
-            " | ? { $_.DriveLetter }).DriveLetter")
-        result = execute(*cmd)
+            " | ? { $_.DriveLetter }) | Format-Volume -Force -Confirm:$false")
+        ps_execute(cmd)
+
+    @Tracer.trace
+    @retry_decorator()
+    def _get_drive_letter(self):
+        cmd = (f"(Get-Partition -DiskNumber {self.disk_number}"
+               " | ? { $_.DriveLetter }).DriveLetter")
+        result = ps_execute(cmd)
 
         # The PowerShell command will place a null character if no drive letter
         # is available. For example, we can receive "\x00\r\n".
@@ -400,15 +415,69 @@ class RbdImage(object):
                 "Invalid drive letter received: %s" % self.drive_letter)
 
     @Tracer.trace
+    def init_fs(self):
+        if not self.mapped:
+            raise CephTestException("Unable to create fs, image not mapped.")
+
+        LOG.info("Initializing fs, image: %s.", self.name)
+
+        self._init_disk()
+        self._create_partition()
+        self._format_volume()
+        self._get_drive_letter()
+
+    @Tracer.trace
     def get_fs_capacity(self):
         if not self.drive_letter:
             raise CephTestException("No drive letter available")
 
-        cmd = ("powershell.exe", "-command",
-               f"(Get-Volume -DriveLetter {self.drive_letter}).Size")
-        result = execute(*cmd)
+        cmd = f"(Get-Volume -DriveLetter {self.drive_letter}).Size"
+        result = ps_execute(cmd)
 
         return int(result.stdout.decode().strip())
+
+    @Tracer.trace
+    def resize(self, new_size_mb, allow_shrink=False):
+        LOG.info(
+            "Resizing image: %s. New size: %s MB, old size: %s MB",
+            self.name, new_size_mb, self.size_mb)
+
+        cmd = ["rbd", "resize", self.name,
+               "--size", f"{new_size_mb}M", "--no-progress"]
+        if allow_shrink:
+            cmd.append("--allow-shrink")
+
+        execute(*cmd)
+
+        self.size_mb = new_size_mb
+
+    @Tracer.trace
+    def get_disk_size(self):
+        """Retrieve the virtual disk size (bytes) reported by Windows."""
+        cmd = f"(Get-Disk -Number {self.disk_number}).Size"
+        result = ps_execute(cmd)
+
+        disk_size = result.stdout.decode().strip()
+        if not disk_size.isdigit():
+            raise CephTestException(
+                "Invalid disk size received: %s" % disk_size)
+
+        return int(disk_size)
+
+    @Tracer.trace
+    @retry_decorator(timeout=30)
+    def wait_for_disk_resize(self):
+        # After resizing the rbd image, the daemon is expected to receive
+        # the notification, inform the WNBD driver and then trigger a disk
+        # rescan (IOCTL_DISK_UPDATE_PROPERTIES). This might take a few seconds,
+        # so we'll need to do some polling.
+        disk_size = self.get_disk_size()
+        disk_size_mb = disk_size // (1 << 20)
+
+        if disk_size_mb != self.size_mb:
+            raise CephTestException(
+                "The disk size hasn't been updated yet. Retrieved size: "
+                f"{disk_size_mb}MB. Expected size: {self.size_mb}MB.")
 
 
 class RbdTest(object):
@@ -524,14 +593,14 @@ class RbdFioTest(RbdTest):
         return self.image.path
 
     @Tracer.trace
-    def run(self):
+    def _run_fio(self, fio_size_mb=None):
         LOG.info("Starting FIO test.")
         cmd = [
             "fio", "--thread", "--output-format=json",
             "--randrepeat=%d" % self.iterations,
             "--direct=1", "--gtod_reduce=1", "--name=test",
             "--bs=%s" % self.bs, "--iodepth=%s" % self.iodepth,
-            "--size=%sM" % self.fio_size_mb,
+            "--size=%sM" % (fio_size_mb or self.fio_size_mb),
             "--readwrite=%s" % self.op,
             "--numjobs=%s" % self.workers,
             "--filename=%s" % self._get_fio_path(),
@@ -541,6 +610,10 @@ class RbdFioTest(RbdTest):
         result = execute(*cmd)
         LOG.info("Completed FIO test.")
         self.process_result(result.stdout)
+
+    @Tracer.trace
+    def run(self):
+        self._run_fio()
 
     @classmethod
     def print_results(cls,
@@ -590,6 +663,30 @@ class RbdFioTest(RbdTest):
                            s['median'], s['std_dev'],
                            s['max_90'], s['min_90'], s['sum']])
             print(table)
+
+
+class RbdResizeFioTest(RbdFioTest):
+    """Image resize test.
+
+    This test extends and then shrinks the image, performing FIO tests to
+    validate the resized image.
+    """
+
+    @Tracer.trace
+    def run(self):
+        self.image.resize(self.image_size_mb * 2)
+        self.image.wait_for_disk_resize()
+
+        self._run_fio(fio_size_mb=self.image_size_mb * 2)
+
+        self.image.resize(self.image_size_mb // 2, allow_shrink=True)
+        self.image.wait_for_disk_resize()
+
+        self._run_fio(fio_size_mb=self.image_size_mb // 2)
+
+        # Just like rbd-nbd, rbd-wnbd is masking out-of-bounds errors.
+        # For this reason, we don't have a negative test that writes
+        # passed the disk boundary.
 
 
 class RbdFsFioTest(RbdFsTestMixin, RbdFioTest):
@@ -653,12 +750,12 @@ class RbdStampTest(RbdTest):
             time.sleep(self._rand_float(0, 5))
 
             stamp = self._read_stamp()
-            assert(stamp == b'\0' * len(self._get_stamp()))
+            assert stamp == b'\0' * len(self._get_stamp())
 
         self._write_stamp()
 
         stamp = self._read_stamp()
-        assert(stamp == self._get_stamp())
+        assert stamp == self._get_stamp()
 
 
 class RbdFsStampTest(RbdFsTestMixin, RbdStampTest):
@@ -742,6 +839,7 @@ class TestRunner(object):
 TESTS: typing.Dict[str, typing.Type[RbdTest]] = {
     'RbdTest': RbdTest,
     'RbdFioTest': RbdFioTest,
+    'RbdResizeFioTest': RbdResizeFioTest,
     'RbdStampTest': RbdStampTest,
     # FS tests
     'RbdFsTest': RbdFsTest,
