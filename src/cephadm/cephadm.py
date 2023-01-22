@@ -913,6 +913,10 @@ class CephIscsi(object):
         # populate files from the config-json
         populate_files(data_dir, self.files, uid, gid)
 
+        if os.path.exists('/etc/hosts'):
+            if isinstance(self.ctx.container_engine, Podman):
+                shutil.copy('/etc/hosts', os.path.join(data_dir, 'hostsfile'))
+
     @staticmethod
     def configfs_mount_umount(data_dir, mount=True):
         # type: (str, bool) -> List[str]
@@ -3070,6 +3074,18 @@ def get_container_mounts(ctx, fsid, daemon_type, daemon_id,
             data_dir = re.sub(r'\.tcmu$', '', data_dir)
         log_dir = get_log_dir(fsid, ctx.log_dir)
         mounts.update(CephIscsi.get_container_mounts(data_dir, log_dir))
+        # Modifications podman makes to /etc/hosts causes issues with
+        # iscsi (specifically referencing "host.containers.internal" entry
+        # being added to /etc/hosts in this case). To avoid that, but still
+        # allow users to use /etc/hosts for hostname resolution, we can
+        # mount a copy of the host's /etc/hosts file. The copy of the hosts file
+        # is made later in the "create_daemon_dirs" function of the CephIscsi class.
+        # Additional note, we are doing this here instead of within the
+        # "get_container_mounts" function of the CephIscsi class so we don't
+        # have to pass ctx there to check which container engine is being used
+        if os.path.exists('/etc/hosts'):
+            if isinstance(ctx.container_engine, Podman):
+                mounts[os.path.join(data_dir, 'hostsfile')] = '/etc/hosts'
 
     if daemon_type == Keepalived.daemon_type:
         assert daemon_id
@@ -3188,6 +3204,13 @@ def get_container(ctx: CephadmContext,
         # to configfs we need to make this a privileged container.
         privileged = True
         set_pids_limit_unlimited(ctx, container_args)
+        # if /etc/hosts doesn't exist, we can be confident
+        # users aren't using it for host name resolution
+        # and adding --no-hosts avoids bugs created in iscsi daemons
+        # by modifications podman makes to /etc/hosts
+        if not os.path.exists('/etc/hosts'):
+            if isinstance(ctx.container_engine, Podman):
+                container_args.extend(['--no-hosts'])
     elif daemon_type == CustomContainer.daemon_type:
         cc = CustomContainer.init(ctx, fsid, daemon_id)
         entrypoint = cc.entrypoint
