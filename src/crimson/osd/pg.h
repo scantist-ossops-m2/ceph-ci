@@ -15,6 +15,7 @@
 #include "messages/MOSDOpReply.h"
 #include "os/Transaction.h"
 #include "osd/osd_types.h"
+#include "osd/osd_types_fmt.h"
 #include "crimson/osd/object_context.h"
 #include "osd/PeeringState.h"
 
