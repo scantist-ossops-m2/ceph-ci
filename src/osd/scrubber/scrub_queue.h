@@ -18,6 +18,60 @@ class ScrubJob;
 class SchedEntry;
 }  // namespace Scrub
 
+struct ScrubQueueStats {
+  uint_fast16_t num_ready{0};
+  uint_fast16_t num_total{0};
+};
+
+struct ScrubQueueImp_IF {
+  using SchedEntry = Scrub::SchedEntry;
+
+  using EntryPred = std::function<bool(const SchedEntry&)>;
+
+  virtual void push_entry(const SchedEntry& entry) = 0;
+
+  virtual bool remove_entry(spg_t pgid, scrub_level_t s_or_d) = 0;
+
+  virtual ScrubQueueStats get_stats(utime_t scrub_clock_now) const = 0;
+
+  virtual std::optional<SchedEntry> pop_ready_pg(utime_t scrub_clock_now) = 0;
+
+  virtual void dump_scrubs(ceph::Formatter* f) const = 0;
+
+  virtual std::set<spg_t> get_pgs(EntryPred) const = 0;
+
+  virtual std::vector<SchedEntry> get_entries(EntryPred) const = 0;
+
+  virtual ~ScrubQueueImp_IF() = default;
+};
+
+
+class ScrubQueueImp : public ScrubQueueImp_IF {
+  using SchedEntry = Scrub::SchedEntry;
+  using SchedulingQueue = std::deque<SchedEntry>;
+
+
+ public:
+  void push_entry(const SchedEntry& entry) override;
+
+  bool remove_entry(spg_t pgid, scrub_level_t s_or_d) override;
+
+  ScrubQueueStats get_stats(utime_t scrub_clock_now) const override;
+
+  std::optional<SchedEntry> pop_ready_pg(utime_t scrub_clock_now) override;
+
+  void dump_scrubs(ceph::Formatter* f) const override;
+
+  std::set<spg_t> get_pgs(EntryPred) const override;
+
+  std::vector<SchedEntry> get_entries(EntryPred) const override;
+
+
+ private:
+  SchedulingQueue to_scrub;
+};
+
+
 /**
  * The 'ScrubQueue' is a "sub-component" of the OSD. It is responsible (mainly)
  * for selecting the PGs to be scrubbed, and initiating the scrub operation.
@@ -50,6 +104,16 @@ class SchedEntry;
  * - 'white-out' queue elements are never reported to the queue users.
  */
 class ScrubQueue : public Scrub::ScrubQueueOps {
+  /// the bookkeeping involved with an on-going 'scrub initiation
+  /// loop' (see full description above).
+  struct ScrubStartLoop {
+    utime_t loop_id;	  // and its start time
+    int retries_budget;	  // how many retries are left
+    int retries_done{0};  // how many retries were done
+
+    ///\todo consider adding 'last update' time, to detect a stuck loop
+  };
+
  public:
   ScrubQueue(CephContext* cct, Scrub::ScrubSchedListener& osds);
   virtual ~ScrubQueue() = default;
@@ -89,6 +153,12 @@ class ScrubQueue : public Scrub::ScrubQueueOps {
       const ceph::common::ConfigProxy& config,
       bool is_recovery_active);
 
+  void initiate_a_scrub(
+      const ceph::common::ConfigProxy& config,
+      bool is_recovery_active);
+
+  void scrub_next_in_queue(/*utime_t loop_id, int retries_budget*/); // RRR do pass the id token
+
   /*
    * handles a change to the configuration parameters affecting the scheduling
    * of scrubs.
@@ -112,7 +182,7 @@ class ScrubQueue : public Scrub::ScrubQueueOps {
   const Scrub::ScrubResources& resource_bookkeeper() const;
   /// and the logger function used by that bookkeeper:
   void log_fwd(std::string_view text);
-  
+
   /// counting the number of PGs stuck while scrubbing, waiting for objects
   void mark_pg_scrub_blocked(spg_t blocked_pg);
   void clear_pg_scrub_blocked(spg_t blocked_pg);
@@ -157,7 +227,10 @@ class ScrubQueue : public Scrub::ScrubQueueOps {
 
   mutable ceph::mutex jobs_lock = ceph::make_mutex("ScrubQueue::jobs_lock");
 
-  SchedulingQueue to_scrub;
+  //SchedulingQueue to_scrub;
+  std::unique_ptr<ScrubQueueImp_IF> m_queue_impl;
+
+  std::optional<ScrubStartLoop> m_initiation_loop;  // if set - we are in a loop
 
   double daily_loadavg{0.0};
 

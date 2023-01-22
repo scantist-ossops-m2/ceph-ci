@@ -182,7 +182,6 @@ struct sched_conf_t {
    * concerned. \todo based on users complaints (and the fact that the
    * interaction between the configuration parameters is clear to no one),
    * this will be revised shortly.
-   * \todo consider using conf()->mon_warn_not_deep_scrubbed for now;
    */
   double max_deep{0.0};
 
@@ -270,7 +269,7 @@ struct SchedEntry {
   /**
    * a SchedEntry is 'ripe' for scrubbing if the current time is past its
    * 'not_before' time (which guarantees it is also past its 'target').
-   * And - it must not be 'inactive'. i.e. must not have urgency 'off'.
+   * It also must not be 'inactive'. i.e. must not have urgency 'off'.
    */
   bool is_ripe(utime_t now_is) const;
 
@@ -624,6 +623,12 @@ class ScrubSchedListener {
   virtual std::optional<PGLockWrapper> get_locked_pg(spg_t pgid) = 0;
 
   virtual void send_sched_recalc_to_pg(spg_t pgid) = 0;
+
+  //virtual void send_try_sched_to_pg(spg_t pgid, ) = 0;
+  virtual void queue_for_scrub_initiation(
+      spg_t pg,
+      scrub_level_t scrub_level,
+      Scrub::ScrubPreconds m_env_conditions) = 0;
 
   virtual ~ScrubSchedListener() {}
 };

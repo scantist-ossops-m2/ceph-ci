@@ -528,8 +528,19 @@ class PgScrubber : public ScrubPgIF,
   Scrub::schedule_result_t start_scrubbing(
       utime_t scrub_clock_now,
       scrub_level_t lvl,
-      const Scrub::ScrubPGPreconds& pg_cond,
-      const Scrub::ScrubPreconds& preconds) final;
+      Scrub::ScrubPGPreconds pg_cond,
+      Scrub::ScrubPreconds preconds) final;
+
+  Scrub::schedule_result_t start_scrubbing(
+      scrub_level_t lvl,
+      utime_t loop_id,
+      int retries_budget,
+      Scrub::ScrubPreconds preconds,
+      Scrub::ScrubPGPreconds pg_cond) final;
+
+  Scrub::schedule_result_t initiation_loop_trigger_next(
+      utime_t token,
+      int retries_budget) final;
 
   void recovery_completed() final;
 

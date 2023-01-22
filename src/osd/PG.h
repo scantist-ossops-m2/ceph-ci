@@ -712,14 +712,23 @@ public:
    *
    * @param [in] scrub_clock_now time now (unless under unit-test)
    * @param [in] level Level of scrub (deep or shallow)
+
+add missing
+
    * @param [in] preconds a set of flags determined based on environment
    *       conditions (time & load) that might restrict some scrubs
    * @returns either 'scrub_initiated' or 'failure'
+   * @note 'preconds' is only 4B in size; moved around by copying
    */
   Scrub::schedule_result_t start_scrubbing(
       utime_t scrub_clock_now,
       scrub_level_t level,
-      const Scrub::ScrubPreconds preconds);
+      Scrub::ScrubPreconds preconds);
+  Scrub::schedule_result_t start_scrubbing(
+      scrub_level_t level,
+      utime_t loop_id,
+      int retries_budget,
+      Scrub::ScrubPreconds preconds);
 
   unsigned int scrub_requeue_priority(
     Scrub::scrub_prio_t with_priority,

@@ -1298,7 +1298,7 @@ unsigned int PG::scrub_requeue_priority(
 Scrub::schedule_result_t PG::start_scrubbing(
     utime_t scrub_clock_now,
     scrub_level_t level,
-    const Scrub::ScrubPreconds preconds)
+    Scrub::ScrubPreconds preconds)
 {
   dout(10) << fmt::format(
 		  "{}: pg[{}] {} {} target: {}", __func__, info.pgid,
@@ -1325,6 +1325,52 @@ Scrub::schedule_result_t PG::start_scrubbing(
        get_pgbackend()->auto_repair_supported());
 
   return m_scrubber->start_scrubbing(scrub_clock_now, level, pg_cond, preconds);
+}
+
+
+/*
+ * Note: start_scrubbing() does not quietly fail if the scrub cannot be started.
+ * While most of the failures are expected to be detected later on,
+ * in m_scrubber->start_scrubbing(), we do have a few preconditions that are
+ * checked here.
+ * In all those cases - we use the scrubber's 'try the next PG' mechanism.
+ */
+Scrub::schedule_result_t PG::start_scrubbing(
+    scrub_level_t level,
+    utime_t loop_id,
+    int retries_budget,
+    Scrub::ScrubPreconds preconds)
+
+{
+  dout(10) << fmt::format(
+		  "{}: pg[{}] {} {} target: {} (env restrictions:{}). Part of "
+		  "initiation loop {}/{})",
+		  __func__, info.pgid,
+		  (is_active() ? "<active>" : "<not-active>"),
+		  (is_clean() ? "<clean>" : "<not-clean>"), level, preconds,
+		  loop_id, retries_budget)
+	   << dendl;
+  ceph_assert(ceph_mutex_is_locked(_lock));
+  ceph_assert(m_scrubber);
+
+  if (!is_primary() || !is_active() || !is_clean()) {
+    return Scrub::schedule_result_t::failure;
+  }
+
+  Scrub::ScrubPGPreconds pg_cond{};
+  pg_cond.allow_shallow =
+      !(get_osdmap()->test_flag(CEPH_OSDMAP_NOSCRUB) ||
+	pool.info.has_flag(pg_pool_t::FLAG_NOSCRUB));
+  pg_cond.allow_deep =
+      !(get_osdmap()->test_flag(CEPH_OSDMAP_NODEEP_SCRUB) ||
+	pool.info.has_flag(pg_pool_t::FLAG_NODEEP_SCRUB));
+  pg_cond.has_deep_errors = (info.stats.stats.sum.num_deep_scrub_errors > 0);
+  pg_cond.can_autorepair =
+      (cct->_conf->osd_scrub_auto_repair &&
+       get_pgbackend()->auto_repair_supported());
+
+  return m_scrubber->start_scrubbing(
+      level, loop_id, retries_budget, preconds, pg_cond);
 }
 
 /*
