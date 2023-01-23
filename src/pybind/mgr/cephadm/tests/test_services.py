@@ -453,7 +453,7 @@ class TestMonitoring:
                     'deploy',
                     [
                         '--name', 'alertmanager.test',
-                        '--meta-json', '{"service_name": "alertmanager", "ports": [9093, 9094], "ip": null, "deployed_by": [], "rank": null, "rank_generation": null, "extra_container_args": null}',
+                        '--meta-json', '{"service_name": "alertmanager", "ports": [9093, 9094], "ip": null, "deployed_by": [], "rank": null, "rank_generation": null, "extra_container_args": null, "extra_entrypoint_args": null}',
                         '--config-json', '-', '--tcp-ports', '9093 9094'
                     ],
                     stdin=json.dumps({
@@ -512,17 +512,16 @@ class TestMonitoring:
                     http_sd_configs:
                     - url: http://[::1]:8765/sd/prometheus/sd-config?service=node-exporter
 
+                  - job_name: 'haproxy'
+                    http_sd_configs:
+                    - url: http://[::1]:8765/sd/prometheus/sd-config?service=haproxy
 
                   - job_name: 'ceph-exporter'
                     honor_labels: true
                     http_sd_configs:
-                    - url: https://[::1]:8765/sd/prometheus/sd-config?service=ceph-exporter
+                    - url: http://[::1]:8765/sd/prometheus/sd-config?service=ceph-exporter
                       tls_config:
                         ca_file: root_cert.pem
-
-                  - job_name: 'haproxy'
-                    http_sd_configs:
-                    - url: http://[::1]:8765/sd/prometheus/sd-config?service=haproxy
                 """).lstrip()
 
                 _run_cephadm.assert_called_with(
@@ -639,6 +638,13 @@ class TestMonitoring:
                         password: fake_password
                       tls_config:
                         ca_file: root_cert.pem
+
+                  - job_name: 'ceph-exporter'
+                    honor_labels: true
+                    http_sd_configs:
+                    - url: https://[::1]:8765/sd/prometheus/sd-config?service=ceph-exporter
+                      tls_config:
+                        ca_file: root_cert.pem
                 """).lstrip()
 
                 _run_cephadm.assert_called_with(
@@ -648,7 +654,7 @@ class TestMonitoring:
                     [
                         '--name', 'prometheus.test',
                         '--meta-json',
-                        '{"service_name": "prometheus", "ports": [9095], "ip": null, "deployed_by": [], "rank": null, "rank_generation": null, "extra_container_args": null}',
+                        '{"service_name": "prometheus", "ports": [9095], "ip": null, "deployed_by": [], "rank": null, "rank_generation": null, "extra_container_args": null, "extra_entrypoint_args": null}',
                         '--config-json', '-',
                         '--tcp-ports', '9095'
                     ],

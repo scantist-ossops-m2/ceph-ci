@@ -85,7 +85,7 @@ scrape_configs:
     http_sd_configs:
     - url: {{ haproxy_sd_url }}
 {% endif %}
-
+{% endif %}
 
 {% if ceph_exporter_sd_url %}
   - job_name: 'ceph-exporter'
