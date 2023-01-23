@@ -117,6 +117,22 @@ static void usage()
   generic_server_usage();
 }
 
+static void set_exposed_addrs(auto& msgr, const auto& public_addrs)
+{
+  // this transplantates the ports a msgr has bound to the public
+  // addrs we're going to expose
+  // XXX: a makeshift solution. we want to kill set_addrs() and
+  // retrofit bindv() with optional parameter for bind addrs.
+  // the current setter is too broad while lacking rebinding support.
+  auto exposed_addrs = public_addrs;
+  const auto bound_addrs = msgr.get_myaddrs();
+  ceph_assert(std::size(bound_addrs) == std::size(exposed_addrs));
+  for (size_t i = 0; i < std::size(bound_addrs.v); i++) {
+    exposed_addrs.v[i].set_port(bound_addrs.v[i].get_port());
+  }
+  msgr.set_addrs(exposed_addrs);
+}
+
 int main(int argc, const char **argv)
 {
   auto args = argv_to_vec(argc, argv);
@@ -648,7 +664,7 @@ flushjournal_out:
   // to the public one, now that the bind is complete.
   if (public_addrs != public_bind_addrs) {
     dout(10) << "setting ms_public's addrs to " << public_addrs << dendl;
-    ms_public->set_addrs(public_addrs);
+    set_exposed_addrs(*ms_public, public_addrs);
   }
 
   if (ms_cluster->bindv(cluster_addrs) < 0)
@@ -673,8 +689,8 @@ flushjournal_out:
   if (ms_hb_front_server->bindv(hb_front_bind_addrs) < 0)
     forker.exit(1);
   if (hb_front_addrs != public_bind_addrs) {
-    dout(10) << "setting ms_hb_front_server's addrs to " << public_addrs << dendl;
-    ms_hb_front_server->set_addrs(hb_front_addrs);
+    dout(10) << "setting ms_hb_front_server's addrs to " << hb_front_addrs << dendl;
+    set_exposed_addrs(*ms_hb_front_server, hb_front_addrs);
   }
   if (ms_hb_front_client->client_bind(hb_front_addrs.front()) < 0)
     forker.exit(1);
