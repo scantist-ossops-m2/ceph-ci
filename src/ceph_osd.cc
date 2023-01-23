@@ -674,7 +674,7 @@ flushjournal_out:
     forker.exit(1);
   if (hb_front_addrs != public_bind_addrs) {
     dout(10) << "setting ms_hb_front_server's addrs to " << public_addrs << dendl;
-    ms_public->set_addrs(hb_front_addrs);
+    ms_hb_front_server->set_addrs(hb_front_addrs);
   }
   if (ms_hb_front_client->client_bind(hb_front_addrs.front()) < 0)
     forker.exit(1);
