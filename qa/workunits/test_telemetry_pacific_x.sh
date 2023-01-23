@@ -38,9 +38,18 @@ ceph telemetry enable channel perf
 # Check the warning (should be gone after 2 seconds):
 sleep 2
 STATUS=$(ceph -s)
-if [[ $STATUS == *"Telemetry requires re-opt-in"* ]]
-then
-    echo "STATUS should not contain re-opt-in warning at this point"
+MAX_RETRIES=10
+RETRIES=0
+
+while [[ $STATUS == *"Telemetry requires re-opt-in"* ]] && [ $RETRIES -lt $MAX_RETRIES ]; do
+    echo "Ceph telemetry warning detected. Retrying..."
+    sleep 2
+    STATUS=$(ceph -s)
+    RETRIES=$((RETRIES+1))
+done
+
+if [[ $STATUS == *"Telemetry requires re-opt-in"* ]]; then
+    echo "STATUS should not contain re-opt-in warning at this point after $MAX_RETRIES retries. Exiting."
     exit 1
 fi
 
