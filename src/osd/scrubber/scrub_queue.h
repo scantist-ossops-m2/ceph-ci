@@ -52,6 +52,8 @@ class ScrubQueueImp : public ScrubQueueImp_IF {
 
 
  public:
+  ScrubQueueImp(Scrub::ScrubQueueOps& parent_queue) : parent_queue(parent_queue) {}
+
   void push_entry(const SchedEntry& entry) override;
 
   bool remove_entry(spg_t pgid, scrub_level_t s_or_d) override;
@@ -66,9 +68,13 @@ class ScrubQueueImp : public ScrubQueueImp_IF {
 
   std::vector<SchedEntry> get_entries(EntryPred) const override;
 
+  // very temporary:
+
+  std::deque<SchedEntry>::iterator normalize_queue(utime_t scrub_clock_now);
 
  private:
   SchedulingQueue to_scrub;
+  Scrub::ScrubQueueOps& parent_queue;
 };
 
 
@@ -104,11 +110,18 @@ class ScrubQueueImp : public ScrubQueueImp_IF {
  * - 'white-out' queue elements are never reported to the queue users.
  */
 class ScrubQueue : public Scrub::ScrubQueueOps {
-  /// the bookkeeping involved with an on-going 'scrub initiation
-  /// loop' (see full description above).
+
+  /**
+   * the bookkeeping involved with an on-going 'scrub initiation
+   * loop' (see full description above).
+   */
   struct ScrubStartLoop {
-    utime_t loop_id;	  // and its start time
-    int retries_budget;	  // how many retries are left
+    utime_t loop_id;	 // and its start time
+    int retries_budget;	 // how many retries are left
+
+    /// restrictions on the next scrub imposed by OSD environment
+    Scrub::ScrubPreconds env_restrictions;
+
     int retries_done{0};  // how many retries were done
 
     ///\todo consider adding 'last update' time, to detect a stuck loop
@@ -126,8 +139,8 @@ class ScrubQueue : public Scrub::ScrubQueueOps {
 
   std::ostream& gen_prefix(std::ostream& out) const;
 
-  // ///////////////////////////////////////////////////
-  // the ScrubQueueOps interface:
+  // //////////////////////////////////////////////////////////////
+  // the ScrubQueueOps interface (doc in scrub_queue_if.h)
 
   utime_t scrub_clock_now() const override;
 
@@ -140,8 +153,11 @@ class ScrubQueue : public Scrub::ScrubQueueOps {
 
   bool queue_entries(spg_t pgid, SchedEntry shallow, SchedEntry deep) final;
 
+  void scrub_next_in_queue(utime_t loop_id) final;
 
-  // ///////////////////////////////////////////////////
+  void initiation_loop_done(utime_t loop_id) final;
+
+  // ///////////////////////////////////////////////////////////////
   // outside the scope of the I/F used by the ScrubJob:
 
   /**
@@ -156,8 +172,6 @@ class ScrubQueue : public Scrub::ScrubQueueOps {
   void initiate_a_scrub(
       const ceph::common::ConfigProxy& config,
       bool is_recovery_active);
-
-  void scrub_next_in_queue(/*utime_t loop_id, int retries_budget*/); // RRR do pass the id token
 
   /*
    * handles a change to the configuration parameters affecting the scheduling
@@ -230,7 +244,17 @@ class ScrubQueue : public Scrub::ScrubQueueOps {
   //SchedulingQueue to_scrub;
   std::unique_ptr<ScrubQueueImp_IF> m_queue_impl;
 
-  std::optional<ScrubStartLoop> m_initiation_loop;  // if set - we are in a loop
+  /// m_initiation_loop, when set, indicates that we are traversing the scrub
+  /// queue looking for a PG to scrub. It also maintains the look ID (its start
+  /// time) and the number of retries left.
+  std::optional<ScrubStartLoop> m_initiation_loop;
+
+  /**
+   * protects 'm_initiation_loop'
+   *
+   * \attn never take 'jobs_lock' while holding this lock!
+   */
+  ceph::mutex m_loop_lock{ceph::make_mutex("ScrubQueue::m_loop_lock")};
 
   double daily_loadavg{0.0};
 

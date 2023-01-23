@@ -74,7 +74,7 @@ void PGScrubTryInitiating::run(
     PGRef& pg,
     [[maybe_unused]] ThreadPool::TPHandle& handle)
 {
-  pg->start_scrubbing(m_level, m_token, m_retries_budget, m_env_conditions);
+  pg->start_scrubbing(m_level, m_token, m_env_conditions);
   pg->unlock();
 }
 

@@ -1669,40 +1669,19 @@ void OSDService::queue_for_snap_trim(PG *pg)
 void OSDService::queue_for_scrub_initiation(
 spg_t pg,
 scrub_level_t scrub_level,
+utime_t loop_id,
 Scrub::ScrubPreconds env_conditions)
 {
   dout(10) << "queueing " << pg << " for scrub initiation" << dendl;
   enqueue_back(
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(
-        new PGScrubTryInitiating(pg, scrub_level, env_conditions)),
+        new PGScrubTryInitiating(pg, scrub_level, loop_id, env_conditions)),
       cct->_conf->osd_scrub_cost,
       cct->_conf->osd_scrub_priority,
       ceph_clock_now(),
       0,
       get_osdmap_epoch()));
-}
-
-
-
-Scrub::scrub_prio_t with_priority)
-{
-  dout(10) << "queueing " << *pg << " for scrub initiation" << dendl;
-  enqueue_back(
-    OpSchedulerItem(
-
-
-
-
-
-
-      unique_ptr<OpSchedulerItem::OpQueueable>(
-        new PGScrubInit(pg->get_pgid(), pg->get_osdmap_epoch(), with_priority)),
-      cct->_conf->osd_scrub_cost,
-      pg->scrub_requeue_priority(with_priority, 0),
-      ceph_clock_now(),
-      0,
-      pg->get_osdmap_epoch()));
 }
 
 template <class MSG_TYPE>
@@ -6171,7 +6150,7 @@ void OSD::tick_without_osd_lock()
   }
 
   if (is_active()) {
-    service.get_scrub_services().sched_scrub(
+    service.get_scrub_services().initiate_a_scrub(
       cct->_conf, service.is_recovery_active());
     service.promote_throttle_recalibrate();
     resume_creating_pg();

@@ -1335,26 +1335,26 @@ Scrub::schedule_result_t PG::start_scrubbing(
  * checked here.
  * In all those cases - we use the scrubber's 'try the next PG' mechanism.
  */
-Scrub::schedule_result_t PG::start_scrubbing(
+void PG::start_scrubbing(
     scrub_level_t level,
     utime_t loop_id,
-    int retries_budget,
     Scrub::ScrubPreconds preconds)
 
 {
   dout(10) << fmt::format(
 		  "{}: pg[{}] {} {} target: {} (env restrictions:{}). Part of "
-		  "initiation loop {}/{})",
+		  "initiation loop {})",
 		  __func__, info.pgid,
 		  (is_active() ? "<active>" : "<not-active>"),
 		  (is_clean() ? "<clean>" : "<not-clean>"), level, preconds,
-		  loop_id, retries_budget)
+		  loop_id)
 	   << dendl;
   ceph_assert(ceph_mutex_is_locked(_lock));
   ceph_assert(m_scrubber);
 
   if (!is_primary() || !is_active() || !is_clean()) {
-    return Scrub::schedule_result_t::failure;
+    osd->get_scrub_services().scrub_next_in_queue(loop_id);
+    return;
   }
 
   Scrub::ScrubPGPreconds pg_cond{};
@@ -1369,8 +1369,7 @@ Scrub::schedule_result_t PG::start_scrubbing(
       (cct->_conf->osd_scrub_auto_repair &&
        get_pgbackend()->auto_repair_supported());
 
-  return m_scrubber->start_scrubbing(
-      level, loop_id, retries_budget, preconds, pg_cond);
+  m_scrubber->start_scrubbing(level, loop_id, preconds, pg_cond);
 }
 
 /*

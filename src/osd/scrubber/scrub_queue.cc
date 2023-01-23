@@ -27,7 +27,7 @@ ScrubQueue::ScrubQueue(CephContext* cct, Scrub::ScrubSchedListener& osds)
     , osd_service{osds}
     , m_osd_resources{[this](std::string msg) { log_fwd(msg); },
 	  cct->_conf}
-    , m_queue_impl{std::make_unique<ScrubQueueImp>(/*cct, osds*/)}
+    , m_queue_impl{std::make_unique<ScrubQueueImp>(*this/*cct, osds*/)}
 {
   log_prefix = fmt::format("osd.{} scrub-queue::", osd_service.get_nodeid());
 
@@ -302,6 +302,8 @@ void ScrubQueue::initiate_a_scrub(
   // is there an active 'scrub-loop'? (i.e. - are we in the middle of
   // the asynchronous process of going over the ready-to-scrub PGs, trying
   // them one by one?)
+  // note: no need to hold 'm_loop_lock' here, as the creation of the
+  // protected 'm_initiation_loop' is done here, only called from the tick.
   if (m_initiation_loop) {
     dout(10)
 	<< fmt::format(
@@ -325,8 +327,8 @@ void ScrubQueue::initiate_a_scrub(
   auto queue_stats = m_queue_impl->get_stats(scrub_tick_time);
   if (queue_stats.num_ready == 0) {
     dout(10) << fmt::format(
-		    "{}: no eligible scrub targets in the {} entries",
-		    __func__, queue_stats.num_total)
+		    "{}: no eligible scrub targets in the {} entries", __func__,
+		    queue_stats.num_total)
 	     << dendl;
     return;
   }
@@ -336,10 +338,13 @@ void ScrubQueue::initiate_a_scrub(
   // 'scrub-loop' (and will be reset when the loop ends). It would also be
   // used to limit the number of PGs tried.
 
-  //auto max_pgs_to_try = std::min<uint32_t, uint32_t>(queue_stats.num_ready, /* conf */ 10);
-  auto max_pgs_to_try = queue_stats.num_ready;
+  //auto max_pgs_to_try = std::min<uint32_t, uint32_t>(queue_stats.num_ready, /* conf */ 40);
+  auto max_pgs_to_try = queue_stats.num_ready + 5 /* RRR dev testing */;
 
-  m_initiation_loop = std::make_optional<ScrubStartLoop>(scrub_tick_time, max_pgs_to_try);
+  std::unique_lock loop_data_lock{m_loop_lock};
+  m_initiation_loop =
+      std::make_optional<ScrubStartLoop>(scrub_tick_time, max_pgs_to_try, preconds);
+  loop_data_lock.unlock();
 
   auto maybe_cand = m_queue_impl->pop_ready_pg(scrub_tick_time);
   ceph_assert(maybe_cand);
@@ -351,23 +356,14 @@ void ScrubQueue::initiate_a_scrub(
   l.unlock();
 
   // send a message to that PG to start scrubbing
-  osd_service.queue_for_scrub_initiation(maybe_cand->pgid, maybe_cand->level,
-preconds);
-// 
-// 
-// 
-//   auto locked_g = osd_service.get_locked_pg(maybe_cand->pgid);
-//   if (!locked_g) {
-//     // the PG was deleted in the short time since unlocking the queue
-//     dout(5) << fmt::format("{}: pg[{}] not found", __func__, maybe_cand->pgid)
-// 	    << dendl;
-//     return;
-//   }
-//   locked_g->pg()->start_scrubbing(scrub_tick_time, cand.level, preconds);
+  osd_service.queue_for_scrub_initiation(
+      maybe_cand->pgid, maybe_cand->level, m_initiation_loop->loop_id, preconds);
 }
 
-void ScrubQueue::scrub_next_in_queue()
+void ScrubQueue::scrub_next_in_queue(utime_t loop_id)
 {
+  std::scoped_lock lock(jobs_lock, m_loop_lock);
+
   // are we indeed in the middle of a 'scrub-loop'?
   if (!m_initiation_loop) {
     dout(10) << fmt::format("{}: no active scrub-loop. skipping", __func__)
@@ -375,9 +371,17 @@ void ScrubQueue::scrub_next_in_queue()
     return;
   }
 
+  // verify that we are not receiving a message from a previous loop
+  if (m_initiation_loop->loop_id != loop_id) {
+    dout(10) << fmt::format(
+                    "{}: loop-id mismatch. skipping. ({} != {})", __func__,
+                    m_initiation_loop->loop_id, loop_id)
+             << dendl;
+    return;
+  }
+
   // are we allowed to continue the loop?
-  --m_initiation_loop->retries_budget;
-  if (m_initiation_loop->retries_budget <= 0) {
+  if (++m_initiation_loop->retries_done >= m_initiation_loop->retries_budget) {
     dout(10) << fmt::format(
 		    "{}: reached the max number of PGs to try. ending the loop",
 		    __func__)
@@ -385,6 +389,51 @@ void ScrubQueue::scrub_next_in_queue()
     m_initiation_loop.reset();
     return;
   }
+
+  utime_t scrub_tick_time = scrub_clock_now();
+  auto queue_stats = m_queue_impl->get_stats(scrub_tick_time);
+  if (queue_stats.num_ready == 0) {
+    dout(10) << fmt::format(
+		    "{}: no eligible scrub targets in the {} entries", __func__,
+		    queue_stats.num_total)
+	     << dendl;
+    m_initiation_loop.reset();
+    return;
+  }
+
+  auto maybe_cand = m_queue_impl->pop_ready_pg(scrub_tick_time);
+  ceph_assert(maybe_cand);
+  dout(10) << fmt::format(
+		  "{}: scrub candidate is {}. {} candidates in the queue",
+		  __func__, maybe_cand->pgid, queue_stats.num_total)
+	   << dendl;
+
+  // send a message to that PG to start scrubbing
+  osd_service.queue_for_scrub_initiation(
+      maybe_cand->pgid, maybe_cand->level, m_initiation_loop->loop_id, m_initiation_loop->env_restrictions);
+
+}
+
+void ScrubQueue::initiation_loop_done(utime_t loop_id)
+{
+  std::scoped_lock lock(m_loop_lock);
+
+  // are we indeed in the middle of a 'scrub-loop'?
+  if (!m_initiation_loop) {
+    dout(10) << fmt::format("{}: no active scrub-loop. skipping", __func__)
+	     << dendl;
+    return;
+  }
+  // verify that we are not receiving a message from a previous loop
+  if (m_initiation_loop->loop_id != loop_id) {
+    dout(10) << fmt::format(
+		    "{}: loop-id mismatch. skipping. ({} != {})", __func__,
+		    m_initiation_loop->loop_id, loop_id)
+	     << dendl;
+    return;
+  }
+
+  m_initiation_loop.reset();
 }
 
 
@@ -695,19 +744,89 @@ int ScrubQueue::get_blocked_pgs_count() const
   return blocked_scrubs_cnt;
 }
 
+
+
+// ////////////////////////////////////////////////////////////////////////// //
+// SchedLoopHolder
+
+using SchedLoopHolder = Scrub::SchedLoopHolder;
+
+SchedLoopHolder::~SchedLoopHolder()
+{
+  // we may have failed without handling the sched-loop
+  // state. Let's just ignore it ('success()' does not cause any harm)
+  success();
+}
+
+/// tell the ScrubQueue to terminate the sched-loop (the process of trying
+/// to schedule the queue elements for scrubbing)
+void SchedLoopHolder::success()
+{
+  if (m_loop_id) {
+    m_queue.initiation_loop_done(*m_loop_id);
+    m_loop_id.reset();
+  }
+}
+
+void SchedLoopHolder::failure()
+{
+  if (m_loop_id) {
+    // we must have failed to schedule a scrub
+    m_queue.scrub_next_in_queue(*m_loop_id);
+    m_loop_id.reset();
+  }
+}
+
+
 // ////////////////////////////////////////////////////////////////////////// //
 // ScrubQueueImp: container low-level operations
 
 
-void ScrubQueueImp::push_entry(const SchedEntry& entry) {}
+void ScrubQueueImp::push_entry(const SchedEntry& entry)
+{
+  //dout(10) << fmt::format("{}: {}", __func__, entry) << dendl;
+  to_scrub.push_back(entry);
+  normalize_queue(parent_queue.scrub_clock_now());
+}
 
-bool ScrubQueueImp::remove_entry(spg_t pgid, scrub_level_t s_or_d) {}
+bool ScrubQueueImp::remove_entry(spg_t pgid, scrub_level_t s_or_d)
+{
+  auto i = std::find_if(
+      to_scrub.begin(), to_scrub.end(), [pgid, s_or_d](const auto& e) {
+	return same_key(e, pgid, s_or_d);
+      });
+  if (i == to_scrub.end()) {
+    return false;
+  }
+  to_scrub.erase(i);
+  normalize_queue(parent_queue.scrub_clock_now());
+  return true;
+}
 
 
-ScrubQueueStats ScrubQueueImp::get_stats(utime_t scrub_clock_now) const {}
+ScrubQueueStats ScrubQueueImp::get_stats(utime_t scrub_clock_now) const
+{
+  // assuming the queue is normalized
+  auto first_not_ripe = std::find_if_not(
+      to_scrub.cbegin(), to_scrub.cend(),
+      [scrub_clock_now](const auto& e) { return e.is_ripe(scrub_clock_now); });
+
+  return ScrubQueueStats{
+      static_cast<uint_fast16_t>(
+	  std::distance(to_scrub.cbegin(), first_not_ripe)),
+      static_cast<uint_fast16_t>(to_scrub.size())};
+}
 
 std::optional<SchedEntry> ScrubQueueImp::pop_ready_pg(utime_t scrub_clock_now)
-{}
+{
+  normalize_queue(scrub_clock_now);
+  const auto& e = to_scrub.front();
+  if (e.is_ripe(scrub_clock_now)) {
+    to_scrub.pop_front();
+    return e;
+  }
+  return std::nullopt;
+}
 
 
 void ScrubQueueImp::dump_scrubs(ceph::Formatter* f) const {}
@@ -736,4 +855,73 @@ std::vector<SchedEntry> ScrubQueueImp::get_entries(
     }
   }
   return res;
+}
+
+std::deque<SchedEntry>::iterator ScrubQueueImp::normalize_queue(utime_t nowis)
+{
+    // partition into 'ripe' and to those not eligible for scrubbing
+    auto not_ripe = std::stable_partition(
+        to_scrub.begin(), to_scrub.end(),
+        [nowis](const auto& sched_entry) { return sched_entry.is_ripe(nowis); });
+  
+    // sort the 'ripe' entries by their specific criteria
+    std::sort(to_scrub.begin(), not_ripe, [](const auto& lhs, const auto& rhs) {
+  #ifdef DEBUGss
+      std::cout << fmt::format(
+  	"-r- comparing {} / {} -> {}\n", lhs, rhs,
+  	ordering_as_int(cmp_ripe_entries(lhs, rhs)));
+  #endif
+      return cmp_ripe_entries(lhs, rhs) < 0;
+    });
+  
+    // sort those with not-before in the future - mostly by their 'not-before'
+    // time
+    std::sort(not_ripe, to_scrub.end(), [](const auto& lhs, const auto& rhs) {
+  #ifdef DEBUGss
+      std::cout << fmt::format(
+  	"-x- comparing {} / {} -> {}\n", lhs, rhs,
+  	ordering_as_int(cmp_future_entries(lhs, rhs)));
+  #endif
+      return cmp_future_entries(lhs, rhs) < 0;
+    });
+  
+//    const int ready_cnt = std::distance(to_scrub.begin(), not_ripe);
+//    const int future_cnt = std::distance(not_ripe, to_scrub.end());
+//     dout(10) << fmt::format(
+//   		  "{}: ready: {}, future: {} total queue size: {}", __func__,
+//   		  ready_cnt, future_cnt, to_scrub.size())
+//   	   << dendl;
+  
+    // dump the queue
+#if 0
+    {
+      static const int max_to_log = 10;
+  
+      // top of the ready-queue
+      int ready_n = std::min(ready_cnt, max_to_log);
+      if (ready_n && g_conf()->subsys.should_gather<ceph_subsys_osd, 10>()) {
+        dout(10) << fmt::format(
+  		      "{}: top ({} of {}) of the ready-queue:", __func__,
+  		      ready_n, ready_cnt)
+  	       << dendl;
+        for (int i = 0; i < ready_n; ++i) {
+  	dout(10) << fmt::format(" ready:  {}", to_scrub[i]) << dendl;
+        }
+      }
+  
+      // and some of the targets with 'not-before' in the future
+      int future_n = std::min(future_cnt, max_to_log);
+      if (future_n && g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
+        dout(10) << fmt::format(
+  		      "{}: top ({} of {}) of the future targets:", __func__,
+  		      future_n, future_cnt)
+  	       << dendl;
+        int k = future_n;
+        for (auto e = not_ripe; k > 0; --k, ++e) {
+  	dout(20) << fmt::format(" future: {}", *e) << dendl;
+        }
+      }
+    }
+#endif
+    return not_ripe;
 }

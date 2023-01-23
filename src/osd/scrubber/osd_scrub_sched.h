@@ -624,11 +624,11 @@ class ScrubSchedListener {
 
   virtual void send_sched_recalc_to_pg(spg_t pgid) = 0;
 
-  //virtual void send_try_sched_to_pg(spg_t pgid, ) = 0;
   virtual void queue_for_scrub_initiation(
       spg_t pg,
       scrub_level_t scrub_level,
-      Scrub::ScrubPreconds m_env_conditions) = 0;
+      utime_t loop_id,
+      Scrub::ScrubPreconds env_conditions) = 0;
 
   virtual ~ScrubSchedListener() {}
 };

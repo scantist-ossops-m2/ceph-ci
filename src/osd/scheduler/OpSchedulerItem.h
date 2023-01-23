@@ -414,21 +414,21 @@ class PGScrubTryInitiating : public PGScrubItem {
   using ScrubLoopToken = utime_t;
  private:
   scrub_level_t m_level;
- // utime_t /*ScrubLoopToken*/ m_token;  // identifying the specific "scrub
+  utime_t /*ScrubLoopToken*/ m_token;  // identifying the specific "scrub
 				       // initiating loop"
  // int m_retries_budget;	 // how many more PGs have we to try before giving up
   Scrub::ScrubPreconds m_env_conditions;  // note - only 1L in size
  public:
   PGScrubTryInitiating(
       spg_t pg,
-      epoch_t epoch_queued,
+      //epoch_t epoch_queued,
       scrub_level_t level,
-      //utime_t token,  // RRR combine with the next into one token
+      utime_t token,
       //int retries_budget,
       Scrub::ScrubPreconds env_conditions)
-      : PGScrubItem{pg, epoch_queued, "PGScrubTryInitiating"}
+      : PGScrubItem{pg, 0/*epoch_queued*/, "PGScrubTryInitiating"}
       , m_level{level}
-      //, m_token{token}
+      , m_token{token}
       //, m_retries_budget{retries_budget}
       , m_env_conditions{env_conditions}
   {}

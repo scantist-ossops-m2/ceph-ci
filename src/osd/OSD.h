@@ -533,7 +533,8 @@ public:
   void queue_for_scrub_initiation(
       spg_t pg,
       scrub_level_t scrub_level,
-      Scrub::ScrubPreconds m_env_conditions);
+      utime_t loop_id,
+      Scrub::ScrubPreconds env_conditions) override;
 
   void queue_for_scrub(PG* pg, Scrub::scrub_prio_t with_priority);
 

@@ -724,10 +724,9 @@ add missing
       utime_t scrub_clock_now,
       scrub_level_t level,
       Scrub::ScrubPreconds preconds);
-  Scrub::schedule_result_t start_scrubbing(
+  void start_scrubbing(
       scrub_level_t level,
       utime_t loop_id,
-      int retries_budget,
       Scrub::ScrubPreconds preconds);
 
   unsigned int scrub_requeue_priority(

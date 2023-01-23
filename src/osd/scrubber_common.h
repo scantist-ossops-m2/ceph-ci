@@ -204,16 +204,16 @@ struct ScrubPgIF {
     Scrub::ScrubPGPreconds pg_cond,
     Scrub::ScrubPreconds preconds) = 0;
 
-  virtual Scrub::schedule_result_t start_scrubbing(
+  virtual void start_scrubbing(
       scrub_level_t lvl,
       utime_t loop_id,
-      int retries_budget,
-      Scrub::ScrubPGPreconds pg_cond,
-      Scrub::ScrubPreconds preconds) = 0;
+      //int retries_budget,
+      Scrub::ScrubPreconds preconds,
+      Scrub::ScrubPGPreconds pg_cond) = 0;
 
-  virtual Scrub::schedule_result_t initiation_loop_trigger_next(
-      utime_t token,
-      int retries_budget) = 0;
+//   virtual Scrub::schedule_result_t initiation_loop_trigger_next(
+//       utime_t token,
+//       int retries_budget) = 0;
 
   /**
    * let the scrubber know that a recovery operation has completed.

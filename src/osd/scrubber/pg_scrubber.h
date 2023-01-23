@@ -531,16 +531,11 @@ class PgScrubber : public ScrubPgIF,
       Scrub::ScrubPGPreconds pg_cond,
       Scrub::ScrubPreconds preconds) final;
 
-  Scrub::schedule_result_t start_scrubbing(
+  void start_scrubbing(
       scrub_level_t lvl,
       utime_t loop_id,
-      int retries_budget,
       Scrub::ScrubPreconds preconds,
       Scrub::ScrubPGPreconds pg_cond) final;
-
-  Scrub::schedule_result_t initiation_loop_trigger_next(
-      utime_t token,
-      int retries_budget) final;
 
   void recovery_completed() final;
 
@@ -883,6 +878,14 @@ class PgScrubber : public ScrubPgIF,
   scrub_flags_t m_flags;
 
   bool m_active{false};
+
+  /**
+   * a token identifying the 'current' scrub scheduling 'loop'. Opaque
+   * for the scrubber, but used by the OSD's ScrubQueue to identify stale
+   * scheduling 'loop' (the traversing of the ready targets in the
+   * scrub queue).
+   */
+  std::optional<Scrub::SchedLoopHolder> m_schedloop_step{std::nullopt};
 
   /**
    * a flag designed to prevent the initiation of a second scrub on a PG for
