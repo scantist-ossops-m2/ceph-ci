@@ -4058,6 +4058,12 @@ int RGWRados::fetch_remote_obj(RGWObjectCtx& obj_ctx,
   //erase the append attr
   cb.get_attrs().erase(RGW_ATTR_APPEND_PART_NUM);
 
+  { // add x-amz-replication-status=REPLICA
+    auto& bl = cb.get_attrs()[RGW_ATTR_OBJ_REPLICATION_STATUS];
+    bl.clear(); // overwrite source's status
+    bl.append("REPLICA");
+  }
+
   if (source_zone.empty()) {
     set_copy_attrs(cb.get_attrs(), attrs, attrs_mod);
   } else {
@@ -7100,32 +7106,24 @@ int RGWRados::bucket_index_read_olh_log(const DoutPrefixProvider *dpp,
 
   cls_rgw_obj_key key(obj_instance.key.get_index_key_name(), string());
 
-  ret = guard_reshard(dpp, &bs, obj_instance, bucket_info,
-		      [&](BucketShard *bs) -> int {
-	                auto& ref = bs->bucket_obj.get_ref();
-			ObjectReadOperation op;
-			cls_rgw_guard_bucket_resharding(op, -ERR_BUSY_RESHARDING);
+  auto& shard_ref = bs.bucket_obj.get_ref();
+  ObjectReadOperation op;
 
-                        rgw_cls_read_olh_log_ret log_ret;
-                        int op_ret = 0;
-			cls_rgw_get_olh_log(op, key, ver_marker, olh_tag, log_ret, op_ret); 
-                        bufferlist outbl;
-                        int r =  rgw_rados_operate(dpp, ref.pool.ioctx(), ref.obj.oid, &op, &outbl, null_yield);
-                        if (r < 0) {
-                          return r;
-                        }
-                        if (op_ret < 0) {
-                          return op_ret;
-                        }
-
-                        *log = std::move(log_ret.log);
-                        *is_truncated = log_ret.is_truncated;
-                        return r;
-		      });
-  if (ret < 0) {
-    ldpp_dout(dpp, 20) << "cls_rgw_get_olh_log() returned r=" << r << dendl;
-    return ret;
+  rgw_cls_read_olh_log_ret log_ret;
+  int op_ret = 0;
+  cls_rgw_get_olh_log(op, key, ver_marker, olh_tag, log_ret, op_ret); 
+  bufferlist outbl;
+  r =  rgw_rados_operate(dpp, shard_ref.pool.ioctx(), shard_ref.obj.oid, &op, &outbl, null_yield);
+  if (r < 0) {
+    return r;
   }
+  if (op_ret < 0) {
+    ldpp_dout(dpp, 20) << "cls_rgw_get_olh_log() returned op_ret=" << op_ret << dendl;
+    return op_ret;
+  }
+
+  *log = std::move(log_ret.log);
+  *is_truncated = log_ret.is_truncated;
 
   return 0;
 }
@@ -8534,9 +8532,16 @@ int RGWRados::cls_obj_set_bucket_tag_timeout(const DoutPrefixProvider *dpp, RGWB
 }
 
 
+// returns 0 if there is an error in calculation
 uint32_t RGWRados::calc_ordered_bucket_list_per_shard(uint32_t num_entries,
 						      uint32_t num_shards)
 {
+  if (num_shards == 0) {
+    // we'll get a floating point exception since we divide by
+    // num_shards
+    return 0;
+  }
+
   // We want to minimize the chances that when num_shards >>
   // num_entries that we return much fewer than num_entries to the
   // client. Given all the overhead of making a cls call to the osd,
@@ -8618,6 +8623,13 @@ int RGWRados::cls_bucket_list_ordered(const DoutPrefixProvider *dpp,
   }
 
   const uint32_t shard_count = shard_oids.size();
+  if (shard_count == 0) {
+    ldpp_dout(dpp, 0) << "ERROR: " << __func__ <<
+      ": the bucket index shard count appears to be 0, "
+      "which is an illegal value" << dendl;
+    return -ERR_INVALID_BUCKET_STATE;
+  }
+
   uint32_t num_entries_per_shard;
   if (expansion_factor == 0) {
     num_entries_per_shard =
@@ -8630,6 +8642,13 @@ int RGWRados::cls_bucket_list_ordered(const DoutPrefixProvider *dpp,
 		calc_ordered_bucket_list_per_shard(num_entries, shard_count)));
   } else {
     num_entries_per_shard = num_entries;
+  }
+
+  if (num_entries_per_shard == 0) {
+    ldpp_dout(dpp, 0) << "ERROR: " << __func__ <<
+      ": unable to calculate the number of entries to read from each "
+      "bucket index shard" << dendl;
+    return -ERR_INVALID_BUCKET_STATE;
   }
 
   ldpp_dout(dpp, 10) << __func__ <<

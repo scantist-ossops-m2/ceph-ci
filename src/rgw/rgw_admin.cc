@@ -2367,26 +2367,21 @@ static void get_data_sync_status(const rgw_zone_id& source_zone, list<string>& s
     }
   }
 
-  int total_behind = shards_behind.size() + (sync_status.sync_info.num_shards - num_inc);
-  int total_recovering = recovering_shards.size();
-  if (total_behind == 0 && total_recovering == 0) {
-    push_ss(ss, status, tab) << "data is caught up with source";
-  } else if (total_behind > 0) {
-    push_ss(ss, status, tab) << "data is behind on " << total_behind << " shards";
-
-    push_ss(ss, status, tab) << "behind shards: " << "[" << shards_behind_set << "]" ;
-
+  std::optional<std::pair<int, ceph::real_time>> oldest;
+  if (!shards_behind.empty()) {
     map<int, rgw_datalog_shard_data> master_pos;
     ret = sync.read_source_log_shards_next(dpp(), shards_behind, &master_pos);
+
     if (ret < 0) {
       derr << "ERROR: failed to fetch next positions (" << cpp_strerror(-ret) << ")" << dendl;
     } else {
-      std::optional<std::pair<int, ceph::real_time>> oldest;
-
       for (auto iter : master_pos) {
         rgw_datalog_shard_data& shard_data = iter.second;
-
-        if (!shard_data.entries.empty()) {
+        if (shard_data.entries.empty()) {
+          // there aren't any entries in this shard, so we're not really behind
+          shards_behind.erase(iter.first);
+          shards_behind_set.erase(iter.first);
+        } else {
           rgw_datalog_entry& entry = shard_data.entries.front();
           if (!oldest) {
             oldest.emplace(iter.first, entry.timestamp);
@@ -2395,11 +2390,20 @@ static void get_data_sync_status(const rgw_zone_id& source_zone, list<string>& s
           }
         }
       }
+    }
+  }
 
-      if (oldest) {
-        push_ss(ss, status, tab) << "oldest incremental change not applied: "
-            << oldest->second << " [" << oldest->first << ']';
-      }
+  int total_behind = shards_behind.size() + (sync_status.sync_info.num_shards - num_inc);
+  int total_recovering = recovering_shards.size();
+
+  if (total_behind == 0 && total_recovering == 0) {
+    push_ss(ss, status, tab) << "data is caught up with source";
+  } else if (total_behind > 0) {
+    push_ss(ss, status, tab) << "data is behind on " << total_behind << " shards";
+    push_ss(ss, status, tab) << "behind shards: " << "[" << shards_behind_set << "]" ;
+    if (oldest) {
+      push_ss(ss, status, tab) << "oldest incremental change not applied: "
+          << oldest->second << " [" << oldest->first << ']';
     }
   }
 
@@ -7139,6 +7143,10 @@ int main(int argc, const char **argv)
           cerr << "ERROR: driver->list_objects(): " << cpp_strerror(-ret) << std::endl;
           return -ret;
         }
+	ldpp_dout(dpp(), 20) << "INFO: " << __func__ <<
+	  ": list() returned without error; results.objs.sizie()=" <<
+	  results.objs.size() << "results.is_truncated=" << results.is_truncated << ", marker=" <<
+	  params.marker << dendl;
 
         count += results.objs.size();
 
@@ -7147,6 +7155,7 @@ int main(int argc, const char **argv)
         }
         formatter->flush(cout);
       } while (results.is_truncated && count < max_entries);
+      ldpp_dout(dpp(), 20) << "INFO: " << __func__ << ": done" << dendl;
 
       formatter->close_section();
       formatter->flush(cout);
@@ -7658,7 +7667,6 @@ next:
     }
 
     rgw_cls_bi_entry entry;
-
     ret = static_cast<rgw::sal::RadosStore*>(driver)->getRados()->bi_get(dpp(), bucket->get_info(), obj, bi_index_type, &entry);
     if (ret < 0) {
       cerr << "ERROR: bi_get(): " << cpp_strerror(-ret) << std::endl;
@@ -7701,25 +7709,30 @@ next:
       cerr << "ERROR: bucket name not specified" << std::endl;
       return EINVAL;
     }
+
     int ret = init_bucket(user.get(), tenant, bucket_name, bucket_id, &bucket);
     if (ret < 0) {
       cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
 
-    list<rgw_cls_bi_entry> entries;
+    std::list<rgw_cls_bi_entry> entries;
     bool is_truncated;
+    const auto& index = bucket->get_info().layout.current_index;
+    const int max_shards = rgw::num_shards(index);
     if (max_entries < 0) {
       max_entries = 1000;
     }
 
-    const auto& index = bucket->get_info().layout.current_index;
-    const int max_shards = rgw::num_shards(index);
+    ldpp_dout(dpp(), 20) << "INFO: " << __func__ << ": max_entries=" << max_entries <<
+      ", index=" << index << ", max_shards=" << max_shards << dendl;
 
     formatter->open_array_section("entries");
 
     int i = (specified_shard_id ? shard_id : 0);
     for (; i < max_shards; i++) {
+      ldpp_dout(dpp(), 20) << "INFO: " << __func__ << ": starting shard=" << i << dendl;
+
       RGWRados::BucketShard bs(static_cast<rgw::sal::RadosStore*>(driver)->getRados());
       int ret = bs.init(dpp(), bucket->get_info(), index, i);
       marker.clear();
@@ -7737,20 +7750,26 @@ next:
           cerr << "ERROR: bi_list(): " << cpp_strerror(-ret) << std::endl;
           return -ret;
         }
+	ldpp_dout(dpp(), 20) << "INFO: " << __func__ <<
+	  ": bi_list() returned without error; entries.size()=" <<
+	  entries.size() << ", is_truncated=" << is_truncated <<
+	  ", marker=" << marker << dendl;
 
-        list<rgw_cls_bi_entry>::iterator iter;
-        for (iter = entries.begin(); iter != entries.end(); ++iter) {
-          rgw_cls_bi_entry& entry = *iter;
+	for (const auto& entry : entries) {
           encode_json("entry", entry, formatter.get());
           marker = entry.idx;
         }
         formatter->flush(cout);
       } while (is_truncated);
+
       formatter->flush(cout);
 
-      if (specified_shard_id)
+      if (specified_shard_id) {
         break;
+      }
     }
+    ldpp_dout(dpp(), 20) << "INFO: " << __func__ << ": done" << dendl;
+
     formatter->close_section();
     formatter->flush(cout);
   }

@@ -10,8 +10,7 @@
  * to provide additional virtual methods such as send_response or get_params.
  */
 
-#ifndef CEPH_RGW_OP_H
-#define CEPH_RGW_OP_H
+#pragma once
 
 #include <limits.h>
 
@@ -1659,7 +1658,7 @@ public:
   ~RGWPutLC() override {}
 
   void init(rgw::sal::Driver* driver, req_state *s, RGWHandler *dialect_handler) override {
-#define COOKIE_LEN 16
+    static constexpr std::size_t COOKIE_LEN = 16;
     char buf[COOKIE_LEN + 1];
 
     RGWOp::init(driver, s, dialect_handler);
@@ -2669,5 +2668,3 @@ int rgw_policy_from_attrset(const DoutPrefixProvider *dpp,
                             CephContext *cct,
                             std::map<std::string, bufferlist>& attrset,
                             RGWAccessControlPolicy *policy);
-
-#endif /* CEPH_RGW_OP_H */
