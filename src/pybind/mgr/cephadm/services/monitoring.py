@@ -384,7 +384,8 @@ class PrometheusService(CephadmService):
         # build service discovery end-point
         port = self.mgr.service_discovery_port
         mgr_addr = wrap_ipv6(self.mgr.get_mgr_ip())
-        srv_end_point = f'https://{mgr_addr}:{port}/sd/prometheus/sd-config?'
+        protocol = 'https' if self.mgr.secure_monitoring_stack else 'http'
+        srv_end_point = f'{protocol}://{mgr_addr}:{port}/sd/prometheus/sd-config?'
 
         node_exporter_cnt = len(self.mgr.cache.get_daemons_by_service('node-exporter'))
         alertmgr_cnt = len(self.mgr.cache.get_daemons_by_service('alertmanager'))
