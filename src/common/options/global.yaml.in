@@ -2795,6 +2795,11 @@ options:
   type: bool
   level: dev
   default: true
+- name: osd_heartbeat_bind_to_public
+  desc: Whether to bind the hb_front_server's msgr to public_addrs or to public_bind_addrs
+  type: bool
+  level: dev
+  default: false
 - name: osd_heartbeat_interval
   type: int
   level: dev

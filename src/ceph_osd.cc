@@ -688,6 +688,13 @@ flushjournal_out:
   }
   if (ms_hb_front_server->bindv(hb_front_bind_addrs) < 0)
     forker.exit(1);
+  if (hb_front_addrs != hb_front_bind_addrs
+      && cct->_conf.get_val<bool>("osd_heartbeat_bind_to_public")) {
+    dout(10) << "setting ms_hb_front_server's addrs to " << hb_front_addrs << dendl;
+    set_exposed_addrs(*ms_hb_front_server, hb_front_addrs);
+  } else {
+    dout(10) << "letting ms_hb_front_server use public_bind_addrs" << dendl;
+  }
   if (ms_hb_front_client->client_bind(hb_front_addrs.front()) < 0)
     forker.exit(1);
 
