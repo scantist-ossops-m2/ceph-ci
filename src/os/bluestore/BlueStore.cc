@@ -1205,6 +1205,11 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
     *onodes += num;
     *pinned_onodes += num_pinned;
   }
+#ifdef DEBUG_CACHE
+  void _audit(const char *when) override
+  {
+  }
+#endif
 };
 
 // OnodeCacheShard
@@ -1305,7 +1310,7 @@ struct LruBufferCacheShard : public BlueStore::BufferCacheShard {
     *bytes += buffer_bytes;
   }
 #ifdef DEBUG_CACHE
-  void _audit(const char *s) override
+  void _audit(const char *when) override
   {
     dout(10) << __func__ << " " << when << " start" << dendl;
     uint64_t s = 0;
@@ -1611,7 +1616,7 @@ public:
   }
 
 #ifdef DEBUG_CACHE
-  void _audit(const char *s) override
+  void _audit(const char *when) override
   {
     dout(10) << __func__ << " " << when << " start" << dendl;
     uint64_t s = 0;
