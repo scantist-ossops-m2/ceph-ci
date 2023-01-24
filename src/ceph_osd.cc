@@ -688,10 +688,6 @@ flushjournal_out:
   }
   if (ms_hb_front_server->bindv(hb_front_bind_addrs) < 0)
     forker.exit(1);
-  if (hb_front_addrs != public_bind_addrs) {
-    dout(10) << "setting ms_hb_front_server's addrs to " << hb_front_addrs << dendl;
-    set_exposed_addrs(*ms_hb_front_server, hb_front_addrs);
-  }
   if (ms_hb_front_client->client_bind(hb_front_addrs.front()) < 0)
     forker.exit(1);
 
