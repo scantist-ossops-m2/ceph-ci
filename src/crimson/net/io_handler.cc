@@ -517,11 +517,11 @@ IOHandler::read_message(utime_t throttle_stamp, std::size_t msg_size)
     // XXX: paranoid copy just to avoid oops
     ceph_msg_header2 current_header = msg_frame.header();
 
-    logger().trace("{} got {} + {} + {} byte message,"
-                   " envelope type={} src={} off={} seq={}",
-                   conn, msg_frame.front_len(), msg_frame.middle_len(),
-                   msg_frame.data_len(), current_header.type, conn.get_peer_name(),
-                   current_header.data_off, current_header.seq);
+//    logger().trace("{} got {} + {} + {} byte message,"
+//                   " envelope type={} src={} off={} seq={}",
+//                   conn, msg_frame.front_len(), msg_frame.middle_len(),
+//                   msg_frame.data_len(), current_header.type, conn.get_peer_name(),
+//                   current_header.data_off, current_header.seq);
 
     ceph_msg_header header{current_header.seq,
                            current_header.tid,

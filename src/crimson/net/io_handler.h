@@ -267,3 +267,9 @@ struct fmt::formatter<crimson::net::IOHandler::io_state_t>
     return formatter<string_view>::format(name, ctx);
   }
 };
+
+#if FMT_VERSION >= 9000
+template <> struct fmt::formatter<crimson::net::IOHandler::io_stat_printer> : fmt::ostream_formatter {};
+#endif
+
+
