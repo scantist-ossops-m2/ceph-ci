@@ -203,6 +203,7 @@ BuildRequires:	sharutils
 BuildRequires:	checkpolicy
 BuildRequires:	selinux-policy-devel
 %endif
+BuildRequires:  grpc-devel
 BuildRequires:	gperf
 BuildRequires:  cmake > 3.5
 BuildRequires:	fuse-devel
