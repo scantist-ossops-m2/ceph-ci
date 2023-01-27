@@ -1372,6 +1372,8 @@ protected:
   void queue_scrub_after_repair();
   unsigned int get_scrub_priority();
 
+  void stop_active_scrubs() override;
+
   bool try_flush_or_schedule_async() override;
   void start_flush_on_transaction(
     ObjectStore::Transaction &t) override;

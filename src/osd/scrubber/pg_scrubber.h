@@ -325,7 +325,7 @@ class PgScrubber : public ScrubPgIF,
  public:
   explicit PgScrubber(PG* pg);
 
-  friend class ScrubBackend;  // will be replaced by a limited interface
+  friend class ScrubBackend;  /// \todo replace by a limited interface?
 
   //  ------------------  the I/F exposed to the PG (ScrubPgIF) -------------
 
@@ -407,12 +407,15 @@ class PgScrubber : public ScrubPgIF,
   void rm_from_osd_scrubbing() final;
 
   void on_primary_change(
-    std::string_view caller,
-    const requested_scrub_t& request_flags) final;
+      std::string_view caller,
+      const requested_scrub_t& request_flags) final;
 
-  void scrub_requested(scrub_level_t scrub_level,
-		       scrub_type_t scrub_type,
-		       requested_scrub_t& req_flags) final;
+  void on_pg_activate(const requested_scrub_t& request_flags) final;
+
+  void scrub_requested(
+      scrub_level_t scrub_level,
+      scrub_type_t scrub_type,
+      requested_scrub_t& req_flags) final;
 
   /**
    * Reserve local scrub resources (managed by the OSD)
@@ -457,9 +460,12 @@ class PgScrubber : public ScrubPgIF,
   /// handle a message carrying a replica map
   void map_from_replica(OpRequestRef op) final;
 
+  void stop_active_scrubs() final;
+
   void scrub_clear_state() final;
 
   bool is_queued_or_active() const final;
+  Scrub::QueuedForRole queued_for_role() const;// final;
 
   /**
    *  add to scrub statistics, but only if the soid is below the scrub start
@@ -493,6 +499,7 @@ class PgScrubber : public ScrubPgIF,
 		 std::string param,
 		 Formatter* f,
 		 std::stringstream& ss) override;
+
   int m_debug_blockrange{0};
 
   // --------------------------------------------------------------------------
@@ -579,7 +586,8 @@ class PgScrubber : public ScrubPgIF,
 
   [[nodiscard]] bool was_epoch_changed() const final;
 
-  void set_queued_or_active() final;
+  void set_queued_or_active(Scrub::QueuedForRole role_queued) final;
+
   /// Clears `m_queued_or_active` and restarts snaptrimming
   void clear_queued_or_active() final;
 
@@ -667,7 +675,7 @@ class PgScrubber : public ScrubPgIF,
    *  the current scrubbing operation is done. We should mark that fact, so that
    *  all events related to the previous operation can be discarded.
    */
-  void advance_token();
+  void advance_token(bool also_reset);
 
   bool is_token_current(Scrub::act_token_t received_token);
 
@@ -775,6 +783,12 @@ class PgScrubber : public ScrubPgIF,
   epoch_t m_interval_start{0};	///< interval's 'from' of when scrubbing was
 				///< first scheduled
 
+  /**
+   * the 'from' in any role (Replica/Primary) change we've noticed.
+   * used to prevent excessive role-to-same-role handlings.
+   */
+  int last_acknowledged_role;
+
   void repair_oinfo_oid(ScrubMap& smap);
 
   /*
@@ -830,7 +844,7 @@ class PgScrubber : public ScrubPgIF,
    * Compared with 'm_active', this flag is asserted earlier and remains ON for
    * longer.
    */
-  bool m_queued_or_active{false};
+  Scrub::QueuedForRole m_queued_or_active{Scrub::QueuedForRole::none};
 
   eversion_t m_subset_last_update{};
 

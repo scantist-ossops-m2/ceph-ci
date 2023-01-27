@@ -453,6 +453,13 @@ unsigned PG::get_scrub_priority()
   return pool_scrub_priority > 0 ? pool_scrub_priority : cct->_conf->osd_scrub_priority;
 }
 
+void PG::stop_active_scrubs()
+{
+  if (m_scrubber) {
+    m_scrubber->stop_active_scrubs();
+  }
+}
+
 Context *PG::finish_recovery()
 {
   dout(10) << "finish_recovery" << dendl;
@@ -1829,6 +1836,7 @@ void PG::on_activate(interval_set<snapid_t> snaps)
   snap_trimq = snaps;
   release_pg_backoffs();
   projected_last_update = info.last_update;
+  m_scrubber->on_pg_activate(m_planned_scrub);
 }
 
 void PG::on_active_exit()
