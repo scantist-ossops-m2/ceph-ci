@@ -90,6 +90,10 @@ int main(int argc, const char **argv)
     plb.add_u64_counter(rbd::mirror::l_rbd_mirror_snapshot_replay_bytes,
                         "replay_bytes", "Replayed data", "rb", prio,
                         unit_t(UNIT_BYTES));
+    plb.add_u64_counter(rbd::mirror::l_rbd_mirror_remote_timestamp, "remote_timestamp", "timestamp", "rt", prio);
+    plb.add_u64_counter(rbd::mirror::l_rbd_mirror_local_timestamp, "local_timestamp", "timestamp", "lt", prio);
+    plb.add_u64_counter(rbd::mirror::l_rbd_mirror_last_snapshot_sync_seconds, "sync_seconds", "time taken to sync", "st", prio);
+    plb.add_u64_counter(rbd::mirror::l_rbd_mirror_last_snapshot_bytes, "sync_bytes", "bytes synced", "sb", prio) ;
     g_snapshot_perf_counters = plb.create_perf_counters();
   }
   g_ceph_context->get_perfcounters_collection()->add(g_journal_perf_counters);

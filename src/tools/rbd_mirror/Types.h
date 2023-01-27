@@ -29,6 +29,10 @@ enum {
   l_rbd_mirror_snapshot_replay_snapshots,
   l_rbd_mirror_snapshot_replay_snapshots_time,
   l_rbd_mirror_snapshot_replay_bytes,
+  l_rbd_mirror_remote_timestamp,
+  l_rbd_mirror_local_timestamp,
+  l_rbd_mirror_last_snapshot_sync_seconds,
+  l_rbd_mirror_last_snapshot_bytes,
   l_rbd_mirror_snapshot_last,
 };
 
