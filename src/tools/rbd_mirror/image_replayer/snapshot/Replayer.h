@@ -5,6 +5,7 @@
 #define RBD_MIRROR_IMAGE_REPLAYER_SNAPSHOT_REPLAYER_H
 
 #include "tools/rbd_mirror/image_replayer/Replayer.h"
+#include "common/perf_counters.h"
 #include "common/ceph_mutex.h"
 #include "common/AsyncOpTracker.h"
 #include "cls/rbd/cls_rbd_types.h"
@@ -211,6 +212,10 @@ private:
   State m_state = STATE_INIT;
 
   std::string m_image_spec;
+  std::string name_of_image;
+  std::string name_of_pool;
+  
+
   Context* m_on_init_shutdown = nullptr;
 
   bool m_resync_requested = false;
@@ -256,6 +261,7 @@ private:
   bool m_sync_in_progress = false;
 
   PerfCounters *m_perf_counters = nullptr;
+// PerfCountersCache *perf_counters_cache = NULL;
 
   void load_local_image_meta();
   void handle_load_local_image_meta(int r);

@@ -14,6 +14,7 @@
 #include "librbd/Utils.h"
 #include "librbd/asio/ContextWQ.h"
 #include "librbd/deep_copy/Handler.h"
+#include "common/perf_counters_key.h"
 #include "librbd/deep_copy/ImageCopyRequest.h"
 #include "librbd/deep_copy/SnapshotCopyRequest.h"
 #include "librbd/mirror/ImageStateUpdateRequest.h"
@@ -162,6 +163,8 @@ void Replayer<I>::init(Context* on_finish) {
     std::shared_lock image_locker{local_image_ctx->image_lock};
     m_image_spec = image_replayer::util::compute_image_spec(
       local_image_ctx->md_ctx, local_image_ctx->name);
+    name_of_image = local_image_ctx->name;
+    name_of_pool = local_image_ctx->md_ctx.get_pool_name();
   }
 
   {
@@ -217,6 +220,7 @@ bool Replayer<I>::get_replay_status(std::string* description,
                                     Context* on_finish) {
   dout(10) << dendl;
 
+  ceph_assert(m_perf_counters!=nullptr)
   std::unique_lock locker{m_lock};
   if (m_state != STATE_REPLAYING && m_state != STATE_IDLE) {
     locker.unlock();
@@ -255,6 +259,8 @@ bool Replayer<I>::get_replay_status(std::string* description,
   root_obj["replay_state"] = replay_state;
   root_obj["remote_snapshot_timestamp"] = remote_snap_info->timestamp.sec();
 
+    m_perf_counters->set( l_rbd_mirror_remote_timestamp, remote_snap_info->timestamp.sec());
+
   auto matching_remote_snap_id = util::compute_remote_snap_id(
     m_state_builder->local_image_ctx->image_lock,
     m_state_builder->local_image_ctx->snap_info,
@@ -269,6 +275,7 @@ bool Replayer<I>::get_replay_status(std::string* description,
     // synced and not the consistency point in time.
     root_obj["local_snapshot_timestamp"] =
       matching_remote_snap_it->second.timestamp.sec();
+      m_perf_counters->set(l_rbd_mirror_local_timestamp, matching_remote_snap_it->second.timestamp.sec());
   }
 
   matching_remote_snap_it = m_state_builder->remote_image_ctx->snap_info.find(
@@ -300,6 +307,8 @@ bool Replayer<I>::get_replay_status(std::string* description,
 
   root_obj["last_snapshot_sync_seconds"] = m_last_snapshot_sync_seconds;
   root_obj["last_snapshot_bytes"] = m_last_snapshot_bytes;
+  m_perf_counters->set(l_rbd_mirror_last_snapshot_sync_seconds, m_last_snapshot_sync_seconds);
+  m_perf_countesrs->set(l_rbd_mirror_last_snapshot_bytes, m_last_snapshot_bytes);
 
   auto pending_bytes = bytes_per_snapshot * m_pending_snapshots;
   if (bytes_per_second > 0 && m_pending_snapshots > 0) {
@@ -340,6 +349,8 @@ void Replayer<I>::load_local_image_meta() {
       local_image_ctx->md_ctx, local_image_ctx->name);
     if (m_image_spec != image_spec) {
       m_image_spec = image_spec;
+      name_of_image = local_image_ctx->name;
+      name_of_pool = local_image_ctx->md_ctx.get_pool_name();
       update_status = true;
     }
   }
@@ -1130,6 +1141,15 @@ void Replayer<I>::handle_copy_image(int r) {
       m_perf_counters->inc(l_rbd_mirror_snapshot_replay_snapshots);
       m_perf_counters->tinc(l_rbd_mirror_snapshot_replay_snapshots_time, duration);
     }
+    // if (perf_counters_cache)
+    // {
+    //   std::string labels = ceph::perf_counters::key_create("rbd", {{"Pool", name_of_pool}, {"Image", name_of_image}});
+    //   perf_counters_cache->add(labels);
+    //   perf_counters_cache->inc(labels, l_rbd_mirror_snapshot_replay_bytes, m_snapshot_bytes);
+    //   perf_counters_cache->inc(labels, l_rbd_mirror_snapshot_replay_snapshots, 1);
+    //   perf_counters_cache->tinc(labels, l_rbd_mirror_snapshot_replay_snapshots_time, time);
+    // }
+    m_snapshot_bytes = 0;
   }
 
   apply_image_state();
@@ -1554,6 +1574,10 @@ bool Replayer<I>::is_replay_interrupted(std::unique_lock<ceph::mutex>* locker) {
   return false;
 }
 
+// PerfCounters* add_labelled_counters(std::string name, CephContext *cct){
+//  return counters;
+// }
+
 template <typename I>
 void Replayer<I>::register_perf_counters() {
   dout(5) << dendl;
@@ -1563,17 +1587,23 @@ void Replayer<I>::register_perf_counters() {
 
   auto cct = static_cast<CephContext *>(m_state_builder->local_image_ctx->cct);
   auto prio = cct->_conf.get_val<int64_t>("rbd_mirror_image_perf_stats_prio");
-  PerfCountersBuilder plb(g_ceph_context,
-                          "rbd_mirror_snapshot_image_" + m_image_spec,
-                          l_rbd_mirror_snapshot_first,
-                          l_rbd_mirror_snapshot_last);
-  plb.add_u64_counter(l_rbd_mirror_snapshot_replay_snapshots,
-                      "snapshots", "Snapshots", "r", prio);
-  plb.add_time_avg(l_rbd_mirror_snapshot_replay_snapshots_time,
-                   "snapshots_time", "Snapshots time", "rl", prio);
-  plb.add_u64_counter(l_rbd_mirror_snapshot_replay_bytes, "replay_bytes",
-                      "Replayed data", "rb", prio, unit_t(UNIT_BYTES));
-  m_perf_counters = plb.create_perf_counters();
+  
+  std::string labels = ceph::perf_counters::key_create("z_rbd", {{"Pool", name_of_pool}, {"Image", name_of_image}});
+
+  auto lpcb = new PerfCountersBuilder(g_ceph_context, labels, l_rbd_mirror_snapshot_first, l_rbd_mirror_snapshot_last);
+  lpcb->set_prio_default(prio);
+  lpcb->add_u64_counter(l_rbd_mirror_snapshot_replay_snapshots, "snapshots", "Snapshots", "r");
+  lpcb->add_time_avg(l_rbd_mirror_snapshot_replay_snapshots_time, "snapshots_time", "Snapshots time", "rl");
+  lpcb->add_u64_counter(l_rbd_mirror_snapshot_replay_bytes, "replay_bytes",
+                      "Replayed data", "rb" );
+  lpcb->add_u64_counter(l_rbd_mirror_remote_timestamp, "remote_timestamp", "Timestamp", "rt");
+  lpcb->add_u64_counter(l_rbd_mirror_local_timestamp, "local_timestamp", "Timestamp", "lt");
+  lpcb->add_u64_counter(l_rbd_mirror_last_snapshot_sync_seconds, "sync_seconds", "time taken to sync", "st", prio);
+  lpcb->add_u64_counter(l_rbd_mirror_last_snapshot_bytes, "sync_bytes", "bytes synced", "sb", prio) ;
+
+  m_perf_counters = lpcb->create_perf_counters();
+  delete lpcb;
+
   g_ceph_context->get_perfcounters_collection()->add(m_perf_counters);
 }
 
