@@ -527,9 +527,7 @@ void PgScrubber::stop_active_scrubs()
       break;
   }
 
-  if (m_scrub_job && m_scrub_job->is_state_registered()) {
-    unregister_from_osd();
-  }
+  rm_from_osd_scrubbing();
 }
 
 
@@ -591,13 +589,13 @@ void PgScrubber::stop_active_scrubs()
 // }
 
 
-void PgScrubber::unregister_from_osd()
-{
-  if (m_scrub_job && m_scrub_job->is_state_registered()) {
-    dout(15) << __func__ << " prev. state: " << registration_state() << dendl;
-    m_osds->get_scrub_services().remove_from_osd_queue(m_scrub_job);
-  }
-}
+// void PgScrubber::unregister_from_osd()
+// {
+//   if (m_scrub_job && m_scrub_job->is_state_registered()) {
+//     dout(15) << __func__ << " prev. state: " << registration_state() << dendl;
+//     m_osds->get_scrub_services().remove_from_osd_queue(m_scrub_job);
+//   }
+// }
 
 
 bool PgScrubber::is_scrub_registered() const
@@ -615,11 +613,11 @@ std::string_view PgScrubber::registration_state() const
 
 void PgScrubber::rm_from_osd_scrubbing()
 {
-  // make sure the OSD won't try to scrub this one just now
-  unregister_from_osd();
+  if (m_scrub_job && m_scrub_job->is_state_registered()) {
+    dout(15) << __func__ << " prev. state: " << registration_state() << dendl;
+    m_osds->get_scrub_services().remove_from_osd_queue(m_scrub_job);
+  }
 }
-
-// AllReplicasActivated
 
 void PgScrubber::on_pg_activate(const requested_scrub_t& request_flags)
 {
@@ -652,7 +650,7 @@ void PgScrubber::on_pg_activate(const requested_scrub_t& request_flags)
 	   << dendl;
 }
 
-
+#if 0
 void PgScrubber::on_primary_change(
     std::string_view caller,
     const requested_scrub_t& request_flags)
@@ -686,6 +684,7 @@ void PgScrubber::on_primary_change(
   // on 'in_queues'. Was:
   // ceph_assert(!is_scrub_registered());
 }
+#endif
 
 
 // void PgScrubber::on_primary_change(
@@ -2808,8 +2807,8 @@ void ReplicaReservations::send_all_done()
 
 void ReplicaReservations::send_reject()
 {
-  // stop any pending timeout timer
-  m_no_reply.reset();
+//   // stop any pending timeout timer
+//   m_no_reply.reset();
   m_scrub_job->resources_failure = true;
   m_osds->queue_for_scrub_denied(m_pg, scrub_prio_t::low_priority);
 }
@@ -2960,6 +2959,8 @@ void ReplicaReservations::handle_reserve_reject(OpRequestRef op,
     dout(10) << __func__ << ": osd." << from << " scrub reserve = fail"
 	     << dendl;
     m_had_rejections = true;  // preventing any additional notifications
+    // stop any pending timeout timer
+    m_no_reply.reset();
     send_reject();
   }
 }
@@ -2998,7 +2999,6 @@ ReplicaReservations::no_reply_t::no_reply_t(
 	  // already cancelled
 	  return;
 	}
-	m_abort_callback = nullptr;
 	m_osds->clog->warn() << fmt::format(
 	    "{} timeout on replica reservations (since {})", m_log_prfx,
 	    now_is);
@@ -3008,8 +3008,17 @@ ReplicaReservations::no_reply_t::no_reply_t(
 	      << "scrub_noreply_callback: Could not find PG " << pgid << dendl;
 	  return;
 	}
+
+	if (!m_abort_callback) {
+	  // already cancelled
+          pg->unlock();
+	  return;
+	}
+	m_abort_callback = nullptr;
 	m_parent.handle_no_reply_timeout();
 	pg->unlock();
+	m_osds->clog->warn() << fmt::format(
+	    "{} timeout on replica reservations - handled", m_log_prfx);
       });
 
   std::lock_guard l(m_osds->sleep_lock);

@@ -1685,6 +1685,7 @@ std::optional<requested_scrub_t> PG::validate_scrub_mode() const
   return upd_flags;
 }
 
+#if 1
 /*
  * Note: on_info_history_change() is used in those two cases where we're not sure
  * whether the role of the PG was changed, and if so - was this change relayed to the
@@ -1693,12 +1694,16 @@ std::optional<requested_scrub_t> PG::validate_scrub_mode() const
 void PG::on_info_history_change()
 {
   ceph_assert(m_scrubber);
-  m_scrubber->on_primary_change(__func__, m_planned_scrub);
+  dout(20) << __func__ << " for a "
+	   << (is_primary() ? "Primary" : "non-primary") << dendl;
+  //m_scrubber->on_primary_change(__func__, m_planned_scrub);
 }
+#endif
 
 void PG::reschedule_scrub()
 {
-  dout(20) << __func__ << " for a " << (is_primary() ? "Primary" : "non-primary") <<dendl;
+  dout(20) << __func__ << " for a "
+	   << (is_primary() ? "Primary" : "non-primary") << dendl;
 
   // we are assuming no change in primary status
   if (is_primary()) {
@@ -1707,14 +1712,16 @@ void PG::reschedule_scrub()
   }
 }
 
+#if 1
 void PG::on_primary_status_change(bool was_primary, bool now_primary)
 {
   // make sure we have a working scrubber when becoming a primary
-  if (was_primary != now_primary) {
-    ceph_assert(m_scrubber);
-    m_scrubber->on_primary_change(__func__, m_planned_scrub);
-  }
+//   if (was_primary != now_primary) {
+//     ceph_assert(m_scrubber);
+//     m_scrubber->on_primary_change(__func__, m_planned_scrub);
+//   }
 }
+#endif
 
 void PG::scrub_requested(scrub_level_t scrub_level, scrub_type_t scrub_type)
 {
@@ -1749,7 +1756,7 @@ void PG::on_new_interval()
   dout(20) << __func__ << (is_scrub_queued_or_active() ? " scrubbing " : " ")
            << "flags: " << m_planned_scrub << dendl;
 
-  m_scrubber->on_primary_change(__func__, m_planned_scrub);
+  //m_scrubber->on_primary_change(__func__, m_planned_scrub);
 }
 
 epoch_t PG::oldest_stored_osdmap() {
