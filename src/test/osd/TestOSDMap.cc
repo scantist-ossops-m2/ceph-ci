@@ -74,41 +74,13 @@ public:
     if (no_default_pools) // do not create any default pool(s)
       return;
 
-    // Create an EC rule and a pool using it
-//    int r = get_ec_crush_rule();
-//     int r = osdmap.crush->add_simple_rule(
-//       EC_RULE_NAME, "default", "osd", "",
-//       "indep", pg_pool_t::TYPE_ERASURE,
-//       &cerr);
-
     OSDMap::Incremental new_pool_inc(osdmap.get_epoch() + 1);
     new_pool_inc.new_pool_max = osdmap.get_pool_max();
     new_pool_inc.fsid = osdmap.get_fsid();
     // make an ec pool
     set_ec_pool("ec", new_pool_inc);
-//     pg_pool_t empty;
-//     // make an ec pool
-//     uint64_t pool_id = ++new_pool_inc.new_pool_max;
-//     ceph_assert(pool_id == my_ec_pool);
-//     pg_pool_t *p = new_pool_inc.get_new_pool(pool_id, &empty);
-//     p->size = 3;
-//     p->set_pg_num(64);
-//     p->set_pgp_num(64);
-//     p->type = pg_pool_t::TYPE_ERASURE;
-//     p->crush_rule = r;
-//     new_pool_inc.new_pool_names[pool_id] = "ec";
     // and a replicated pool
     set_rep_pool("reppool",new_pool_inc);
-//     pool_id = ++new_pool_inc.new_pool_max;
-//     ceph_assert(pool_id == my_rep_pool);
-//     p = new_pool_inc.get_new_pool(pool_id, &empty);
-//     p->size = 3;
-//     p->set_pg_num(64);
-//     p->set_pgp_num(64);
-//     p->type = pg_pool_t::TYPE_REPLICATED;
-//     p->crush_rule = 0;
-//     p->set_flag(pg_pool_t::FLAG_HASHPSPOOL);
-//     new_pool_inc.new_pool_names[pool_id] = "reppool";
     osdmap.apply_incremental(new_pool_inc);
   }
   int get_ec_crush_rule() {
@@ -133,7 +105,7 @@ public:
     p->set_pgp_num(64);
     p->type = pg_pool_t::TYPE_ERASURE;
     p->crush_rule = get_ec_crush_rule();
-    new_pool_inc.new_pool_names[pool_id] = "ec";
+    new_pool_inc.new_pool_names[pool_id] = name;//"ec";
     return pool_id;
   }
   uint64_t set_rep_pool(const string name, OSDMap::Incremental &new_pool_inc,
@@ -149,7 +121,7 @@ public:
     p->type = pg_pool_t::TYPE_REPLICATED;
     p->crush_rule = 0;
     p->set_flag(pg_pool_t::FLAG_HASHPSPOOL);
-    new_pool_inc.new_pool_names[pool_id] = "reppool";
+    new_pool_inc.new_pool_names[pool_id] = name;//"reppool";
     return pool_id;
   }
 
