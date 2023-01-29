@@ -406,9 +406,9 @@ class PgScrubber : public ScrubPgIF,
 
   void rm_from_osd_scrubbing() final;
 
-  void on_primary_change(
-      std::string_view caller,
-      const requested_scrub_t& request_flags) final;
+//   void on_primary_change(
+//       std::string_view caller,
+//       const requested_scrub_t& request_flags) final;
 
   void on_pg_activate(const requested_scrub_t& request_flags) final;
 
@@ -902,8 +902,6 @@ class PgScrubber : public ScrubPgIF,
    * initiate a deep-scrub after the current scrub ended with errors.
    */
   void request_rescrubbing(requested_scrub_t& req_flags);
-
-  void unregister_from_osd();
 
   /*
    * Select a range of objects to scrub.
