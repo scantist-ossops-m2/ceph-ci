@@ -534,6 +534,17 @@ options:
   services:
   - mds
   with_legacy: true
+- name: mds_major_segment_event_ratio
+  type: uint
+  level: advanced
+  desc: multiple of mds_log_events_per_segment between major segments
+  default: 12
+  services:
+  - mds
+  min: 1
+  see_also:
+  - mds_log_events_per_segment
+  with_legacy: true
 # segment size for mds log, default to default file_layout_t
 - name: mds_log_segment_size
   type: size
