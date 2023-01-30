@@ -81,11 +81,14 @@ class FuseMount(CephFSMount):
             'ceph-fuse', "-f",
             "--admin-socket", "/var/run/ceph/$cluster-$name.$pid.asok",
         ]
+        fuse_cmd = [self._mount_bin, self.hostfs_mntpt]
         if self.client_id is not None:
             fuse_cmd += ['--id', self.client_id]
         if self.client_keyring_path and self.client_id is not None:
             fuse_cmd += ['-k', self.client_keyring_path]
+
         self.validate_subvol_options()
+
         if self.cephfs_mntpt is not None:
             fuse_cmd += ["--client_mountpoint=" + self.cephfs_mntpt]
         if self.cephfs_name is not None:
