@@ -3,6 +3,27 @@ tasks:
     host.a:
       - ceph osd pool create foo
       - rbd pool init foo
-      - ceph orch apply iscsi foo u p
+      - ceph orch apply iscsi foo u p --placement "*"
 - cephadm.wait_for_service:
     service: iscsi.foo
+- vip.exec:
+    host.a:
+      - |
+        set -e
+        set -x
+        FSID=$(/home/ubuntu/cephtest/cephadm shell -- ceph fsid)
+        ISCSI_DAEMON=$(/home/ubuntu/cephtest/cephadm ls | jq -r '.[] | select(.service_name == "iscsi.foo") | .name')
+        ISCSI_UNIT_RUN=$(cat /var/lib/ceph/$FSID/$ISCSI_DAEMON/unit.run)
+        if grep -q "docker run" <<< "$ISCSI_UNIT_RUN"; then
+          echo "Using docker, no need to check /etc/hosts"
+          exit 0
+        fi
+        /home/ubuntu/cephtest/cephadm enter --name $ISCSI_DAEMON -- cat /etc/hosts > iscsi_daemon_etc_hosts.txt
+        HOST_ETC_HOSTS=$(cat /etc/hosts)
+        DAEMON_ETC_HOSTS=$(cat iscsi_daemon_etc_hosts.txt)
+        if [ "$HOST_ETC_HOSTS" != "$DAEMON_ETC_HOSTS" ]; then
+          printf "\n\n$HOST_ETC_HOSTS\n\nis not equal to\n\n$DAEMON_ETC_HOSTS\n\n"
+          exit 1
+        else
+          echo "Daemon and host /etc/hosts files successfully matched"
+        fi
