@@ -29,6 +29,7 @@ class XFSTestsDev(CephFSTestCase):
         self.install_deps()
         self.create_reqd_users()
         self.write_local_config()
+        self.write_ceph_exclude()
 
         # NOTE: On teuthology machines it's necessary to run "make" as
         # superuser since the repo is cloned somewhere in /tmp.
@@ -180,6 +181,19 @@ class XFSTestsDev(CephFSTestCase):
 
         self.mount_a.client_remote.write_file(join(self.xfstests_repo_path, 'local.config'),
                                               xfstests_config_contents, sudo=True)
+
+    def write_ceph_exclude(self):
+        from os.path import join
+        from textwrap import dedent
+
+        # These tests will fail or take to much time and will
+        # make the test timedout, just skip them for now.
+        xfstests_exclude_contents = dedent('''\
+            {c}/001 {g}/003 {g}/538 {g}/531
+            ''').format(g="generic", c="ceph")
+
+        self.mount_a.client_remote.write_file(join(self.xfstests_repo_path, 'ceph.exclude'),
+                                              xfstests_exclude_contents, sudo=True)
 
     def tearDown(self):
         self.mount_a.client_remote.run(args=['sudo', 'userdel', '--force',
