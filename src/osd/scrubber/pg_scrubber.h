@@ -325,7 +325,7 @@ class PgScrubber : public ScrubPgIF,
  public:
   explicit PgScrubber(PG* pg);
 
-  friend class ScrubBackend;  /// \todo replace by a limited interface?
+  friend class ScrubBackend;  // will be replaced by a limited interface
 
   //  ------------------  the I/F exposed to the PG (ScrubPgIF) -------------
 
@@ -671,11 +671,16 @@ class PgScrubber : public ScrubPgIF,
  private:
   void reset_internal_state();
 
+//   enum class advance_token_t {
+//     advance,
+//     advance_and_reset
+//   };
+
   /**
    *  the current scrubbing operation is done. We should mark that fact, so that
    *  all events related to the previous operation can be discarded.
    */
-  void advance_token(bool also_reset);
+  void advance_token(/*advance_token_t rst*/);
 
   bool is_token_current(Scrub::act_token_t received_token);
 

@@ -497,7 +497,7 @@ void PgScrubber::stop_active_scrubs()
 	   << dendl;
 
   // was_active_replica checks for the two active FSM replica states
-  bool was_active_replica = m_fsm->is_active_replica();
+  //bool was_active_replica = m_fsm->is_active_replica();
   // 'active_role' catches 'event is in the mail' cases, too (matching
   // 'is_queued_or_active()')
   auto active_role = queued_for_role();
@@ -506,30 +506,35 @@ void PgScrubber::stop_active_scrubs()
     dout(10) << fmt::format(
 		    "{}: discarding reservation by remote primary", __func__)
 	     << dendl;
-    advance_token(false);
     m_remote_osd_resource.reset();
+    // advance_token() also full-resets the FSm if 'active replica'
+    advance_token(/*false*/);
   }
 
-  switch (active_role) {
-    case QueuedForRole::primary:
-      m_fsm->process_event(FullReset{});
-      clear_pgscrub_state();
-      break;
-
-    case QueuedForRole::replica:
-      m_fsm->process_event(FullReset{});
-      if (was_active_replica) {
-	replica_handling_done();
-      }
-      break;
-
-    case QueuedForRole::none:
-      break;
+  if (active_role == QueuedForRole::primary) {
+    m_fsm->process_event(FullReset{});
+    clear_pgscrub_state();
   }
+
+//   switch (active_role) {
+//     case QueuedForRole::primary:
+//       m_fsm->process_event(FullReset{});
+//       clear_pgscrub_state();
+//       break;
+// 
+//     case QueuedForRole::replica:
+//       m_fsm->process_event(FullReset{});
+//       if (was_active_replica) {
+// 	replica_handling_done();
+//       }
+//       break;
+// 
+//     case QueuedForRole::none:
+//       break;
+//   }
 
   rm_from_osd_scrubbing();
 }
-
 
 // void PgScrubber::stop_active_scrubs()
 // {
@@ -539,19 +544,11 @@ void PgScrubber::stop_active_scrubs()
 // 		  is_scrub_active(), is_queued_or_active())
 // 	   << dendl;
 // 
+//   // was_active_replica checks for the two active FSM replica states
 //   bool was_active_replica = m_fsm->is_active_replica();
-// 
-//   // What if we are queued, but not yet active?
-//   // For a primary - it is OK:
-//   // initiate_regular_scrub() & initiate_scrub_after_repair() will notice an
-//   // interval change and abort the scrub. So we don't need to do anything here.
-//   // As for replicas:
-//   // - we would notice becoming a Primary, but that would be too late.
-//   // - we also check the interval in the 'scrub' event, but an analysis of the
-//   //   order of changes is required.
-//   //   But we also check the token, and there is no reason not to make this
-//   //   test fail, by discarding our resource grant. See replica_scrub_op()
-//   //   for how the sequence of messages initiating a replica scrub is handled.
+//   // 'active_role' catches 'event is in the mail' cases, too (matching
+//   // 'is_queued_or_active()')
+//   auto active_role = queued_for_role();
 // 
 //   if (m_remote_osd_resource) {
 //     dout(10) << fmt::format(
@@ -561,32 +558,27 @@ void PgScrubber::stop_active_scrubs()
 //     m_remote_osd_resource.reset();
 //   }
 // 
-//   if (is_queued_or_active()) {
-//     m_fsm->process_event(FullReset{});
-// 
-//     // But what if we are queued, but not yet active?
-//     // initiate_regular_scrub() & initiate_scrub_after_repair() would notice an interval
-//     // change and abort the scrub. No special handling here is required.
-//     // As for replicas:
-//     // - we would notice becoming a Primary, but that would be too late.
-//     // - we also check the interval in the 'scrub' event, but an analysis of the
-//     //   order of changes is required.
-//     //   But we also check the token, and there is no reason not to make this
-//     //   test fail. See replica_scrub_op() for how the
-//     //   sequence of messages initiating a replica scrub is handled.
-// 
-//     if (was_active_replica) {
-//       replica_handling_done();
-//     } else {
-//       // we *were* the primary. Must not assume we are still.
+//   switch (active_role) {
+//     case QueuedForRole::primary:
+//       m_fsm->process_event(FullReset{});
 //       clear_pgscrub_state();
-//     }
+//       break;
+// 
+//     case QueuedForRole::replica:
+//       m_fsm->process_event(FullReset{});
+//       if (was_active_replica) {
+// 	replica_handling_done();
+//       }
+//       break;
+// 
+//     case QueuedForRole::none:
+//       break;
 //   }
 // 
-//   if (m_scrub_job && m_scrub_job->in_queues) {
-//     unregister_from_osd();
-//   }
+//   rm_from_osd_scrubbing();
 // }
+
+
 
 
 // void PgScrubber::unregister_from_osd()
@@ -741,7 +733,7 @@ void PgScrubber::update_scrub_job(const requested_scrub_t& request_flags)
   dout(10) << fmt::format("{}: flags:<{}>", __func__, request_flags) << dendl;
   // verify that the 'in_q' status matches our "Primariority"
   if (m_scrub_job && is_primary() && !m_scrub_job->in_queues) {
-    dout(1) << __func__ << " !!! primary but not scheduled! " << dendl;
+    dout(10) << __func__ << " !!! primary but not scheduled! " << dendl;
   }
 
   if (is_primary() && m_scrub_job) {
@@ -749,7 +741,7 @@ void PgScrubber::update_scrub_job(const requested_scrub_t& request_flags)
     auto suggested = m_osds->get_scrub_services().determine_scrub_time(
       request_flags, m_pg->info, m_pg->get_pgpool().info.opts);
     m_osds->get_scrub_services().update_job(m_scrub_job, suggested);
-    m_pg->publish_stats_to_osd();
+    //m_pg->publish_stats_to_osd();
   }
 
   dout(15) << __func__ << ": done " << registration_state() << dendl;
@@ -1842,7 +1834,7 @@ void PgScrubber::handle_scrub_reserve_request(OpRequestRef op)
      * the first renewed 'give me your scrub map' from the primary will see us
      * in active state, crashing the OSD).
      */
-    advance_token(true);
+    advance_token(/*true*/);
     granted = true;
 
   } else if (m_pg->cct->_conf->osd_scrub_during_recovery ||
@@ -1903,7 +1895,7 @@ void PgScrubber::handle_scrub_reserve_release(OpRequestRef op)
    * this specific scrub session has terminated. All incoming events carrying
    *  the old tag will be discarded.
    */
-  advance_token(true);
+  advance_token(/*true*/);
   m_remote_osd_resource.reset();
 }
 
@@ -2576,23 +2568,51 @@ void PgScrubber::reset_internal_state()
 }
 
 // note that only applicable to the Replica:
-void PgScrubber::advance_token(bool also_reset)
+void PgScrubber::advance_token(/*advance_token_t also_reset*/)
 {
-  dout(10) << __func__ << " was: " << m_current_token << dendl;
+  dout(10) << fmt::format(
+		  "{}: prev. token:{}", __func__,
+		  m_current_token)
+	   << dendl;
+
+//   dout(10) << fmt::format(
+// 		  "{}: prev. token:{}, also_reset?:{}", __func__,
+// 		  m_current_token,
+// 		  (also_reset == advance_token_t::advance_and_reset))
+// 	   << dendl;
   m_current_token++;
 
-  if (also_reset) {
-    // when advance_token() is called, it is assumed that no scrubbing takes
-    // place. We will, though, verify that. And if we are actually still handling
-    // a stale request - both our internal state and the FSM state will be
-    // cleared.
-    if (m_fsm->is_active_replica()) {
-      dout(10) << __func__ << " clearing stale replica state" << dendl;
-      m_fsm->process_event(FullReset{});
-      replica_handling_done();
-    }
+  // when advance_token() is called, it is assumed that no scrubbing takes
+  // place. We will, though, verify that. And if we are actually still handling
+  // a stale request - both our internal state and the FSM state will be
+  // cleared.
+  if (m_fsm->is_active_replica()) {
+    dout(10) << fmt::format("{}: clearing stale replica state", __func__) << dendl;
+    m_fsm->process_event(FullReset{});
+    replica_handling_done();
   }
 }
+
+// void PgScrubber::advance_token(bool also_reset)
+// {
+//   dout(10) << fmt::format(
+// 		  "{}: prev. token:{}, also_reset:{}", __func__,
+// 		  m_current_token, also_reset)
+// 	   << dendl;
+//   m_current_token++;
+// 
+//   if (also_reset) {
+//     // when advance_token() is called, it is assumed that no scrubbing takes
+//     // place. We will, though, verify that. And if we are actually still handling
+//     // a stale request - both our internal state and the FSM state will be
+//     // cleared.
+//     if (m_fsm->is_active_replica()) {
+//       dout(10) << __func__ << " clearing stale replica state" << dendl;
+//       m_fsm->process_event(FullReset{});
+//       replica_handling_done();
+//     }
+//   }
+// }
 
 bool PgScrubber::is_token_current(Scrub::act_token_t received_token)
 {

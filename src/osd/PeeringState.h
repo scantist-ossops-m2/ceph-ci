@@ -291,7 +291,7 @@ public:
     /// Notify that a scrub has been requested
     virtual void scrub_requested(scrub_level_t scrub_level, scrub_type_t scrub_type) = 0;
 
-    /// stop any active scrubbing (e.g. on interval end)
+    /// stop any active scrubbing (on interval end)
     virtual void stop_active_scrubs() = 0;
 
     /// Return current snap_trimq size
