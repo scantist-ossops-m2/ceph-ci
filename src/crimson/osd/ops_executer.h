@@ -525,7 +525,9 @@ OpsExecuter::flush_changes_n_do_ops_effects(
     return maybe_mutated;
   } else {
     return maybe_mutated.then_unpack_interruptible(
-      [this, pg=std::move(pg)](auto&& submitted, auto&& all_completed) mutable {
+      // need extra ref pg due to apply_stats() which can be executed after
+      // informing snap mapper
+      [this, pg=this->pg](auto&& submitted, auto&& all_completed) mutable {
       return interruptor::make_ready_future<rep_op_fut_tuple>(
 	  std::move(submitted),
 	  all_completed.safe_then_interruptible([this, pg=std::move(pg)] {
