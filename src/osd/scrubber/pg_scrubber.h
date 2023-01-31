@@ -788,12 +788,6 @@ class PgScrubber : public ScrubPgIF,
   epoch_t m_interval_start{0};	///< interval's 'from' of when scrubbing was
 				///< first scheduled
 
-  /**
-   * the 'from' in any role (Replica/Primary) change we've noticed.
-   * used to prevent excessive role-to-same-role handlings.
-   */
-  int last_acknowledged_role;
-
   void repair_oinfo_oid(ScrubMap& smap);
 
   /*

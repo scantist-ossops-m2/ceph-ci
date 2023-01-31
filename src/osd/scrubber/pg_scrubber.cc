@@ -469,7 +469,7 @@ unsigned int PgScrubber::scrub_requeue_priority(
 /*
  * implementation notes:
  * =====================
- * If a scrub is active, we stop the scrub we were performing (whether
+ * If a scrub is active, it is stopped (whether performed
  * as a Primary or as a Replica).
  * If we were a Primary - we deregister from the OSD.
  *
@@ -480,10 +480,7 @@ unsigned int PgScrubber::scrub_requeue_priority(
  * here is required.
  *
  * As for replicas:
- * - we would notice becoming a Primary, but that would be too late.
- * - we also check the interval in the 'scrub' event, but an analysis of the
- *    order of changes is required before we can be sure that this is
- *    sufficient.
+ * we would notice becoming a Primary, but that would be too late.
  * But we also check the token, and there is no reason not to make this
  * test fail. See replica_scrub_op() for how the sequence of messages
  * initiating a replica scrub is handled.
@@ -507,8 +504,8 @@ void PgScrubber::stop_active_scrubs()
 		    "{}: discarding reservation by remote primary", __func__)
 	     << dendl;
     m_remote_osd_resource.reset();
-    // advance_token() also full-resets the FSm if 'active replica'
-    advance_token(/*false*/);
+    // advance_token() also full-resets the FSM if 'active replica'
+    advance_token();
   }
 
   if (active_role == QueuedForRole::primary) {
@@ -616,7 +613,6 @@ void PgScrubber::rm_from_osd_scrubbing()
 void PgScrubber::on_pg_activate(const requested_scrub_t& request_flags)
 {
   ceph_assert(is_primary());
-
   if (!m_scrub_job) {
     // we won't have a chance to see more logs from this function, thus:
     dout(10) << fmt::format(
@@ -739,7 +735,7 @@ void PgScrubber::update_scrub_job(const requested_scrub_t& request_flags)
   if (is_primary() && m_scrub_job) {
     ceph_assert(m_pg->is_locked());
     auto suggested = m_osds->get_scrub_services().determine_scrub_time(
-      request_flags, m_pg->info, m_pg->get_pgpool().info.opts);
+	request_flags, m_pg->info, m_pg->get_pgpool().info.opts);
     m_osds->get_scrub_services().update_job(m_scrub_job, suggested);
     //m_pg->publish_stats_to_osd();
   }
@@ -2575,11 +2571,6 @@ void PgScrubber::advance_token(/*advance_token_t also_reset*/)
 		  m_current_token)
 	   << dendl;
 
-//   dout(10) << fmt::format(
-// 		  "{}: prev. token:{}, also_reset?:{}", __func__,
-// 		  m_current_token,
-// 		  (also_reset == advance_token_t::advance_and_reset))
-// 	   << dendl;
   m_current_token++;
 
   // when advance_token() is called, it is assumed that no scrubbing takes
