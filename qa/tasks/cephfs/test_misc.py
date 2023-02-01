@@ -223,6 +223,27 @@ class TestMisc(CephFSTestCase):
         info = self.fs.mds_asok(['dump', 'inode', hex(ino)])
         assert info['path'] == "/foo"
 
+    def test_dump_dir(self):
+        self.mount_a.run_shell(["mkdir", "-p", "foo/bar"])
+        dirs = self.fs.mds_asok(['dump', 'dir', '/foo'])
+        assert type(dirs) is list
+        for dir in dirs:
+            assert dir['path'] == "/foo"
+            assert "dentries" not in dir
+        dirs = self.fs.mds_asok(['dump', 'dir', '/foo', '--dentry_dump'])
+        assert type(dirs) is list
+        found_dentry = False
+        for dir in dirs:
+            assert dir['path'] == "/foo"
+            assert type(dir['dentries']) is list
+            if found_dentry:
+                continue
+            for dentry in dir['dentries']:
+                if dentry['path'] == "foo/bar":
+                    found_dentry = True
+                    break
+        assert found_dentry
+
     def test_fs_lsflags(self):
         """
         Check that the lsflags displays the default state and the new state of flags
