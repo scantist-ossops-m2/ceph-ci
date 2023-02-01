@@ -1693,15 +1693,6 @@ void PG::reschedule_scrub()
   }
 }
 
-void PG::on_primary_status_change(bool was_primary, bool now_primary)
-{
-  // make sure we have a working scrubber when becoming a primary
-  if (was_primary != now_primary) {
-    ceph_assert(m_scrubber);
-    m_scrubber->on_primary_change(__func__, m_planned_scrub);
-  }
-}
-
 void PG::scrub_requested(scrub_level_t scrub_level, scrub_type_t scrub_type)
 {
   ceph_assert(m_scrubber);
@@ -1729,13 +1720,7 @@ void PG::on_new_interval()
 {
   projected_last_update = eversion_t();
   cancel_recovery();
-
-  ceph_assert(m_scrubber);
-  // log some scrub data before we react to the interval
-  dout(20) << __func__ << (is_scrub_queued_or_active() ? " scrubbing " : " ")
-           << "flags: " << m_planned_scrub << dendl;
-
-  m_scrubber->on_primary_change(__func__, m_planned_scrub);
+  m_scrubber->on_new_interval();
 }
 
 epoch_t PG::cluster_osdmap_trim_lower_bound() {
@@ -1822,6 +1807,7 @@ void PG::on_activate(interval_set<snapid_t> snaps)
   snap_trimq = snaps;
   release_pg_backoffs();
   projected_last_update = info.last_update;
+  m_scrubber->on_pg_activate(m_planned_scrub);
 }
 
 void PG::on_active_exit()
