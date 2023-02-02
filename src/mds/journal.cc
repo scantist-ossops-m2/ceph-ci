@@ -1583,13 +1583,12 @@ void EMetaBlob::replay(MDSRank *mds, LogSegment *logseg, MDPeerUpdate *peerup)
     }
   }
   if (sessionmapv) {
-    unsigned diff = (used_preallocated_ino && !preallocated_inos.empty()) ? 2 : 1;
     if (mds->sessionmap.get_version() >= sessionmapv) {
       dout(10) << "EMetaBlob.replay sessionmap v " << sessionmapv
 	       << " <= table " << mds->sessionmap.get_version() << dendl;
-    } else if (mds->sessionmap.get_version() + diff == sessionmapv) {
+    } else {
       dout(10) << "EMetaBlob.replay sessionmap v " << sessionmapv
-	       << " - " << diff << " == table " << mds->sessionmap.get_version()
+	       << ", table " << mds->sessionmap.get_version()
 	       << " prealloc " << preallocated_inos
 	       << " used " << used_preallocated_ino
 	       << dendl;
@@ -1609,7 +1608,6 @@ void EMetaBlob::replay(MDSRank *mds, LogSegment *logseg, MDPeerUpdate *peerup)
 	  session->info.prealloc_inos.insert(preallocated_inos);
           mds->sessionmap.replay_dirty_session(session);
 	}
-
       } else {
 	dout(10) << "EMetaBlob.replay no session for " << client_name << dendl;
 	if (used_preallocated_ino)
@@ -1618,13 +1616,17 @@ void EMetaBlob::replay(MDSRank *mds, LogSegment *logseg, MDPeerUpdate *peerup)
 	if (!preallocated_inos.empty())
 	  mds->sessionmap.replay_advance_version();
       }
-      ceph_assert(sessionmapv == mds->sessionmap.get_version());
-    } else {
-      mds->clog->error() << "EMetaBlob.replay sessionmap v " << sessionmapv
-			 << " - " << diff << " > table " << mds->sessionmap.get_version();
-      ceph_assert(g_conf()->mds_wipe_sessions);
-      mds->sessionmap.wipe();
-      mds->sessionmap.set_version(sessionmapv);
+
+      // [repair bad sessionmap updates]
+      if (sessionmapv > mds->sessionmap.get_version()) {
+        mds->clog->error() << "EMetaBlob.replay sessionmapv mismatch "
+            << sessionmapv << " -> " << mds->sessionmap.get_version();
+        if (g_conf()->mds_wipe_sessions) {
+          mds->sessionmap.wipe();
+        }
+        // force replay sessionmap version
+        mds->sessionmap.set_version(sessionmapv);
+      }
     }
   }
 
