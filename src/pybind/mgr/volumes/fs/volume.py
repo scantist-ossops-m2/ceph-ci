@@ -12,7 +12,7 @@ from mgr_util import CephfsClient
 from .fs_util import listdir
 
 from .operations.group import open_group, create_group, remove_group, \
-    open_group_unique, set_group_attrs
+    open_group_unique
 from .operations.volume import create_volume, delete_volume, \
     list_volumes, open_volume, get_pool_names, get_pool_ids, get_pending_subvol_deletions_count
 from .operations.subvolume import open_subvol, create_subvol, remove_subvol, \
