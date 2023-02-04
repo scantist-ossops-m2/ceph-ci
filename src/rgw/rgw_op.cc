@@ -6860,6 +6860,7 @@ void RGWDeleteMultiObj::handle_individual_object(const rgw_obj_key& o, optional_
         check_obj_lock = false;
       } else {
         // Something went wrong.
+        ldpp_dout(this, 2) << "DELETE_OBJ_ERR: send_partial_response_1: " << ret << dendl;
         send_partial_response(o, false, "", ret, formatter_flush_cond);
         return;
       }
@@ -6872,6 +6873,7 @@ void RGWDeleteMultiObj::handle_individual_object(const rgw_obj_key& o, optional_
       ceph_assert(astate);
       int object_lock_response = verify_object_lock(this, astate->attrset, bypass_perm, bypass_governance_mode);
       if (object_lock_response != 0) {
+        ldpp_dout(this, 2) << "DELETE_OBJ_ERR: send_partial_response_2: " << object_lock_response << dendl;
         send_partial_response(o, false, "", object_lock_response, formatter_flush_cond);
         return;
       }
@@ -6885,6 +6887,7 @@ void RGWDeleteMultiObj::handle_individual_object(const rgw_obj_key& o, optional_
       rgw::notify::ObjectRemovedDeleteMarkerCreated : rgw::notify::ObjectRemovedDelete;
   op_ret = rgw::notify::publish_reserve(this, event_type, res, nullptr);
   if (op_ret < 0) {
+    ldpp_dout(this, 2) << "DEL_OBJ_ERROR: send_partial_response_3: " << op_ret << dendl;
     send_partial_response(o, false, "", op_ret, formatter_flush_cond);
     return;
   }
@@ -6897,6 +6900,7 @@ void RGWDeleteMultiObj::handle_individual_object(const rgw_obj_key& o, optional_
     op_ret = 0;
   }
 
+  ldpp_dout(this, 2) << "DELETE_OBJ_ERR: send_partial_response_4: " << op_ret << dendl;
   send_partial_response(o, obj->get_delete_marker(), version_id, op_ret, formatter_flush_cond);
 
   // send request to notification manager

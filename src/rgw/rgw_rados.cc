@@ -5066,6 +5066,7 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
 
       int r = store->set_olh(dpp, target->get_ctx(), target->get_bucket_info(), marker, true, &meta, params.olh_epoch, params.unmod_since, params.high_precision_time, y, params.zones_trace);
       if (r < 0) {
+        ldpp_dout(dpp, 2) << "DELETE_OBJ_ERR: delete_obj_1: r=" << r << dendl;
         return r;
       }
     } else {
@@ -5073,11 +5074,13 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
 
       int r = store->bi_get_instance(dpp, target->get_bucket_info(), obj, &dirent);
       if (r < 0) {
+        ldpp_dout(dpp, 2) << "DELETE_OBJ_ERR: delete_obj_2: r=" << r << dendl;
         return r;
       }
       result.delete_marker = dirent.is_delete_marker();
       r = store->unlink_obj_instance(dpp, target->get_ctx(), target->get_bucket_info(), obj, params.olh_epoch, y, params.zones_trace);
       if (r < 0) {
+        ldpp_dout(dpp, 2) << "DELETE_OBJ_ERR: delete_obj_3: r=" << r << dendl;
         return r;
       }
       result.version_id = instance;
@@ -5086,6 +5089,7 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
     BucketShard *bs;
     int r = target->get_bucket_shard(&bs, dpp);
     if (r < 0) {
+      ldpp_dout(dpp, 2) << "DELETE_OBJ_ERR: delete_obj_4: r=" << r << dendl;
       ldpp_dout(dpp, 5) << "failed to get BucketShard object: r=" << r << dendl;
       return r;
     }
@@ -5102,13 +5106,16 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
   rgw_rados_ref ref;
   int r = store->get_obj_head_ref(dpp, target->get_bucket_info(), obj, &ref);
   if (r < 0) {
+    ldpp_dout(dpp, 2) << "DELETE_OBJ_ERR: delete_obj_5: r=" << r << dendl;
     return r;
   }
 
   RGWObjState *state;
   r = target->get_state(dpp, &state, false, y);
-  if (r < 0)
+  if (r < 0) {
+    ldpp_dout(dpp, 2) << "DELETE_OBJ_ERR: delete_obj_6: r=" << r << dendl;
     return r;
+  }
 
   ObjectWriteOperation op;
 
@@ -5161,8 +5168,10 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
   }
 
   r = target->prepare_atomic_modification(dpp, op, false, NULL, NULL, NULL, true, false, y);
-  if (r < 0)
+  if (r < 0) {
+    ldpp_dout(dpp, 2) << "DELETE_OBJ_ERR: delete_obj_7: r=" << r << dendl;
     return r;
+  }
 
   RGWBucketInfo& bucket_info = target->get_bucket_info();
 
@@ -5173,8 +5182,10 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
   index_op.set_bilog_flags(params.bilog_flags);
 
   r = index_op.prepare(dpp, CLS_RGW_OP_DEL, &state->write_tag, y);
-  if (r < 0)
+  if (r < 0) {
+    ldpp_dout(dpp, 2) << "DELETE_OBJ_ERR: delete_obj_8: r=" << r << dendl;
     return r;
+  }
 
   store->remove_rgw_head_obj(op);
 
@@ -5209,8 +5220,10 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
     target->invalidate_state();
   }
 
-  if (r < 0)
+  if (r < 0) {
+    ldpp_dout(dpp, 2) << "DELETE_OBJ_ERR: delete_obj_9: r=" << r << dendl;
     return r;
+  }
 
   /* update quota cache */
   store->quota_handler->update_stats(params.bucket_owner, obj.bucket, -1, 0, obj_accounted_size);
