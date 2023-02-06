@@ -7,6 +7,7 @@
 #include <string>
 
 #include <boost/optional.hpp>
+#include <boost/functional/hash.hpp>
 
 extern "C" {
 #include <liboath/oath.h>
@@ -86,6 +87,19 @@ static const DoutPrefixProvider* dpp() {
   return &global_dpp;
 }
 
+namespace std {
+    template<> struct hash<cls_rgw_obj_key>
+    {
+        std::size_t operator()(const cls_rgw_obj_key& p) const noexcept
+        {
+          std::size_t seed = 0;
+          boost::hash_combine(seed, p.name);
+          boost::hash_combine(seed, p.instance);
+          return seed;
+        }
+    };
+} 
+
 #define CHECK_TRUE(x, msg, err) \
   do { \
     if (!x) { \
@@ -142,6 +156,7 @@ void usage()
   cout << "  bi get                     retrieve bucket index object entries\n";
   cout << "  bi put                     store bucket index object entries\n";
   cout << "  bi list                    list raw bucket index entries\n";
+  cout << "  bi find zombies            list zombie objects\n";
   cout << "  bi purge                   purge bucket index entries\n";
   cout << "  object rm                  remove object\n";
   cout << "  object put                 put object\n";
@@ -639,6 +654,7 @@ enum class OPT {
   OBJECTS_EXPIRE_STALE_RM,
   BI_GET,
   BI_PUT,
+  BI_FIND_ZOMBIES,
   BI_LIST,
   BI_PURGE,
   OLH_GET,
@@ -847,6 +863,7 @@ static SimpleCmd::Commands all_cmds = {
   { "objects expire-stale rm", OPT::OBJECTS_EXPIRE_STALE_RM },
   { "bi get", OPT::BI_GET },
   { "bi put", OPT::BI_PUT },
+  { "bi find zombies", OPT::BI_FIND_ZOMBIES },
   { "bi list", OPT::BI_LIST },
   { "bi purge", OPT::BI_PURGE },
   { "olh get", OPT::OLH_GET },
@@ -3856,6 +3873,7 @@ int main(int argc, const char **argv)
 			 OPT::OBJECT_STAT,
 			 OPT::BI_GET,
 			 OPT::BI_LIST,
+			 OPT::BI_FIND_ZOMBIES,
 			 OPT::OLH_GET,
 			 OPT::OLH_READLOG,
 			 OPT::GC_LIST,
@@ -6602,6 +6620,98 @@ next:
       cerr << "ERROR: bi_put(): " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
+  }
+  if (opt_cmd == OPT::BI_FIND_ZOMBIES) {
+    if (bucket_name.empty()) {
+      cerr << "ERROR: bucket name not specified" << std::endl;
+      return EINVAL;
+    }
+    RGWBucketInfo bucket_info;
+    int ret = init_bucket(tenant, bucket_name, bucket_id, bucket_info, bucket);
+    if (ret < 0) {
+      cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+    list<rgw_cls_bi_entry> entries;
+    bool is_truncated;
+    if (max_entries < 0) {
+      max_entries = 1000;
+    }
+
+    int max_shards = (bucket_info.layout.current_index.layout.normal.num_shards > 0 ? bucket_info.layout.current_index.layout.normal.num_shards : 1);
+    cerr << "num shards = " << max_shards << std::endl;
+
+    int i = (specified_shard_id ? shard_id : 0);
+    
+    uint64_t total_size = 0;
+    uint64_t total_count = 0;
+    for (; i < max_shards; i++) {
+      RGWRados::BucketShard bs(store->getRados());
+      int shard_id = (bucket_info.layout.current_index.layout.normal.num_shards > 0  ? i : -1);
+
+      int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index, nullptr /* no RGWBucketInfo */, dpp());
+      marker.clear();
+
+      if (ret < 0) {
+        cerr << "ERROR: bs.init(bucket=" << bucket << ", shard=" << shard_id << "): " << cpp_strerror(-ret) << std::endl;
+        return -ret;
+      }
+
+      std::unordered_set<cls_rgw_obj_key> versioned_entries;
+      uint64_t shard_size = 0;
+      uint64_t shard_count = 0;
+
+      do {
+        entries.clear();
+	// if object is specified, we use that as a filter to only retrieve some some entries
+        ret = store->getRados()->bi_list(bs, object, marker, max_entries, &entries, &is_truncated);
+        if (ret < 0) {
+          cerr << "ERROR: bi_list(): " << cpp_strerror(-ret) << std::endl;
+          return -ret;
+        }
+
+        list<rgw_cls_bi_entry>::iterator iter;
+        for (iter = entries.begin(); iter != entries.end(); ++iter) {
+          rgw_cls_bi_entry& entry = *iter;
+          if (entry.type == BIIndexType::Plain) {
+	    rgw_bucket_dir_entry plain;
+            auto iiter = entry.data.cbegin();
+            try {
+              decode(plain, iiter);
+            } catch (buffer::error& err) {
+              cerr << "ERROR: failed to decode bi_entry()" << std::endl;
+              return -EIO;
+            }
+            if (!plain.key.instance.empty()) {
+              versioned_entries.insert(plain.key); 
+            } 
+          } else if (entry.type == BIIndexType::Instance) {
+	    rgw_bucket_dir_entry instance;
+            auto iiter = entry.data.cbegin();
+            try {
+              decode(instance, iiter);
+            } catch (buffer::error& err) {
+              cerr << "ERROR: failed to decode bi_entry()" << std::endl;
+              return -EIO;
+            }
+            if (versioned_entries.find(instance.key) == versioned_entries.end()) {
+              cout << instance.key.name << " " << instance.key.instance << std::endl;
+              shard_size += instance.meta.size;
+              shard_count += 1;
+            }
+          } else if (entry.type == BIIndexType::OLH) {
+            is_truncated = false;
+            break;
+          }
+          marker = entry.idx;
+        }
+      } while (is_truncated);
+
+      total_count += shard_count;
+      total_size += shard_size;
+      cerr << "finished shard: " << i << "[dark_data_size_bytes= " << shard_size << ", dark_data_obj_cnt=" << shard_count << "]" << std::endl;
+    }
+    cerr << "finished [dark_data_size_bytes= " << total_size << ", dark_data_obj_cnt=" << total_count << "]" << std::endl;
   }
 
   if (opt_cmd == OPT::BI_LIST) {
