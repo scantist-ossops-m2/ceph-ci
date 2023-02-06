@@ -3922,6 +3922,7 @@ void MDSRankDispatcher::handle_conf_change(const ConfigProxy& conf, const std::s
     server->handle_conf_change(changed);
     mdcache->handle_conf_change(changed, *mdsmap);
     purge_queue.handle_conf_change(changed, *mdsmap);
+    scrubstack->handle_conf_change(changed);
   }));
 }
 
