@@ -7,6 +7,7 @@
 #include <string>
 
 #include <boost/optional.hpp>
+#include <boost/functional/hash.hpp>
 
 extern "C" {
 #include <liboath/oath.h>
@@ -86,6 +87,19 @@ static const DoutPrefixProvider* dpp() {
   return &global_dpp;
 }
 
+namespace std {
+    template<> struct hash<cls_rgw_obj_key>
+    {
+        std::size_t operator()(const cls_rgw_obj_key& p) const noexcept
+        {
+          std::size_t seed = 0;
+          boost::hash_combine(seed, p.name);
+          boost::hash_combine(seed, p.instance);
+          return seed;
+        }
+    };
+} 
+
 #define CHECK_TRUE(x, msg, err) \
   do { \
     if (!x) { \
@@ -142,6 +156,7 @@ void usage()
   cout << "  bi get                     retrieve bucket index object entries\n";
   cout << "  bi put                     store bucket index object entries\n";
   cout << "  bi list                    list raw bucket index entries\n";
+  cout << "  bi find zombies            list zombie objects\n";
   cout << "  bi purge                   purge bucket index entries\n";
   cout << "  object rm                  remove object\n";
   cout << "  object put                 put object\n";
@@ -405,6 +420,7 @@ void usage()
   cout << "   --trim-delay-ms           time interval in msec to limit the frequency of sync error log entries trimming operations,\n";
   cout << "                             the trimming process will sleep the specified msec for every 1000 entries trimmed\n";
   cout << "   --max-concurrent-ios      maximum concurrent ios for bucket operations (default: 32)\n";
+  cout << "   --max-threads             maximum number of threads (default: 32) (applies to bi find zombies)\n";
   cout << "\n";
   cout << "<date> := \"YYYY-MM-DD[ hh:mm:ss]\"\n";
   cout << "\nQuota options:\n";
@@ -639,6 +655,7 @@ enum class OPT {
   OBJECTS_EXPIRE_STALE_RM,
   BI_GET,
   BI_PUT,
+  BI_FIND_ZOMBIES,
   BI_LIST,
   BI_PURGE,
   OLH_GET,
@@ -847,6 +864,7 @@ static SimpleCmd::Commands all_cmds = {
   { "objects expire-stale rm", OPT::OBJECTS_EXPIRE_STALE_RM },
   { "bi get", OPT::BI_GET },
   { "bi put", OPT::BI_PUT },
+  { "bi find zombies", OPT::BI_FIND_ZOMBIES },
   { "bi list", OPT::BI_LIST },
   { "bi purge", OPT::BI_PURGE },
   { "olh get", OPT::OLH_GET },
@@ -3168,6 +3186,7 @@ int main(int argc, const char **argv)
   bool num_shards_specified = false;
   std::optional<int> bucket_index_max_shards;
   int max_concurrent_ios = 32;
+  int max_threads = 32;
   uint64_t orphan_stale_secs = (24 * 3600);
   int detail = false;
 
@@ -3385,6 +3404,12 @@ int main(int argc, const char **argv)
       max_concurrent_ios = (int)strict_strtol(val.c_str(), 10, &err);
       if (!err.empty()) {
         cerr << "ERROR: failed to parse max concurrent ios: " << err << std::endl;
+        return EINVAL;
+      }
+    } else if (ceph_argparse_witharg(args, i, &val, "--max-threads", (char*)NULL)) {
+      max_threads = (int)strict_strtol(val.c_str(), 10, &err);
+      if (!err.empty()) {
+        cerr << "ERROR: failed to parse max threads: " << err << std::endl;
         return EINVAL;
       }
     } else if (ceph_argparse_witharg(args, i, &val, "--orphan-stale-secs", (char*)NULL)) {
@@ -3856,6 +3881,7 @@ int main(int argc, const char **argv)
 			 OPT::OBJECT_STAT,
 			 OPT::BI_GET,
 			 OPT::BI_LIST,
+			 OPT::BI_FIND_ZOMBIES,
 			 OPT::OLH_GET,
 			 OPT::OLH_READLOG,
 			 OPT::GC_LIST,
@@ -6604,6 +6630,124 @@ next:
       cerr << "ERROR: bi_put(): " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
+  }
+  if (opt_cmd == OPT::BI_FIND_ZOMBIES) {
+    if (bucket_name.empty()) {
+      cerr << "ERROR: bucket name not specified" << std::endl;
+      return EINVAL;
+    }
+    RGWBucketInfo bucket_info;
+    int ret = init_bucket(tenant, bucket_name, bucket_id, bucket_info, bucket);
+    if (ret < 0) {
+      cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+    if (max_entries < 0) {
+      max_entries = 1000;
+    }
+
+    int max_shards = (bucket_info.layout.current_index.layout.normal.num_shards > 0 ? bucket_info.layout.current_index.layout.normal.num_shards : 1);
+    cerr << "num shards = " << max_shards << std::endl;
+
+    ceph::real_clock::time_point now = ceph::real_clock::now();
+    ceph::real_clock::time_point start = now - std::chrono::seconds(60);
+     
+    int num_threads = std::min(max_shards, max_threads);
+    std::mutex cerr_mutex;
+    std::mutex cout_mutex;
+    atomic_int next_shard = (specified_shard_id ? shard_id : 0);
+    atomic_ullong total_size = 0;
+    atomic_ullong total_count = 0;
+    std::vector<std::thread> ts;
+    for (int j=0; j<num_threads; j++) {
+      std::thread t([&]() {
+        string marker = "";
+        list<rgw_cls_bi_entry> entries;
+        bool is_truncated;
+        while (true) {
+          int shard = next_shard.fetch_add(1, std::memory_order_relaxed);
+          if (shard >= max_shards) {
+            return;
+          }
+          RGWRados::BucketShard bs(store->getRados());
+          int shard_id = (bucket_info.layout.current_index.layout.normal.num_shards > 0  ? shard : -1);
+
+          int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index, nullptr /* no RGWBucketInfo */, dpp());
+          marker.clear();
+
+          if (ret < 0) {
+            std::lock_guard<std::mutex> guard(cerr_mutex);
+            cerr << "ERROR shard " << shard << ": bs.init(bucket=" << bucket << ", shard=" << shard_id << "): " << cpp_strerror(-ret) << std::endl;
+            continue;
+          }
+
+          std::unordered_set<cls_rgw_obj_key> versioned_entries;
+          uint64_t shard_size = 0;
+          uint64_t shard_count = 0;
+
+          do {
+            entries.clear();
+            // if object is specified, we use that as a filter to only retrieve some entries
+            ret = store->getRados()->bi_list(bs, object, marker, max_entries, &entries, &is_truncated);
+            if (ret < 0) {
+              std::lock_guard<std::mutex> guard(cerr_mutex);
+              cerr << "ERROR shard " << shard << ": bi_list(): " << cpp_strerror(-ret) << std::endl;
+              break;
+            }
+
+            list<rgw_cls_bi_entry>::iterator iter;
+            for (iter = entries.begin(); iter != entries.end(); ++iter) {
+              rgw_cls_bi_entry& entry = *iter;
+              if (entry.type == BIIndexType::Plain) {
+                rgw_bucket_dir_entry plain;
+                auto iiter = entry.data.cbegin();
+                try {
+                  decode(plain, iiter);
+                } catch (buffer::error& err) {
+                  std::lock_guard<std::mutex> guard(cerr_mutex);
+                  cerr << "ERROR shard " << shard << ": failed to decode bi_entry()" << std::endl;
+                  break;
+                }
+                if (!plain.key.instance.empty()) {
+                  versioned_entries.insert(plain.key); 
+                } 
+              } else if (entry.type == BIIndexType::Instance) {
+                rgw_bucket_dir_entry instance;
+                auto iiter = entry.data.cbegin();
+                try {
+                  decode(instance, iiter);
+                } catch (buffer::error& err) {
+                  std::lock_guard<std::mutex> guard(cerr_mutex);
+                  cerr << "ERROR shard " << shard << ": failed to decode bi_entry()" << std::endl;
+                  break;
+                }
+                if (versioned_entries.find(instance.key) == versioned_entries.end() && instance.exists &&
+                    instance.versioned_epoch > 0 && instance.meta.mtime < start && !instance.key.instance.empty()) {
+                  std::lock_guard<std::mutex> guard(cout_mutex);
+                  cout << instance.key.name << " " << instance.key.instance << std::endl;
+                  shard_size += instance.meta.size;
+                  shard_count += 1;
+                }
+              } else if (entry.type == BIIndexType::OLH) {
+                is_truncated = false;
+                break;
+              }
+              marker = entry.idx;
+            }
+          } while (is_truncated);
+
+          total_count += shard_count;
+          total_size += shard_size;
+          std::lock_guard<std::mutex> guard(cerr_mutex);
+          cerr << "FINISHED shard " << shard << " [dark_data_size_bytes= " << shard_size << ", dark_data_obj_cnt=" << shard_count << "]" << std::endl;
+        }
+      });
+      ts.push_back(std::move(t));
+    }
+    for (auto & t : ts) {
+      t.join(); 
+    } 
+    cerr << "FINISHED totals [dark_data_size_bytes= " << total_size << ", dark_data_obj_cnt=" << total_count << "]" << std::endl;
   }
 
   if (opt_cmd == OPT::BI_LIST) {
