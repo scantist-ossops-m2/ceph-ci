@@ -144,7 +144,7 @@ class mClockScheduler : public OpScheduler, md_config_obs_t {
    * Invariant: entries are never empty
    */
   SubQueue high_priority;
-  std::list<OpSchedulerItem> immediate;
+  priority_t immediate_class_priority = 999999;
 
   static scheduler_id_t get_scheduler_id(const OpSchedulerItem &item) {
     return scheduler_id_t{
@@ -212,7 +212,7 @@ public:
   // Enqueue op in the back of the regular queue
   void enqueue(OpSchedulerItem &&item) final;
 
-  // Enqueue the op in the front of the high priority queue or the immediate queue (based on priority)
+  // Enqueue the op in the front of the high priority queue
   void enqueue_front(OpSchedulerItem &&item) final;
 
   // Return an op to be dispatch
@@ -220,7 +220,7 @@ public:
 
   // Returns if the queue is empty
   bool empty() const final {
-    return immediate.empty() && scheduler.empty() && high_priority.empty();
+    return scheduler.empty() && high_priority.empty();
   }
 
   // Formatted output of the queue
