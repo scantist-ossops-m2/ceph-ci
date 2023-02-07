@@ -3,6 +3,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Subscription } from 'rxjs';
 import { filter, first, map } from 'rxjs/operators';
 
+import { environment } from '~/environments/environment';
 import { CephReleaseNamePipe } from '../pipes/ceph-release-name.pipe';
 import { SummaryService } from './summary.service';
 
@@ -25,27 +26,51 @@ export class DocService {
 
   urlGenerator(section: string, release = 'pacific'): string {
     const docVersion = release === 'pacific' ? '5' : release;
-    const domain = `https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/${docVersion}/html/`;
-    const domainRedHat = `https://www.redhat.com/en/about/`;
+    let sections = {};
 
-    const sections = {
-      iscsi: `${domain}dashboard_guide/management-of-block-devices-using-the-ceph-dashboard#management-of-iscsi-functions-on-the-ceph-dashboard`,
-      prometheus: `${domain}dashboard_guide/management-of-alerts-on-the-ceph-dashboard`,
-      'nfs-ganesha': `${domain}dashboard_guide/management-of-nfs-ganesha-exports-on-the-ceph-dashboard#configuring-nfs-ganesha-daemons-on-the-ceph-dashboard_dash`,
-      'rgw-nfs': `${domain}dashboard_guide/management-of-nfs-ganesha-exports-on-the-ceph-dashboard`,
-      rgw: `${domain}dashboard_guide/management-of-ceph-object-gateway-using-the-dashboard`,
-      dashboard: `${domain}dashboard_guide/`,
-      grafana: `${domain}dashboard_guide/management-of-alerts-on-the-ceph-dashboard#enabling-monitoring-stack_dash`,
-      orch: `${domain}operations_guide/introduction-to-the-ceph-orchestrator`,
-      pgs: `https://access.redhat.com/labs/cephpgc/`,
-      help: `https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/`,
-      terms: `${domainRedHat}all-policies-guidelines/`,
-      privacy: `${domainRedHat}privacy-policy/`,
-      'dashboard-landing-page-status': `${domain}dashboard_guide/index#understanding-the-landing-page_dash`,
-      'dashboard-landing-page-performance': `${domain}dashboard_guide/index#understanding-the-landing-page_dash`,
-      'dashboard-landing-page-capacity': `${domain}dashboard_guide/index#understanding-the-landing-page_dash`
-    };
+    if (environment.build === 'ibm') {
+      const domain = `https://www.ibm.com/docs/storage-ceph/5.3/html-single/`;
+      const domainIBM = `https://www.ibm.com/`;
 
+      sections = {
+        iscsi: `${domain}dashboard_guide/management-of-block-devices-using-the-ceph-dashboard#management-of-iscsi-functions-on-the-ceph-dashboard`,
+        prometheus: `${domain}dashboard_guide/management-of-alerts-on-the-ceph-dashboard`,
+        'nfs-ganesha': `${domain}dashboard_guide/management-of-nfs-ganesha-exports-on-the-ceph-dashboard#configuring-nfs-ganesha-daemons-on-the-ceph-dashboard_dash`,
+        'rgw-nfs': `${domain}dashboard_guide/management-of-nfs-ganesha-exports-on-the-ceph-dashboard`,
+        rgw: `${domain}dashboard_guide/management-of-ceph-object-gateway-using-the-dashboard`,
+        dashboard: `${domain}dashboard_guide/`,
+        grafana: `${domain}dashboard_guide/management-of-alerts-on-the-ceph-dashboard#enabling-monitoring-stack_dash`,
+        orch: `${domain}operations_guide/introduction-to-the-ceph-orchestrator`,
+        pgs: `https://www.ibm.com/labs/cephpgc/`,
+        help: domain,
+        terms: `${domainIBM}legal/`,
+        privacy: `${domainIBM}privacy/`,
+        'dashboard-landing-page-status': `${domain}dashboard_guide/index#understanding-the-landing-page_dash`,
+        'dashboard-landing-page-performance': `${domain}dashboard_guide/index#understanding-the-landing-page_dash`,
+        'dashboard-landing-page-capacity': `${domain}dashboard_guide/index#understanding-the-landing-page_dash`
+      };
+    } else {
+      const domain = `https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/${docVersion}/html/`;
+      const domainRedHat = `https://www.redhat.com/en/about/`;
+
+      sections = {
+        iscsi: `${domain}dashboard_guide/management-of-block-devices-using-the-ceph-dashboard#management-of-iscsi-functions-on-the-ceph-dashboard`,
+        prometheus: `${domain}dashboard_guide/management-of-alerts-on-the-ceph-dashboard`,
+        'nfs-ganesha': `${domain}dashboard_guide/management-of-nfs-ganesha-exports-on-the-ceph-dashboard#configuring-nfs-ganesha-daemons-on-the-ceph-dashboard_dash`,
+        'rgw-nfs': `${domain}dashboard_guide/management-of-nfs-ganesha-exports-on-the-ceph-dashboard`,
+        rgw: `${domain}dashboard_guide/management-of-ceph-object-gateway-using-the-dashboard`,
+        dashboard: `${domain}dashboard_guide/`,
+        grafana: `${domain}dashboard_guide/management-of-alerts-on-the-ceph-dashboard#enabling-monitoring-stack_dash`,
+        orch: `${domain}operations_guide/introduction-to-the-ceph-orchestrator`,
+        pgs: `https://access.redhat.com/labs/cephpgc/`,
+        help: `https://access.redhat.com/documentation/en-us/red_hat_ceph_storage/`,
+        terms: `${domainRedHat}all-policies-guidelines/`,
+        privacy: `${domainRedHat}privacy-policy/`,
+        'dashboard-landing-page-status': `${domain}dashboard_guide/index#understanding-the-landing-page_dash`,
+        'dashboard-landing-page-performance': `${domain}dashboard_guide/index#understanding-the-landing-page_dash`,
+        'dashboard-landing-page-capacity': `${domain}dashboard_guide/index#understanding-the-landing-page_dash`
+      };
+    }
     return sections[section];
   }
 
