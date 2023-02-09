@@ -1128,6 +1128,27 @@ int PeerReplayer::pre_sync_check_and_open_handles(
   return 0;
 }
 
+int PeerReplayer::sync_dir_root_perms(const std::string& dir_root) {
+  int r = 0;
+  struct ceph_statx tstx;
+
+  // sync the mode of the remote dir_root with that of the local dir_root
+  r = ceph_statx(m_local_mount, dir_root.c_str(), &tstx, CEPH_STATX_MODE,
+		 AT_STATX_DONT_SYNC | AT_SYMLINK_NOFOLLOW);
+  if (r < 0) {
+    derr << ": failed to fetch stat for local dir root: "
+	 << cpp_strerror(r) << dendl;
+    return r;
+  }
+  r = ceph_chmod(m_remote_mount, dir_root.c_str(), tstx.stx_mode);
+  if (r < 0) {
+    derr << ": failed to set mode for remote dir root: "
+	 << cpp_strerror(r) << dendl;
+    return r;
+  }
+  return 0;
+}
+
 void PeerReplayer::post_sync_close_handles(const FHandles &fh) {
   dout(20) << dendl;
 
@@ -1167,6 +1188,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
   }
 
   struct ceph_statx tstx;
+
   r = ceph_fstatx(m_local_mount, fh.c_fd, &tstx,
                   CEPH_STATX_MODE | CEPH_STATX_UID | CEPH_STATX_GID |
                   CEPH_STATX_SIZE | CEPH_STATX_ATIME | CEPH_STATX_MTIME,
@@ -1499,8 +1521,13 @@ void PeerReplayer::run(SnapshotReplayerThread *replayer) {
         dout(5) << ": picked dir_root=" << *dir_root << dendl;
         int r = register_directory(*dir_root, replayer);
         if (r == 0) {
-          sync_snaps(*dir_root, locker);
-          unregister_directory(*dir_root);
+	  r = sync_dir_root_perms(*dir_root);
+	  if (r < 0) {
+	    _inc_failed_count(*dir_root);
+	  } else {
+	    sync_snaps(*dir_root, locker);
+	  }
+	  unregister_directory(*dir_root);
         }
       }
 
