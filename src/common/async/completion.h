@@ -17,7 +17,11 @@
 
 #include <memory>
 
+#include <boost/asio/bind_executor.hpp>
+#include <boost/asio/defer.hpp>
+#include <boost/asio/dispatch.hpp>
 #include <boost/asio/executor_work_guard.hpp>
+#include <boost/asio/post.hpp>
 
 #include "bind_handler.h"
 #include "forward_handler.h"
