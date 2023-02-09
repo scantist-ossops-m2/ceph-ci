@@ -78,9 +78,10 @@ class mClockScheduler : public OpScheduler, md_config_obs_t {
   const int shard_id;
   bool is_rotational;
   MonClient *monc;
-  double max_osd_capacity;
-  double osd_mclock_cost_per_io;
-  double osd_mclock_cost_per_byte;
+  double max_osd_random_write_iops;
+  double max_osd_random_write_iops_per_shard;
+  uint64_t max_osd_sequential_bandwidth;
+  double osd_bandwidth_cost_per_io;
   std::string mclock_profile = "high_client_ops";
   struct ClientAllocs {
     uint64_t res;
@@ -123,7 +124,7 @@ class mClockScheduler : public OpScheduler, md_config_obs_t {
     const crimson::dmclock::ClientInfo *get_external_client(
       const client_profile_id_t &client) const;
   public:
-    void update_from_config(const ConfigProxy &conf);
+    void update_from_config(const ConfigProxy &conf, double cost_per_io);
     const crimson::dmclock::ClientInfo *get_info(
       const scheduler_id_t &id) const;
   } client_registry;
@@ -171,19 +172,19 @@ class mClockScheduler : public OpScheduler, md_config_obs_t {
     }
   }
 
+  /// Set the bandwidth cost per io for the osd
+  void set_osd_bandwidth_cost_per_io();
+
 public:
   mClockScheduler(CephContext *cct, int whoami, uint32_t num_shards,
     int shard_id, bool is_rotational, MonClient *monc);
   ~mClockScheduler() override;
 
-  // Set the max osd capacity in iops
-  void set_max_osd_capacity();
+  /// Set the max osd capacity in iops - random write @ 4KiB
+  void set_max_osd_random_write_iops();
 
-  // Set the cost per io for the osd
-  void set_osd_mclock_cost_per_io();
-
-  // Set the cost per byte for the osd
-  void set_osd_mclock_cost_per_byte();
+  /// Set the max sequential bandwidth for the osd
+  void set_max_osd_sequential_bandwidth();
 
   // Set the mclock profile type to enable
   void set_mclock_profile();
@@ -206,8 +207,8 @@ public:
   // Set mclock config parameter based on allocations
   void set_profile_config();
 
-  // Calculate scale cost per item
-  int calc_scaled_cost(int cost);
+  /// Calculate scaled cost per item
+  uint32_t calc_scaled_cost(int cost);
 
   // Helper method to display mclock queues
   std::string display_queues() const;
