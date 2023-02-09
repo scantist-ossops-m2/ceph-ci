@@ -36,7 +36,7 @@ using crimson::common::local_conf;
 namespace {
 
 seastar::logger& logger() {
-  return crimson::get_logger(ceph_subsys_ms);
+  return crimson::get_logger(ceph_subsys_test);
 }
 
 static std::random_device rd;
@@ -197,7 +197,7 @@ static seastar::future<> test_echo(unsigned rounds,
             [this, conn, &count_ping, &count_keepalive] {
               return seastar::repeat([this, conn, &count_ping, &count_keepalive] {
                   if (keepalive_dist(rng)) {
-                    return conn->keepalive()
+                    return conn->send_keepalive()
                       .then([&count_keepalive] {
                         count_keepalive += 1;
                         return seastar::make_ready_future<seastar::stop_iteration>(
@@ -1155,7 +1155,7 @@ class FailoverSuite : public Dispatcher {
   seastar::future<> keepalive_peer() {
     logger().info("[Test] keepalive_peer()");
     ceph_assert(tracked_conn);
-    return tracked_conn->keepalive();
+    return tracked_conn->send_keepalive();
   }
 
   seastar::future<> try_send_peer() {
@@ -1524,7 +1524,7 @@ class FailoverSuitePeer : public Dispatcher {
   seastar::future<> keepalive_peer() {
     logger().info("[TestPeer] keepalive_peer()");
     ceph_assert(tracked_conn);
-    return tracked_conn->keepalive();
+    return tracked_conn->send_keepalive();
   }
 
   seastar::future<> markdown() {
