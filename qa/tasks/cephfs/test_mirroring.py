@@ -1261,3 +1261,38 @@ class TestMirroring(CephFSTestCase):
         self.verify_snapshot('d2', 'snap0')
 
         self.disable_mirroring(self.primary_fs_name, self.primary_fs_id)
+
+    def test_local_and_remote_dir_root_mode(self):
+        log.debug('reconfigure client auth caps')
+        self.mds_cluster.mon_manager.raw_cluster_cmd_result(
+            'auth', 'caps', "client.{0}".format(self.mount_b.client_id),
+                'mds', 'allow rw',
+                'mon', 'allow r',
+                'osd', 'allow rw pool={0}, allow rw pool={1}'.format(
+                    self.backup_fs.get_data_pool_name(), self.backup_fs.get_data_pool_name()))
+
+        log.debug(f'mounting filesystem {self.secondary_fs_name}')
+        self.mount_b.umount_wait()
+        self.mount_b.mount_wait(cephfs_name=self.secondary_fs_name)
+
+        self.mount_a.run_shell(["mkdir", "l1"])
+        self.mount_a.run_shell(["mkdir", "l1/.snap/snap0"])
+        self.mount_a.run_shell(["chmod", "go-rwx", "l1"])
+
+        self.enable_mirroring(self.primary_fs_name, self.primary_fs_id)
+        self.add_directory(self.primary_fs_name, self.primary_fs_id, '/l1')
+        self.peer_add(self.primary_fs_name, self.primary_fs_id, "client.mirror_remote@ceph", self.secondary_fs_name)
+
+        time.sleep(60)
+        self.check_peer_status(self.primary_fs_name, self.primary_fs_id,
+                               "client.mirror_remote@ceph", '/l1', 'snap0', 1)
+
+        mode_local = self.mount_a.run_shell(["stat", "--format=%A", "l1"]).stdout.getvalue().strip()
+        mode_remote = self.mount_b.run_shell(["stat", "--format=%A", "l1"]).stdout.getvalue().strip()
+        log.debug(f"local mode: {mode_local}, remote_mode: {mode_remote}")
+
+        self.assertTrue(mode_local == mode_remote)
+
+        self.disable_mirroring(self.primary_fs_name, self.primary_fs_id)
+        self.mount_a.run_shell(["rmdir", "l1/.snap/snap0"])
+        self.mount_a.run_shell(["rmdir", "l1"])
