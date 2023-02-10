@@ -347,6 +347,35 @@ cd-create-cluster {
     width: 100%;
   }
 
+  cd-login-password-form {
+    h2 {
+      margin-left: calc(50vw - (100% / 2));
+      margin-top: calc(50vh - (100% / 2));
+      width: 100%;
+    }
+
+    h4,
+    form {
+      margin-left: calc(50vw - (100% / 2));
+      width: 100%;
+    }
+
+    form {
+      .form-group {
+        background-color: transparent !important;
+        border-left: 0 !important;
+
+        &:focus-within {
+          border-left: 0 !important;
+        }
+
+        .invalid-feedback {
+          color: $support-01 !important;
+        }
+      }
+    }
+  }
+
   .container {
     margin: 0;
     max-width: 825px;
