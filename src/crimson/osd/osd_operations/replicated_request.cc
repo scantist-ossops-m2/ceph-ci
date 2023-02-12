@@ -67,7 +67,7 @@ seastar::future<> RepRequest::with_pg(
         PG_OSDMapGate::OSDMapBlocker::BlockingEvent
       >([this, pg](auto &&trigger) {
         return pg->osdmap_gate.wait_for_map(
-          std::move(trigger), req->map_epoch);
+          std::move(trigger), req->min_epoch);
       });
     }).then_interruptible([this, pg] (auto) {
       return pg->handle_rep_op(req);
