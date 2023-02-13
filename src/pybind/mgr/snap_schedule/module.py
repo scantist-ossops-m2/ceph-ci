@@ -40,7 +40,7 @@ class Module(MgrModule):
         if not subvol:
             return path
 
-        rc, subvol_path, err = self.remote('volumes', 'subvolume_getpath',
+        rc, subvol_path, err = self.remote('volumes', 'subvolume_getsnapdirroot',
                                            fs, subvol, None)
         if rc != 0:
             # TODO custom exception?
