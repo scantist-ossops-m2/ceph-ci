@@ -3210,6 +3210,11 @@ void BlueStore::ExtentMap::dup(BlueStore* b, TransContext* txc,
   oldo->extent_map.fault_range(c->store->db, 0, OBJECT_MAX_SIZE);//srcoff, length);
   newo->extent_map.fault_range(c->store->db, 0, OBJECT_MAX_SIZE);//dstoff, length);
 
+  dout(25) << __func__ << "start oldo=" << dendl;
+  _dump_onode<25>(onode->c->store->cct, *oldo);
+  dout(25) << __func__ << "start newo=" << dendl;
+  _dump_onode<25>(onode->c->store->cct, *newo);
+
   make_range_shared_maybe_merge(b, txc, c, oldo, srcoff, length);
   vector<BlobRef> id_to_blob(oldo->extent_map.extent_map.size());
   for (auto& e : oldo->extent_map.extent_map) {
@@ -3323,6 +3328,10 @@ void BlueStore::ExtentMap::dup(BlueStore* b, TransContext* txc,
     newo->onode.size = dstoff + length;
   }
   newo->extent_map.dirty_range(dstoff, length);
+  dout(25) << __func__ << "end oldo=" << dendl;
+  _dump_onode<25>(onode->c->store->cct, *oldo);
+  dout(25) << __func__ << "end newo=" << dendl;
+  _dump_onode<25>(onode->c->store->cct, *newo);
   bcs->lock.unlock();
 }
 void BlueStore::ExtentMap::update(KeyValueDB::Transaction t,
@@ -3376,6 +3385,7 @@ void BlueStore::ExtentMap::update(KeyValueDB::Transaction t,
 	if (encode_some(p->shard_info->offset, endoff - p->shard_info->offset,
 			bl, &p->extents)) {
 	  if (force) {
+	    _dump_extent_map<-1>(cct, *this);
 	    derr << __func__ << "  encode_some needs reshard" << dendl;
 	    ceph_assert(!force);
 	  }
