@@ -179,6 +179,15 @@ class Module(orchestrator.OrchestratorClientMixin, MgrModule):
             'perm': 'rw'
         },
         {
+            'cmd': 'fs subvolume getsnapdirroot '
+                   'name=vol_name,type=CephString '
+                   'name=sub_name,type=CephString '
+                   'name=group_name,type=CephString,req=false ',
+            'desc': "Get the path under which snapshots of a of a CephFS "
+                    "subvolume can be created",
+            'perm': 'rw'
+        },
+        {
             'cmd': 'fs subvolume info '
                    'name=vol_name,type=CephString '
                    'name=sub_name,type=CephString '
@@ -615,6 +624,12 @@ class Module(orchestrator.OrchestratorClientMixin, MgrModule):
         return self.vc.subvolume_getpath(vol_name=cmd['vol_name'],
                                          sub_name=cmd['sub_name'],
                                          group_name=cmd.get('group_name', None))
+
+    @mgr_cmd_wrap
+    def _cmd_fs_subvolume_getsnapdirroot(self, inbuf, cmd):
+        return self.vc.subvolume_getsnapdirroot(vol_name=cmd['vol_name'],
+                                                sub_name=cmd['sub_name'],
+                                                group_name=cmd.get('group_name', None))
 
     @mgr_cmd_wrap
     def _cmd_fs_subvolume_info(self, inbuf, cmd):

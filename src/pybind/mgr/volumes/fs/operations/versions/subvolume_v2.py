@@ -44,6 +44,14 @@ class SubvolumeV2(SubvolumeV1):
         return SubvolumeV2.VERSION
 
     @property
+    def snap_dir_root(self):
+        p = SubvolumeV1.snap_dir_root.fget(self).decode('utf-8')
+        p1 = p.split("/")
+        p2 = p1[:-1]
+        p3 = "/".join(p2)
+        return p3.encode('utf-8')
+
+    @property
     def features(self):
         return [SubvolumeFeatures.FEATURE_SNAPSHOT_CLONE.value,
                 SubvolumeFeatures.FEATURE_SNAPSHOT_AUTOPROTECT.value,

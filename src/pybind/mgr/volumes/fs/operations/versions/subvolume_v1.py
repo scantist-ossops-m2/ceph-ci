@@ -59,6 +59,10 @@ class SubvolumeV1(SubvolumeBase, SubvolumeTemplate):
             raise VolumeException(-errno.EINVAL, "error fetching subvolume metadata")
 
     @property
+    def snap_dir_root(self):
+        return self.path
+
+    @property
     def features(self):
         return [SubvolumeFeatures.FEATURE_SNAPSHOT_CLONE.value, SubvolumeFeatures.FEATURE_SNAPSHOT_AUTOPROTECT.value]
 

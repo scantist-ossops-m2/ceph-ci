@@ -68,6 +68,7 @@ class SubvolumeOpType(Enum):
     SNAP_METADATA_GET     = 'snap-metadata-get'
     SNAP_METADATA_LIST    = 'snap-metadata-ls'
     SNAP_METADATA_REMOVE  = 'snap-metadata-rm'
+    GET_SNAP_DIR_ROOT     = 'get-snap-dir-root'
 
 class SubvolumeTemplate(object):
     VERSION = None # type: int
