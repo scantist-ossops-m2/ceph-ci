@@ -3838,11 +3838,18 @@ void PeeringState::update_calc_stats()
       misplaced += extra_misplaced;
     }
 out:
-    // NOTE: Tests use these messages to verify this code
+    // NOTE: Tests use these messages to verify this code.
+    //       For legacy reasons, define dout_prefix to as
+    //       several tests expecets.
+#undef dout_prefix
+#define dout_prefix (dpp->gen_prefix(*_dout))
     psdout(20) << " degraded " << degraded
 	       << (estimate ? " (est)": "") << dendl;
     psdout(20) << " misplaced " << misplaced
 	       << (estimate ? " (est)": "")<< dendl;
+#undef dout_prefix
+#define dout_prefix (dpp->gen_prefix(*_dout)) \
+        << "PeeringState::" << __func__ << " "
 
     info.stats.stats.sum.num_objects_degraded = degraded;
     info.stats.stats.sum.num_objects_unfound = get_num_unfound();
