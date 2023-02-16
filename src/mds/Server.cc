@@ -6442,6 +6442,12 @@ void Server::handle_client_setxattr(MDRequestRef& mdr)
     if (((cur_xattrs_size + inc) > g_conf()->mds_max_xattr_pairs_size)) {
       dout(10) << "xattr kv pairs size too big. cur_xattrs_size "
 	<< cur_xattrs_size << ", inc " << inc << dendl;
+      for (const auto& p : *pxattrs) {
+        if ((flags & CEPH_XATTR_REPLACE) && name.compare(p.first) == 0) {
+	  continue;
+        }
+        dout(10) << " xattr name " << p.first << " value " << p.second << dendl;
+      }
       respond_to_request(mdr, -CEPHFS_ENOSPC);
       return;
     }
