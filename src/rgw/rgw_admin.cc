@@ -7512,7 +7512,7 @@ next:
     }
 
     rgw_cls_bi_entry entry;
-    ret = static_cast<rgw::sal::RadosStore*>(driver)->getRados()->bi_get(dpp(), bucket->get_info(), obj, bi_index_type, &entry);
+    ret = static_cast<rgw::sal::RadosStore*>(driver)->getRados()->bi_get(dpp(), bucket->get_info(), obj, bi_index_type, &entry, null_yield);
     if (ret < 0) {
       cerr << "ERROR: bi_get(): " << cpp_strerror(-ret) << std::endl;
       return -ret;
@@ -7542,7 +7542,7 @@ next:
 
     rgw_obj obj(bucket->get_key(), key);
 
-    ret = static_cast<rgw::sal::RadosStore*>(driver)->getRados()->bi_put(dpp(), bucket->get_key(), obj, entry);
+    ret = static_cast<rgw::sal::RadosStore*>(driver)->getRados()->bi_put(dpp(), bucket->get_key(), obj, entry, null_yield);
     if (ret < 0) {
       cerr << "ERROR: bi_put(): " << cpp_strerror(-ret) << std::endl;
       return -ret;
@@ -7579,7 +7579,7 @@ next:
       ldpp_dout(dpp(), 20) << "INFO: " << __func__ << ": starting shard=" << i << dendl;
 
       RGWRados::BucketShard bs(static_cast<rgw::sal::RadosStore*>(driver)->getRados());
-      int ret = bs.init(dpp(), bucket->get_info(), index, i);
+      int ret = bs.init(dpp(), bucket->get_info(), index, i, null_yield);
       marker.clear();
 
       if (ret < 0) {
@@ -7590,7 +7590,7 @@ next:
       do {
         entries.clear();
 	// if object is specified, we use that as a filter to only retrieve some some entries
-        ret = static_cast<rgw::sal::RadosStore*>(driver)->getRados()->bi_list(bs, object, marker, max_entries, &entries, &is_truncated);
+        ret = static_cast<rgw::sal::RadosStore*>(driver)->getRados()->bi_list(bs, object, marker, max_entries, &entries, &is_truncated, null_yield);
         if (ret < 0) {
           cerr << "ERROR: bi_list(): " << cpp_strerror(-ret) << std::endl;
           return -ret;
@@ -7653,7 +7653,7 @@ next:
     const int max_shards = rgw::num_shards(index);
     for (int i = 0; i < max_shards; i++) {
       RGWRados::BucketShard bs(static_cast<rgw::sal::RadosStore*>(driver)->getRados());
-      int ret = bs.init(dpp(), bucket->get_info(), index, i);
+      int ret = bs.init(dpp(), bucket->get_info(), index, i, null_yield);
       if (ret < 0) {
         cerr << "ERROR: bs.init(bucket=" << bucket << ", shard=" << i << "): " << cpp_strerror(-ret) << std::endl;
         return -ret;

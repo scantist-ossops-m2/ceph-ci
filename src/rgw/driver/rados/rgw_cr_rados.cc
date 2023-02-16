@@ -702,7 +702,7 @@ RGWRadosBILogTrimCR::RGWRadosBILogTrimCR(
 
 int RGWRadosBILogTrimCR::send_request(const DoutPrefixProvider *dpp)
 {
-  int r = bs.init(dpp, bucket_info, generation, shard_id);
+  int r = bs.init(dpp, bucket_info, generation, shard_id, null_yield);
   if (r < 0) {
     ldpp_dout(dpp, -1) << "ERROR: bucket shard init failed ret=" << r << dendl;
     return r;
@@ -771,7 +771,7 @@ int RGWAsyncFetchRemoteObj::_send_request(const DoutPrefixProvider *dpp)
                        NULL, /* void (*progress_cb)(off_t, void *), */
                        NULL, /* void *progress_data*); */
                        dpp,
-                       filter.get(),
+                       filter.get(), null_yield,
                        source_trace_entry,
                        &zones_trace,
                        &bytes_transferred);
@@ -861,7 +861,7 @@ int RGWAsyncStatRemoteObj::_send_request(const DoutPrefixProvider *dpp)
                        pheaders,
                        nullptr,
                        nullptr, /* string *ptag, */
-                       petag); /* string *petag, */
+                       petag, null_yield); /* string *petag, */
 
   if (r < 0) {
     ldpp_dout(dpp, 0) << "store->stat_remote_obj() returned r=" << r << dendl;

@@ -230,7 +230,7 @@ public:
 			     RGWRateLimitInfo& anon_ratelimit) override;
   virtual int set_buckets_enabled(const DoutPrefixProvider* dpp,
 				  std::vector<rgw_bucket>& buckets,
-				  bool enabled) override;
+				  bool enabled, optional_yield y) override;
   virtual uint64_t get_new_req_id() override;
   virtual int get_sync_policy_handler(const DoutPrefixProvider* dpp,
 				      std::optional<rgw_zone_id> zone,
@@ -434,7 +434,7 @@ public:
 			       const bucket_index_layout_generation& idx_layout,
 			       int shard_id, RGWGetBucketStats_CB* ctx) override;
   virtual int sync_user_stats(const DoutPrefixProvider *dpp, optional_yield y) override;
-  virtual int update_container_stats(const DoutPrefixProvider* dpp) override;
+  virtual int update_container_stats(const DoutPrefixProvider* dpp, optional_yield y) override;
   virtual int check_bucket_shards(const DoutPrefixProvider* dpp, optional_yield y) override;
   virtual int chown(const DoutPrefixProvider* dpp, User& new_user,
 		    optional_yield y) override;
@@ -450,7 +450,7 @@ public:
   virtual int merge_and_store_attrs(const DoutPrefixProvider* dpp,
 				    Attrs& new_attrs, optional_yield y) override;
   virtual int try_refresh_info(const DoutPrefixProvider* dpp,
-			       ceph::real_time* pmtime) override;
+			       ceph::real_time* pmtime, optional_yield y) override;
   virtual int read_usage(const DoutPrefixProvider *dpp, uint64_t start_epoch,
 			 uint64_t end_epoch, uint32_t max_entries,
 			 bool* is_truncated, RGWUsageIter& usage_iter,
@@ -468,7 +468,7 @@ public:
 			  calculated_stats) override;
   virtual int rebuild_index(const DoutPrefixProvider *dpp) override;
   virtual int set_tag_timeout(const DoutPrefixProvider *dpp, uint64_t timeout) override;
-  virtual int purge_instance(const DoutPrefixProvider* dpp) override;
+  virtual int purge_instance(const DoutPrefixProvider* dpp, optional_yield y) override;
   virtual bool empty() const override { return next->empty(); }
   virtual const std::string& get_name() const override { return next->get_name(); }
   virtual const std::string& get_tenant() const override { return next->get_tenant(); }
@@ -663,7 +663,7 @@ public:
   virtual void clear_instance() override { return next->clear_instance(); }
 
   virtual int swift_versioning_restore(bool& restored,   /* out */
-				       const DoutPrefixProvider* dpp) override;
+				       const DoutPrefixProvider* dpp, optional_yield y) override;
   virtual int swift_versioning_copy(const DoutPrefixProvider* dpp,
 				    optional_yield y) override;
 
