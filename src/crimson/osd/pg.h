@@ -29,7 +29,6 @@
 #include "crimson/osd/osd_operations/logmissing_request_reply.h"
 #include "crimson/osd/osd_operations/peering_event.h"
 #include "crimson/osd/osd_operations/replicated_request.h"
-#include "crimson/osd/osd_operations/background_recovery.h"
 #include "crimson/osd/shard_services.h"
 #include "crimson/osd/osdmap_gate.h"
 #include "crimson/osd/pg_activation_blocker.h"
@@ -58,6 +57,7 @@ namespace crimson::os {
 
 namespace crimson::osd {
 class OpsExecuter;
+class BackfillRecovery;
 
 class PG : public boost::intrusive_ref_counter<
   PG,
@@ -69,9 +69,8 @@ class PG : public boost::intrusive_ref_counter<
   using ec_profile_t = std::map<std::string,std::string>;
   using cached_map_t = OSDMapService::cached_map_t;
 
-  ClientRequest::PGPipeline client_request_pg_pipeline;
+  ClientRequest::PGPipeline request_pg_pipeline;
   PGPeeringPipeline peering_request_pg_pipeline;
-  RepRequest::PGPipeline replicated_request_pg_pipeline;
 
   ClientRequest::Orderer client_request_orderer;
 
@@ -344,9 +343,8 @@ public:
     // Not needed yet
   }
 
-  void on_removal(ceph::os::Transaction &t) final {
-    // TODO
-  }
+  void on_removal(ceph::os::Transaction &t) final;
+
   std::pair<ghobject_t, bool>
   do_delete_work(ceph::os::Transaction &t, ghobject_t _next) final;
 
@@ -592,6 +590,7 @@ private:
   interruptible_future<> repair_object(
     const hobject_t& oid,
     eversion_t& v);
+  void check_blocklisted_obc_watchers(ObjectContextRef &obc);
 
 private:
   PG_OSDMapGate osdmap_gate;
@@ -618,6 +617,7 @@ private:
   eversion_t projected_last_update;
 
 public:
+  ObjectContextRegistry obc_registry;
   ObjectContextLoader obc_loader;
 
   // PeeringListener
@@ -748,8 +748,6 @@ private:
   }
 
 private:
-  BackfillRecovery::BackfillRecoveryPipeline backfill_pipeline;
-
   friend class IOInterruptCondition;
   struct log_update_t {
     std::set<pg_shard_t> waiting_on;

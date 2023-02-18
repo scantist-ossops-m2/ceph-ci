@@ -92,8 +92,6 @@ class PerShardState {
     up_epoch = epoch;
   }
 
-  crimson::osd::ObjectContextRegistry obc_registry;
-
   // prevent creating new osd operations when system is shutting down,
   // this is necessary because there are chances that a new operation
   // is created, after the interruption of all ongoing operations, and
@@ -353,6 +351,14 @@ public:
     return local_state.store;
   }
 
+  auto remove_pg(spg_t pgid) {
+    local_state.pg_map.remove_pg(pgid);
+    return with_singleton(
+      [pgid](auto &osstate) {
+      osstate.pg_to_shard_mapping.remove_pg(pgid);
+    });
+  }
+
   crimson::common::CephContext *get_cct() {
     return &(local_state.cct);
   }
@@ -456,11 +462,6 @@ public:
   FORWARD_TO_LOCAL(get_hb_stamps)
 
   FORWARD(pg_created, pg_created, local_state.pg_map)
-
-  FORWARD(
-    maybe_get_cached_obc, maybe_get_cached_obc, local_state.obc_registry)
-  FORWARD(
-    get_cached_obc, get_cached_obc, local_state.obc_registry)
 
   FORWARD_TO_OSD_SINGLETON_TARGET(
     local_update_priority,

@@ -1139,6 +1139,7 @@ SeaStore::tm_ret SeaStore::_do_transaction_step(
       switch (op->op) {
       case Transaction::OP_REMOVE:
       {
+	TRACET("removing {}", *ctx.transaction, i.get_oid(op->oid));
         return _remove(ctx, onodes[op->oid]);
       }
       case Transaction::OP_CREATE:
@@ -1266,7 +1267,40 @@ SeaStore::tm_ret SeaStore::_remove(
 {
   LOG_PREFIX(SeaStore::_remove);
   DEBUGT("onode={}", *ctx.transaction, *onode);
-  return onode_manager->erase_onode(*ctx.transaction, onode);
+  auto fut = BtreeOMapManager::omap_clear_iertr::now();
+  auto omap_root = onode->get_layout().omap_root.get(
+    onode->get_metadata_hint(device->get_block_size()));
+  if (omap_root.get_location() != L_ADDR_NULL) {
+    fut = seastar::do_with(
+      BtreeOMapManager(*transaction_manager),
+      onode->get_layout().omap_root.get(
+	onode->get_metadata_hint(device->get_block_size())),
+      [&ctx, onode](auto &omap_manager, auto &omap_root) {
+      return omap_manager.omap_clear(
+	omap_root,
+	*ctx.transaction
+      );
+    });
+  }
+  return fut.si_then([this, &ctx, onode] {
+    return seastar::do_with(
+      ObjectDataHandler(max_object_size),
+      [=, this, &ctx](auto &objhandler) {
+	return objhandler.clear(
+	  ObjectDataHandler::context_t{
+	    *transaction_manager,
+	    *ctx.transaction,
+	    *onode,
+	  });
+    });
+  }).si_then([this, &ctx, onode]() mutable {
+    return onode_manager->erase_onode(*ctx.transaction, onode);
+  }).handle_error_interruptible(
+    crimson::ct_error::input_output_error::pass_further(),
+    crimson::ct_error::assert_all(
+      "Invalid error in SeaStore::_remove"
+    )
+  );
 }
 
 SeaStore::tm_ret SeaStore::_touch(
@@ -1546,16 +1580,24 @@ SeaStore::tm_ret SeaStore::_setattrs(
 {
   LOG_PREFIX(SeaStore::_setattrs);
   DEBUGT("onode={}", *ctx.transaction, *onode);
+
+  auto fut = tm_iertr::now();
   auto& layout = onode->get_mutable_layout(*ctx.transaction);
   if (auto it = aset.find(OI_ATTR); it != aset.end()) {
     auto& val = it->second;
     if (likely(val.length() <= onode_layout_t::MAX_OI_LENGTH)) {
-      layout.oi_size = val.length();
       maybe_inline_memcpy(
 	&layout.oi[0],
 	val.c_str(),
 	val.length(),
 	onode_layout_t::MAX_OI_LENGTH);
+
+      if (!layout.oi_size) {
+	// if oi was not in the layout, it probably exists in the omap,
+	// need to remove it first
+	fut = _xattr_rmattr(ctx, onode, OI_ATTR);
+      }
+      layout.oi_size = val.length();
       aset.erase(it);
     } else {
       layout.oi_size = 0;
@@ -1565,12 +1607,17 @@ SeaStore::tm_ret SeaStore::_setattrs(
   if (auto it = aset.find(SS_ATTR); it != aset.end()) {
     auto& val = it->second;
     if (likely(val.length() <= onode_layout_t::MAX_SS_LENGTH)) {
-      layout.ss_size = val.length();
       maybe_inline_memcpy(
 	&layout.ss[0],
 	val.c_str(),
 	val.length(),
 	onode_layout_t::MAX_SS_LENGTH);
+
+      if (!layout.ss_size) {
+	fut = _xattr_rmattr(ctx, onode, SS_ATTR);
+      }
+      layout.ss_size = val.length();
+
       aset.erase(it);
     } else {
       layout.ss_size = 0;
@@ -1578,15 +1625,19 @@ SeaStore::tm_ret SeaStore::_setattrs(
   }
 
   if (aset.empty()) {
-    return tm_iertr::now();
+    return fut;
   }
 
-  return _omap_set_kvs(
-    onode,
-    onode->get_layout().xattr_root,
-    *ctx.transaction,
-    layout.xattr_root,
-    std::move(aset));
+  return fut.si_then(
+    [this, onode, &ctx, &layout,
+    aset=std::move(aset)]() mutable {
+    return _omap_set_kvs(
+      onode,
+      onode->get_layout().xattr_root,
+      *ctx.transaction,
+      layout.xattr_root,
+      std::move(aset));
+  });
 }
 
 SeaStore::tm_ret SeaStore::_rmattr(

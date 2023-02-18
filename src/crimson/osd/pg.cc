@@ -37,8 +37,10 @@
 #include "crimson/osd/ops_executer.h"
 #include "crimson/osd/osd_operations/osdop_params.h"
 #include "crimson/osd/osd_operations/peering_event.h"
+#include "crimson/osd/osd_operations/background_recovery.h"
 #include "crimson/osd/pg_recovery.h"
 #include "crimson/osd/replicated_recovery_backend.h"
+#include "crimson/osd/watch.h"
 
 using std::ostream;
 using std::set;
@@ -134,8 +136,10 @@ PG::PG(
       osdmap,
       this,
       this),
+    obc_registry{
+      local_conf()},
     obc_loader{
-      shard_services,
+      obc_registry,
       *backend.get(),
       *this},
     wait_for_active_blocker(this)
@@ -284,6 +288,17 @@ unsigned PG::get_target_pg_log_entries() const
   }
 }
 
+void PG::on_removal(ceph::os::Transaction &t) {
+  t.register_on_commit(
+    new LambdaContext(
+      [this](int r) {
+      ceph_assert(r == 0);
+      (void)shard_services.start_operation<LocalPeeringEvent>(
+        this, pg_whoami, pgid, float(0.001), get_osdmap_epoch(),
+        get_osdmap_epoch(), PeeringState::DeleteSome());
+  }));
+}
+
 void PG::on_activate(interval_set<snapid_t>)
 {
   projected_last_update = peering_state.get_info().last_update;
@@ -371,8 +386,47 @@ void PG::prepare_write(pg_info_t &info,
 std::pair<ghobject_t, bool>
 PG::do_delete_work(ceph::os::Transaction &t, ghobject_t _next)
 {
-  // TODO
-  return {_next, false};
+  logger().info("removing pg {}", pgid);
+  auto fut = interruptor::make_interruptible(
+    shard_services.get_store().list_objects(
+      coll_ref,
+      _next,
+      ghobject_t::get_max(),
+      local_conf()->osd_target_transaction_size));
+
+  auto [objs_to_rm, next] = fut.get();
+  if (objs_to_rm.empty()) {
+    logger().info("all objs removed, removing coll for {}", pgid);
+    t.remove(coll_ref->get_cid(), pgmeta_oid);
+    t.remove_collection(coll_ref->get_cid());
+    (void) shard_services.get_store().do_transaction(
+      coll_ref, std::move(t)).then([this] {
+      return shard_services.remove_pg(pgid);
+    });
+    return {next, false};
+  } else {
+    for (auto &obj : objs_to_rm) {
+      if (obj == pgmeta_oid) {
+        continue;
+      }
+      logger().trace("pg {}, removing obj {}", pgid, obj);
+      t.remove(coll_ref->get_cid(), obj);
+    }
+    t.register_on_commit(
+      new LambdaContext([this](int r) {
+      ceph_assert(r == 0);
+      logger().trace("triggering more pg delete {}", pgid);
+      (void) shard_services.start_operation<LocalPeeringEvent>(
+        this,
+        pg_whoami,
+        pgid,
+        float(0.001),
+        get_osdmap_epoch(),
+        get_osdmap_epoch(),
+        PeeringState::DeleteSome{});
+    }));
+    return {next, true};
+  }
 }
 
 void PG::scrub_requested(scrub_level_t scrub_level, scrub_type_t scrub_type)
@@ -1005,6 +1059,22 @@ RWState::State PG::get_lock_type(const OpInfo &op_info)
   }
 }
 
+void PG::check_blocklisted_obc_watchers(
+  ObjectContextRef &obc)
+{
+  if (obc->watchers.empty()) {
+    for (auto &[src, winfo] : obc->obs.oi.watchers) {
+      auto watch = crimson::osd::Watch::create(
+        obc, winfo, src.second, this);
+      watch->disconnect();
+      auto [it, emplaced] = obc->watchers.emplace(src, std::move(watch));
+      assert(emplaced);
+      logger().debug("added watch for obj {}, client {}",
+        obc->get_oid(), src.second);
+    }
+  }
+}
+
 PG::load_obc_iertr::future<>
 PG::with_locked_obc(const hobject_t &hobj,
                     const OpInfo &op_info,
@@ -1014,13 +1084,17 @@ PG::with_locked_obc(const hobject_t &hobj,
     throw crimson::common::system_shutdown_exception();
   }
   const hobject_t oid = get_oid(hobj);
+  auto wrapper = [f=std::move(f), this](auto obc) {
+    check_blocklisted_obc_watchers(obc);
+    return f(obc);
+  };
   switch (get_lock_type(op_info)) {
   case RWState::RWREAD:
-      return obc_loader.with_obc<RWState::RWREAD>(oid, std::move(f));
+      return obc_loader.with_obc<RWState::RWREAD>(oid, std::move(wrapper));
   case RWState::RWWRITE:
-      return obc_loader.with_obc<RWState::RWWRITE>(oid, std::move(f));
+      return obc_loader.with_obc<RWState::RWWRITE>(oid, std::move(wrapper));
   case RWState::RWEXCL:
-      return obc_loader.with_obc<RWState::RWEXCL>(oid, std::move(f));
+      return obc_loader.with_obc<RWState::RWEXCL>(oid, std::move(wrapper));
   default:
     ceph_abort();
   };
