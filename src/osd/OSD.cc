@@ -10320,17 +10320,35 @@ bool OSD::maybe_override_options_for_qos(const std::set<std::string> *changed)
         }
       }
     } else { // if (changed != nullptr) (osd boot-up)
-      // Override the default recovery max active and max backfills to
-      // higher values based on the type of backing device (hdd/ssd).
-      // This section is executed only during osd boot-up.
+      // Override the default recovery max active (hdd & ssd) and max
+      // backfills to mClock defaults. This section is executed only
+      // during osd boot-up.
       for (auto opt : recovery_qos_defaults) {
-        cct->_conf.set_val_default(opt.first, std::to_string(opt.second));
-        if (opt.first == "osd_max_backfills") {
-          service.local_reserver.set_max(opt.second);
-          service.remote_reserver.set_max(opt.second);
+        // Get the current and built-in default value
+        uint64_t def_val = 0;
+        uint64_t cur_val = cct->_conf.get_val<uint64_t>(opt.first);
+        dout(1) << __func__ << " Current value of " << opt.first
+                << ": " << cur_val << dendl;
+        auto val = cct->_conf.get_val_default(opt.first);
+        if (val.has_value()) {
+        def_val = std::strtoull(val.value().c_str(), nullptr, 10);
+        dout(1) << __func__ << " Default value of " << opt.first
+                << ": " << def_val << dendl;
         }
-        dout(1) << __func__ << " Set default value for " << opt.first
-                << " to " << opt.second << dendl;
+
+        // Determine if we really need to set default value
+        if ((def_val == cur_val) && (cur_val != opt.second)) {
+          // The built-in default is equal to the current value.
+          // Therefore, the value must be updated to the mclock
+          // default if different from the current value.
+          cct->_conf.set_val_default(opt.first, std::to_string(opt.second));
+          dout(1) << __func__ << " Set default value of " << opt.first
+                  << " to " << opt.second << dendl;
+          if (opt.first == "osd_max_backfills") {
+            service.local_reserver.set_max(opt.second);
+            service.remote_reserver.set_max(opt.second);
+          }
+        }
       }
     }
     return true;
