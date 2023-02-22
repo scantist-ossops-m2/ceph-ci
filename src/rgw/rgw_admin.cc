@@ -8043,7 +8043,7 @@ next:
   }
 
   if (opt_cmd == OPT::USER_CHECK) {
-    check_bad_user_bucket_mapping(store, user.get(), fix, null_yield, dpp());
+    check_bad_user_bucket_mapping(store, *user.get(), fix, null_yield, dpp());
   }
 
   if (opt_cmd == OPT::USER_STATS) {
