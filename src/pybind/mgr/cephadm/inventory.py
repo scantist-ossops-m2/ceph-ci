@@ -16,7 +16,7 @@ from ceph.utils import str_to_datetime, datetime_to_str, datetime_now
 from orchestrator import OrchestratorError, HostSpec, OrchestratorEvent, service_to_daemon_types
 from cephadm.services.cephadmservice import CephadmDaemonDeploySpec
 
-from .utils import resolve_ip
+from .utils import resolve_ip, SpecialHostLabels
 from .migrations import queue_migrate_nfs_spec
 
 if TYPE_CHECKING:
@@ -921,7 +921,7 @@ class HostCache():
             h for h in self.mgr.inventory.all_specs()
             if (
                 self.host_had_daemon_refresh(h.hostname)
-                and '_no_schedule' not in h.labels
+                and SpecialHostLabels.drain_daemons_label not in h.labels
             )
         ]
 
@@ -939,7 +939,7 @@ class HostCache():
             h for h in self.mgr.inventory.all_specs()
             if (
                 self.host_had_daemon_refresh(h.hostname)
-                and '_no_conf_keyring' not in h.labels
+                and SpecialHostLabels.drain_conf_keyring_label not in h.labels
             )
         ]
 
@@ -952,7 +952,7 @@ class HostCache():
         no daemon refresh
         """
         return [
-            h for h in self.mgr.inventory.all_specs() if '_no_schedule' not in h.labels
+            h for h in self.mgr.inventory.all_specs() if SpecialHostLabels.drain_daemons_label not in h.labels
         ]
 
     def get_draining_hosts(self) -> List[HostSpec]:
@@ -961,7 +961,7 @@ class HostCache():
         no daemons placed on them, but are potentially still reachable
         """
         return [
-            h for h in self.mgr.inventory.all_specs() if '_no_schedule' in h.labels
+            h for h in self.mgr.inventory.all_specs() if SpecialHostLabels.drain_daemons_label in h.labels
         ]
 
     def get_conf_keyring_draining_hosts(self) -> List[HostSpec]:
@@ -970,7 +970,7 @@ class HostCache():
         no config files or client keyring placed on them, but are potentially still reachable
         """
         return [
-            h for h in self.mgr.inventory.all_specs() if '_no_conf_keyring' in h.labels
+            h for h in self.mgr.inventory.all_specs() if SpecialHostLabels.drain_conf_keyring_label in h.labels
         ]
 
     def get_unreachable_hosts(self) -> List[HostSpec]:
