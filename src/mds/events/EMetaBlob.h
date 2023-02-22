@@ -497,7 +497,7 @@ private:
   }
   void add_dentry(dirlump& lump, CDentry *dn, bool dirty, bool dirty_parent, bool dirty_pool) {
     // primary or remote
-    if (dn->get_projected_linkage()->is_remote()) {
+    if (dn->get_projected_linkage()->is_remote() || dn->get_projected_linkage()->is_referent()) {
       add_remote_dentry(dn, dirty);
       return;
     } else if (dn->get_projected_linkage()->is_null()) {

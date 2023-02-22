@@ -368,7 +368,7 @@ bool Locker::acquire_locks(MDRequestRef& mdr,
       if (mdr->lock_cache) { // debug
 	ceph_assert(mdr->lock_cache->opcode == CEPH_MDS_OP_UNLINK);
 	CDentry *dn = mdr->dn[0].back();
-	ceph_assert(dn->get_projected_linkage()->is_remote());
+	ceph_assert(dn->get_projected_linkage()->is_remote() || dn->get_projected_linkage()->is_referent());
       }
 
       if (object->is_ambiguous_auth()) {
@@ -404,7 +404,7 @@ bool Locker::acquire_locks(MDRequestRef& mdr,
 	{ // debug
 	  ceph_assert(mdr->lock_cache->opcode == CEPH_MDS_OP_UNLINK);
 	  CDentry *dn = mdr->dn[0].back();
-	  ceph_assert(dn->get_projected_linkage()->is_remote());
+	  ceph_assert(dn->get_projected_linkage()->is_remote() || dn->get_projected_linkage()->is_referent());
 	}
       }
 
