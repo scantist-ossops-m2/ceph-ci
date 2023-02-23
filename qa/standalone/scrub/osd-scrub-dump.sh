@@ -31,7 +31,7 @@ function run() {
     CEPH_ARGS+="--fsid=$(uuidgen) --auth-supported=none "
     CEPH_ARGS+="--mon-host=$CEPH_MON "
     CEPH_ARGS+="--osd_max_scrubs=$MAX_SCRUBS "
-    CEPH_ARGS+="--osd_scrub_chunk_max=$CHUNK_MAX "
+    CEPH_ARGS+="--osd_shallow_scrub_chunk_max=$CHUNK_MAX "
     CEPH_ARGS+="--osd_scrub_sleep=$SCRUB_SLEEP "
     CEPH_ARGS+="--osd_pool_default_size=$POOL_SIZE "
     # Set scheduler to "wpq" until there's a reliable way to query scrub states
@@ -138,7 +138,7 @@ function TEST_recover_unexpected() {
 	    break
 	fi
 	total=$(expr $total + $pass)
-	sleep $(expr $SCRUB_SLEEP \* 2)
+	sleep $(expr $SCRUB_SLEEP \* 2 - 2)
     done
 
     # Check that there are no more scrubs
