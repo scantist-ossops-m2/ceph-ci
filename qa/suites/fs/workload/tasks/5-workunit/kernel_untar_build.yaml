@@ -4,6 +4,15 @@ overrides:
       mds:
         - "mds.dir_split"
 tasks:
+- install:
+    extra_system_packages:
+      - bison
+      - flex
+      - elfutils-libelf-devel
+      - openssl-devel
+      - NetworkManager
+      - iproute
+      - util-linux
 - workunit:
     clients:
       all:
