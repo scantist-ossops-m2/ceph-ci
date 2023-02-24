@@ -353,8 +353,8 @@ def valgrind_post(ctx, config):
                 if (file.find('mds') >= 0) and kind.find('Lost') > 0:
                     continue
                 log.error('saw valgrind issue %s in %s', kind, file)
-                valgrind_exception = Exception('saw valgrind issues')
-                ValgrindScanner(client=remote.ssh).generate_yaml_summary()
+                valgrind_exception_text = ValgrindScanner(client=remote.ssh).get_exception_msg()
+                valgrind_exception = Exception(valgrind_exception_text)
 
         if config.get('expect_valgrind_errors'):
             if not valgrind_exception:
