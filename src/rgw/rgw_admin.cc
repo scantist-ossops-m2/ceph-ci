@@ -10420,7 +10420,7 @@ next:
 
   if (opt_cmd == OPT::PUBSUB_TOPICS_LIST) {
 
-    RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), tenant);
+    RGWPubSub ps(store, tenant);
 
     if (!bucket_name.empty()) {
       rgw_pubsub_bucket_topics result;
@@ -10430,8 +10430,8 @@ next:
         return -ret;
       }
 
-      const RGWPubSub::Bucket b(ps, bucket->get_key());
-      ret = b.get_topics(&result);
+      const RGWPubSub::Bucket b(ps, bucket.get());
+      ret = b.get_topics(dpp(), &result, null_yield);
       if (ret < 0 && ret != -ENOENT) {
         cerr << "ERROR: could not get topics: " << cpp_strerror(-ret) << std::endl;
         return -ret;
@@ -10439,8 +10439,8 @@ next:
       encode_json("result", result, formatter.get());
     } else {
       rgw_pubsub_topics result;
-      int ret = ps.get_topics(&result);
-      if (ret < 0) {
+      int ret = ps.get_topics(dpp(), &result, null_yield);
+      if (ret < 0 && ret != -ENOENT) {
         cerr << "ERROR: could not get topics: " << cpp_strerror(-ret) << std::endl;
         return -ret;
       }
@@ -10455,10 +10455,10 @@ next:
       return EINVAL;
     }
 
-    RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), tenant);
+    RGWPubSub ps(store, tenant);
 
     rgw_pubsub_topic topic;
-    ret = ps.get_topic(topic_name, &topic);
+    ret = ps.get_topic(dpp(), topic_name, &topic, null_yield);
     if (ret < 0) {
       cerr << "ERROR: could not get topic: " << cpp_strerror(-ret) << std::endl;
       return -ret;
@@ -10473,7 +10473,7 @@ next:
       return EINVAL;
     }
 
-    RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), tenant);
+    RGWPubSub ps(store, tenant);
 
     ret = ps.remove_topic(dpp(), topic_name, null_yield);
     if (ret < 0) {

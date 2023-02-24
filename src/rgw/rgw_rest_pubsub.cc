@@ -13,7 +13,6 @@
 #include "rgw_arn.h"
 #include "rgw_auth_s3.h"
 #include "rgw_notify.h"
-#include "rgw_sal_rados.h"
 #include "services/svc_zone.h"
 #include "common/dout.h"
 #include "rgw_url.h"
@@ -166,7 +165,7 @@ void RGWPSCreateTopicOp::execute(optional_yield y) {
     return;
   }
 
-  RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), s->owner.get_id().tenant);
+  const RGWPubSub ps(store, s->owner.get_id().tenant);
   op_ret = ps.create_topic(this, topic_name, dest, topic_arn, opaque_data, y);
   if (op_ret < 0) {
     ldpp_dout(this, 1) << "failed to create topic '" << topic_name << "', ret=" << op_ret << dendl;
@@ -220,8 +219,8 @@ public:
 };
 
 void RGWPSListTopicsOp::execute(optional_yield y) {
-  RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), s->owner.get_id().tenant);
-  op_ret = ps.get_topics(&result);
+  const RGWPubSub ps(store, s->owner.get_id().tenant);
+  op_ret = ps.get_topics(this, &result, y);
   // if there are no topics it is not considered an error
   op_ret = op_ret == -ENOENT ? 0 : op_ret;
   if (op_ret < 0) {
@@ -298,8 +297,8 @@ void RGWPSGetTopicOp::execute(optional_yield y) {
   if (op_ret < 0) {
     return;
   }
-  RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), s->owner.get_id().tenant);
-  op_ret = ps.get_topic(topic_name, &result);
+  const RGWPubSub ps(store, s->owner.get_id().tenant);
+  op_ret = ps.get_topic(this, topic_name, &result, y);
   if (op_ret < 0) {
     ldpp_dout(this, 1) << "failed to get topic '" << topic_name << "', ret=" << op_ret << dendl;
     return;
@@ -374,8 +373,8 @@ void RGWPSGetTopicAttributesOp::execute(optional_yield y) {
   if (op_ret < 0) {
     return;
   }
-  RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), s->owner.get_id().tenant);
-  op_ret = ps.get_topic(topic_name, &result);
+  const RGWPubSub ps(store, s->owner.get_id().tenant);
+  op_ret = ps.get_topic(this, topic_name, &result, y);
   if (op_ret < 0) {
     ldpp_dout(this, 1) << "failed to get topic '" << topic_name << "', ret=" << op_ret << dendl;
     return;
@@ -459,7 +458,7 @@ void RGWPSDeleteTopicOp::execute(optional_yield y) {
   if (op_ret < 0) {
     return;
   }
-  RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), s->owner.get_id().tenant);
+  const RGWPubSub ps(store, s->owner.get_id().tenant);
   op_ret = ps.remove_topic(this, topic_name, y);
   if (op_ret < 0) {
     ldpp_dout(this, 1) << "failed to remove topic '" << topic_name << ", ret=" << op_ret << dendl;
@@ -656,7 +655,7 @@ int delete_all_notifications(const DoutPrefixProvider *dpp, const rgw_pubsub_buc
 class RGWPSCreateNotifOp : public RGWDefaultResponseOp {
   private:
   std::string bucket_name;
-  RGWBucketInfo bucket_info;
+  std::unique_ptr<rgw::sal::Bucket> bucket;
   rgw_pubsub_s3_notifications configurations;
 
   int get_params() {
@@ -734,15 +733,15 @@ void RGWPSCreateNotifOp::execute(optional_yield y) {
     return;
   }
 
-  const RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), s->owner.get_id().tenant);
-  const RGWPubSub::Bucket b(ps, bucket_info.bucket);
+  const RGWPubSub ps(store, s->owner.get_id().tenant);
+  const RGWPubSub::Bucket b(ps, bucket.get());
 
   if(configurations.list.empty()) {
     // get all topics on a bucket
     rgw_pubsub_bucket_topics bucket_topics;
-    op_ret = b.get_topics(&bucket_topics);
+    op_ret = b.get_topics(this, &bucket_topics, y);
     if (op_ret < 0) {
-      ldpp_dout(this, 1) << "failed to get list of topics from bucket '" << bucket_info.bucket.name << "', ret=" << op_ret << dendl;
+      ldpp_dout(this, 1) << "failed to get list of topics from bucket '" << bucket_name << "', ret=" << op_ret << dendl;
       return;
     }
 
@@ -780,7 +779,7 @@ void RGWPSCreateNotifOp::execute(optional_yield y) {
 
     // get topic information. destination information is stored in the topic
     rgw_pubsub_topic topic_info;  
-    op_ret = ps.get_topic(topic_name, &topic_info);
+    op_ret = ps.get_topic(this, topic_name, &topic_info, y);
     if (op_ret < 0) {
       ldpp_dout(this, 1) << "failed to get topic '" << topic_name << "', ret=" << op_ret << dendl;
       return;
@@ -829,9 +828,8 @@ int RGWPSCreateNotifOp::verify_permission(optional_yield y) {
     ldpp_dout(this, 1) << "failed to get bucket info, cannot verify ownership" << dendl;
     return ret;
   }
-  bucket_info = bucket->get_info();
 
-  if (bucket_info.owner != s->owner.get_id()) {
+  if (bucket->get_info().owner != s->owner.get_id()) {
     ldpp_dout(this, 1) << "user doesn't own bucket, not allowed to create notification" << dendl;
     return -EPERM;
   }
@@ -842,7 +840,7 @@ int RGWPSCreateNotifOp::verify_permission(optional_yield y) {
 class RGWPSDeleteNotifOp : public RGWDefaultResponseOp {
   private:
   std::string bucket_name;
-  RGWBucketInfo bucket_info;
+  std::unique_ptr<rgw::sal::Bucket> bucket;
   std::string notif_name;
   
   public:
@@ -880,14 +878,14 @@ void RGWPSDeleteNotifOp::execute(optional_yield y) {
     return;
   }
 
-  const RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), s->owner.get_id().tenant);
-  const RGWPubSub::Bucket b(ps, bucket_info.bucket);
+  const RGWPubSub ps(store, s->owner.get_id().tenant);
+  const RGWPubSub::Bucket b(ps, bucket.get());
 
   // get all topics on a bucket
   rgw_pubsub_bucket_topics bucket_topics;
-  op_ret = b.get_topics(&bucket_topics);
+  op_ret = b.get_topics(this, &bucket_topics, y);
   if (op_ret < 0) {
-    ldpp_dout(this, 1) << "failed to get list of topics from bucket '" << bucket_info.bucket.name << "', ret=" << op_ret << dendl;
+    ldpp_dout(this, 1) << "failed to get list of topics from bucket '" << bucket_name << "', ret=" << op_ret << dendl;
     return;
   }
 
@@ -919,9 +917,8 @@ int RGWPSDeleteNotifOp::verify_permission(optional_yield y) {
   if (ret < 0) {
     return ret;
   }
-  bucket_info = bucket->get_info();
 
-  if (bucket_info.owner != s->owner.get_id()) {
+  if (bucket->get_info().owner != s->owner.get_id()) {
     ldpp_dout(this, 1) << "user doesn't own bucket, cannot remove notification" << dendl;
     return -EPERM;
   }
@@ -932,7 +929,7 @@ int RGWPSDeleteNotifOp::verify_permission(optional_yield y) {
 class RGWPSListNotifsOp : public RGWOp {
 private:
   std::string bucket_name;
-  RGWBucketInfo bucket_info;
+  std::unique_ptr<rgw::sal::Bucket> bucket;
   std::string notif_name;
   rgw_pubsub_s3_notifications notifications;
 
@@ -979,14 +976,14 @@ private:
 };
 
 void RGWPSListNotifsOp::execute(optional_yield y) {
-  const RGWPubSub ps(static_cast<rgw::sal::RadosStore*>(store), s->owner.get_id().tenant);
-  const RGWPubSub::Bucket b(ps, bucket_info.bucket);
+  const RGWPubSub ps(store, s->owner.get_id().tenant);
+  const RGWPubSub::Bucket b(ps, bucket.get());
   
   // get all topics on a bucket
   rgw_pubsub_bucket_topics bucket_topics;
-  op_ret = b.get_topics(&bucket_topics);
+  op_ret = b.get_topics(this, &bucket_topics, y);
   if (op_ret < 0) {
-    ldpp_dout(this, 1) << "failed to get list of topics from bucket '" << bucket_info.bucket.name << "', ret=" << op_ret << dendl;
+    ldpp_dout(this, 1) << "failed to get list of topics from bucket '" << bucket_name << "', ret=" << op_ret << dendl;
     return;
   }
   if (!notif_name.empty()) {
@@ -1022,9 +1019,8 @@ int RGWPSListNotifsOp::verify_permission(optional_yield y) {
   if (ret < 0) {
     return ret;
   }
-  bucket_info = bucket->get_info();
 
-  if (bucket_info.owner != s->owner.get_id()) {
+  if (bucket->get_info().owner != s->owner.get_id()) {
     ldpp_dout(this, 1) << "user doesn't own bucket, cannot get notification list" << dendl;
     return -EPERM;
   }
