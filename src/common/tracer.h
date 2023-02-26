@@ -96,10 +96,20 @@ class Value {
 
 using jspan_attribute = Value;
 
-struct jspan_context {
-  jspan_context() {}
-  jspan_context(bool sampled_flag, bool is_remote) {}
+namespace opentelemetry {
+inline namespace v1 {
+namespace trace {
+class SpanContext {
+public:
+  SpanContext() = default;
+  SpanContext(bool sampled_flag, bool is_remote) {}
+  bool IsValid() const { return false;}
 };
+} // namespace trace
+} // namespace v1
+} // namespace opentelemetry
+
+using jspan_context = opentelemetry::v1::trace::SpanContext;
 
 struct span_stub {
   jspan_context _ctx;
@@ -108,7 +118,7 @@ struct span_stub {
   void AddEvent(std::string_view) {}
   void AddEvent(std::string_view, std::initializer_list<std::pair<std::string_view, jspan_attribute>> fields) {}
   template <typename T> void AddEvent(std::string_view name, const T& fields = {}) {}
-  const jspan_context& GetContext() { return _ctx; }
+  jspan_context GetContext() const { return _ctx; }
   void UpdateName(std::string_view) {}
   bool IsRecording() { return false; }
 };

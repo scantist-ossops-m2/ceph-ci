@@ -14,8 +14,6 @@
 #include "librados_fwd.hpp"
 #include "rados_types.hpp"
 
-typedef opentelemetry::trace::SpanContext jspan_context;
-
 namespace libradosstriper
 {
   class RadosStriper;
