@@ -10431,7 +10431,7 @@ next:
       }
 
       const RGWPubSub::Bucket b(ps, bucket.get());
-      ret = b.get_topics(dpp(), &result, null_yield);
+      ret = b.get_topics(dpp(), result, null_yield);
       if (ret < 0 && ret != -ENOENT) {
         cerr << "ERROR: could not get topics: " << cpp_strerror(-ret) << std::endl;
         return -ret;
@@ -10439,7 +10439,7 @@ next:
       encode_json("result", result, formatter.get());
     } else {
       rgw_pubsub_topics result;
-      int ret = ps.get_topics(dpp(), &result, null_yield);
+      int ret = ps.get_topics(dpp(), result, null_yield);
       if (ret < 0 && ret != -ENOENT) {
         cerr << "ERROR: could not get topics: " << cpp_strerror(-ret) << std::endl;
         return -ret;
@@ -10458,7 +10458,7 @@ next:
     RGWPubSub ps(store, tenant);
 
     rgw_pubsub_topic topic;
-    ret = ps.get_topic(dpp(), topic_name, &topic, null_yield);
+    ret = ps.get_topic(dpp(), topic_name, topic, null_yield);
     if (ret < 0) {
       cerr << "ERROR: could not get topic: " << cpp_strerror(-ret) << std::endl;
       return -ret;
