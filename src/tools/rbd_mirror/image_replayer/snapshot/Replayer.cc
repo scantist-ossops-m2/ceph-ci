@@ -220,7 +220,7 @@ bool Replayer<I>::get_replay_status(std::string* description,
                                     Context* on_finish) {
   dout(10) << dendl;
 
-  ceph_assert(m_perf_counters!=nullptr)
+  ceph_assert(m_perf_counters!=nullptr);
   std::unique_lock locker{m_lock};
   if (m_state != STATE_REPLAYING && m_state != STATE_IDLE) {
     locker.unlock();
@@ -308,7 +308,7 @@ bool Replayer<I>::get_replay_status(std::string* description,
   root_obj["last_snapshot_sync_seconds"] = m_last_snapshot_sync_seconds;
   root_obj["last_snapshot_bytes"] = m_last_snapshot_bytes;
   m_perf_counters->set(l_rbd_mirror_last_snapshot_sync_seconds, m_last_snapshot_sync_seconds);
-  m_perf_countesrs->set(l_rbd_mirror_last_snapshot_bytes, m_last_snapshot_bytes);
+  m_perf_counters->set(l_rbd_mirror_last_snapshot_bytes, m_last_snapshot_bytes);
 
   auto pending_bytes = bytes_per_snapshot * m_pending_snapshots;
   if (bytes_per_second > 0 && m_pending_snapshots > 0) {
