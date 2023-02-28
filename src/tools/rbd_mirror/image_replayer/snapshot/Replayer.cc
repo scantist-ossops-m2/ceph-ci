@@ -1141,7 +1141,6 @@ void Replayer<I>::handle_copy_image(int r) {
       m_perf_counters->inc(l_rbd_mirror_snapshot_replay_snapshots);
       m_perf_counters->tinc(l_rbd_mirror_snapshot_replay_snapshots_time, duration);
     }
-    m_snapshot_bytes = 0;
   }
 
   apply_image_state();
