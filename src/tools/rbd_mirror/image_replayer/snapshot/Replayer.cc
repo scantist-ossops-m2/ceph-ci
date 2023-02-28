@@ -259,7 +259,7 @@ bool Replayer<I>::get_replay_status(std::string* description,
   root_obj["replay_state"] = replay_state;
   root_obj["remote_snapshot_timestamp"] = remote_snap_info->timestamp.sec();
 
-    m_perf_counters->set( l_rbd_mirror_remote_timestamp, remote_snap_info->timestamp.sec());
+    m_perf_counters->set( l_rbd_mirror_snapshot_remote_timestamp, remote_snap_info->timestamp.sec());
 
   auto matching_remote_snap_id = util::compute_remote_snap_id(
     m_state_builder->local_image_ctx->image_lock,
@@ -275,7 +275,7 @@ bool Replayer<I>::get_replay_status(std::string* description,
     // synced and not the consistency point in time.
     root_obj["local_snapshot_timestamp"] =
       matching_remote_snap_it->second.timestamp.sec();
-      m_perf_counters->set(l_rbd_mirror_local_timestamp, matching_remote_snap_it->second.timestamp.sec());
+      m_perf_counters->set(l_rbd_mirror_snapshot_local_timestamp, matching_remote_snap_it->second.timestamp.sec());
   }
 
   matching_remote_snap_it = m_state_builder->remote_image_ctx->snap_info.find(
@@ -307,8 +307,6 @@ bool Replayer<I>::get_replay_status(std::string* description,
 
   root_obj["last_snapshot_sync_seconds"] = m_last_snapshot_sync_seconds;
   root_obj["last_snapshot_bytes"] = m_last_snapshot_bytes;
-  m_perf_counters->set(l_rbd_mirror_last_snapshot_sync_seconds, m_last_snapshot_sync_seconds);
-  m_perf_counters->set(l_rbd_mirror_last_snapshot_bytes, m_last_snapshot_bytes);
 
   auto pending_bytes = bytes_per_snapshot * m_pending_snapshots;
   if (bytes_per_second > 0 && m_pending_snapshots > 0) {
@@ -1140,6 +1138,8 @@ void Replayer<I>::handle_copy_image(int r) {
       m_perf_counters->inc(l_rbd_mirror_snapshot_replay_bytes, m_snapshot_bytes);
       m_perf_counters->inc(l_rbd_mirror_snapshot_replay_snapshots);
       m_perf_counters->tinc(l_rbd_mirror_snapshot_replay_snapshots_time, duration);
+      m_perf_counters->set(l_rbd_mirror_snapshot_last_sync_seconds, m_last_snapshot_sync_seconds);
+      m_perf_counters->set(l_rbd_mirror_snapshot_last_sync_bytes, m_last_snapshot_bytes);
     }
   }
 
@@ -1579,18 +1579,19 @@ void Replayer<I>::register_perf_counters() {
   auto cct = static_cast<CephContext *>(m_state_builder->local_image_ctx->cct);
   auto prio = cct->_conf.get_val<int64_t>("rbd_mirror_image_perf_stats_prio");
   
-  std::string labels = ceph::perf_counters::key_create("z_rbd", {{"Pool", name_of_pool}, {"Image", name_of_image}});
+  std::string labels = ceph::perf_counters::key_create("rbd_mirror_snapshot", {{"pool", name_of_pool}, {"image", name_of_image}});
 
-  auto lpcb = new PerfCountersBuilder(g_ceph_context, labels, l_rbd_mirror_snapshot_first, l_rbd_mirror_snapshot_last);
+  auto lpcb = new PerfCountersBuilder(g_ceph_context, labels, l_rbd_mirror_snapshot_first, l_rbd_mirror_snapshot_last_labeled);
   lpcb->set_prio_default(prio);
   lpcb->add_u64_counter(l_rbd_mirror_snapshot_replay_snapshots, "snapshots", "Snapshots", "r");
   lpcb->add_time_avg(l_rbd_mirror_snapshot_replay_snapshots_time, "snapshots_time", "Snapshots time", "rl");
   lpcb->add_u64_counter(l_rbd_mirror_snapshot_replay_bytes, "replay_bytes",
                       "Replayed data", "rb" );
-  lpcb->add_u64_counter(l_rbd_mirror_remote_timestamp, "remote_timestamp", "Timestamp", "rt");
-  lpcb->add_u64_counter(l_rbd_mirror_local_timestamp, "local_timestamp", "Timestamp", "lt");
-  lpcb->add_u64_counter(l_rbd_mirror_last_snapshot_sync_seconds, "sync_seconds", "time taken to sync", "st", prio);
-  lpcb->add_u64_counter(l_rbd_mirror_last_snapshot_bytes, "sync_bytes", "bytes synced", "sb", prio) ;
+  // lpcb->add_u64_counter(l_rbd_mirror_snapshot_last, "testing_last","testing_last", "tl");
+  lpcb->add_u64_counter(l_rbd_mirror_snapshot_remote_timestamp, "remote_timestamp", "Timestamp", "rt");
+  lpcb->add_u64_counter(l_rbd_mirror_snapshot_local_timestamp, "local_timestamp", "Timestamp", "lt");
+  lpcb->add_u64_counter(l_rbd_mirror_snapshot_last_sync_seconds, "last_sync_seconds", "time taken to sync", "st", prio);
+  lpcb->add_u64_counter(l_rbd_mirror_snapshot_last_sync_bytes, "last_sync_bytes", "bytes synced", "sb", prio) ;
 
   m_perf_counters = lpcb->create_perf_counters();
   delete lpcb;
