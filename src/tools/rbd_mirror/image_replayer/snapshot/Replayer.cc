@@ -1141,14 +1141,6 @@ void Replayer<I>::handle_copy_image(int r) {
       m_perf_counters->inc(l_rbd_mirror_snapshot_replay_snapshots);
       m_perf_counters->tinc(l_rbd_mirror_snapshot_replay_snapshots_time, duration);
     }
-    // if (perf_counters_cache)
-    // {
-    //   std::string labels = ceph::perf_counters::key_create("rbd", {{"Pool", name_of_pool}, {"Image", name_of_image}});
-    //   perf_counters_cache->add(labels);
-    //   perf_counters_cache->inc(labels, l_rbd_mirror_snapshot_replay_bytes, m_snapshot_bytes);
-    //   perf_counters_cache->inc(labels, l_rbd_mirror_snapshot_replay_snapshots, 1);
-    //   perf_counters_cache->tinc(labels, l_rbd_mirror_snapshot_replay_snapshots_time, time);
-    // }
     m_snapshot_bytes = 0;
   }
 
