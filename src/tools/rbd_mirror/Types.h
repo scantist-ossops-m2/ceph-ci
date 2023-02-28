@@ -29,11 +29,16 @@ enum {
   l_rbd_mirror_snapshot_replay_snapshots,
   l_rbd_mirror_snapshot_replay_snapshots_time,
   l_rbd_mirror_snapshot_replay_bytes,
-  l_rbd_mirror_remote_timestamp,
-  l_rbd_mirror_local_timestamp,
-  l_rbd_mirror_last_snapshot_sync_seconds,
-  l_rbd_mirror_last_snapshot_bytes,
   l_rbd_mirror_snapshot_last,
+};
+
+// Labeled performance counters
+enum {
+  l_rbd_mirror_snapshot_remote_timestamp = l_rbd_mirror_snapshot_last,
+  l_rbd_mirror_snapshot_local_timestamp,
+  l_rbd_mirror_snapshot_last_sync_seconds,
+  l_rbd_mirror_snapshot_last_sync_bytes,
+  l_rbd_mirror_snapshot_last_labeled,
 };
 
 typedef std::shared_ptr<librados::Rados> RadosRef;
