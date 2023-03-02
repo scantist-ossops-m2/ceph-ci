@@ -3841,9 +3841,9 @@ void PeeringState::update_calc_stats()
     }
 out:
     // NOTE: Tests use these messages to verify this code
-    psdout(20) << " degraded " << degraded
+    psdout(20) << "degraded " << degraded
 	       << (estimate ? " (est)": "") << dendl;
-    psdout(20) << " misplaced " << misplaced
+    psdout(20) << "misplaced " << misplaced
 	       << (estimate ? " (est)": "")<< dendl;
 
     info.stats.stats.sum.num_objects_degraded = degraded;
