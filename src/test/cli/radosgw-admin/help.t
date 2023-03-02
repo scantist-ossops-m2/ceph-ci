@@ -42,6 +42,7 @@
     object stat                stat an object for its metadata
     object unlink              unlink object from bucket index
     object rewrite             rewrite the specified object
+    object reindex             reindex the object(s) indicated by --bucket and either --object or --objects-file
     objects expire             run expired objects cleanup
     objects expire-stale list  list stale expired objects (caused by reshard)
     objects expire-stale rm    remove stale expired objects
