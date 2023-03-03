@@ -1579,7 +1579,7 @@ void Replayer<I>::register_perf_counters() {
   auto cct = static_cast<CephContext *>(m_state_builder->local_image_ctx->cct);
   auto prio = cct->_conf.get_val<int64_t>("rbd_mirror_image_perf_stats_prio");
   
-  std::string labels = ceph::perf_counters::key_create("rbd_mirror_snapshot", {{"pool", name_of_pool}, {"image", name_of_image}});
+  std::string labels = ceph::perf_counters::key_create("rbd_mirror_snapshot_labeled", {{"pool", name_of_pool}, {"image", name_of_image}});
 
   auto lpcb = new PerfCountersBuilder(g_ceph_context, labels, l_rbd_mirror_snapshot_first, l_rbd_mirror_snapshot_last_labeled);
   lpcb->set_prio_default(prio);

@@ -52,3 +52,12 @@ options:
   - ceph-exporter
   flags:
   - runtime
+- name: exporter_get_labeled_counters
+  type: bool
+  level: advanced
+  desc: If true will fetch labeled perfcounters from counter dump command
+  default: false
+  services:
+  - ceph-exporter
+  flags:
+  - runtime
