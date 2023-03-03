@@ -24,9 +24,13 @@ class Transaction;
 
 namespace crimson::os {
 class FuturizedCollection;
+class FuturizedShardStore;
+
+constexpr core_id_t PRIMARY_CORE = 0;
 
 class FuturizedStore {
 
+// public interfaces called by main OSD
 public:
   static seastar::future<std::unique_ptr<FuturizedStore>> create(const std::string& type,
                                                 const std::string& data,
@@ -45,10 +49,12 @@ public:
 
   using mount_ertr = crimson::errorator<crimson::stateful_ec>;
   virtual mount_ertr::future<> mount() = 0;
+
   virtual seastar::future<> umount() = 0;
 
   using mkfs_ertr = crimson::errorator<crimson::stateful_ec>;
   virtual mkfs_ertr::future<> mkfs(uuid_d new_osd_fsid) = 0;
+
   virtual seastar::future<store_statfs_t> stat() const = 0;
 
   using CollectionRef = boost::intrusive_ptr<FuturizedCollection>;
@@ -60,6 +66,50 @@ public:
     uint64_t offset,
     size_t len,
     uint32_t op_flags = 0) = 0;
+
+  virtual seastar::future<CollectionRef> open_collection(const coll_t& cid) = 0;
+
+  virtual seastar::future<CollectionRef> create_new_collection(const coll_t& cid) = 0;
+
+  virtual uuid_d get_fsid() const  = 0;
+
+  virtual seastar::future<> write_meta(const std::string& key,
+				       const std::string& value) = 0;
+
+  virtual seastar::future<> do_transaction(
+    CollectionRef ch,
+    ceph::os::Transaction&& txn) = 0;
+
+  virtual FuturizedShardStore& get_local_shard_store() = 0;
+
+  virtual seastar::future<std::tuple<int, std::string>> read_meta(
+    const std::string& key) = 0;
+
+};
+
+class FuturizedShardStore {
+public:
+  FuturizedShardStore() = default;
+  virtual ~FuturizedShardStore() = default;
+  // no copying
+  explicit FuturizedShardStore(const FuturizedShardStore& o) = delete;
+  const FuturizedShardStore& operator=(const FuturizedShardStore& o) = delete;
+
+  // public interfaces called by each shard osd
+  using mount_ertr = FuturizedStore::mount_ertr;
+  virtual mount_ertr::future<> mount() = 0;
+
+  virtual seastar::future<> umount() = 0;
+
+  using CollectionRef = FuturizedStore::CollectionRef;
+  using read_errorator = FuturizedStore::read_errorator;
+  virtual read_errorator::future<ceph::bufferlist> read(
+    CollectionRef c,
+    const ghobject_t& oid,
+    uint64_t offset,
+    size_t len,
+    uint32_t op_flags = 0) = 0;
+
   virtual read_errorator::future<ceph::bufferlist> readv(
     CollectionRef c,
     const ghobject_t& oid,
@@ -80,6 +130,7 @@ public:
   virtual get_attrs_ertr::future<attrs_t> get_attrs(
     CollectionRef c,
     const ghobject_t& oid) = 0;
+
   virtual seastar::future<struct stat> stat(
     CollectionRef c,
     const ghobject_t& oid) = 0;
@@ -90,11 +141,7 @@ public:
     CollectionRef c,
     const ghobject_t& oid,
     const omap_keys_t& keys) = 0;
-  virtual seastar::future<std::tuple<std::vector<ghobject_t>, ghobject_t>> list_objects(
-    CollectionRef c,
-    const ghobject_t& start,
-    const ghobject_t& end,
-    uint64_t limit) const = 0;
+
   virtual read_errorator::future<std::tuple<bool, omap_values_t>> omap_get_values(
     CollectionRef c,           ///< [in] collection
     const ghobject_t &oid,     ///< [in] oid
@@ -105,8 +152,16 @@ public:
     CollectionRef c,
     const ghobject_t& oid) = 0;
 
+  virtual seastar::future<std::tuple<std::vector<ghobject_t>, ghobject_t>> list_objects(
+    CollectionRef c,
+    const ghobject_t& start,
+    const ghobject_t& end,
+    uint64_t limit) const = 0;
+
   virtual seastar::future<CollectionRef> create_new_collection(const coll_t& cid) = 0;
+
   virtual seastar::future<CollectionRef> open_collection(const coll_t& cid) = 0;
+
   using coll_core_t = std::pair<coll_t, core_id_t>;
   virtual seastar::future<std::vector<coll_core_t>> list_collections() = 0;
 
@@ -147,6 +202,7 @@ public:
   virtual seastar::future<> inject_data_error(const ghobject_t& o) {
     return seastar::now();
   }
+
   virtual seastar::future<> inject_mdata_error(const ghobject_t& o) {
     return seastar::now();
   }
@@ -157,11 +213,6 @@ public:
     uint64_t off,
     uint64_t len) = 0;
 
-  virtual seastar::future<> write_meta(const std::string& key,
-				       const std::string& value) = 0;
-  virtual seastar::future<std::tuple<int, std::string>> read_meta(
-    const std::string& key) = 0;
-  virtual uuid_d get_fsid() const  = 0;
   virtual unsigned get_max_attr_name_length() const = 0;
 };
 
@@ -172,8 +223,9 @@ public:
  * the store was initialized for implementations without support for multiple
  * reactors.
  */
+/*
 template <typename T>
-class ShardedStoreProxy : public FuturizedStore {
+class ShardedStoreProxy : public FuturizedStore, FuturizedShardStore {
   const core_id_t core;
   std::unique_ptr<T> impl;
   uuid_d fsid;
@@ -207,6 +259,7 @@ public:
 
   seastar::future<> start() final { return proxy(&T::start); }
   seastar::future<> stop() final { return proxy(&T::stop); }
+  using mount_ertr = FuturizedStore::mount_ertr;
   mount_ertr::future<> mount() final {
     auto ret = seastar::smp::submit_to(
       core,
@@ -300,6 +353,7 @@ public:
   seastar::future<CollectionRef> open_collection(const coll_t &cid) final {
     return proxy(&T::open_collection, cid);
   }
+  using coll_core_t = FuturizedStore::coll_core_t;
   seastar::future<std::vector<coll_core_t>> list_collections() final {
     return proxy(&T::list_collections);
   }
@@ -342,5 +396,5 @@ public:
     return max_attr;
   }
 };
-
+*/
 }

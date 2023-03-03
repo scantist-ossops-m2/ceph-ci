@@ -462,10 +462,10 @@ ReplicatedRecoveryBackend::read_metadata_for_push_op(
 	})),
       interruptor::make_interruptible(store->get_attrs(coll, ghobject_t(oid)))
       .handle_error_interruptible<false>(
-	crimson::os::FuturizedStore::get_attrs_ertr::all_same_way(
+	crimson::os::FuturizedShardStore::get_attrs_ertr::all_same_way(
 	  [oid] (const std::error_code& e) {
 	  logger().debug("read_metadata_for_push_op, error {} when getting attrs: {}", e, oid);
-	  return seastar::make_ready_future<crimson::os::FuturizedStore::attrs_t>();
+	  return seastar::make_ready_future<crimson::os::FuturizedShardStore::attrs_t>();
 	}))
   )).then_unpack_interruptible([&new_progress, push_op](auto bl, auto attrs) {
     if (bl.length() == 0) {

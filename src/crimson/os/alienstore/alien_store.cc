@@ -84,6 +84,7 @@ AlienStore::~AlienStore()
 
 seastar::future<> AlienStore::start()
 {
+  ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
   cct = std::make_unique<CephContext>(
     CEPH_ENTITY_TYPE_OSD,
     CephContext::create_options { CODE_ENVIRONMENT_UTILITY, 0,
@@ -120,11 +121,18 @@ seastar::future<> AlienStore::start()
   const auto num_threads =
     get_conf<uint64_t>("crimson_alien_op_num_threads");
   tp = std::make_unique<crimson::os::ThreadPool>(num_threads, 128, cpu_cores);
-  return tp->start();
+  return tp->start().then([this] {
+    return shard_stores.start(
+      std::ref(tp),
+      std::ref(store),
+      std::ref(op_gate),
+      std::ref(coll_map));
+  });
 }
 
 seastar::future<> AlienStore::stop()
 {
+  ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
   if (!tp) {
     // not really started yet
     return seastar::now();
@@ -139,11 +147,14 @@ seastar::future<> AlienStore::stop()
 
   }).then([this] {
     return tp->stop();
+  }).then([this] {
+    return shard_stores.stop();
   });
 }
 
 AlienStore::mount_ertr::future<> AlienStore::mount()
 {
+  ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
   logger().debug("{}", __func__);
   assert(tp);
   return tp->submit([this] {
@@ -160,6 +171,7 @@ AlienStore::mount_ertr::future<> AlienStore::mount()
 
 seastar::future<> AlienStore::umount()
 {
+  ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
   logger().info("{}", __func__);
   if (!tp) {
     // not really started yet
@@ -177,6 +189,7 @@ seastar::future<> AlienStore::umount()
 
 AlienStore::mkfs_ertr::future<> AlienStore::mkfs(uuid_d osd_fsid)
 {
+  ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
   logger().debug("{}", __func__);
   store->set_fsid(osd_fsid);
   assert(tp);
@@ -193,7 +206,7 @@ AlienStore::mkfs_ertr::future<> AlienStore::mkfs(uuid_d osd_fsid)
 }
 
 seastar::future<std::tuple<std::vector<ghobject_t>, ghobject_t>>
-AlienStore::list_objects(CollectionRef ch,
+AlienStore::AlienShardStore::list_objects(CollectionRef ch,
                         const ghobject_t& start,
                         const ghobject_t& end,
                         uint64_t limit) const
@@ -218,7 +231,8 @@ AlienStore::list_objects(CollectionRef ch,
   });
 }
 
-seastar::future<CollectionRef> AlienStore::create_new_collection(const coll_t& cid)
+seastar::future<CollectionRef>
+AlienStore::AlienShardStore::create_new_collection(const coll_t& cid)
 {
   logger().debug("{}", __func__);
   assert(tp);
@@ -242,7 +256,8 @@ seastar::future<CollectionRef> AlienStore::create_new_collection(const coll_t& c
 
 }
 
-seastar::future<CollectionRef> AlienStore::open_collection(const coll_t& cid)
+seastar::future<CollectionRef>
+AlienStore::AlienShardStore::open_collection(const coll_t& cid)
 {
   logger().debug("{}", __func__);
   assert(tp);
@@ -268,7 +283,9 @@ seastar::future<CollectionRef> AlienStore::open_collection(const coll_t& cid)
   });
 }
 
-seastar::future<std::vector<coll_core_t>> AlienStore::list_collections()
+using coll_core_t = FuturizedShardStore::coll_core_t;
+seastar::future<std::vector<coll_core_t>>
+AlienStore::AlienShardStore::list_collections()
 {
   logger().debug("{}", __func__);
   assert(tp);
@@ -288,8 +305,8 @@ seastar::future<std::vector<coll_core_t>> AlienStore::list_collections()
   });
 }
 
-AlienStore::read_errorator::future<ceph::bufferlist>
-AlienStore::read(CollectionRef ch,
+AlienStore::AlienShardStore::read_errorator::future<ceph::bufferlist>
+AlienStore::AlienShardStore::read(CollectionRef ch,
                  const ghobject_t& oid,
                  uint64_t offset,
                  size_t len,
@@ -314,8 +331,8 @@ AlienStore::read(CollectionRef ch,
   });
 }
 
-AlienStore::read_errorator::future<ceph::bufferlist>
-AlienStore::readv(CollectionRef ch,
+AlienStore::AlienShardStore::read_errorator::future<ceph::bufferlist>
+AlienStore::AlienShardStore::readv(CollectionRef ch,
 		  const ghobject_t& oid,
 		  interval_set<uint64_t>& m,
 		  uint32_t op_flags)
@@ -341,8 +358,8 @@ AlienStore::readv(CollectionRef ch,
   });
 }
 
-AlienStore::get_attr_errorator::future<ceph::bufferlist>
-AlienStore::get_attr(CollectionRef ch,
+AlienStore::AlienShardStore::get_attr_errorator::future<ceph::bufferlist>
+AlienStore::AlienShardStore::get_attr(CollectionRef ch,
                      const ghobject_t& oid,
                      std::string_view name) const
 {
@@ -370,8 +387,8 @@ AlienStore::get_attr(CollectionRef ch,
   });
 }
 
-AlienStore::get_attrs_ertr::future<AlienStore::attrs_t>
-AlienStore::get_attrs(CollectionRef ch,
+AlienStore::AlienShardStore::get_attrs_ertr::future<AlienStore::AlienShardStore::attrs_t>
+AlienStore::AlienShardStore::get_attrs(CollectionRef ch,
                       const ghobject_t& oid)
 {
   logger().debug("{}", __func__);
@@ -391,7 +408,7 @@ AlienStore::get_attrs(CollectionRef ch,
   });
 }
 
-auto AlienStore::omap_get_values(CollectionRef ch,
+auto AlienStore::AlienShardStore::omap_get_values(CollectionRef ch,
                                  const ghobject_t& oid,
                                  const set<string>& keys)
   -> read_errorator::future<omap_values_t>
@@ -415,7 +432,7 @@ auto AlienStore::omap_get_values(CollectionRef ch,
   });
 }
 
-auto AlienStore::omap_get_values(CollectionRef ch,
+auto AlienStore::AlienShardStore::omap_get_values(CollectionRef ch,
                                  const ghobject_t &oid,
                                  const std::optional<string> &start)
   -> read_errorator::future<std::tuple<bool, omap_values_t>>
@@ -442,7 +459,8 @@ auto AlienStore::omap_get_values(CollectionRef ch,
   });
 }
 
-seastar::future<> AlienStore::do_transaction_no_callbacks(
+seastar::future<>
+AlienStore::AlienShardStore::do_transaction_no_callbacks(
   CollectionRef ch,
   ceph::os::Transaction&& txn)
 {
@@ -470,7 +488,8 @@ seastar::future<> AlienStore::do_transaction_no_callbacks(
     });
 }
 
-seastar::future<> AlienStore::inject_data_error(const ghobject_t& o)
+seastar::future<>
+AlienStore::AlienShardStore::inject_data_error(const ghobject_t& o)
 {
   logger().debug("{}", __func__);
   assert(tp);
@@ -481,7 +500,8 @@ seastar::future<> AlienStore::inject_data_error(const ghobject_t& o)
   });
 }
 
-seastar::future<> AlienStore::inject_mdata_error(const ghobject_t& o)
+seastar::future<>
+AlienStore::AlienShardStore::inject_mdata_error(const ghobject_t& o)
 {
   logger().debug("{}", __func__);
   assert(tp);
@@ -492,9 +512,11 @@ seastar::future<> AlienStore::inject_mdata_error(const ghobject_t& o)
   });
 }
 
-seastar::future<> AlienStore::write_meta(const std::string& key,
+seastar::future<>
+AlienStore::write_meta(const std::string& key,
                                          const std::string& value)
 {
+  ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
   logger().debug("{}", __func__);
   assert(tp);
   return seastar::with_gate(op_gate, [=, this] {
@@ -510,6 +532,7 @@ seastar::future<> AlienStore::write_meta(const std::string& key,
 seastar::future<std::tuple<int, std::string>>
 AlienStore::read_meta(const std::string& key)
 {
+  ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
   logger().debug("{}", __func__);
   assert(tp);
   return seastar::with_gate(op_gate, [this, key] {
@@ -533,6 +556,7 @@ AlienStore::read_meta(const std::string& key)
 
 uuid_d AlienStore::get_fsid() const
 {
+  ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
   logger().debug("{}", __func__);
   return store->get_fsid();
 }
@@ -551,13 +575,13 @@ seastar::future<store_statfs_t> AlienStore::stat() const
   });
 }
 
-unsigned AlienStore::get_max_attr_name_length() const
+unsigned AlienStore::AlienShardStore::get_max_attr_name_length() const
 {
   logger().info("{}", __func__);
   return 256;
 }
 
-seastar::future<struct stat> AlienStore::stat(
+seastar::future<struct stat> AlienStore::AlienShardStore::stat(
   CollectionRef ch,
   const ghobject_t& oid)
 {
@@ -571,8 +595,9 @@ seastar::future<struct stat> AlienStore::stat(
   });
 }
 
-auto AlienStore::omap_get_header(CollectionRef ch,
-                                 const ghobject_t& oid)
+auto AlienStore::AlienShardStore::omap_get_header(
+  CollectionRef ch,
+  const ghobject_t& oid)
   -> get_attr_errorator::future<ceph::bufferlist>
 {
   assert(tp);
@@ -594,7 +619,8 @@ auto AlienStore::omap_get_header(CollectionRef ch,
   });
 }
 
-AlienStore::read_errorator::future<std::map<uint64_t, uint64_t>> AlienStore::fiemap(
+AlienStore::AlienShardStore::read_errorator::future<std::map<uint64_t, uint64_t>>
+AlienStore::AlienShardStore::fiemap(
   CollectionRef ch,
   const ghobject_t& oid,
   uint64_t off,

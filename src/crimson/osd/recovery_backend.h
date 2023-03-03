@@ -95,7 +95,7 @@ public:
 protected:
   crimson::osd::PG& pg;
   crimson::osd::ShardServices& shard_services;
-  crimson::os::FuturizedStore* store;
+  crimson::os::FuturizedShardStore* store;
   crimson::os::CollectionRef coll;
   PGBackend* backend;
 

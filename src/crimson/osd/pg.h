@@ -55,7 +55,7 @@ namespace crimson::net {
 }
 
 namespace crimson::os {
-  class FuturizedStore;
+  class FuturizedShardStore;
 }
 
 namespace crimson::osd {
@@ -493,7 +493,7 @@ public:
     const PastIntervals& pim,
     ceph::os::Transaction &t);
 
-  seastar::future<> read_state(crimson::os::FuturizedStore* store);
+  seastar::future<> read_state(crimson::os::FuturizedShardStore* store);
 
   interruptible_future<> do_peering_event(
     PGPeeringEvent& evt, PeeringCtx &rctx);

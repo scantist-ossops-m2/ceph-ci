@@ -12,16 +12,16 @@ using std::string;
 using std::string_view;
 // prefix pgmeta_oid keys with _ so that PGLog::read_log_and_missing() can
 // easily skip them
-using crimson::os::FuturizedStore;
+using crimson::os::FuturizedShardStore;
 
-PGMeta::PGMeta(FuturizedStore& store, spg_t pgid)
+PGMeta::PGMeta(FuturizedShardStore& store, spg_t pgid)
   : store{store},
     pgid{pgid}
 {}
 
 namespace {
   template<typename T>
-  std::optional<T> find_value(const FuturizedStore::omap_values_t& values,
+  std::optional<T> find_value(const FuturizedShardStore::omap_values_t& values,
                               string_view key)
   {
     auto found = values.find(key);
@@ -57,7 +57,7 @@ seastar::future<epoch_t> PGMeta::get_epoch()
         return seastar::make_ready_future<epoch_t>(*epoch);
       }
     },
-    FuturizedStore::read_errorator::assert_all{
+    FuturizedShardStore::read_errorator::assert_all{
       "PGMeta::get_epoch: unable to read pgmeta"
     });
   });
@@ -104,7 +104,7 @@ seastar::future<std::tuple<pg_info_t, PastIntervals>> PGMeta::load()
     return seastar::make_ready_future<std::tuple<pg_info_t, PastIntervals>>(
       std::make_tuple(std::move(info), std::move(past_intervals)));
   },
-  FuturizedStore::read_errorator::assert_all{
+  FuturizedShardStore::read_errorator::assert_all{
     "PGMeta::load: unable to read pgmeta"
   });
 }

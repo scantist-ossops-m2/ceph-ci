@@ -20,13 +20,10 @@ FuturizedStore::create(const std::string& type,
     return seastar::make_ready_future<std::unique_ptr<FuturizedStore>>(
       std::make_unique<CyanStore>(data));
   } else if (type == "seastore") {
-    return crimson::os::seastore::make_seastore(
-      data, values
-    ).then([] (auto seastore) {
-      return seastar::make_ready_future<std::unique_ptr<FuturizedStore>>(
-	std::make_unique<ShardedStoreProxy<seastore::SeaStore>>(
-	  seastore.release()));
-    });
+    auto seastore =  crimson::os::seastore::make_seastore(
+      data, values);
+    return seastar::make_ready_future<std::unique_ptr<FuturizedStore>>(
+      seastore.release());
   } else {
     using crimson::os::AlienStore;
 #ifdef WITH_BLUESTORE

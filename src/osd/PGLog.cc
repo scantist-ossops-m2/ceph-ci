@@ -1074,8 +1074,8 @@ void PGLog::rebuild_missing_set_with_deletes(
 #ifdef WITH_SEASTAR
 
 namespace {
-  struct FuturizedStoreLogReader {
-    crimson::os::FuturizedStore &store;
+  struct FuturizedShardStoreLogReader {
+    crimson::os::FuturizedShardStore &store;
     const pg_info_t &info;
     PGLog::IndexedLog &log;
     std::set<std::string>* log_keys_debug = NULL;
@@ -1186,7 +1186,7 @@ namespace {
 }
 
 seastar::future<> PGLog::read_log_and_missing_crimson(
-  crimson::os::FuturizedStore &store,
+  crimson::os::FuturizedShardStore &store,
   crimson::os::CollectionRef ch,
   const pg_info_t &info,
   IndexedLog &log,
@@ -1198,16 +1198,16 @@ seastar::future<> PGLog::read_log_and_missing_crimson(
   ldpp_dout(dpp, 20) << "read_log_and_missing coll "
                      << ch->get_cid()
                      << " " << pgmeta_oid << dendl;
-  return seastar::do_with(FuturizedStoreLogReader{
+  return seastar::do_with(FuturizedShardStoreLogReader{
       store, info, log, log_keys_debug,
       missing, dpp},
-    [ch, pgmeta_oid](FuturizedStoreLogReader& reader) {
+    [ch, pgmeta_oid](FuturizedShardStoreLogReader& reader) {
     return reader.read(ch, pgmeta_oid);
   });
 }
 
 seastar::future<> PGLog::rebuild_missing_set_with_deletes_crimson(
-  crimson::os::FuturizedStore &store,
+  crimson::os::FuturizedShardStore &store,
   crimson::os::CollectionRef ch,
   const pg_info_t &info)
 {

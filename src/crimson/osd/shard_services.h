@@ -36,7 +36,7 @@ namespace crimson::mon {
 }
 
 namespace crimson::os {
-  class FuturizedStore;
+  class FuturizedShardStore;
 }
 
 class OSDMap;
@@ -65,7 +65,7 @@ class PerShardState {
 #define assert_core() ceph_assert(seastar::this_shard_id() == core);
 
   const int whoami;
-  crimson::os::FuturizedStore &store;
+  crimson::os::FuturizedShardStore &store;
   crimson::common::CephContext cct;
 
   PerfCounters *perf = nullptr;
@@ -348,7 +348,7 @@ public:
 
   FORWARD_TO_OSD_SINGLETON(send_to_osd)
 
-  crimson::os::FuturizedStore &get_store() {
+  crimson::os::FuturizedShardStore &get_store() {
     return local_state.store;
   }
 

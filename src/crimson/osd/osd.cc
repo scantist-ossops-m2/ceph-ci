@@ -354,15 +354,14 @@ seastar::future<> OSD::start()
 
   startup_time = ceph::mono_clock::now();
 
-  return pg_shard_manager.start(
+  return store.start().then([this] {
+    return pg_shard_manager.start(
     whoami, *cluster_msgr,
-    *public_msgr, *monc, *mgrc, store
-  ).then([this] {
+    *public_msgr, *monc, *mgrc, store);
+  }).then([this] {
     heartbeat.reset(new Heartbeat{
 	whoami, get_shard_services(),
 	*monc, *hb_front_msgr, *hb_back_msgr});
-    return store.start();
-  }).then([this] {
     return store.mount().handle_error(
       crimson::stateful_ec::handle([] (const auto& ec) {
         logger().error("error mounting object store in {}: ({}) {}",

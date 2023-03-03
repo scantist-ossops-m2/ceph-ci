@@ -8,16 +8,16 @@
 #include "osd/osd_types.h"
 
 namespace crimson::os {
-  class FuturizedStore;
+  class FuturizedShardStore;
 }
 
 /// PG related metadata
 class PGMeta
 {
-  crimson::os::FuturizedStore& store;
+  crimson::os::FuturizedShardStore& store;
   const spg_t pgid;
 public:
-  PGMeta(crimson::os::FuturizedStore& store, spg_t pgid);
+  PGMeta(crimson::os::FuturizedShardStore& store, spg_t pgid);
   seastar::future<epoch_t> get_epoch();
   seastar::future<std::tuple<pg_info_t, PastIntervals>> load();
 };
