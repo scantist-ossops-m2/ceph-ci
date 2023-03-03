@@ -493,7 +493,7 @@ public:
     const PastIntervals& pim,
     ceph::os::Transaction &t);
 
-  seastar::future<> read_state(crimson::os::FuturizedStore* store);
+  seastar::future<> read_state(crimson::os::FuturizedStore::Shard* store);
 
   interruptible_future<> do_peering_event(
     PGPeeringEvent& evt, PeeringCtx &rctx);
