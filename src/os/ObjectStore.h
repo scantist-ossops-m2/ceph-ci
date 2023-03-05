@@ -49,6 +49,58 @@ namespace ceph {
 
 class Logger;
 class ContextQueue;
+class GlobalSnapMapper;
+typedef std::unordered_map<snapid_t, struct hobjs_t> snap_to_objs_map_t;
+struct hobjs_t{
+  struct hobj_compare {
+    bool operator() (const hobject_t & a, const hobject_t & b) const {
+      if (a.pool < b.pool) {
+	return true;
+      }
+      if (a.pool > b.pool) {
+	return false;
+      }
+
+      if (a.get_bitwise_key() < b.get_bitwise_key()) {
+	return true;
+      }
+      if (a.get_bitwise_key() > b.get_bitwise_key()) {
+	return false;
+      }
+
+      if (a.nspace < b.nspace) {
+	return true;
+      }
+      if (a.nspace > b.nspace) {
+	return false;
+      }
+#if 0
+      if (!(get_key().empty() && rhs.get_key().empty())) {
+	cmp = get_effective_key() <=> rhs.get_effective_key();
+	if (cmp != 0) return cmp;
+      }
+#endif
+
+      if (a.get_key() < b.get_key()) {
+	return true;
+      }
+      if (a.get_key() > b.get_key()) {
+	return false;
+      }
+
+      return (a.oid < b.oid);
+    }
+  };
+
+  mutable std::mutex  lock;
+  std::set<hobject_t, hobj_compare> set;
+
+  // add ordering function for the hobjs_t
+  // order by: shard(uint8), pool(uint64), then hash(uint32) and finally the oid (string)
+  // generate key = shard + pool + hash = 0 and oid=""
+  // ask for first bigger than key
+};
+
 
 static inline void encode(const std::map<std::string,ceph::buffer::ptr> *attrset, ceph::buffer::list &bl) {
   using ceph::encode;
@@ -290,6 +342,13 @@ public:
   virtual bool allows_journal() = 0; //< allows a journal
   virtual void prepare_for_fast_shutdown() {}
   virtual bool has_null_manager() const { return false; }
+  //virtual bool has_null_manager() { return false; }
+  virtual int  store_snap_maps(const GlobalSnapMapper & gsnap_mapper, const char *caller) {return 0;}
+  virtual int  restore_snap_mapper(GlobalSnapMapper & sm, const char *caller) { return 0;}
+  virtual void foreach_old_snap_mapper_obj(std::function<void(const bufferlist &, const char *shard)> cb) {};
+  virtual void remove_old_snap_mapper_from_db() {};
+  virtual bool new_snap_map_mode() { return false;}
+
   // return store min allocation size, if applicable
   virtual uint64_t get_min_alloc_size() const {
     return 0;

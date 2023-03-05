@@ -15,18 +15,20 @@
 #ifndef CEPH_OBJECTSTORE_TOOL_H_
 #define CEPH_OBJECTSTORE_TOOL_H_
 
+class GlobalSnapMapper;
+
 #include "RadosDump.h"
 
 class ObjectStoreTool : public RadosDump
 {
   public:
-    ObjectStoreTool(int file_fd, bool dry_run)
-      : RadosDump(file_fd, dry_run)
+  ObjectStoreTool(int file_fd, bool dry_run)
+    : RadosDump(file_fd, dry_run)
     {}
 
     int dump_export(Formatter *formatter, const std::string &dump_data_dir);
     int do_import(ObjectStore *store, OSDSuperblock& sb, bool force,
-		  std::string pgidstr);
+		  std::string pgidstr, class GlobalSnapMapper *gsnap_mapper);
     int do_export(CephContext *cct, ObjectStore *fs, coll_t coll, spg_t pgid,
           pg_info_t &info, epoch_t map_epoch, __u8 struct_ver,
           const OSDSuperblock& superblock,
@@ -34,11 +36,14 @@ class ObjectStoreTool : public RadosDump
     int dump_object(Formatter *formatter, bufferlist &bl,
                     const std::string &dump_data_dir = "");
     int get_object(
-      ObjectStore *store, OSDriver& driver, SnapMapper& mapper, coll_t coll,
+      ObjectStore *store, PGSnapMapper& mapper, coll_t coll,
       bufferlist &bl, OSDMap &curmap, bool *skipped_objects);
     int export_file(
         ObjectStore *store, coll_t cid, ghobject_t &obj);
     int export_files(ObjectStore *store, coll_t coll);
+
+private:
+
 };
 
 #endif // CEPH_OBJECSTORE_TOOL_H_

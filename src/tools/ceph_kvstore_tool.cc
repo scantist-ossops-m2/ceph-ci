@@ -149,10 +149,9 @@ int main(int argc, const char *argv[])
     }
     string prefix(url_unescape(argv[4]));
     string key(url_unescape(argv[5]));
-
+    std::cout << "(" << url_escape(prefix) << ", " << url_escape(key) << ")";
     bool exists = false;
     bufferlist bl = st.get(prefix, key, exists);
-    std::cout << "(" << url_escape(prefix) << ", " << url_escape(key) << ")";
     if (!exists) {
       std::cout << " does not exist" << std::endl;
       return 1;

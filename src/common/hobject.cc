@@ -31,7 +31,16 @@ static void append_escaped(const string &in, string *out)
     }
   }
 }
-
+//
+// Generate up-to 8 prefix strings each starting with a 16Byte @pool
+//    followed by 8Byte permutation of the mask with a separting '.'
+// If @bits count is less than 32 bits we will trim all upper bits
+// We will then round the @mask to the next full nibble
+// adding up-to 8 permuation of bits needed to complete to a full nibble
+//  * when bits is a full nibble                     -> no prefeix is needed
+//  * when bits is one   bit  short to a full nibble -> 2 prefixes will be added 0/1
+//  * when bits is two   bits short to a full nibble -> 4 prefixes will be added 00/01/10/11
+//  * when bits is three bits short to a full nibble -> 8 prefixes will be added 000/001/010/011/100/101/110/111
 set<string> hobject_t::get_prefixes(
   uint32_t bits,
   uint32_t mask,

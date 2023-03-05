@@ -100,15 +100,7 @@ function create_scenario() {
     JSON="$(ceph-objectstore-tool --data-path $dir/${osd} --op list obj5 | grep \"snapid\":1)"
     OBJ5SAVE="$JSON"
     # Starts with a snapmap
-    ceph-kvstore-tool bluestore-kv $dir/${osd} list 2> /dev/null > $dir/drk.log
-    grep SNA_ $dir/drk.log
-    grep "^[pm].*SNA_.*[.]1[.]obj5[.][.]$" $dir/drk.log || return 1
     ceph-objectstore-tool --data-path $dir/${osd} --rmtype nosnapmap "$JSON" remove || return 1
-    # Check that snapmap is stil there
-    ceph-kvstore-tool bluestore-kv $dir/${osd} list 2> /dev/null > $dir/drk.log
-    grep SNA_ $dir/drk.log
-    grep "^[pm].*SNA_.*[.]1[.]obj5[.][.]$" $dir/drk.log || return 1
-    rm -f $dir/drk.log
 
     JSON="$(ceph-objectstore-tool --data-path $dir/${osd} --op list obj5 | grep \"snapid\":4)"
     dd if=/dev/urandom of=$TESTDATA bs=256 count=18
@@ -122,16 +114,8 @@ function create_scenario() {
     ceph-objectstore-tool --data-path $dir/${osd} "$JSON" remove || return 1
 
     # Starts with a snapmap
-    ceph-kvstore-tool bluestore-kv $dir/${osd} list 2> /dev/null > $dir/drk.log
-    grep SNA_ $dir/drk.log
-    grep "^[pm].*SNA_.*[.]7[.]obj16[.][.]$" $dir/drk.log || return 1
     JSON="$(ceph-objectstore-tool --data-path $dir/${osd} --op list obj16 | grep \"snapid\":7)"
     ceph-objectstore-tool --data-path $dir/${osd} --rmtype snapmap "$JSON" remove || return 1
-    # Check that snapmap is now removed
-    ceph-kvstore-tool bluestore-kv $dir/${osd} list 2> /dev/null > $dir/drk.log
-    grep SNA_ $dir/drk.log
-    ! grep "^[pm].*SNA_.*[.]7[.]obj16[.][.]$" $dir/drk.log || return 1
-    rm -f $dir/drk.log
 
     JSON="$(ceph-objectstore-tool --data-path $dir/${osd} --head --op list obj2)"
     ceph-objectstore-tool --data-path $dir/${osd} "$JSON" rm-attr snapset || return 1

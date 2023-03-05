@@ -57,10 +57,13 @@
 #include "common/zipkin_trace.h"
 #endif
 
-class Allocator;
-class FreelistManager;
-class BlueStoreRepairer;
-class SimpleBitmap;
+class  Allocator;
+class  SnapMapperShard;
+class  FreelistManager;
+class  BlueStoreRepairer;
+class  SimpleBitmap;
+class  GlobalSnapMapper;
+struct SnapMapperRecovery;
 //#define DEBUG_CACHE
 //#define DEBUG_DEFERRED
 
@@ -220,6 +223,7 @@ enum {
 #define META_POOL_ID ((uint64_t)-1ull)
 using bptr_c_it_t = buffer::ptr::const_iterator;
 
+struct snap_listing_entry_t;
 class BlueStore : public ObjectStore,
 		  public md_config_obs_t {
   // -----------------------------------------------------
@@ -2198,6 +2202,13 @@ private:
     bool apply_defer();
   };
 
+  bool has_null_fm();
+
+  bool new_snap_map_mode();
+  int  store_snap_maps    (const GlobalSnapMapper & gsnap_mapper, const char *caller);
+  int  restore_snap_mapper(GlobalSnapMapper & sm, const char *caller);
+  void foreach_old_snap_mapper_obj(std::function<void(const bufferlist &, const char *shard)> cb);
+  void remove_old_snap_mapper_from_db();
   // --------------------------------------------------------
   // members
 private:
@@ -2663,7 +2674,7 @@ private:
   void _close_fm();
   int _write_out_fm_meta(uint64_t target_size);
   int _create_alloc();
-  int _init_alloc(std::map<uint64_t, uint64_t> *zone_adjustments);
+  int _init_alloc(std::map<uint64_t, uint64_t> *zone_adjustments, struct SnapMapperRecovery &);
   void _post_init_alloc(const std::map<uint64_t, uint64_t>& zone_adjustments);
   void _close_alloc();
   int _open_collections();
@@ -3730,7 +3741,7 @@ public:
   int  push_allocation_to_rocksdb();
   int  read_allocation_from_drive_for_bluestore_tool();
 #endif
-  void set_allocation_in_simple_bmap(SimpleBitmap* sbmap, uint64_t offset, uint64_t length);
+  //void set_allocation_in_simple_bmap(SimpleBitmap* sbmap, uint64_t offset, uint64_t length);
 
 private:
   struct  read_alloc_stats_t {
@@ -3818,13 +3829,23 @@ private:
 
   int  copy_allocator(Allocator* src_alloc, Allocator *dest_alloc, uint64_t* p_num_entries);
   int  store_allocator(Allocator* allocator);
+  //int  __restore_snap_maps(const std::vector<snap_listing_entry_t> &sdir);
+  int  restore_snap_map_listing_file(std::vector<snap_listing_entry_t> &sdir, BlueFS::FileReader *p_temp_handle);
+  int  store_snap_map_listing_file(const std::vector<snap_listing_entry_t> &sdir);
+  int  restore_from_snap_maps_file(GlobalSnapMapper &sm, const snap_listing_entry_t *entry);
+
   int  invalidate_allocation_file_on_bluefs();
   int  __restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
   int  restore_allocator(Allocator* allocator, uint64_t *num, uint64_t *bytes);
-  int  read_allocation_from_drive_on_startup();
-  int  reconstruct_allocations(SimpleBitmap *smbmp, read_alloc_stats_t &stats);
-  int  read_allocation_from_onodes(SimpleBitmap *smbmp, read_alloc_stats_t& stats);
+  int  read_allocation_from_drive_on_startup(struct SnapMapperRecovery &);
+  int  reconstruct_allocations(SimpleBitmap *smbmp, read_alloc_stats_t &stats, struct SnapMapperRecovery &);
+  int  read_allocation_from_onodes(SimpleBitmap *smbmp, read_alloc_stats_t& stats, struct SnapMapperRecovery &);
   int  commit_freelist_type();
+
+  void read_allocation_from_single_onode(SimpleBitmap *smbmp, BlueStore::OnodeRef& onode_ref,
+					 GlobalSnapMapper*, shard_id_t shard_id, read_alloc_stats_t& stats);
+  void set_allocation_in_simple_bmap(SimpleBitmap* sbmap, uint64_t offset, uint64_t length);
+
   int  commit_to_null_manager();
   int  commit_to_real_manager();
   int  db_cleanup(int ret);
@@ -3833,6 +3854,14 @@ private:
   Allocator* clone_allocator_without_bluefs(Allocator *src_allocator);
   Allocator* initialize_allocator_from_freelist(FreelistManager *real_fm);
   void copy_allocator_content_to_fm(Allocator *allocator, FreelistManager *real_fm);
+  uint32_t flush_coid_to_file(BlueFS::FileWriter *p_handle,
+			      bufferlist         &bl,
+			      uint32_t            coid_count,
+			      uint32_t            crc32);
+  int  store_snap_maps_single_shard(std::vector<snap_listing_entry_t> &sdir,
+				    const snap_to_objs_map_t          *snap_to_objs,
+				    SnapMapperShard                   *shard);
+  //int  __remove_snap_maps(const std::vector<snap_listing_entry_t> &sdir, spg_t pgid);
 
 
   void _fsck_check_object_omap(FSCKDepth depth,

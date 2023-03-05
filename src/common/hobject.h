@@ -115,6 +115,10 @@ public:
     build_hash_cache();
   }
 
+  hobject_t(snapid_t snap, uint32_t hash, bool max, int64_t pool) : snap(snap), hash(hash), max(max), pool(pool) {
+    build_hash_cache();
+  }
+
   hobject_t(const hobject_t &rhs) = default;
   hobject_t(hobject_t &&rhs) = default;
   hobject_t(hobject_t_max &&singleton) : hobject_t() {
@@ -259,10 +263,16 @@ public:
     ceph_assert(!max);
     return hash_reverse_bits;
   }
+#if 0
   uint64_t get_bitwise_key() const {
     return max ? 0x100000000ull : hash_reverse_bits;
   }
-
+#else
+  // changed the order to help branch prediction
+  uint64_t get_bitwise_key() const {
+    return !max ? hash_reverse_bits : 0x100000000ull;
+  }
+#endif
   // please remember to update set_bitwise_key_u32() also
   // once you change build_hash_cache()
   void build_hash_cache() {

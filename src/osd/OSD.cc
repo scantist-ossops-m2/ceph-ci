@@ -45,6 +45,7 @@
 
 #include "OSD.h"
 #include "OSDMap.h"
+#include "GlobalSnapMapper.h"
 #include "Watch.h"
 #include "osdc/Objecter.h"
 
@@ -195,7 +196,6 @@ using TOPNSPC::common::cmd_getval_or;
 static ostream& _prefix(std::ostream* _dout, int whoami, epoch_t epoch) {
   return *_dout << "osd." << whoami << " " << epoch << " ";
 }
-
 
 //Initial features in new superblock.
 //Features here are also automatically upgraded
@@ -2315,6 +2315,7 @@ OSD::OSD(CephContext *cct_,
   tick_timer(cct, osd_lock),
   tick_timer_without_osd_lock(cct, tick_timer_lock),
   gss_ktfile_client(cct->_conf.get_val<std::string>("gss_ktab_client_file")),
+  gsnap_mapper(nullptr),
   cluster_messenger(internal_messenger),
   client_messenger(external_messenger),
   objecter_messenger(osdc_messenger),
@@ -3120,12 +3121,6 @@ will start to track new ops received afterwards.";
     store->dump_cache_stats(f);
     f->close_section();
   }
-
-  else if (prefix == "scrub_purged_snaps") {
-    lock_guard l(osd_lock);
-    scrub_purged_snaps();
-  }
-
   else if (prefix == "dump_osd_network") {
     lock_guard l(osd_lock);
     int64_t value = 0;
@@ -3588,6 +3583,47 @@ float OSD::get_osd_snap_trim_sleep()
   return cct->_conf.get_val<double>("osd_snap_trim_sleep_hdd");
 }
 
+// convert SnapMapper objects from old-format to the new mode
+void OSD::convert_old_snap_mapper_objects(OSDMapRef & osdmap)
+{
+  dout(1) << "::GBH::SNAPMAP::convert_old_snap_mapper_objects" << dendl;
+  uint64_t obj_converted_count = 0;
+  auto convert_old_snap_obj = [&](const bufferlist &bl, const char *shard_str) {
+    GlobalSnapMapper::object_snaps objsnap;
+    try {
+      decode(objsnap, bl);
+    }
+    catch (ceph::buffer::error& e) {
+      derr << "GBH::SNAPMAP::[" << obj_converted_count << "]failed object_snaps decode" << dendl;
+      return;
+    }
+
+    const hobject_t          &hoid  = objsnap.oid;
+    const std::set<snapid_t> &snaps = objsnap.snaps;
+    shard_id_t shard = shard_id_t::NO_SHARD;
+    if (shard_str[0] == '.') {
+      int sh = 0;
+      int r = sscanf(shard_str+1, "%x", &sh);
+      if (r == 1) {
+	shard = shard_id_t(sh);
+      }
+    }
+
+    std::vector snap_vec(snaps.begin(), snaps.end());
+    gsnap_mapper->add_oid(shard, hoid, snap_vec);
+  };
+
+  utime_t  start_time = ceph_clock_now();
+  store->foreach_old_snap_mapper_obj(convert_old_snap_obj);
+
+  //Remove the full perfeix from RocksDB
+  store->remove_old_snap_mapper_from_db();
+
+  utime_t end_time = ceph_clock_now();
+  dout(1) << "::GBH::SNAPMAP::" << obj_converted_count << " Old SnapMapper Objs were converted; elapsed time="
+	  << end_time - start_time << " seconds" << dendl;
+}
+
 int OSD::init()
 {
   OSDMapRef osdmap;
@@ -3747,17 +3783,9 @@ int OSD::init()
   initial = get_osd_initial_compat_set();
   diff = superblock.compat_features.unsupported(initial);
   if (superblock.compat_features.merge(initial)) {
-    // Are we adding SNAPMAPPER2?
-    if (diff.incompat.contains(CEPH_OSD_FEATURE_INCOMPAT_SNAPMAPPER2)) {
-      dout(1) << __func__ << " upgrade snap_mapper (first start as octopus)"
-	      << dendl;
-      auto ch = service.meta_ch;
-      auto hoid = make_snapmapper_oid();
-      unsigned max = cct->_conf->osd_target_transaction_size;
-      r = SnapMapper::convert_legacy(cct, store.get(), ch, hoid, max);
-      if (r < 0)
-	goto out;
-    }
+    // Legacy Snaps were removed in Octopus so can't be upgrading
+    // from a code with legacy snaps
+    dout(10) << __func__ << ":: SnapMapper::convert_legacy() is disabled by new SNAPMAPPER" << dendl;
     // We need to persist the new compat_set before we
     // do anything else
     dout(5) << "Upgrading superblock adding: " << diff << dendl;
@@ -3782,15 +3810,6 @@ int OSD::init()
     if (r < 0)
       goto out;
   }
-  if (!store->exists(service.meta_ch, OSD::make_purged_snaps_oid())) {
-    dout(10) << "init creating/touching purged_snaps object" << dendl;
-    ObjectStore::Transaction t;
-    t.touch(coll_t::meta(), OSD::make_purged_snaps_oid());
-    r = store->queue_transaction(service.meta_ch, std::move(t));
-    if (r < 0)
-      goto out;
-  }
-
   if (cct->_conf->osd_open_classes_on_start) {
     int r = ClassHandler::get_instance().open_all_classes();
     if (r)
@@ -3812,9 +3831,26 @@ int OSD::init()
     shard->shard_osdmap = osdmap;
   }
 
+  gsnap_mapper = new GlobalSnapMapper(cct);
+  ceph_assert(gsnap_mapper != nullptr);
+  store->restore_snap_mapper(*gsnap_mapper, "OSD::init()");
+  //gsnap_mapper->print_snaps(__func__);
+
   // load up pgs (as they previously existed)
   load_pgs();
 
+  if (!store->new_snap_map_mode()) {
+    // skip conversion step if we already moved to new-snap--mode
+    // this will also stop conversion when an upgrade happens after
+    //   recovery (where we already built the new tables)
+
+    // TBD:
+    // we need to maintain the old DB until after we finish PGLog recovery as we
+    // might need data stored in the Snaps Objects for transaction which failed in the middle
+    // we will still need to delete the old tables after PGLog recovery is done
+
+    convert_old_snap_mapper_objects(osdmap);
+  }
   dout(2) << "superblock: I am osd." << superblock.whoami << dendl;
 
   if (cct->_conf.get_val<bool>("osd_compact_on_start")) {
@@ -4300,11 +4336,6 @@ void OSD::final_init()
     "Get OSD caches statistics");
   ceph_assert(r == 0);
   r = admin_socket->register_command(
-    "scrub_purged_snaps",
-    asok_hook,
-    "Scrub purged_snaps vs snapmapper index");
-  ceph_assert(r == 0);
-  r = admin_socket->register_command(
     "scrubdebug "						\
     "name=pgid,type=CephPgid "	                                \
     "name=cmd,type=CephChoices,strings=block|unblock|set|unset " \
@@ -4416,10 +4447,18 @@ PerfCounters* OSD::create_recoverystate_perf()
   return recoverystate_perf;
 }
 
+void OSD::store_snap_maps(const char *caller)
+{
+  // GBH:: hold a ref to SnapMapper in the OSD instead of search PGs
+  dout(1) << "GBH::SNAPMAP::" <<__func__ << "::" << caller << "::calling store->store_snap_maps()" << dendl;
+  //gsnap_mapper->print_snaps(__func__);
+  store->store_snap_maps(*gsnap_mapper, caller);
+}
+
 int OSD::shutdown()
 {
   // vstart overwrites osd_fast_shutdown value in the conf file -> force the value here!
-  //cct->_conf->osd_fast_shutdown = true;
+  cct->_conf->osd_fast_shutdown = true;
 
   dout(0) << "Fast Shutdown: - cct->_conf->osd_fast_shutdown = "
 	  << cct->_conf->osd_fast_shutdown
@@ -4432,7 +4471,7 @@ int OSD::shutdown()
     if (cct->_conf->osd_fast_shutdown_notify_mon)
       service.prepare_to_stop();
 
-    // There is no state we need to keep wehn running in NULL-FM moode
+    // There is no state we need to keep when running in NULL-FM moode
     if (!store->has_null_manager()) {
       cct->_log->flush();
       _exit(0);
@@ -4491,8 +4530,9 @@ int OSD::shutdown()
 
     utime_t  start_time_umount = ceph_clock_now();
     store->prepare_for_fast_shutdown();
+
     std::lock_guard lock(osd_lock);
-    // TBD: assert in allocator that nothing is being add
+    store_snap_maps("Fast Shutdown");
     store->umount();
 
     utime_t end_time = ceph_clock_now();
@@ -4515,6 +4555,8 @@ int OSD::shutdown()
   // from racing with on_shutdown and potentially entering the pg after.
   op_shardedwq.drain();
 
+  //store_snap_maps("Full Shutdown");
+  
   // Shutdown PGs
   {
     vector<PGRef> pgs;
@@ -4648,6 +4690,8 @@ int OSD::shutdown()
   service.shutdown();
 
   std::lock_guard lock(osd_lock);
+
+  store_snap_maps("Full Shutdown");
   store->umount();
   store.reset();
   dout(10) << "Store synced" << dendl;
@@ -4909,18 +4953,40 @@ void OSD::clear_temp_objects()
   }
 }
 
-void OSD::recursive_remove_collection(CephContext* cct,
-				      ObjectStore *store, spg_t pgid,
-				      coll_t tmp)
+uint32_t OSD::get_pg_num_from_history(pool_pg_num_history_t & pg_num_history, int64_t pool)
 {
-  OSDriver driver(
-    store,
-    coll_t(),
-    make_snapmapper_oid());
+  std::map<epoch_t,uint32_t> epoch_to_pgnum = pg_num_history.pg_nums[pool];
+  // epochs are sorted so the last one has the highest value
+  auto       itr        = epoch_to_pgnum.rbegin();
+  // GBH::TBD: what should we do when no epoch exists for pool???
+  ceph_assert(itr != epoch_to_pgnum.crend());
+  uint32_t   pg_num     = itr->second;
+
+  return pg_num;
+}
+
+void OSD::recursive_remove_collection(CephContext* cct,
+				      ObjectStore *store,
+				      spg_t pgid,
+				      coll_t tmp,
+				      pool_pg_num_history_t & pg_num_history,
+				      GlobalSnapMapper      * gsnap_mapper)
+{
+  // PGs are offline so we don't have any active SnapMapper
+  // Simply remove the SnapMapper files associated with this pgid
+  uint32_t   pg_num     = get_pg_num_from_history(pg_num_history, pgid.pool());
+  int64_t    pool       = pgid.pool();
+  uint32_t   split_bits = pgid.get_split_bits(pg_num);
+  uint32_t   match      = pgid.ps();
+
+  // SnapMapper is already loaded, so simply remove objects in memory
+  uint32_t hash_prefix = (match & ~((uint32_t)(~0) << split_bits));
+  uint32_t hash_prefix_reversed = hobject_t::_reverse_bits(hash_prefix);
+  gsnap_mapper->delete_objs_from_pg(SnapMapperShard(pgid.shard), pool, pgid, hash_prefix,
+				    hash_prefix_reversed, split_bits, match, UINT64_MAX);
 
   ObjectStore::CollectionHandle ch = store->open_collection(tmp);
   ObjectStore::Transaction t;
-  SnapMapper mapper(cct, &driver, 0, 0, 0, pgid.shard);
 
   ghobject_t next;
   int max = cct->_conf->osd_target_transaction_size;
@@ -4929,21 +4995,20 @@ void OSD::recursive_remove_collection(CephContext* cct,
   while (true) {
     objects.clear();
     store->collection_list(ch, next, ghobject_t::get_max(),
-      max, &objects, &next);
+			   max, &objects, &next);
     generic_dout(10) << __func__ << " " << objects << dendl;
-    if (objects.empty())
+    if (objects.empty()) {
       break;
+    }
+
     for (auto& p: objects) {
-      OSDriver::OSTransaction _t(driver.get_transaction(&t));
-      int r = mapper.remove_oid(p.hobj, &_t);
-      if (r != 0 && r != -ENOENT)
-        ceph_abort();
       t.remove(tmp, p);
     }
     int r = store->queue_transaction(ch, std::move(t));
     ceph_assert(r == 0);
     t = ObjectStore::Transaction();
   }
+
   t.remove_collection(tmp);
   int r = store->queue_transaction(ch, std::move(t));
   ceph_assert(r == 0);
@@ -4995,9 +5060,10 @@ PG* OSD::_make_pg(
   }
   PGPool pool(createmap, pgid.pool(), pi, name);
   PG *pg;
+  ceph_assert(gsnap_mapper);
   if (pi.type == pg_pool_t::TYPE_REPLICATED ||
       pi.type == pg_pool_t::TYPE_ERASURE)
-    pg = new PrimaryLogPG(&service, createmap, pool, ec_profile, pgid);
+    pg = new PrimaryLogPG(&service, createmap, pool, ec_profile, pgid, gsnap_mapper);
   else
     ceph_abort();
   return pg;
@@ -5130,7 +5196,7 @@ void OSD::load_pgs()
     }
     dout(20) << __func__ << " pg_num_history " << pg_num_history << dendl;
   }
-
+  
   vector<coll_t> ls;
   int r = store->list_collections(ls);
   if (r < 0) {
@@ -5146,7 +5212,7 @@ void OSD::load_pgs()
        (it->is_pg(&pgid) && PG::_has_removal_flag(store.get(), pgid))) {
       dout(10) << "load_pgs " << *it
 	       << " removing, legacy or flagged for removal pg" << dendl;
-      recursive_remove_collection(cct, store.get(), pgid, *it);
+      recursive_remove_collection(cct, store.get(), pgid, *it, pg_num_history, gsnap_mapper);
       continue;
     }
 
@@ -5187,12 +5253,11 @@ void OSD::load_pgs()
       pg = _make_pg(get_osdmap(), pgid);
     }
     if (!pg) {
-      recursive_remove_collection(cct, store.get(), pgid, *it);
+      recursive_remove_collection(cct, store.get(), pgid, *it, pg_num_history, gsnap_mapper);
       continue;
     }
 
     // there can be no waiters here, so we don't call _wake_pg_slot
-
     pg->lock();
     pg->ch = store->open_collection(pg->coll);
 
@@ -5203,7 +5268,7 @@ void OSD::load_pgs()
       dout(10) << "load_pgs " << *it << " deleting dne" << dendl;
       pg->ch = nullptr;
       pg->unlock();
-      recursive_remove_collection(cct, store.get(), pgid, *it);
+      recursive_remove_collection(cct, store.get(), pgid, *it, pg_num_history, gsnap_mapper);
       continue;
     }
     {
@@ -6206,30 +6271,6 @@ void OSD::tick()
       osdmap_subscribe(get_osdmap_epoch() + 1, false);
     }
   }
-
-  // scrub purged_snaps every deep scrub interval
-  {
-    const utime_t last = superblock.last_purged_snaps_scrub;
-    utime_t next = last;
-    next += cct->_conf->osd_scrub_min_interval;
-    std::mt19937 rng;
-    // use a seed that is stable for each scrub interval, but varies
-    // by OSD to avoid any herds.
-    rng.seed(whoami + superblock.last_purged_snaps_scrub.sec());
-    double r = (rng() % 1024) / 1024.0;
-    next +=
-      cct->_conf->osd_scrub_min_interval *
-      cct->_conf->osd_scrub_interval_randomize_ratio * r;
-    if (next < ceph_clock_now()) {
-      dout(20) << __func__ << " last_purged_snaps_scrub " << last
-	       << " next " << next << " ... now" << dendl;
-      scrub_purged_snaps();
-    } else {
-      dout(20) << __func__ << " last_purged_snaps_scrub " << last
-	       << " next " << next << dendl;
-    }
-  }
-
   tick_timer.add_event_after(get_tick_interval(), new C_Tick(this));
 }
 
@@ -6662,8 +6703,6 @@ void OSD::_preboot(epoch_t oldest, epoch_t newest)
     std::lock_guard l(heartbeat_lock);
     heartbeat();
   }
-
-  const auto& monmap = monc->monmap;
   const auto osdmap = get_osdmap();
   // if our map within recent history, try to add ourselves to the osdmap.
   if (osdmap->get_epoch() == 0) {
@@ -6683,12 +6722,8 @@ void OSD::_preboot(epoch_t oldest, epoch_t newest)
   } else if (service.need_fullness_update()) {
     derr << "osdmap fullness state needs update" << dendl;
     send_full_update();
-  } else if (monmap.min_mon_release >= ceph_release_t::octopus &&
-	     superblock.purged_snaps_last < superblock.current_epoch) {
-    dout(10) << __func__ << " purged_snaps_last " << superblock.purged_snaps_last
-	     << " < newest_map " << superblock.current_epoch << dendl;
-    _get_purged_snaps();
-  } else if (osdmap->get_epoch() >= oldest - 1 &&
+  }
+  else if (osdmap->get_epoch() >= oldest - 1 &&
 	     osdmap->get_epoch() + cct->_conf->osd_map_message_max > newest) {
 
     // wait for pgs to fully catch up in a different thread, since
@@ -6719,49 +6754,6 @@ void OSD::_preboot(epoch_t oldest, epoch_t newest)
     osdmap_subscribe(osdmap->get_epoch() + 1, false);
   else
     osdmap_subscribe(oldest - 1, true);
-}
-
-void OSD::_get_purged_snaps()
-{
-  // NOTE: this is a naive, stateless implementaiton.  it may send multiple
-  // overlapping requests to the mon, which will be somewhat inefficient, but
-  // it should be reliable.
-  dout(10) << __func__ << " purged_snaps_last " << superblock.purged_snaps_last
-	   << ", newest_map " << superblock.current_epoch << dendl;
-  MMonGetPurgedSnaps *m = new MMonGetPurgedSnaps(
-    superblock.purged_snaps_last + 1,
-    superblock.current_epoch + 1);
-  monc->send_mon_message(m);
-}
-
-void OSD::handle_get_purged_snaps_reply(MMonGetPurgedSnapsReply *m)
-{
-  dout(10) << __func__ << " " << *m << dendl;
-  ObjectStore::Transaction t;
-  if (!is_preboot() ||
-      m->last < superblock.purged_snaps_last) {
-    goto out;
-  } else {
-    OSDriver osdriver{store.get(), service.meta_ch, make_purged_snaps_oid()};
-    SnapMapper::record_purged_snaps(
-      cct,
-      osdriver,
-      osdriver.get_transaction(&t),
-      m->purged_snaps);
-  }
-  superblock.purged_snaps_last = m->last;
-  write_superblock(cct, superblock, t);
-  store->queue_transaction(
-    service.meta_ch,
-    std::move(t));
-  service.publish_superblock(superblock);
-  if (m->last < superblock.current_epoch) {
-    _get_purged_snaps();
-  } else {
-    start_boot();
-  }
-out:
-  m->put();
 }
 
 void OSD::send_full_update()
@@ -7186,63 +7178,6 @@ namespace {
   };
 }
 
-void OSD::scrub_purged_snaps()
-{
-  dout(10) << __func__ << dendl;
-  ceph_assert(ceph_mutex_is_locked(osd_lock));
-  SnapMapper::Scrubber s(cct, store.get(), service.meta_ch,
-			 make_snapmapper_oid(),
-			 make_purged_snaps_oid());
-  clog->debug() << "purged_snaps scrub starts";
-  osd_lock.unlock();
-  s.run();
-  if (s.stray.size()) {
-    clog->debug() << "purged_snaps scrub found " << s.stray.size() << " strays";
-  } else {
-    clog->debug() << "purged_snaps scrub ok";
-  }
-  set<pair<spg_t,snapid_t>> queued;
-  for (auto& [pool, snap, hash, shard] : s.stray) {
-    const pg_pool_t *pi = get_osdmap()->get_pg_pool(pool);
-    if (!pi) {
-      dout(20) << __func__ << " pool " << pool << " dne" << dendl;
-      continue;
-    }
-    pg_t pgid(pi->raw_hash_to_pg(hash), pool);
-    spg_t spgid(pgid, shard);
-    pair<spg_t,snapid_t> p(spgid, snap);
-    if (queued.count(p)) {
-      dout(20) << __func__ << " pg " << spgid << " snap " << snap
-	       << " already queued" << dendl;
-      continue;
-    }
-    PGRef pg = lookup_lock_pg(spgid);
-    if (!pg) {
-      dout(20) << __func__ << " pg " << spgid << " not found" << dendl;
-      continue;
-    }
-    queued.insert(p);
-    dout(10) << __func__ << " requeue pg " << spgid << " " << pg << " snap "
-	     << snap << dendl;
-    pg->queue_snap_retrim(snap);
-    pg->unlock();
-  }
-  osd_lock.lock();
-  if (is_stopping()) {
-    return;
-  }
-  dout(10) << __func__ << " done queueing pgs, updating superblock" << dendl;
-  ObjectStore::Transaction t;
-  superblock.last_purged_snaps_scrub = ceph_clock_now();
-  write_superblock(cct, superblock, t);
-  int tr = store->queue_transaction(service.meta_ch, std::move(t), nullptr);
-  ceph_assert(tr == 0);
-  if (is_active()) {
-    send_beacon(ceph::coarse_mono_clock::now());
-  }
-  dout(10) << __func__ << " done" << dendl;
-}
-
 void OSD::probe_smart(const string& only_devid, ostream& ss)
 {
   set<string> devnames;
@@ -7562,7 +7497,8 @@ void OSD::_dispatch(Message *m)
     handle_osd_map(static_cast<MOSDMap*>(m));
     break;
   case MSG_MON_GET_PURGED_SNAPS_REPLY:
-    handle_get_purged_snaps_reply(static_cast<MMonGetPurgedSnapsReply*>(m));
+  dout(10) << __func__ << " is disabled by new SNAPMAPPER" << dendl;
+  start_boot();
     break;
 
     // osd
@@ -8311,21 +8247,7 @@ void OSD::handle_osd_map(MOSDMap *m)
     dout(20) << __func__ << " pg_num_history " << pg_num_history << dendl;
   }
 
-  // record new purged_snaps
-  if (superblock.purged_snaps_last == start - 1) {
-    OSDriver osdriver{store.get(), service.meta_ch, make_purged_snaps_oid()};
-    SnapMapper::record_purged_snaps(
-      cct,
-      osdriver,
-      osdriver.get_transaction(&t),
-      purged_snaps);
-    superblock.purged_snaps_last = last;
-  } else {
-    dout(10) << __func__ << " superblock purged_snaps_last is "
-	     << superblock.purged_snaps_last
-	     << ", not recording new purged_snaps" << dendl;
-  }
-
+  dout(1) << __func__ << ":: SnapMapper::record_purged_snaps() is disabled by new SNAPMAPPER" << dendl;
   // superblock and commit
   write_superblock(cct, superblock, t);
   t.register_on_commit(new C_OnMapCommit(this, start, last, m));

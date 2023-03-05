@@ -3,6 +3,7 @@
 # vim: ts=8 sw=2 smarttab
 #
 # test the handling of a corrupted SnapMapper DB by Scrub
+# GBH: This test is meaningless with the new SnapMapper as it has no DB
 
 source $CEPH_ROOT/qa/standalone/ceph-helpers.sh
 source $CEPH_ROOT/qa/standalone/scrub/scrub-helpers.sh
@@ -42,6 +43,7 @@ function make_a_clone()
 }
 
 function TEST_truncated_sna_record() {
+    return 0
     local dir=$1
     local -A cluster_conf=(
         ['osds_num']="3" 

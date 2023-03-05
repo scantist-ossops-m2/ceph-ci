@@ -92,7 +92,9 @@ using namespace ceph::osd::scheduler;
 template <class T>
 static ostream& _prefix(std::ostream *_dout, T *t)
 {
-  return t->gen_prefix(*_dout);
+  // GBH: remove me!!!
+  *_dout << "::"; return *_dout;
+  //return t->gen_prefix(*_dout);
 }
 
 void PG::get(const char* tag)
@@ -182,21 +184,23 @@ void PG::dump_live_ids()
 }
 #endif
 
-PG::PG(OSDService *o, OSDMapRef curmap,
-       const PGPool &_pool, spg_t p) :
+PG::PG(OSDService       *o,
+       OSDMapRef        curmap,
+       const PGPool     &_pool,
+       spg_t            p,
+       GlobalSnapMapper *gsnap_ref) :
   pg_whoami(o->whoami, p.shard),
   pg_id(p),
   coll(p),
   osd(o),
   cct(o->cct),
-  osdriver(osd->store, coll_t(), OSD::make_snapmapper_oid()),
-  snap_mapper(
-    cct,
-    &osdriver,
-    p.ps(),
-    p.get_split_bits(_pool.info.get_pg_num()),
-    _pool.id,
-    p.shard),
+  snap_mapper(gsnap_ref,
+	      cct,
+	      pg_id,
+	      p.ps(),
+	      p.get_split_bits(_pool.info.get_pg_num()),
+	      _pool.id,
+	      p.shard),
   trace_endpoint("0.0.0.0", 0, "PG"),
   info_struct_v(0),
   pgmeta_oid(p.make_pgmeta_oid()),
@@ -313,16 +317,24 @@ void PG::remove_snap_mapped_object(
   clear_object_snap_mapping(&t, soid);
 }
 
+#include "PrimaryLogPG.h"
 void PG::clear_object_snap_mapping(
   ObjectStore::Transaction *t, const hobject_t &soid)
 {
-  OSDriver::OSTransaction _t(osdriver.get_transaction(t));
   if (soid.snap < CEPH_MAXSNAP) {
-    int r = snap_mapper.remove_oid(
-      soid,
-      &_t);
-    if (!(r == 0 || r == -ENOENT)) {
-      derr << __func__ << ": remove_oid returned " << cpp_strerror(r) << dendl;
+    PrimaryLogPG *plPG = dynamic_cast<PrimaryLogPG*>(this);
+    std::vector<snapid_t>old_snaps;
+    int ret = plPG->get_snaps(soid, &old_snaps);
+    if (ret != 0) {
+      // need to return as there is nothing to do
+      // It is still legal to reach here without a valid old_snaps in the OBC
+      // This probably means that the SnapMapper was updated already
+      dout(1) << __func__ << "::GBH::no valid OBC was found for oid=" << soid << ", ret=" << cpp_strerror(ret) << dendl;
+      return;
+    }
+    ret = snap_mapper.remove_oid_from_all_snaps(soid, old_snaps);
+    if (!(ret == 0 || ret == -ENOENT)) {
+      derr << __func__ << ": remove_oid returned " << cpp_strerror(ret) << dendl;
       ceph_abort();
     }
   }
@@ -331,19 +343,15 @@ void PG::clear_object_snap_mapping(
 void PG::update_object_snap_mapping(
   ObjectStore::Transaction *t, const hobject_t &soid, const set<snapid_t> &snaps)
 {
-  OSDriver::OSTransaction _t(osdriver.get_transaction(t));
   ceph_assert(soid.snap < CEPH_MAXSNAP);
-  int r = snap_mapper.remove_oid(
-    soid,
-    &_t);
+  std::vector<snapid_t> _snaps(snaps.begin(), snaps.end());
+  int r = snap_mapper.remove_oid_from_all_snaps(soid, _snaps);
   if (!(r == 0 || r == -ENOENT)) {
     derr << __func__ << ": remove_oid returned " << cpp_strerror(r) << dendl;
     ceph_abort();
   }
-  snap_mapper.add_oid(
-    soid,
-    snaps,
-    &_t);
+
+  snap_mapper.add_oid(soid, _snaps);
 }
 
 /******* PG ***********/
@@ -1166,50 +1174,101 @@ void PG::read_state(ObjectStore *store)
   store->queue_transaction(ch, std::move(rctx.transaction));
 }
 
-void PG::update_snap_map(
-  const vector<pg_log_entry_t> &log_entries,
-  ObjectStore::Transaction &t)
+int PG::recover_old_snaps_from_obc(std::vector<snapid_t> *p_old_snaps, const hobject_t &soid, const char *caller)
 {
-  for (auto i = log_entries.cbegin(); i != log_entries.cend(); ++i) {
-    OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
-    if (i->soid.snap < CEPH_MAXSNAP) {
-      if (i->is_delete()) {
-	int r = snap_mapper.remove_oid(
-	  i->soid,
-	  &_t);
-	if (r)
-	  derr << __func__ << " remove_oid " << i->soid << " failed with " << r << dendl;
-        // On removal tolerate missing key corruption
-        ceph_assert(r == 0 || r == -ENOENT);
-      } else if (i->is_update()) {
-	ceph_assert(i->snaps.length() > 0);
-	vector<snapid_t> snaps;
-	bufferlist snapbl = i->snaps;
-	auto p = snapbl.cbegin();
-	try {
-	  decode(snaps, p);
-	} catch (...) {
-	  derr << __func__ << " decode snaps failure on " << *i << dendl;
-	  snaps.clear();
-	}
-	set<snapid_t> _snaps(snaps.begin(), snaps.end());
+  derr << "::GBH::" << caller <<"::old_snaps:: decode snaps failure on soid=" << soid << dendl;
+  derr << "::GBH::attempt to recover_old_snaps_from_obc!!" << dendl;
 
-	if (i->is_clone() || i->is_promote()) {
-	  snap_mapper.add_oid(
-	    i->soid,
-	    _snaps,
-	    &_t);
-	} else if (i->is_modify()) {
-	  int r = snap_mapper.update_snaps(
-	    i->soid,
-	    _snaps,
-	    0,
-	    &_t);
+  PrimaryLogPG *plPG = dynamic_cast<PrimaryLogPG*>(this);
+  int ret = plPG->get_snaps(soid, p_old_snaps);
+  if (ret != 0) {
+    // need to return as there is nothing to do
+    // It is still legal to reach here without a valid old_snaps in the OBC
+    // This probably means that the SnapMapper was updated already
+    dout(1) << __func__ << ": no valid OBC was found for oid=" << soid << ", ret=" << cpp_strerror(ret) << dendl;
+  }
+  return ret;
+}
+
+static char get_operation_type(const vector<pg_log_entry_t>::const_iterator le)
+{
+  if (le->is_delete()) {
+    return 'D';
+  }
+  if (le->is_update()) {
+    if (le->is_clone()) {
+      return 'C';
+    }
+    if (le->is_promote()) {
+      return 'P';
+    }
+    if (le->is_modify()) {
+      return 'M';
+    }
+    return 'U';
+  }
+  return '-';
+}
+
+void PG::update_snap_map(const vector<pg_log_entry_t> &log_entries, ObjectStore::Transaction &t)
+{
+  for (auto le = log_entries.cbegin(); le != log_entries.cend(); ++le) {
+    if (le->soid.snap < CEPH_MAXSNAP) {
+      dout(20) << "GBH::SNAPMAP::" << __func__ << "::op_type=" << get_operation_type(le) << ", oid=" << le->soid << dendl;
+      vector<snapid_t> new_snaps;
+      bufferlist snapbl = le->snaps;
+      auto p = snapbl.cbegin();
+      try {
+	decode(new_snaps, p);
+      } catch (...) {
+	derr << __func__ << "::failed to decode new_snaps on soid=" << le->soid << ", op_type=" << get_operation_type(le) << dendl;
+	return;
+      }
+
+      if (le->is_delete()) {
+	std::vector<snapid_t> old_snaps;
+	try {
+	  decode(old_snaps, p);
+	} catch (...) {
+	  if (recover_old_snaps_from_obc(&old_snaps, le->soid, "remove_oid") != 0) {
+	    return;
+	  }
+	}
+
+	// This path is only used when we remove the last snap
+	// new_snap must be empty and old_snaps should probaly only hold {le->soid.snap}
+	dout(20) << "GBH::SNAPMAP::" << __func__ << "::>>new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
+	ceph_assert(new_snaps.empty());
+	int ret = snap_mapper.remove_oid_from_all_snaps(le->soid, old_snaps);
+	if (ret) {
+	  derr << __func__ << "::snap_mapper.remove_oid_from_all_snaps() for soid=" << le->soid << " failed with " << ret << dendl;
+	}
+	// On removal tolerate missing key corruption
+	ceph_assert(ret == 0 || ret == -ENOENT);
+      } else if (le->is_update()) {
+	ceph_assert(le->snaps.length() > 0);
+	if (le->is_clone() || le->is_promote()) {
+	  dout(20) << "GBH::SNAPMAP::" << __func__ << "::>>snap_mapper.add_oid(" << le->soid << ", " << new_snaps << ")" << dendl;
+	  snap_mapper.add_oid(le->soid, new_snaps);
+	} else if (le->is_modify()) {
+	  vector<snapid_t> old_snaps;
+	  try {
+	    decode(old_snaps, p);
+	  } catch (...) {
+	    if (recover_old_snaps_from_obc(&old_snaps, le->soid, "update_oid") != 0) {
+	      return;
+	    }
+	  }
+	  dout(20) << "GBH::SNAPMAP::" << __func__ << "::>>new_snaps=<" << new_snaps << "> old_snaps=<" << old_snaps << ">" << dendl;
+	  int r = snap_mapper.update_snaps(le->soid, new_snaps, old_snaps);
 	  ceph_assert(r == 0);
 	} else {
-	  ceph_assert(i->is_clean());
+	  ceph_assert(le->is_clean());
 	}
       }
+    }
+    else {
+      dout(10) << "GBH::SNAPMAP::" << __func__ << "::(le->soid.snap >= CEPH_MAXSNAP)" << dendl;
     }
   }
 }
@@ -2619,6 +2678,7 @@ void PG::C_DeleteMore::complete(int r) {
   delete this;
 }
 
+#if 0
 std::pair<ghobject_t, bool> PG::do_delete_work(
   ObjectStore::Transaction &t,
   ghobject_t _next)
@@ -2690,7 +2750,121 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     }
   }
 
-  OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
+  // clear in-memory tables if exist and remove on disk-maps
+  // can be called multiple times (only first call will be applied)
+  if (snap_mapper.reset() == 0) {
+    // GBH::TBD:: Do we need to remove on-disk data or can we wait for the next shutdown::store()??
+    // dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->remove_snap_mapper(" << pg_id << ")" << dendl;    
+    // osd->store->remove_snap_mapper(pg_id);
+  }
+
+  bool running = true;
+  if (cct->_conf->osd_inject_failure_on_pg_removal) {
+    _exit(1);
+  }
+
+  // final flush here to ensure completions drop refs.  Of particular concern
+  // are the SnapMapper ContainerContexts.
+  {
+    PGRef pgref(this);
+    PGLog::clear_info_log(info.pgid, &t);
+    t.remove_collection(coll);
+    t.register_on_commit(new ContainerContext<PGRef>(pgref));
+    t.register_on_applied(new ContainerContext<PGRef>(pgref));
+    osd->store->queue_transaction(ch, std::move(t));
+  }
+  ch->flush();
+
+  if (!osd->try_finish_pg_delete(this, pool.info.get_pg_num())) {
+    dout(1) << __func__ << " raced with merge, reinstantiating" << dendl;
+    ch = osd->store->create_new_collection(coll);
+    create_pg_collection(t,
+			 info.pgid,
+			 info.pgid.get_split_bits(pool.info.get_pg_num()));
+    init_pg_ondisk(t, info.pgid, &pool.info);
+    recovery_state.reset_last_persisted();
+  } else {
+    recovery_state.set_delete_complete();
+
+    // cancel reserver here, since the PG is about to get deleted and the
+    // exit() methods don't run when that happens.
+    osd->local_reserver.cancel_reservation(info.pgid);
+
+    running = false;
+  }
+  return {next, running};
+}
+#else
+std::pair<ghobject_t, bool> PG::do_delete_work(
+  ObjectStore::Transaction &t,
+  ghobject_t _next)
+{
+  dout(10) << __func__ << dendl;
+  {
+    float osd_delete_sleep = osd->osd->get_osd_delete_sleep();
+    if (osd_delete_sleep > 0 && delete_needs_sleep) {
+      epoch_t e = get_osdmap()->get_epoch();
+      PGRef pgref(this);
+      auto delete_requeue_callback = new LambdaContext([this, pgref, e](int r) {
+        dout(20) << "do_delete_work() [cb] wake up at "
+                 << ceph_clock_now()
+	         << ", re-queuing delete" << dendl;
+        std::scoped_lock locker{*this};
+        delete_needs_sleep = false;
+        if (!pg_has_reset_since(e)) {
+          osd->queue_for_pg_delete(get_pgid(), e);
+        }
+      });
+
+      auto delete_schedule_time = ceph::real_clock::now();
+      delete_schedule_time += ceph::make_timespan(osd_delete_sleep);
+      std::lock_guard l{osd->sleep_lock};
+      osd->sleep_timer.add_event_at(delete_schedule_time,
+				    delete_requeue_callback);
+      dout(20) << __func__ << " Delete scheduled at " << delete_schedule_time << dendl;
+      return std::make_pair(_next, true);
+    }
+  }
+
+  delete_needs_sleep = true;
+
+  ghobject_t next;
+
+  vector<ghobject_t> olist;
+  int max = std::min(osd->store->get_ideal_list_max(),
+		     (int)cct->_conf->osd_target_transaction_size);
+
+  osd->store->collection_list(
+    ch,
+    _next,
+    ghobject_t::get_max(),
+    max,
+    &olist,
+    &next);
+  dout(20) << __func__ << " " << olist << dendl;
+
+  // make sure we've removed everything
+  // by one more listing from the beginning
+  if (_next != ghobject_t() && olist.empty()) {
+    next = ghobject_t();
+    osd->store->collection_list(
+      ch,
+      next,
+      ghobject_t::get_max(),
+      max,
+      &olist,
+      &next);
+    for (auto& oid : olist) {
+      if (oid == pgmeta_oid) {
+        dout(20) << __func__ << " removing pgmeta object " << oid << dendl;
+      } else {
+        dout(0) << __func__ << " additional unexpected onode"
+                <<" new onode has appeared since PG removal started"
+                << oid << dendl;
+      }
+    }
+  }
+
   int64_t num = 0;
   for (auto& oid : olist) {
     if (oid == pgmeta_oid) {
@@ -2700,15 +2874,14 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
       osd->clog->warn() << info.pgid << " found stray pgmeta-like " << oid
 			<< " during PG removal";
     }
-    int r = snap_mapper.remove_oid(oid.hobj, &_t);
-    if (r != 0 && r != -ENOENT) {
-      ceph_abort();
-    }
     t.remove(coll, oid);
     ++num;
   }
+
   bool running = true;
   if (num) {
+    //dout(1) << "GBH::SNAPMAP::" << __func__ << ":: deleting " << num << " objects" << dendl;
+    snap_mapper.delete_objs(num);
     dout(20) << __func__ << " deleting " << num << " objects" << dendl;
     Context *fin = new C_DeleteMore(this, get_osdmap_epoch());
     t.register_on_commit(fin);
@@ -2716,6 +2889,9 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     if (cct->_conf->osd_inject_failure_on_pg_removal) {
       _exit(1);
     }
+    // remove *all* COBJ owned by this PG from the SnapMapper
+    // it will be done only once after all OBJ where removed from the coll
+    snap_mapper.reset();
 
     // final flush here to ensure completions drop refs.  Of particular concern
     // are the SnapMapper ContainerContexts.
@@ -2749,6 +2925,7 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
   }
   return {next, running};
 }
+#endif
 
 int PG::pg_stat_adjust(osd_stat_t *ns)
 {

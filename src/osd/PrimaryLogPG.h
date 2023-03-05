@@ -35,7 +35,7 @@
 class CopyFromCallback;
 class PromoteCallback;
 struct RefCountCallback;
-
+class GlobalSnapMapper;
 class PrimaryLogPG;
 class PGLSFilter;
 class HitSet;
@@ -468,11 +468,12 @@ public:
     return update_object_snap_mapping(t, soid, snaps);
   }
   void pgb_clear_object_snap_mapping(
-    const hobject_t &soid,
-    ObjectStore::Transaction *t) override {
+    ObjectStore::Transaction *t,
+    const hobject_t &soid) override {
     return clear_object_snap_mapping(t, soid);
   }
 
+  virtual PGSnapMapper& pgb_get_snap_mapper() { return snap_mapper; }
   void log_operation(
     std::vector<pg_log_entry_t>&& logv,
     const std::optional<pg_hit_set_history_t> &hset_history,
@@ -1474,7 +1475,7 @@ public:
   PrimaryLogPG(OSDService *o, OSDMapRef curmap,
 	       const PGPool &_pool,
 	       const std::map<std::string,std::string>& ec_profile,
-	       spg_t p);
+	       spg_t p, GlobalSnapMapper *gsnap_ref);
   ~PrimaryLogPG() override;
 
   void do_command(
@@ -1506,6 +1507,8 @@ public:
 
   void handle_backoff(OpRequestRef& op);
 
+  int get_snaps(const hobject_t& coid, std::vector<snapid_t>* snaps_vec);
+  int check_coid_state(const hobject_t &coid, snapid_t snapid);
   int trim_object(bool first, const hobject_t &coid, snapid_t snap_to_trim,
 		  OpContextUPtr *ctxp);
   void snap_trimmer(epoch_t e) override;

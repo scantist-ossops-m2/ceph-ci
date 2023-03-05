@@ -27,7 +27,7 @@
 #include "include/stringify.h"
 #include "osd_types.h"
 #include "include/xlist.h"
-#include "SnapMapper.h"
+#include "PGSnapMapper.h"
 #include "Session.h"
 #include "common/Timer.h"
 
@@ -56,7 +56,7 @@ class OSD;
 class OSDService;
 struct OSDShard;
 struct OSDShardPGSlot;
-
+class GlobalSnapMapper;
 class PG;
 struct OpRequest;
 typedef OpRequest::Ref OpRequestRef;
@@ -186,6 +186,7 @@ public:
     return m_planned_scrub;
   }
 
+  PGSnapMapper& get_snap_mapper() { return snap_mapper;}
   /// scrubbing state for both Primary & replicas
   bool is_scrub_active() const { return m_scrubber->is_scrub_active(); }
 
@@ -820,7 +821,7 @@ public:
 
   // ctor
   PG(OSDService *o, OSDMapRef curmap,
-     const PGPool &pool, spg_t p);
+     const PGPool &pool, spg_t p, GlobalSnapMapper *gsnap_ref);
   ~PG() override;
 
   // prevent copying
@@ -871,8 +872,7 @@ private:
   // =====================
 
 protected:
-  OSDriver osdriver;
-  SnapMapper snap_mapper;
+  PGSnapMapper snap_mapper;
 
   virtual PGBackend *get_pgbackend() = 0;
   virtual const PGBackend* get_pgbackend() const = 0;
@@ -1343,6 +1343,8 @@ public:
   void write_if_dirty(PeeringCtx &rctx) {
     write_if_dirty(rctx.transaction);
   }
+private:
+  int recover_old_snaps_from_obc(std::vector<snapid_t> *p_old_snaps, const hobject_t &soid, const char *caller);
 protected:
   void write_if_dirty(ObjectStore::Transaction& t) {
     recovery_state.write_if_dirty(t);

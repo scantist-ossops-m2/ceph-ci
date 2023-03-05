@@ -461,11 +461,11 @@ add_executable(ceph_test_keys
 target_link_libraries(ceph_test_keys mon global ${CMAKE_DL_LIBS})
 
 # ceph_test_snap_mapper
-add_executable(ceph_test_snap_mapper
-  test_snap_mapper.cc
-  $<TARGET_OBJECTS:unit-main>
-  )
-target_link_libraries(ceph_test_snap_mapper osd global ${BLKID_LIBRARIES} ${UNITTEST_LIBS})
+#add_executable(ceph_test_snap_mapper
+#  test_snap_mapper.cc
+#  $<TARGET_OBJECTS:unit-main>
+#  )
+#target_link_libraries(ceph_test_snap_mapper osd global ${BLKID_LIBRARIES} ${UNITTEST_LIBS})
 endif(NOT WIN32)
 
 add_executable(ceph_test_stress_watch

@@ -112,7 +112,9 @@ using TOPNSPC::common::cmd_getval_or;
 
 template <typename T>
 static ostream& _prefix(std::ostream *_dout, T *pg) {
-  return pg->gen_prefix(*_dout);
+  //return pg->gen_prefix(*_dout);
+  // GBH: remove me!!!
+  *_dout << "::"; return *_dout; 
 }
 
 /**
@@ -399,29 +401,26 @@ void PrimaryLogPG::on_local_recover(
   ObjectRecoveryInfo recovery_info(_recovery_info);
   clear_object_snap_mapping(t, hoid);
   if (!is_delete && recovery_info.soid.is_snap()) {
-    OSDriver::OSTransaction _t(osdriver.get_transaction(t));
-    set<snapid_t> snaps;
-    dout(20) << " snapset " << recovery_info.ss << dendl;
+    dout(20) << __func__ << ":: snapset: " << recovery_info.ss << dendl;
     auto p = recovery_info.ss.clone_snaps.find(hoid.snap);
     if (p != recovery_info.ss.clone_snaps.end()) {
-      snaps.insert(p->second.begin(), p->second.end());
-      dout(20) << " snaps " << snaps << dendl;
-      snap_mapper.add_oid(
-	recovery_info.soid,
-	snaps,
-	&_t);
+      dout(20) << __func__ << "::GBH::SNAPMAP::calling add_oid()::snaps=" << p->second << dendl;
+      snap_mapper.add_oid(recovery_info.soid, p->second);
     } else {
-      derr << __func__ << " " << hoid << " had no clone_snaps" << dendl;
+      derr << __func__ << " " << hoid << " has no clone_snaps" << dendl;
     }
   }
   if (!is_delete && recovery_state.get_pg_log().get_missing().is_missing(recovery_info.soid) &&
       recovery_state.get_pg_log().get_missing().get_items().find(recovery_info.soid)->second.need > recovery_info.version) {
     ceph_assert(is_primary());
+    dout(20) << __func__ << "::GBH::SNAPMAP:: version " << recovery_state.get_pg_log().get_missing().get_items().find(recovery_info.soid)->second.need
+	     << " > " << recovery_info.version << dendl;
     const pg_log_entry_t *latest = recovery_state.get_pg_log().get_log().objects.find(recovery_info.soid)->second;
     if (latest->op == pg_log_entry_t::LOST_REVERT &&
 	latest->reverting_to == recovery_info.version) {
       dout(10) << " got old revert version " << recovery_info.version
 	       << " for " << *latest << dendl;
+      dout(20) << __func__ << "::GBH::SNAPMAP::got old revert version " << recovery_info.version << " for " << *latest << dendl;
       recovery_info.version = latest->version;
       // update the attr to the revert event version
       recovery_info.oi.prior_version = recovery_info.oi.version;
@@ -448,7 +447,7 @@ void PrimaryLogPG::on_local_recover(
   if (is_primary()) {
     if (!is_delete) {
       obc->obs.exists = true;
-
+      dout(20) << __func__ << "::GBH::SNAPMAP::obc->get_recovery_read()" << dendl;
       bool got = obc->get_recovery_read();
       ceph_assert(got);
 
@@ -470,6 +469,7 @@ void PrimaryLogPG::on_local_recover(
       }
     }
   } else {
+    dout(20) << __func__ << "::GBH::SNAPMAP::is_unreadable_object(" << hoid << ")" << dendl;
     t->register_on_applied(
       new C_OSD_AppliedRecoveredObjectReplica(this));
 
@@ -1753,8 +1753,9 @@ void PrimaryLogPG::release_object_locks(
 
 PrimaryLogPG::PrimaryLogPG(OSDService *o, OSDMapRef curmap,
 			   const PGPool &_pool,
-			   const map<string,string>& ec_profile, spg_t p) :
-  PG(o, curmap, _pool, p),
+			   const map<string,string>& ec_profile, spg_t p,
+			   GlobalSnapMapper *gsnap_ref) :
+  PG(o, curmap, _pool, p, gsnap_ref),
   pgbackend(
     PGBackend::build_pg_backend(
       _pool.info, ec_profile, this, coll_t(p), ch, o->store, cct)),
@@ -4615,10 +4616,90 @@ void PrimaryLogPG::do_backfill_remove(OpRequestRef op)
                  << dendl;
       }
     }
+    // The old_snaps map in the ONode is valid in this stage
+    // Which means inside remove_snap_mapped_object()->clear_object_snap_mapping()
+    // we will be ableto fetch it from the OBC before calling snap_mapper.remove_oid()
     remove_snap_mapped_object(t, p.first);
   }
   int r = osd->store->queue_transaction(ch, std::move(t), NULL);
   ceph_assert(r == 0);
+}
+
+int PrimaryLogPG::get_snaps(const hobject_t& coid, std::vector<snapid_t>* snaps_vec)
+{
+  dout(1) << __func__ << "GBH::SNAPMAP::coid=" << coid << dendl;
+  if (coid.is_head()) {
+    osd->clog->error() << __func__ << ": Head-Objects got no snaps_set (must call with a coid)";
+    derr << __func__ << "GBH::SNAPMAP::Head-Objects got no snaps_set (must call with a coid)" << dendl;
+    return -ENOENT;
+  }
+
+  auto it_objects = recovery_state.get_pg_log().get_log().objects.find(coid);
+  if (!(!recovery_state.get_pg_log().get_missing().is_missing(coid) ||
+      // or this is a revert... see recover_primary()
+      (it_objects != recovery_state.get_pg_log().get_log().objects.end() &&
+       it_objects->second->op == pg_log_entry_t::LOST_REVERT))) {
+    derr << __func__ << "::GBH::SNAPMAP::missing OBC (might be in the middle of recovery)" << dendl;
+    return -ENOENT;
+  }
+
+  ObjectContextRef obc = get_object_context(coid, false, NULL);
+  if (!obc || !obc->ssc || !obc->ssc->exists) {
+    osd->clog->error() << __func__ << "::coid<" << coid << "> " << (obc ? "(no obc->ssc or !exists)" : "(no obc)");
+    derr << __func__ << "GBH::SNAPMAP::coid<" << coid << "> " << (obc ? "(no obc->ssc or !exists)" : "(no obc)") << dendl;
+    return -ENOENT;
+  }
+
+  SnapSet& snapset = obc->ssc->snapset;
+  dout(1) << __func__ << "GBH::SNAPMAP::coid=" << coid << "::snapset=" << snapset << dendl;
+  //object_info_t &coi = obc->obs.oi;
+  auto citer = snapset.clone_snaps.find(coid.snap);
+  if (citer == snapset.clone_snaps.end()) {
+    osd->clog->error() << "No clone_snaps in snapset " << snapset
+		       << " for object " << coid << "\n";
+    derr << __func__ << "GBH::SNAPMAP::No clone_snaps in snapset " << snapset << " for object " << coid << dendl;
+    return -ENOENT;
+  }
+
+  if (citer->second.empty()) {
+    osd->clog->error() << "No object info snaps for object " << coid;
+    //derr << "GBH::SNAPMAP::" << "No object info snaps for object " << coid << dendl;
+    return -ENOENT;
+  }
+
+  *snaps_vec = citer->second; // std::set<snapid_t>(citer->second.begin(), citer->second.end());
+  return 0;
+}
+
+int PrimaryLogPG::check_coid_state(const hobject_t &coid, snapid_t snapid)
+{
+  int ret = 0;
+  ObjectContextRef obc = get_object_context(coid, false, NULL);
+  if (!obc || !obc->ssc || !obc->ssc->exists) {
+    dout(10) << __func__ << "::GBH::SNAPMAP::coid="  << coid
+	     << (obc ? "(no obc->ssc or !exists)" : "(no obc)") << dendl;
+    ret = -ENOENT;
+  }
+
+  hobject_t head_oid = coid.get_head();
+  ObjectContextRef head_obc = get_object_context(head_oid, false, NULL);
+  if (!head_obc) {
+    dout(10) << __func__ << "::GBH::SNAPMAP::head_oid="  << head_oid
+	     << " doesn't exist" << dendl;
+    ret = -ENOENT;
+  }
+  SnapSet& snapset = head_obc->ssc->snapset;
+
+  auto citer = snapset.clone_snaps.find(coid.snap);
+  if (citer != snapset.clone_snaps.end()) {
+    dout(10) << __func__ << "::GBH::SNAPMAP:: snapset has mapping for coid=" << coid << dendl;
+  } else {
+    dout(10) << __func__ << "::GBH::SNAPMAP::No clone_snaps in snapset " << snapset
+	     << " for clone-object " << coid << dendl;
+    ret = -ENOENT;
+  }
+
+  return ret;
 }
 
 int PrimaryLogPG::trim_object(
@@ -4645,7 +4726,7 @@ int PrimaryLogPG::trim_object(
   }
 
   SnapSet& snapset = obc->ssc->snapset;
-
+  dout(20) << "GBH::SNAPMAP::" << __func__ << "::hoid=" << head_oid << "::coid=" << coid << "::snapset=" << snapset << dendl;
   object_info_t &coi = obc->obs.oi;
   auto citer = snapset.clone_snaps.find(coid.snap);
   if (citer == snapset.clone_snaps.end()) {
@@ -4661,6 +4742,7 @@ int PrimaryLogPG::trim_object(
 
   dout(10) << coid << " old_snaps " << old_snaps
 	   << " old snapset " << snapset << dendl;
+  dout(20) << "GBH::SNAPMAP::" << __func__ << "::" << coid << " old_snaps " << old_snaps << " old snapset " << snapset << dendl;
   if (snapset.seq == 0) {
     osd->clog->error() << "No snapset.seq for object " << coid;
     return -ENOENT;
@@ -8531,7 +8613,7 @@ void PrimaryLogPG::make_writeable(OpContext *ctx)
   // clone?
   ceph_assert(soid.snap == CEPH_NOSNAP);
   dout(20) << "make_writeable " << soid << " snapset=" << ctx->new_snapset
-	   << "  snapc=" << snapc << dendl;
+          << "  snapc=" << snapc << dendl;
 
   bool was_dirty = ctx->obc->obs.oi.is_dirty();
   if (ctx->new_obs.exists) {
@@ -8588,6 +8670,7 @@ void PrimaryLogPG::make_writeable(OpContext *ctx)
       return vector<snapid_t>{begin(snapc.snaps), last};
     }();
 
+    //ldout(cct, 1) << __func__ << "::GBH::SNAPMAP::" << "snaps=" << snaps << dendl;
     // prepare clone
     object_info_t static_snap_oi(coid);
     object_info_t *snap_oi;
@@ -8655,10 +8738,11 @@ void PrimaryLogPG::make_writeable(OpContext *ctx)
     }
 
     // log clone
-    dout(10) << " cloning v " << ctx->obs->oi.version
-	     << " to " << coid << " v " << ctx->at_version
-	     << " snaps=" << snaps
-	     << " snapset=" << ctx->new_snapset << dendl;
+    ldout(cct, 10) << __func__ << "::GBH::SNAPMAP::" 
+		  << " cloning v " << ctx->obs->oi.version
+		  << " to " << coid << " v " << ctx->at_version
+		  << " snaps=" << snaps
+		  << " snapset=" << ctx->new_snapset << dendl;
     ctx->log.push_back(pg_log_entry_t(
 			 pg_log_entry_t::CLONE, coid, ctx->at_version,
 			 ctx->obs->oi.version,
@@ -11841,6 +11925,7 @@ ObjectContextRef PrimaryLogPG::get_object_context(
     (it_objects != recovery_state.get_pg_log().get_log().objects.end() &&
       it_objects->second->op ==
       pg_log_entry_t::LOST_REVERT));
+
   ObjectContextRef obc = object_contexts.lookup(soid);
   osd->logger->inc(l_osd_object_ctx_cache_total);
   if (obc) {
@@ -12409,6 +12494,9 @@ void PrimaryLogPG::remove_missing_object(const hobject_t &soid,
   ceph_assert(on_complete != nullptr);
   // delete locally
   ObjectStore::Transaction t;
+  // The old_snaps map in the ONode is valid in this stage
+  // Which means inside remove_snap_mapped_object()->clear_object_snap_mapping()
+  // we will be able to fetch it from the OBC before calling snap_mapper.remove_oid()
   remove_snap_mapped_object(t, soid);
 
   ObjectRecoveryInfo recovery_info;
@@ -15651,7 +15739,6 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
   }
 
   ldout(pg->cct, 10) << "AwaitAsyncWork: trimming snap " << snap_to_trim << dendl;
-
   vector<hobject_t> to_trim;
   unsigned max = pg->cct->_conf->osd_pg_max_concurrent_snap_trims;
   // we need to look for at least 1 snaptrim, otherwise we'll misinterpret
@@ -15663,6 +15750,7 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
     max,
     &to_trim);
   if (r != 0 && r != -ENOENT) {
+    ldout(pg->cct, 1) << "GBH::SNAPMAP::" << "ERR::get_next_objects_to_trim returned "  << cpp_strerror(r) << dendl;
     lderr(pg->cct) << "get_next_objects_to_trim returned "
 		   << cpp_strerror(r) << dendl;
     ceph_abort_msg("get_next_objects_to_trim returned an invalid code");
@@ -15707,6 +15795,18 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
     OpContextUPtr ctx;
     int error = pg->trim_object(in_flight.empty(), object, snap_to_trim, &ctx);
     if (error) {
+#if 0
+      if (error == -ENOENT) {
+	pg->check_coid_state(object, snap_to_trim);
+	// SnapMapper holds a reference to a non-existing -> remove it
+	std::vector<snapid_t> old_snaps;
+	old_snaps.push_back(snap_to_trim);
+	ldout(pg->cct, 10) << "GBH::error == -ENOENT::" << object << ", old_snaps=" << old_snaps << dendl;
+	pg->snap_mapper.remove_oid_from_all_snaps(object, old_snaps);
+	//pg->snap_mapper.print_snaps("remove bad coid");
+	continue;
+      }
+#endif
       if (error == -ENOLCK) {
 	ldout(pg->cct, 10) << "could not get write lock on obj "
 			   << object << dendl;
@@ -15739,7 +15839,6 @@ boost::statechart::result PrimaryLogPG::AwaitAsyncWork::react(const DoSnapWork&)
 	  }
 	}
       });
-
     pg->simple_opc_submit(std::move(ctx));
   }
 

@@ -38,6 +38,9 @@ function run() {
 
 function TEST_recover_unexpected() {
     local dir=$1
+    local poolname=pl1
+    local objname=obj1
+    local snapname=sn1
 
     run_mon $dir a || return 1
     run_mgr $dir x || return 1
@@ -45,25 +48,24 @@ function TEST_recover_unexpected() {
     run_osd $dir 1 || return 1
     run_osd $dir 2 || return 1
 
-    ceph osd pool create foo 1
-    rados -p foo put foo /etc/passwd
-    rados -p foo mksnap snap
-    rados -p foo put foo /etc/group
+    ceph osd pool create $poolname 1
+    rados -p $poolname put $objname /etc/passwd
+    rados -p $poolname mksnap $snapname
+    rados -p $poolname put $objname /etc/group
 
     wait_for_clean || return 1
 
-    local osd=$(get_primary foo foo)
-
-    JSON=`objectstore_tool $dir $osd --op list foo | grep snapid.:1`
+    local osd=$(get_primary $poolname $objname)
+    JSON=`objectstore_tool $dir $osd --op list $objname | grep snapid.:1`
     echo "JSON is $JSON"
     rm -f $dir/_ $dir/data
     objectstore_tool $dir $osd "$JSON" get-attr _ > $dir/_ || return 1
     objectstore_tool $dir $osd "$JSON" get-bytes $dir/data || return 1
 
-    rados -p foo rmsnap snap
+    rados -p $poolname rmsnap $snapname
 
     sleep 5
-
+    objectstore_tool $dir $osd --op list $objname > /tmp/obj_before_repair.txt
     objectstore_tool $dir $osd "$JSON" set-bytes $dir/data || return 1
     objectstore_tool $dir $osd "$JSON" set-attr _ $dir/_ || return 1
 
@@ -74,6 +76,8 @@ function TEST_recover_unexpected() {
     sleep 10
 
     ceph log last
+    cp $dir/osd.?.log /tmp
+    objectstore_tool $dir $osd --op list $objname > /tmp/obj_after_repair.txt
 
     # make sure osds are still up
     timeout 60 ceph tell osd.0 version || return 1

@@ -76,7 +76,7 @@ class OSDMap;
 class MLog;
 class Objecter;
 class KeyStore;
-
+class GlobalSnapMapper;
 class Watch;
 class PrimaryLogPG;
 
@@ -1071,6 +1071,7 @@ class OSD : public Dispatcher,
   ceph::mutex tick_timer_lock = ceph::make_mutex("OSD::tick_timer_lock");
   SafeTimer tick_timer_without_osd_lock;
   std::string gss_ktfile_client{};
+  class GlobalSnapMapper *gsnap_mapper;
 
 public:
   // config observer bits
@@ -1180,10 +1181,13 @@ public:
     return ghobject_t(hobject_t(sobject_t("pg_num_history", CEPH_NOSNAP)));
   }
 
+  static uint32_t get_pg_num_from_history(pool_pg_num_history_t & pg_num_history, int64_t pool);
   static void recursive_remove_collection(CephContext* cct,
 					  ObjectStore *store,
 					  spg_t pgid,
-					  coll_t tmp);
+					  coll_t tmp,
+					  pool_pg_num_history_t & pg_num_history,
+					  GlobalSnapMapper      * gsnap_mapper);
 
   /**
    * get_osd_initial_compat_set()
@@ -1214,7 +1218,6 @@ private:
 
   // -- superblock --
   OSDSuperblock superblock;
-
   static void write_superblock(CephContext* cct,
                                OSDSuperblock& sb,
                                ObjectStore::Transaction& t);
@@ -1785,9 +1788,6 @@ protected:
   void _preboot(epoch_t oldest, epoch_t newest);
   void _send_boot();
   void _collect_metadata(std::map<std::string,std::string> *pmeta);
-  void _get_purged_snaps();
-  void handle_get_purged_snaps_reply(MMonGetPurgedSnapsReply *r);
-
   void start_waiting_for_healthy();
   bool _is_healthy();
 
@@ -1977,7 +1977,7 @@ private:
   static int write_meta(CephContext *cct,
 			ObjectStore *store,
 			uuid_d& cluster_fsid, uuid_d& osd_fsid, int whoami, std::string& osdspec_affinity);
-
+  void store_snap_maps(const char *caller);
   void handle_fast_scrub(class MOSDScrub2 *m);
   void handle_osd_ping(class MOSDPing *m);
 
@@ -1988,7 +1988,8 @@ private:
   float get_osd_recovery_sleep();
   float get_osd_delete_sleep();
   float get_osd_snap_trim_sleep();
-
+  void  convert_old_snap_mapper_objects(OSDMapRef & osdmap);
+  
   int get_recovery_max_active();
   void maybe_override_max_osd_capacity_for_qos();
   void maybe_override_sleep_options_for_qos();
