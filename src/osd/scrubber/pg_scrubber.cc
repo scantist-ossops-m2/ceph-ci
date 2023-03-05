@@ -19,6 +19,7 @@
 #include "messages/MOSDScrubReserve.h"
 #include "osd/OSD.h"
 #include "osd/PG.h"
+#include "osd/PGSnapMapper.h"
 #include "include/utime_fmt.h"
 #include "osd/osd_types_fmt.h"
 
@@ -1207,8 +1208,6 @@ void PgScrubber::repair_oinfo_oid(ScrubMap& smap)
 
     if (oi.soid != hoid) {
       ObjectStore::Transaction t;
-      OSDriver::OSTransaction _t(m_pg->osdriver.get_transaction(&t));
-
       m_osds->clog->error()
         << "osd." << m_pg_whoami << " found object info error on pg " << m_pg_id
         << " oid " << hoid << " oid in object info: " << oi.soid
@@ -1267,14 +1266,12 @@ void PgScrubber::apply_snap_mapper_fixes(
   }
 
   ObjectStore::Transaction t;
-  OSDriver::OSTransaction t_drv(m_pg->osdriver.get_transaction(&t));
-
   for (auto& [fix_op, hoid, snaps, bogus_snaps] : fix_list) {
-
+    std::vector<snapid_t> _snaps(snaps.begin(), snaps.end());
     if (fix_op != snap_mapper_op_t::add) {
 
       // must remove the existing snap-set before inserting the correct one
-      if (auto r = m_pg->snap_mapper.remove_oid(hoid, &t_drv); r < 0) {
+      if (auto r = m_pg->snap_mapper.remove_oid_from_all_snaps(hoid, _snaps); r < 0) {
 
 	derr << __func__ << ": remove_oid returned " << cpp_strerror(r)
 	     << dendl;
@@ -1308,7 +1305,7 @@ void PgScrubber::apply_snap_mapper_fixes(
     }
 
     // now - insert the correct snap-set
-    m_pg->snap_mapper.add_oid(hoid, snaps, &t_drv);
+    m_pg->snap_mapper.add_oid(hoid, _snaps);
   }
 
   // wait for repair to apply to avoid confusing other bits of the system.

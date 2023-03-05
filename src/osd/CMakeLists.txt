@@ -29,7 +29,8 @@ set(osd_srcs
   scrubber/scrub_backend.cc
   Watch.cc
   Session.cc
-  SnapMapper.cc
+  GlobalSnapMapper.cc
+  PGSnapMapper.cc
   osd_types.cc
   ECUtil.cc
   ExtentCache.cc

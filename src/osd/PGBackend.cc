@@ -324,7 +324,7 @@ void PGBackend::remove(
   t->remove(
     coll,
     ghobject_t(hoid, ghobject_t::NO_GEN, get_parent()->whoami_shard().shard));
-  get_parent()->pgb_clear_object_snap_mapping(hoid, t);
+  get_parent()->pgb_clear_object_snap_mapping(t, hoid);
 }
 
 void PGBackend::on_change_cleanup(ObjectStore::Transaction *t)

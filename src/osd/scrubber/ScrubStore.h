@@ -5,7 +5,7 @@
 #define CEPH_SCRUB_RESULT_H
 
 #include "common/map_cacher.hpp"
-#include "osd/SnapMapper.h"  // for OSDriver
+#include "osd/PGSnapMapper.h"  // for OSDriver
 
 namespace librados {
 struct object_id_t;
@@ -54,7 +54,7 @@ class Store {
   const ghobject_t hoid;
   // a temp object holding mappings from seq-id to inconsistencies found in
   // scrubbing
-  OSDriver driver;
+  //OSDriver driver;
   mutable MapCacher::MapCacher<std::string, ceph::buffer::list> backend;
   std::map<std::string, ceph::buffer::list> results;
 };
