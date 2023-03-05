@@ -115,8 +115,12 @@ Store::create(ObjectStore* store,
 Store::Store(const coll_t& coll, const ghobject_t& oid, ObjectStore* store)
   : coll(coll),
     hoid(oid),
+#ifdef SNAPMAPPER_OSDriver
     driver(store, coll, hoid),
     backend(&driver)
+#else
+    backend(nullptr)
+#endif  
 {}
 
 Store::~Store()
@@ -155,10 +159,12 @@ bool Store::empty() const
 
 void Store::flush(ObjectStore::Transaction* t)
 {
+#ifdef SNAPMAPPER_OSDriver
   if (t) {
     OSDriver::OSTransaction txn = driver.get_transaction(t);
     backend.set_keys(results, &txn);
   }
+#endif
   results.clear();
 }
 

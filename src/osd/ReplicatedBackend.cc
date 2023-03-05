@@ -307,13 +307,14 @@ public:
 };
 
 void generate_transaction(
+  CephContext *cct,
   PGTransactionUPtr &pgt,
   const coll_t &coll,
   vector<pg_log_entry_t> &log_entries,
   ObjectStore::Transaction *t,
   set<hobject_t> *added,
   set<hobject_t> *removed,
-  const ceph_release_t require_osd_release = ceph_release_t::unknown )
+  const ceph_release_t require_osd_release = ceph_release_t::unknown)
 {
   ceph_assert(t);
   ceph_assert(added);
@@ -323,8 +324,20 @@ void generate_transaction(
     le.mark_unrollbackable();
     auto oiter = pgt->op_map.find(le.soid);
     if (oiter != pgt->op_map.end() && oiter->second.updated_snaps) {
+#if 0
       bufferlist bl(oiter->second.updated_snaps->second.size() * 8 + 8);
       encode(oiter->second.updated_snaps->second, bl);
+#else
+      size_t bl_size = (oiter->second.updated_snaps->second.size() * 8 + 8);
+      bl_size += (oiter->second.updated_snaps->first.size() * 8 + 8);
+      bufferlist bl(bl_size);
+      //lgeneric_derr(cct) << __func__ << "::GBH::new_snaps=" << oiter->second.updated_snaps->second << ", old_snaps=" << oiter->second.updated_snaps->first<< dendl;
+      encode(oiter->second.updated_snaps->second, bl);
+      if (oiter->second.updated_snaps->first.size()) {
+	//lgeneric_derr(cct) << __func__ << "::GBH::old_snaps=" << oiter->second.updated_snaps->first  << dendl;
+	encode(oiter->second.updated_snaps->first, bl);
+      }
+#endif
       le.snaps.swap(bl);
       le.snaps.reassign_to_mempool(mempool::mempool_osd_pglog);
     }
@@ -483,6 +496,7 @@ void ReplicatedBackend::submit_transaction(
   PGTransactionUPtr t(std::move(_t));
   set<hobject_t> added, removed;
   generate_transaction(
+    cct,
     t,
     coll,
     log_entries,
@@ -1811,6 +1825,17 @@ bool ReplicatedBackend::handle_pull_response(
 
   bool first = pi.recovery_progress.first;
   if (first) {
+    // During pull_response we might need to clear the oid from the SnapMapper.
+    // snap_mapper.remove_oid() needs the old_snap map which we don't have
+    // in the recovery path.
+    // However, on the first call we should still have a valid ONode holding the old_snap map
+    // This means we should start by calling clear_object_snap_mapping() which will
+    // read the old_snaps from the ONode and clear it from the SnapMapper *before* we
+    // make *any*change to the ONode.
+    // Subsequnet calls to snap_mapper.remove_oid() will become a NOP when the old_snap
+    // is removed from the ONode
+    get_parent()->pgb_clear_object_snap_mapping(t, pi.recovery_info.soid);
+
     // attrs only reference the origin bufferlist (decode from
     // MOSDPGPush message) whose size is much greater than attrs in
     // recovery. If obc cache it (get_obc maybe cache the attr), this
@@ -1900,6 +1925,20 @@ void ReplicatedBackend::handle_push(
   pg_shard_t from, const PushOp &pop, PushReplyOp *response,
   ObjectStore::Transaction *t, bool is_repair)
 {
+  // During push we might need to clear the oid from the SnapMapper.
+  // snap_mapper.remove_oid() needs the old_snap map which we don't have
+  // in the recovery path.
+  // However, on the first call we should still have a valid ONode holding the old_snap map
+  // This means we should start by calling clear_object_snap_mapping() which will
+  // read the old_snaps from the ONode and clear it from the SnapMapper *before* we
+  // make *any*change to the ONode.
+  // Subsequnet calls to snap_mapper.remove_oid() will become a NOP when the old_snap
+  // is removed from the ONode
+#if 1
+    if (pop.before_progress.first) {
+      get_parent()->pgb_clear_object_snap_mapping(t, pop.recovery_info.soid);
+    }
+#endif
   dout(10) << "handle_push "
 	   << pop.recovery_info
 	   << pop.after_progress
@@ -1935,6 +1974,7 @@ void ReplicatedBackend::handle_push(
       get_parent()->inc_osd_stat_repaired();
       dout(20) << __func__ << " repair complete" << dendl;
     }
+    // this is done after OBC was removed
     get_parent()->on_local_recover(
       pop.recovery_info.soid,
       pop.recovery_info,

@@ -132,7 +132,7 @@ public:
       *ip = i->second;
       vptrs.insert(ip);
     }
-    t->set_keys(keys);
+    //t->set_keys(keys);
     t->add_callback(new TransHolder(vptrs));
   }
 
@@ -148,7 +148,7 @@ public:
       *ip = empty;
       vptrs.insert(ip);
     }
-    t->remove_keys(keys);
+    //t->remove_keys(keys);
     t->add_callback(new TransHolder(vptrs));
   }
 

@@ -479,8 +479,22 @@ void dump_log(Formatter *formatter, ostream &out, pg_log_t &log,
   formatter->flush(out);
 }
 
+int get_pg_num_history(ObjectStore *store, pool_pg_num_history_t *h)
+{
+  ObjectStore::CollectionHandle ch = store->open_collection(coll_t::meta());
+  bufferlist bl;
+  auto pghist = OSD::make_pg_num_history_oid();
+  int r = store->read(ch, pghist, 0, 0, bl, 0);
+  if (r >= 0 && bl.length() > 0) {
+    auto p = bl.cbegin();
+    decode(*h, p);
+  }
+  cout << __func__ << " pg_num_history " << *h << std::endl;
+  return 0;
+}
+
 //Based on part of OSD::load_pgs()
-int finish_remove_pgs(ObjectStore *store)
+static int finish_remove_pgs(GlobalSnapMapper *gsnap_mapper, ObjectStore *store)
 {
   vector<coll_t> ls;
   int r = store->list_collections(ls);
@@ -490,6 +504,9 @@ int finish_remove_pgs(ObjectStore *store)
     return r;
   }
 
+  pool_pg_num_history_t pg_num_history;
+  get_pg_num_history(store, &pg_num_history);
+
   for (vector<coll_t>::iterator it = ls.begin();
        it != ls.end();
        ++it) {
@@ -498,7 +515,7 @@ int finish_remove_pgs(ObjectStore *store)
     if (it->is_temp(&pgid) ||
        (it->is_pg(&pgid) && PG::_has_removal_flag(store, pgid))) {
       cout << "finish_remove_pgs " << *it << " removing " << pgid << std::endl;
-      OSD::recursive_remove_collection(g_ceph_context, store, pgid, *it);
+      OSD::recursive_remove_collection(g_ceph_context, store, pgid, *it, pg_num_history, gsnap_mapper);
       continue;
     }
 
@@ -556,10 +573,10 @@ void wait_until_done(ObjectStore::Transaction* txn, Func&& func)
   cond.wait(lock, [&] {return finished;});
 }
 
-int initiate_new_remove_pg(ObjectStore *store, spg_t r_pgid)
+static int initiate_new_remove_pg(GlobalSnapMapper *gsnap_mapper, ObjectStore *store, spg_t r_pgid)
 {
   if (!dry_run)
-    finish_remove_pgs(store);
+    finish_remove_pgs(gsnap_mapper, store);
   if (!store->collection_exists(coll_t(r_pgid)))
     return -ENOENT;
 
@@ -573,7 +590,7 @@ int initiate_new_remove_pg(ObjectStore *store, spg_t r_pgid)
   }
   ObjectStore::CollectionHandle ch = store->open_collection(coll_t(r_pgid));
   store->queue_transaction(ch, std::move(rmt));
-  finish_remove_pgs(store);
+  finish_remove_pgs(gsnap_mapper, store);
   return r;
 }
 
@@ -1059,20 +1076,6 @@ int get_osdmap(ObjectStore *store, epoch_t e, OSDMap &osdmap, bufferlist& bl)
   return 0;
 }
 
-int get_pg_num_history(ObjectStore *store, pool_pg_num_history_t *h)
-{
-  ObjectStore::CollectionHandle ch = store->open_collection(coll_t::meta());
-  bufferlist bl;
-  auto pghist = OSD::make_pg_num_history_oid();
-  int r = store->read(ch, pghist, 0, 0, bl, 0);
-  if (r >= 0 && bl.length() > 0) {
-    auto p = bl.cbegin();
-    decode(*h, p);
-  }
-  cout << __func__ << " pg_num_history " << *h << std::endl;
-  return 0;
-}
-
 int add_osdmap(ObjectStore *store, metadata_section &ms)
 {
   return get_osdmap(store, ms.map_epoch, ms.osdmap, ms.osdmap_bl);
@@ -1226,8 +1229,7 @@ int dump_attrs(
 
 int get_attrs(
   ObjectStore *store, coll_t coll, ghobject_t hoid,
-  ObjectStore::Transaction *t, bufferlist &bl,
-  OSDriver &driver, SnapMapper &snap_mapper)
+  ObjectStore::Transaction *t, bufferlist &bl, PGSnapMapper &snap_mapper)
 {
   auto ebliter = bl.cbegin();
   attr_section as;
@@ -1264,9 +1266,9 @@ int get_attrs(
 	if (debug)
 	  cerr << "\tsetting " << clone.hobj << " snaps " << snaps
 	       << std::endl;
-	OSDriver::OSTransaction _t(driver.get_transaction(t));
+	//OSDriver::OSTransaction _t(driver.get_transaction(t));
 	ceph_assert(!snaps.empty());
-	snap_mapper.add_oid(clone.hobj, snaps, &_t);
+	snap_mapper.add_oid(clone.hobj, p.second);
       }
     } else {
       cerr << "missing SS_ATTR on " << hoid << std::endl;
@@ -1406,8 +1408,7 @@ int ObjectStoreTool::dump_object(Formatter *formatter,
 }
 
 int ObjectStoreTool::get_object(ObjectStore *store,
-				OSDriver& driver,
-				SnapMapper& mapper,
+				PGSnapMapper& mapper,
 				coll_t coll,
 				bufferlist &bl, OSDMap &origmap,
 				bool *skipped_objects)
@@ -1477,7 +1478,7 @@ int ObjectStoreTool::get_object(ObjectStore *store,
       break;
     case TYPE_ATTRS:
       if (dry_run) break;
-      ret = get_attrs(store, coll, ob.hoid, t, ebl, driver, mapper);
+      ret = get_attrs(store, coll, ob.hoid, t, ebl, mapper);
       if (ret) return ret;
       break;
     case TYPE_OMAP_HDR:
@@ -1775,7 +1776,7 @@ int ObjectStoreTool::do_import(ObjectStore *store, OSDSuperblock& sb,
   bool skipped_objects = false;
 
   if (!dry_run)
-    finish_remove_pgs(store);
+    finish_remove_pgs(gsnap_mapper, store);
 
   int ret = read_super();
   if (ret)
@@ -1878,12 +1879,12 @@ int ObjectStoreTool::do_import(ObjectStore *store, OSDSuperblock& sb,
   }
 
   ObjectStore::CollectionHandle ch;
+  uint32_t   match      = pgid.ps();
+  int64_t    pool       = pgid.pool();
+  uint32_t   pg_num     = OSD::get_pg_num_from_history(pg_num_history, pool);
+  uint32_t   split_bits = pgid.get_split_bits(pg_num);
 
-  OSDriver driver(
-    store,
-    coll_t(),
-    OSD::make_snapmapper_oid());
-  SnapMapper mapper(g_ceph_context, &driver, 0, 0, 0, pgid.shard);
+  PGSnapMapper mapper(gsnap_mapper, g_ceph_context, pgid, match, split_bits, pool, pgid.shard);
 
   cout << "Importing pgid " << pgid;
   cout << std::endl;
@@ -1906,7 +1907,7 @@ int ObjectStoreTool::do_import(ObjectStore *store, OSDSuperblock& sb,
     switch(type) {
     case TYPE_OBJECT_BEGIN:
       ceph_assert(found_metadata);
-      ret = get_object(store, driver, mapper, coll, ebl, ms.osdmap,
+      ret = get_object(store, mapper, coll, ebl, ms.osdmap,
 		       &skipped_objects);
       if (ret) return ret;
       break;
@@ -2131,14 +2132,15 @@ enum rmtype {
   NOSNAPMAP
 };
 
-int remove_object(coll_t coll, ghobject_t &ghobj,
-  SnapMapper &mapper,
-  MapCacher::Transaction<std::string, bufferlist> *_t,
-  ObjectStore::Transaction *t,
-  enum rmtype type)
+static int remove_object(coll_t coll, ghobject_t &ghobj,
+			 const std::vector<snapid_t>& snaps,
+			 PGSnapMapper &mapper,
+			 ObjectStore::Transaction *t,
+			 enum rmtype type)
 {
-  if (type == BOTH || type == SNAPMAP) {
-    int r = mapper.remove_oid(ghobj.hobj, _t);
+  if ( (type == BOTH || type == SNAPMAP) && !ghobj.hobj.is_head() ) {
+    //cerr << __func__ << "::GBH::remove_oid()::hobj=" << ghobj.hobj << std::endl;
+    int r = mapper.remove_oid_from_all_snaps(ghobj.hobj, snaps);
     if (r < 0 && r != -ENOENT) {
       cerr << "remove_oid returned " << cpp_strerror(r) << std::endl;
       return r;
@@ -2153,17 +2155,24 @@ int remove_object(coll_t coll, ghobject_t &ghobj,
 
 int get_snapset(ObjectStore *store, coll_t coll, ghobject_t &ghobj, SnapSet &ss, bool silent);
 
-int do_remove_object(ObjectStore *store, coll_t coll,
-		     ghobject_t &ghobj, bool all, bool force, enum rmtype type)
+static int
+do_remove_object(pool_pg_num_history_t & pg_num_history, GlobalSnapMapper *gsnap_mapper,
+		 ObjectStore *store, coll_t coll, ghobject_t &ghobj, bool all,
+		 bool force, enum rmtype type)
 {
   auto ch = store->open_collection(coll);
-  spg_t pg;
-  coll.is_pg_prefix(&pg);
-  OSDriver driver(
-    store,
-    coll_t(),
-    OSD::make_snapmapper_oid());
-  SnapMapper mapper(g_ceph_context, &driver, 0, 0, 0, pg.shard);
+  spg_t pgid;
+  if (coll.is_pg_prefix(&pgid) == false) {
+    cerr << "coll.is_pg_prefix() failed!!" << std::endl;
+    return -1;
+  }
+
+  uint32_t   match      = pgid.ps();
+  int64_t    pool       = pgid.pool();
+  uint32_t   pg_num     = OSD::get_pg_num_from_history(pg_num_history, pool);
+  uint32_t   split_bits = pgid.get_split_bits(pg_num);
+
+  PGSnapMapper mapper(gsnap_mapper, g_ceph_context, pgid, match, split_bits, pool, pgid.shard);
   struct stat st;
 
   int r = store->stat(ch, ghobj, &st);
@@ -2181,7 +2190,7 @@ int do_remove_object(ObjectStore *store, coll_t coll,
       if (!(force && !all))
         return r;
     }
-//    cout << "snapset " << ss << std::endl;
+
     if (!ss.clone_snaps.empty() && !all) {
       if (force) {
         cout << "WARNING: only removing "
@@ -2197,14 +2206,14 @@ int do_remove_object(ObjectStore *store, coll_t coll,
   }
 
   ObjectStore::Transaction t;
-  OSDriver::OSTransaction _t(driver.get_transaction(&t));
 
   ghobject_t snapobj = ghobj;
   for (auto& p : ss.clone_snaps) {
     snapobj.hobj.snap = p.first;
     cout << "remove clone " << snapobj << std::endl;
     if (!dry_run) {
-      r = remove_object(coll, snapobj, mapper, &_t, &t, type);
+      const std::vector<snapid_t>& snaps = p.second;
+      r = remove_object(coll, snapobj, snaps, mapper, &t, type);
       if (r < 0)
         return r;
     }
@@ -2213,7 +2222,9 @@ int do_remove_object(ObjectStore *store, coll_t coll,
   cout << "remove " << ghobj << std::endl;
 
   if (!dry_run) {
-    r = remove_object(coll, ghobj, mapper, &_t, &t, type);
+    // head object -> we don;t have any snaps
+    const std::vector<snapid_t> snaps;
+    r = remove_object(coll, ghobj, snaps, mapper, &t, type);
     if (r < 0)
       return r;
   }
@@ -3637,8 +3648,6 @@ int main(int argc, char **argv)
     }
   }
 
-  ObjectStoreTool tool = ObjectStoreTool(file_fd, dry_run);
-
   if (vm.count("file") && file_fd == fd_none && !dry_run) {
     cerr << "--file option only applies to import, dump-export, export, export-remove, "
 	 << "get-osdmap, set-osdmap, get-inc-osdmap or set-inc-osdmap" << std::endl;
@@ -3693,16 +3702,6 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  if (op == "dump-export") {
-    int ret = tool.dump_export(formatter);
-    if (ret < 0) {
-      cerr << "dump-export: "
-	   << cpp_strerror(ret) << std::endl;
-      return 1;
-    }
-    return 0;
-  }
-
   //Verify that data-path really exists
   struct stat st;
   if (::stat(dpath.c_str(), &st) == -1) {
@@ -3734,6 +3733,21 @@ int main(int argc, char **argv)
   if (!fs) {
     cerr << "Unable to create store of type " << type << std::endl;
     return 1;
+  }
+
+  GlobalSnapMapper *gsnap_mapper = new GlobalSnapMapper(cct.get());
+  ceph_assert(gsnap_mapper != nullptr);
+  fs.get()->restore_snap_mapper(*gsnap_mapper);
+  ObjectStoreTool tool = ObjectStoreTool(file_fd, dry_run, gsnap_mapper);
+
+  if (op == "dump-export") {
+    int ret = tool.dump_export(formatter);
+    if (ret < 0) {
+      cerr << "dump-export: "
+	   << cpp_strerror(ret) << std::endl;
+      return 1;
+    }
+    return 0;
   }
 
   if (op == "fsck" || op == "fsck-deep") {
@@ -4118,7 +4132,7 @@ int main(int argc, char **argv)
       ret = -EINVAL;
       goto out;
     }
-    ret = initiate_new_remove_pg(fs.get(), pgid);
+    ret = initiate_new_remove_pg(gsnap_mapper, fs.get(), pgid);
     if (ret < 0) {
       cerr << "PG '" << pgid << "' not found" << std::endl;
       goto out;
@@ -4241,8 +4255,9 @@ int main(int argc, char **argv)
     usage(desc);
     ret = 1;
     goto out;
-  }
+    }
   epoch_t map_epoch;
+
 // The following code for export, info, log require omap or !skip-mount-omap
   if (it != ls.end()) {
 
@@ -4257,7 +4272,10 @@ int main(int argc, char **argv)
           type = NOSNAPMAP;
         else if (rmtypestr == "snapmap")
           type = SNAPMAP;
-        ret = do_remove_object(fs.get(), coll, ghobj, all, force, type);
+
+	pool_pg_num_history_t pg_num_history;
+	get_pg_num_history(fs.get(), &pg_num_history);
+        ret = do_remove_object(pg_num_history, gsnap_mapper, fs.get(), coll, ghobj, all, force, type);
         goto out;
       } else if (objcmd == "list-attrs") {
         ret = do_list_attrs(fs.get(), coll, ghobj);
@@ -4530,7 +4548,7 @@ int main(int argc, char **argv)
       if (ret == 0) {
         cerr << "Export successful" << std::endl;
         if (op == "export-remove") {
-          ret = initiate_new_remove_pg(fs.get(), pgid);
+          ret = initiate_new_remove_pg(gsnap_mapper, fs.get(), pgid);
           // Export succeeded, so pgid is there
           ceph_assert(ret == 0);
           cerr << "Remove successful" << std::endl;
