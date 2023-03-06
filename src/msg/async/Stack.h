@@ -200,6 +200,9 @@ enum {
   l_msgr_created_connections,
   l_msgr_active_connections,
 
+  l_msgr_connection_ready_timeouts,
+  l_msgr_connection_idle_timeouts,
+
   l_msgr_running_total_time,
   l_msgr_running_send_time,
   l_msgr_running_recv_time,
@@ -245,6 +248,8 @@ class Worker {
     plb.add_u64_counter(l_msgr_send_bytes, "msgr_send_bytes", "Network sent bytes", NULL, 0, unit_t(UNIT_BYTES));
     plb.add_u64_counter(l_msgr_active_connections, "msgr_active_connections", "Active connection number");
     plb.add_u64_counter(l_msgr_created_connections, "msgr_created_connections", "Created connection number");
+    plb.add_u64_counter(l_msgr_connection_ready_timeouts, "msgr_connection_ready_timeouts", "Number of not yet ready connections declared as dead", NULL, PerfCountersBuilder::PRIO_USEFUL);
+    plb.add_u64_counter(l_msgr_connection_idle_timeouts, "msgr_connection_idle_timeouts", "Number of connections closed due to idleness", NULL, PerfCountersBuilder::PRIO_USEFUL);
 
     plb.add_time(l_msgr_running_total_time, "msgr_running_total_time", "The total time of thread running");
     plb.add_time(l_msgr_running_send_time, "msgr_running_send_time", "The total time of message sending");

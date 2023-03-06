@@ -391,7 +391,6 @@ void AsyncConnection::process() {
     }
     case STATE_CONNECTING: {
       ceph_assert(!policy.server);
-
       // clear timer (if any) since we are connecting/re-connecting
       if (last_tick_id) {
         center->delete_time_event(last_tick_id);
@@ -791,6 +790,7 @@ void AsyncConnection::tick(uint64_t id)
                                 << target_addr << ", fault."
                                 << dendl;
       protocol->fault();
+      logger->inc(l_msgr_connection_ready_timeouts);
     } else {
       last_tick_id = center->create_time_event(connect_timeout_us, tick_handler);
     }
@@ -803,6 +803,7 @@ void AsyncConnection::tick(uint64_t id)
                                 << " us, fault."
                                 << dendl;
       protocol->fault();
+      logger->inc(l_msgr_connection_idle_timeouts);
     } else {
       last_tick_id = center->create_time_event(inactive_timeout_us, tick_handler);
     }
