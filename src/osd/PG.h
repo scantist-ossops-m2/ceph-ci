@@ -538,8 +538,6 @@ public:
   void on_pool_change() override;
   virtual void plpg_on_pool_change() = 0;
 
-  void on_info_history_change() override;
-
   void on_primary_status_change(bool was_primary, bool now_primary) override;
 
   void reschedule_scrub() override;

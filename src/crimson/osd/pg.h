@@ -159,10 +159,6 @@ public:
     bool need_write_epoch,
     ceph::os::Transaction &t) final;
 
-  void on_info_history_change() final {
-    // Not needed yet -- mainly for scrub scheduling
-  }
-
   /// Notify PG that Primary/Replica status has changed (to update scrub registration)
   void on_primary_status_change(bool was_primary, bool now_primary) final {
   }
