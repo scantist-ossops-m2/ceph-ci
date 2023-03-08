@@ -150,13 +150,13 @@ struct seastore_test_t :
       SeaStore &seastore,
       uint64_t off,
       uint64_t len) {
-      return seastore.fiemap(coll, oid, off, len).unsafe_get0();
+      return seastore.get_local_shard_store().fiemap(coll, oid, off, len).unsafe_get0();
     }
 
     bufferlist readv(
       SeaStore &seastore,
       interval_set<uint64_t>&m) {
-      return seastore.readv(coll, oid, m).unsafe_get0();
+      return seastore.get_local_shard_store().readv(coll, oid, m).unsafe_get0();
     }
 
     void remove(
@@ -321,7 +321,7 @@ struct seastore_test_t :
     }
 
     void check_size(SeaStore &seastore) {
-      auto st = seastore.stat(
+      auto st = seastore.get_local_shard_store().stat(
 	coll,
 	oid).get0();
       EXPECT_EQ(contents.length(), st.st_size);
@@ -357,19 +357,19 @@ struct seastore_test_t :
         std::move(t)).get0();
     }
 
-    SeaStore::attrs_t get_attrs(
+    SeaStore::SeaShardStore::attrs_t get_attrs(
       SeaStore &seastore) {
-      return seastore.get_attrs(coll, oid)
-		     .handle_error(SeaStore::get_attrs_ertr::discard_all{})
+      return seastore.get_local_shard_store().get_attrs(coll, oid)
+		     .handle_error(SeaStore::SeaShardStore::get_attrs_ertr::discard_all{})
 		     .get();
     }
 
     ceph::bufferlist get_attr(
       SeaStore& seastore,
       std::string_view name) {
-      return seastore.get_attr(coll, oid, name)
+      return seastore.get_local_shard_store().get_attr(coll, oid, name)
 		      .handle_error(
-			SeaStore::get_attr_errorator::discard_all{})
+			SeaStore::SeaShardStore::get_attr_errorator::discard_all{})
 		      .get();
     }
 
@@ -378,7 +378,7 @@ struct seastore_test_t :
       const string &key) {
       std::set<string> to_check;
       to_check.insert(key);
-      auto result = seastore.omap_get_values(
+      auto result = seastore.get_local_shard_store().omap_get_values(
 	coll,
 	oid,
 	to_check).unsafe_get0();
@@ -398,7 +398,7 @@ struct seastore_test_t :
       auto refiter = omap.begin();
       std::optional<std::string> start;
       while(true) {
-        auto [done, kvs] = seastore.omap_get_values(
+        auto [done, kvs] = seastore.get_local_shard_store().omap_get_values(
           coll,
           oid,
           start).unsafe_get0();
@@ -456,7 +456,7 @@ struct seastore_test_t :
     for (auto& [oid, obj] : test_objects) {
       oids.emplace_back(oid);
     }
-    auto ret = seastore->list_objects(
+    auto ret = seastore->get_local_shard_store().list_objects(
         coll,
         ghobject_t(),
         ghobject_t::get_max(),
@@ -545,7 +545,7 @@ struct seastore_test_t :
       auto right_bound = in_right_bound.get_oid(*seastore, coll);
 
       // get results from seastore
-      auto [listed, next] = seastore->list_objects(
+      auto [listed, next] = seastore->get_local_shard_store().list_objects(
 	coll, left_bound, right_bound, limit).get0();
 
       // compute correct answer
@@ -616,7 +616,7 @@ TEST_P(seastore_test_t, collection_create_list_remove)
 	t.create_collection(test_coll, 4);
 	do_transaction(std::move(t));
       }
-      auto colls_cores = seastore->list_collections().get0();
+      auto colls_cores = seastore->get_local_shard_store().list_collections().get0();
       std::vector<coll_t> colls;
       colls.resize(colls_cores.size());
       std::transform(
@@ -633,7 +633,7 @@ TEST_P(seastore_test_t, collection_create_list_remove)
 	t.remove_collection(test_coll);
 	do_transaction(std::move(t));
       }
-      auto colls_cores = seastore->list_collections().get0();
+      auto colls_cores = seastore->get_local_shard_store().list_collections().get0();
       std::vector<coll_t> colls;
       colls.resize(colls_cores.size());
       std::transform(

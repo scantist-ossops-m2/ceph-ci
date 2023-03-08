@@ -166,13 +166,13 @@ protected:
   EphemeralTestState(std::size_t num_device_managers) :
     num_device_managers(num_device_managers) {}
 
-  virtual void _init() = 0;
+  virtual seastar::future<> _init() = 0;
 
-  virtual void _destroy() = 0;
+  virtual seastar::future<> _destroy() = 0;
   virtual seastar::future<> _teardown() = 0;
   seastar::future<> teardown() {
     return _teardown().then([this] {
-      _destroy();
+      return _destroy();
     });
   }
 
@@ -184,8 +184,9 @@ protected:
     SUBINFO(test, "begin ...");
     return teardown().then([this] {
       devices->remount();
-      _init();
-      return _mount().handle_error(crimson::ct_error::assert_all{});
+      return _init().then([this] {
+        return _mount().handle_error(crimson::ct_error::assert_all{});
+      });
     }).then([FNAME] {
       SUBINFO(test, "finish");
     });
@@ -209,16 +210,17 @@ protected:
     }
     SUBINFO(test, "begin with {} devices ...", devices->get_num_devices());
     return devices->setup(
-    ).then([this, FNAME]() {                                                               
-      _init();
+    ).then([this]() {
+      return _init();
+    }).then([this, FNAME] {
       return _mkfs(
       ).safe_then([this] {
-	return restart_fut();                                                               
+	return restart_fut();
       }).handle_error(
-	crimson::ct_error::assert_all{}                                                     
+	crimson::ct_error::assert_all{}
       ).then([FNAME] {
-	SUBINFO(test, "finish");                                                            
-      });                                                                                   
+	SUBINFO(test, "finish");
+      });
     });   
   }
 
@@ -244,26 +246,27 @@ protected:
 
   TMTestState(std::size_t num_devices) : EphemeralTestState(num_devices) {}
 
-  virtual void _init() override {
+  virtual seastar::future<> _init() override {
     auto sec_devices = devices->get_secondary_devices();
     auto p_dev = devices->get_primary_device();
     tm = make_transaction_manager(p_dev, sec_devices, true);
     epm = tm->get_epm();
     lba_manager = tm->get_lba_manager();
     cache = tm->get_cache();
+    return seastar::now();
   }
 
-  virtual void _destroy() override {
+  virtual seastar::future<> _destroy() override {
     epm = nullptr;
     lba_manager = nullptr;
     cache = nullptr;
     tm.reset();
+    return seastar::now();
   }
 
   virtual seastar::future<> _teardown() {
     return tm->close().safe_then([this] {
-      _destroy();
-      return seastar::now();
+      return _destroy();
     }).handle_error(
       crimson::ct_error::assert_all{"Error in teardown"}
     );
@@ -390,15 +393,18 @@ protected:
 
   SeaStoreTestState() : EphemeralTestState(1) {}
 
-  virtual void _init() final {
+  virtual seastar::future<> _init() final {
     seastore = make_test_seastore(
       devices->get_primary_device_ref(),
       std::make_unique<TestMDStoreState::Store>(mdstore_state.get_mdstore()));
+    return seastore->start();
   }
 
-  virtual void _destroy() final {
+  virtual seastar::future<> _destroy() final {
     devices->set_primary_device_ref(seastore->get_primary_device_ref());
-    seastore.reset();
+    return seastore->stop().then([this] {
+      seastore.reset();
+    });
   }
 
   virtual seastar::future<> _teardown() final {
