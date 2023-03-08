@@ -1,0 +1,31 @@
+roles:
+- - c1.host.a
+  - c1.mon.a
+  - c1.mgr.a
+  - c1.osd.0
+- - c1.host.b
+  - c1.mon.b
+  - c1.mgr.b
+  - c1.osd.1
+- - c1.host.c
+  - c1.mon.c
+  - c1.mgr.c
+  - c1.osd.2
+- - c2.host.a
+  - c2.mon.a
+  - c2.mgr.a
+  - c2.osd.0
+- - c2.host.b
+  - c2.mon.b
+  - c2.mgr.b
+  - c2.osd.0
+- - c2.host.c
+  - c2.mon.c
+  - c2.mgr.c
+  - c2.osd.0
+- cephadm.shell:
+    c1.host.a:
+      - ceph orch ps
+- cephadm.shell:
+    c2.host.a:
+      - ceph orch ps

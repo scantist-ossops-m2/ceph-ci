@@ -1,0 +1,4 @@
+tasks:
+- install:
+- cephadm: {cluster: c1}
+- cephadm: {cluster: c2}
