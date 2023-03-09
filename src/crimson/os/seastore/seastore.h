@@ -112,9 +112,29 @@ public:
 
     seastar::future<> mkfs(
       secondary_device_set_t &sds,
-      uuid_d new_osd_fsid,
-      device_type_t d_type,
-      device_id_t id);
+      uuid_d new_osd_fsid);
+
+    seastar::future<> shard_mkfs(
+      secondary_device_set_t &sds,
+      uuid_d new_osd_fsid);
+
+    seastar::future<> manager_mkfs();
+
+    seastar::future<> make_sec_device(
+      const std::string path,
+      device_type_t dtype,
+      device_id_t id,
+      secondary_device_set_t &sds);
+
+    seastar::future<> sec_mkfs(
+      device_type_t dtype,
+      device_id_t id,
+      uuid_d new_osd_fsid);
+
+    seastar::future<> sec_shard_mkfs(
+      device_type_t dtype,
+      device_id_t id,
+      uuid_d new_osd_fsid);
 
     seastar::future<struct stat> stat(
       CollectionRef c,
@@ -196,7 +216,7 @@ public:
 
     uuid_d get_fsid() const;
 
-    seastar::future<> make_shard_stores();
+    seastar::future<> make_shard_stores(device_type_t d_type);
 
     seastar::future<> prepare_managers();
 
@@ -205,13 +225,6 @@ public:
     TransactionManagerRef& get_transaction_manager() {
       return transaction_manager;
     }
-
-    seastar::future<> sec_mkfs(
-      const std::string path,
-      device_type_t dtype,
-      device_id_t id,
-      secondary_device_set_t &sds,
-      uuid_d new_osd_fsid);
 
     DeviceRef get_primary_device_ref() {
       return std::move(device);
@@ -579,6 +592,17 @@ private:
   seastar::future<> prepare_meta(uuid_d new_osd_fsid);
 
   seastar::future<> _mkfs(uuid_d new_osd_fsid);
+
+  seastar::future<> shard_mkfs(
+    std::vector<secondary_device_set_t> &sds,
+    uuid_d new_osd_fsid);
+
+  seastar::future<> sec_shard_mkfs(
+    const std::string path,
+    device_type_t dtype,
+    device_id_t id,
+    std::vector<secondary_device_set_t> &sds,
+    uuid_d new_osd_fsid);
 
 private:
   std::string root;

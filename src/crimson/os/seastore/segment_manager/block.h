@@ -114,6 +114,7 @@ public:
   mount_ret mount() final;
 
   mkfs_ret mkfs(device_config_t) final;
+  mkfs_ret shard_mkfs(device_config_t) final;
 
   close_ertr::future<> close();
 
@@ -133,7 +134,7 @@ public:
     ceph::bufferptr &out) final;
 
   size_t get_available_size() const final {
-    return superblock.size;
+    return superblock.shard_size[seastar::this_shard_id()];
   }
   extent_len_t get_block_size() const {
     return superblock.block_size;
@@ -211,7 +212,7 @@ private:
 
   size_t get_offset(paddr_t addr) {
     auto& seg_addr = addr.as_seg_paddr();
-    return superblock.first_segment_offset +
+    return superblock.shard_first_segment_offset[seastar::this_shard_id()] +
       (seg_addr.get_segment_id().device_segment_id() * superblock.segment_size) +
       seg_addr.get_segment_off();
   }

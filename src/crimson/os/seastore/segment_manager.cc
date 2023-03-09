@@ -16,12 +16,12 @@ namespace crimson::os::seastore {
 std::ostream& operator<<(std::ostream& out, const block_sm_superblock_t& sb)
 {
   out << "superblock("
-      << "size=" << sb.size
+      << "size=" << sb.shard_size[seastar::this_shard_id()]
       << ", segment_size=" << sb.segment_size
       << ", block_size=" << sb.block_size
-      << ", segments=" << sb.segments
-      << ", tracker_offset=" << sb.tracker_offset
-      << ", first_segment_offset=" << sb.first_segment_offset
+      << ", segments=" << sb.shard_segments[seastar::this_shard_id()]
+      << ", tracker_offset=" << sb.shard_tracker_offset[seastar::this_shard_id()]
+      << ", first_segment_offset=" << sb.shard_first_segment_offset[seastar::this_shard_id()]
       << ", config=" << sb.config
       << ")";
   return out;
@@ -52,7 +52,7 @@ LOG_PREFIX(SegmentManager::get_segment_manager);
     static_cast<size_t>(0),
     [&](auto &nr_zones) {
       return seastar::open_file_dma(
-	device + "/block" + std::to_string(seastar::this_shard_id()),
+	device + "/block",
 	seastar::open_flags::rw
       ).then([&](auto file) {
 	return seastar::do_with(
@@ -67,11 +67,11 @@ LOG_PREFIX(SegmentManager::get_segment_manager);
 	if (nr_zones != 0) {
 	  return std::make_unique<
 	    segment_manager::zns::ZNSSegmentManager
-	    >(device + "/block" + std::to_string(seastar::this_shard_id()));
+	    >(device + "/block");
 	} else {
 	  return std::make_unique<
 	    segment_manager::block::BlockSegmentManager
-	    >(device + "/block" + std::to_string(seastar::this_shard_id()));
+	    >(device + "/block");
 	}
       });
     });
@@ -79,7 +79,7 @@ LOG_PREFIX(SegmentManager::get_segment_manager);
   return seastar::make_ready_future<crimson::os::seastore::SegmentManagerRef>(
     std::make_unique<
       segment_manager::block::BlockSegmentManager
-    >(device + "/block" + std::to_string(seastar::this_shard_id())));
+    >(device + "/block"));
 #endif
 }
 

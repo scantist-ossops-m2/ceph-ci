@@ -20,43 +20,49 @@
 
 namespace crimson::os::seastore {
 
+using std::vector;
 struct block_sm_superblock_t {
-  size_t size = 0;
+  unsigned int shard_num = 0;
+  vector<size_t> shard_size;
   size_t segment_size = 0;
   size_t block_size = 0;
 
-  size_t segments = 0;
-  uint64_t tracker_offset = 0;
-  uint64_t first_segment_offset = 0;
+  vector<size_t> shard_segments;
+  vector<uint64_t> shard_tracker_offset;
+  vector<uint64_t> shard_first_segment_offset;
 
   device_config_t config;
 
   DENC(block_sm_superblock_t, v, p) {
     DENC_START(1, 1, p);
-    denc(v.size, p);
+    denc(v.shard_num, p);
+    denc(v.shard_size, p);
     denc(v.segment_size, p);
     denc(v.block_size, p);
-    denc(v.segments, p);
-    denc(v.tracker_offset, p);
-    denc(v.first_segment_offset, p);
+    denc(v.shard_segments, p);
+    denc(v.shard_tracker_offset, p);
+    denc(v.shard_first_segment_offset, p);
     denc(v.config, p);
     DENC_FINISH(p);
   }
 
   void validate() const {
+    ceph_assert(shard_num == seastar::smp::count);
     ceph_assert(block_size > 0);
     ceph_assert(segment_size > 0 &&
                 segment_size % block_size == 0);
     ceph_assert_always(segment_size <= SEGMENT_OFF_MAX);
-    ceph_assert(size > segment_size &&
-                size % block_size == 0);
-    ceph_assert_always(size <= DEVICE_OFF_MAX);
-    ceph_assert(segments > 0);
-    ceph_assert_always(segments <= DEVICE_SEGMENT_ID_MAX);
-    ceph_assert(tracker_offset > 0 &&
-                tracker_offset % block_size == 0);
-    ceph_assert(first_segment_offset > tracker_offset &&
-                first_segment_offset % block_size == 0);
+    for (unsigned int i = 0; i < seastar::smp::count; i ++) {
+      ceph_assert(shard_size[i] > segment_size &&
+		  shard_size[i] % block_size == 0);
+      ceph_assert_always(shard_size[i] <= DEVICE_OFF_MAX);
+      ceph_assert(shard_segments[i] > 0);
+      ceph_assert_always(shard_segments[i] <= DEVICE_SEGMENT_ID_MAX);
+      ceph_assert(shard_tracker_offset[i] > 0 &&
+		  shard_tracker_offset[i] % block_size == 0);
+      ceph_assert(shard_first_segment_offset[i] > shard_tracker_offset[i] &&
+		  shard_first_segment_offset[i] % block_size == 0);
+    }
     ceph_assert(config.spec.magic != 0);
     ceph_assert(config.spec.dtype == device_type_t::SSD);
     ceph_assert(config.spec.id <= DEVICE_ID_MAX_VALID);

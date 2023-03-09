@@ -85,6 +85,9 @@ public:
   using mkfs_ertr = access_ertr;
   using mkfs_ret = mkfs_ertr::future<>;
   virtual mkfs_ret mkfs(device_config_t) = 0;
+  virtual mkfs_ret shard_mkfs(device_config_t) {
+    return mkfs_ertr::now();
+  }
 
   using mount_ertr = access_ertr;
   using mount_ret = access_ertr::future<>;
