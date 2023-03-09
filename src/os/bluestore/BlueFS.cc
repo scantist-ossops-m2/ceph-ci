@@ -2742,15 +2742,18 @@ void BlueFS::_compact_log_async_LD_LNF_D() //also locks FW for new_writer
   // Part 0.
   // Lock the log and forbid its expansion and other compactions
 
+  // lock log's run-time structures for a while
+  log.lock.lock();
+
+  // Extend log in case of having a big transaction waiting before starting compaction.
+  _maybe_extend_log();
+
   // only one compaction allowed at one time
   bool old_is_comp = std::atomic_exchange(&log_is_compacting, true);
   if (old_is_comp) {
     dout(10) << __func__ << " ongoing" <<dendl;
     return;
   }
-  // lock log's run-time structures for a while
-  log.lock.lock();
-  _flush_and_sync_log_core();
   auto t0 = mono_clock::now();
 
   // Part 1.
@@ -3054,41 +3057,36 @@ void BlueFS::_consume_dirty(uint64_t seq)
   }
 }
 
-int64_t BlueFS::_maybe_extend_log(uint64_t amount, bool ignore_compaction) {
+int64_t BlueFS::_maybe_extend_log() {
   uint64_t runway = log.writer->file->fnode.get_allocated() - log.writer->get_effective_write_pos();
   // increasing the size of the log involves adding a OP_FILE_UPDATE_INC which its size will 
   // increase with respect the number of extents. bluefs_min_log_runway should cover the max size 
   // a log can get.
-  if (runway < cct->_conf->bluefs_min_log_runway) {
-    _extend_log(log.t.expected_size(), ignore_compaction);
-  }
   // inject new allocation in case log is too big
   if (log.t.expected_size() > runway) {
-    _extend_log(log.t.expected_size(), ignore_compaction);
+    _extend_log(log.t.expected_size());
+  } else if (runway < cct->_conf->bluefs_min_log_runway) {
+    _extend_log(cct->_conf->bluefs_max_log_runway);
   }
   runway = log.writer->file->fnode.get_allocated() - log.writer->get_effective_write_pos();
   return runway;
 }
 
-int64_t BlueFS::_extend_log(uint64_t amount, bool ignore_compaction) {
+int64_t BlueFS::_extend_log(uint64_t amount) {
   ceph_assert(ceph_mutex_is_locked(log.lock));
-  if (!ignore_compaction) {
-    std::unique_lock<ceph::mutex> ll(log.lock, std::adopt_lock);
-    while (log_forbidden_to_expand.load() == true) {
-      log_cond.wait(ll);
-    }
-    ll.release();
+  std::unique_lock<ceph::mutex> ll(log.lock, std::adopt_lock);
+  while (log_forbidden_to_expand.load() == true) {
+    log_cond.wait(ll);
   }
+  ll.release();
   vselector->sub_usage(log.writer->file->vselector_hint, log.writer->file->fnode);
-  while (amount > 0) {
-    int r = _allocate(
-        vselector->select_prefer_bdev(log.writer->file->vselector_hint),
-        cct->_conf->bluefs_max_log_runway,
-        0,
-        &log.writer->file->fnode);
-    amount -= std::min(cct->_conf->bluefs_max_log_runway, amount);
-    ceph_assert(r == 0);
-  }
+  int r = _allocate(
+      vselector->select_prefer_bdev(log.writer->file->vselector_hint),
+      amount,
+      0,
+      &log.writer->file->fnode);
+  amount -= std::min(cct->_conf->bluefs_max_log_runway, amount);
+  ceph_assert(r == 0);
   vselector->add_usage(log.writer->file->vselector_hint, log.writer->file->fnode);
 
   bluefs_transaction_t log_extend_transaction;
@@ -3120,7 +3118,6 @@ void BlueFS::_flush_and_sync_log_core(bool ignore_compaction)
   ceph_assert(ceph_mutex_is_locked(log.lock));
   dout(10) << __func__ << " " << log.t << dendl;
 
-  _maybe_extend_log(log.t.expected_size(), ignore_compaction);
 
   bufferlist bl;
   bl.reserve(super.block_size);
@@ -3223,6 +3220,7 @@ int BlueFS::_flush_and_sync_log_LD(uint64_t want_seq)
   to_release.swap(dirty.pending_release);
   dirty.lock.unlock();
 
+  _maybe_extend_log();
   _flush_and_sync_log_core();
   _flush_bdev(log.writer);
   logger->set(l_bluefs_log_bytes, log.writer->file->fnode.size);
@@ -3250,7 +3248,9 @@ int BlueFS::_flush_and_sync_log_jump_D(uint64_t jump_to, bool ignore_compaction)
   vector<interval_set<uint64_t>> to_release(dirty.pending_release.size());
   to_release.swap(dirty.pending_release);
   dirty.lock.unlock();
-  _flush_and_sync_log_core(ignore_compaction);
+  uint64_t runway = log.writer->file->fnode.get_allocated() - log.writer->get_effective_write_pos();
+  ceph_assert(log.t.expected_size() <= runway);
+  _flush_and_sync_log_core();
 
   dout(10) << __func__ << " jumping log offset from 0x" << std::hex
 	   << log.writer->pos << " -> 0x" << jump_to << std::dec << dendl;

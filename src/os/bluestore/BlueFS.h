@@ -452,8 +452,8 @@ private:
   void _wait_for_aio(FileWriter *h);  // safe to call without a lock
 #endif
 
-  int64_t _maybe_extend_log(uint64_t amount, bool ignore_compaction = false);
-  int64_t _extend_log(uint64_t amount, bool ignore_compaction = false);
+  int64_t _maybe_extend_log();
+  int64_t _extend_log(uint64_t amount);
   uint64_t _log_advance_seq();
   void _consume_dirty(uint64_t seq);
   void _clear_dirty_set_stable_D(uint64_t seq_stable);
