@@ -28,6 +28,7 @@
 #include <boost/assign/list_of.hpp>
 #include <utility>
 #include <vector>
+#include "test/librados/crimson_utils.h"
 
 using namespace std;
 
@@ -582,6 +583,9 @@ TEST_F(TestInternal, MetadataConfApply) {
 
 TEST_F(TestInternal, SnapshotCopyup)
 {
+  //https://tracker.ceph.com/issues/58263
+  // Clone overlap is WIP
+  SKIP_IF_CRIMSON();
   REQUIRE_FEATURE(RBD_FEATURE_LAYERING);
 
   librbd::ImageCtx *ictx;
