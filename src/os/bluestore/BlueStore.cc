@@ -19519,7 +19519,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
     derr << "failed getting onode's iterator" << dendl;
     return -ENOENT;
   }
-
+  dout(1) << "GBH::SNAPMAP::recovery started" << dendl;
   // we don't need driver and split bits for the SnapMapper here
   GlobalSnapMapper     snap_map(cct);
   mempool::bluestore_cache_meta::string ss_attr_name(SS_ATTR);
@@ -19591,6 +19591,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
   // bool did_recovery_upgrade = !new_snap_map_mode();
   // by storing the maps we will prevent conversion from old snapmapper objects
   // which was done already here (we piggybacked SnapMapper recovery)
+  dout(1) << "GBH::SNAPMAP::recovery completed!!!" << dendl;
   store_snap_maps(snap_map);
 
   std::lock_guard l(vstatfs_lock);

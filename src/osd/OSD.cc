@@ -3542,6 +3542,7 @@ float OSD::get_osd_snap_trim_sleep()
 // convert SnapMapper objects from old-format to the new mode
 void OSD::convert_old_snap_mapper_objects(OSDMapRef & osdmap)
 {
+  dout(1) << "::GBH::SNAPMAP::convert_old_snap_mapper_objects" << dendl;
   uint64_t obj_converted_count = 0;
   auto convert_old_snap_obj = [&](const bufferlist &bl, const char *shard_str) {
     GlobalSnapMapper::object_snaps objsnap;
@@ -3549,7 +3550,7 @@ void OSD::convert_old_snap_mapper_objects(OSDMapRef & osdmap)
       decode(objsnap, bl);
     }
     catch (ceph::buffer::error& e) {
-      derr << "GBH::[" << obj_converted_count << "]failed object_snaps decode" << dendl;
+      derr << "GBH::SNAPMAP::[" << obj_converted_count << "]failed object_snaps decode" << dendl;
       return;
     }
 
@@ -3575,7 +3576,7 @@ void OSD::convert_old_snap_mapper_objects(OSDMapRef & osdmap)
   store->remove_old_snap_mapper_from_db();
 
   utime_t end_time = ceph_clock_now();
-  dout(1) << "::GBH::" << obj_converted_count << " Old SnapMapper Objs were converted; elapsed time="
+  dout(1) << "::GBH::SNAPMAP::" << obj_converted_count << " Old SnapMapper Objs were converted; elapsed time="
 	  << end_time - start_time << " seconds" << dendl;
 }
 
@@ -3784,7 +3785,7 @@ int OSD::init()
   gsnap_mapper = new GlobalSnapMapper(cct);
   ceph_assert(gsnap_mapper != nullptr);
   store->restore_snap_mapper(*gsnap_mapper);
-  gsnap_mapper->print_snaps(__func__);
+  //gsnap_mapper->print_snaps(__func__);
 
   // load up pgs (as they previously existed)
   load_pgs();
@@ -4401,7 +4402,7 @@ void OSD::store_snap_maps()
 {
   // GBH:: hold a ref to SnapMapper in the OSD instead of search PGs
   dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->store_snap_maps()" << dendl;
-  gsnap_mapper->print_snaps(__func__);
+  //gsnap_mapper->print_snaps(__func__);
   store->store_snap_maps(*gsnap_mapper);
 }
 
