@@ -237,7 +237,7 @@ block_sm_superblock_t make_superblock(
        device_id_printer_t{device_id},
        size,
        shard_available_size,
-       config_segment_size,
+       uint64_t(config_segment_size),
        shard_segments,
        data.block_size,
        shard_tracker_off,
