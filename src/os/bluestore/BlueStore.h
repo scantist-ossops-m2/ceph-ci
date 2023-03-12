@@ -3844,7 +3844,7 @@ private:
   int  copy_allocator(Allocator* src_alloc, Allocator *dest_alloc, uint64_t* p_num_entries);
   int  store_allocator(Allocator* allocator);
   //int  __restore_snap_maps(const std::vector<snap_listing_entry_t> &sdir);
-  int  restore_snap_map_listing_file(std::vector<snap_listing_entry_t> &sdir);
+  int  restore_snap_map_listing_file(std::vector<snap_listing_entry_t> &sdir, BlueFS::FileReader *p_temp_handle);
   int  store_snap_map_listing_file(const std::vector<snap_listing_entry_t> &sdir);
   int  restore_from_snap_maps_file(GlobalSnapMapper &sm, const snap_listing_entry_t *entry);
 

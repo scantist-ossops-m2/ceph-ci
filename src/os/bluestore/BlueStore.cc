@@ -18674,15 +18674,8 @@ static size_t calc_snap_listing_header_size()
 }
 
 //-----------------------------------------------------------------------------------
-int BlueStore::restore_snap_map_listing_file(std::vector<snap_listing_entry_t> &sdir)
+int BlueStore::restore_snap_map_listing_file(std::vector<snap_listing_entry_t> &sdir, BlueFS::FileReader *p_temp_handle)
 {
-  dout(10) << "GBH::SNAPMAP::snap_maps_dir =" << snap_maps_dir << ", snap_maps_listing=" << snap_maps_listing << dendl;
-  BlueFS::FileReader *p_temp_handle = nullptr;
-  int ret = bluefs->open_for_read(snap_maps_dir, snap_maps_listing, &p_temp_handle, false);
-  if (ret != 0) {
-    derr << "GBH::SNAPMAP::Failed open_for_read with error-code " << ret << dendl;
-    return -1;
-  }
   unique_ptr<BlueFS::FileReader> p_handle(p_temp_handle);
   uint64_t file_size = p_handle->file->fnode.size;
   uint64_t allocated = p_handle->file->fnode.get_allocated();
@@ -18743,6 +18736,7 @@ static inline const std::string get_snap_file_name(SnapMapperShard shard, snapid
 //-----------------------------------------------------------------------------------
 int BlueStore::store_snap_map_listing_file(const std::vector<snap_listing_entry_t> &sdir)
 {
+  dout(1) << "GBH::SNAPMAP::store_snap_map_listing_file - started" << dendl;
   // reuse previous file-allocation if exists
   int ret = bluefs->stat(snap_maps_dir, snap_maps_listing, nullptr, nullptr);
   bool overwrite_file = (ret == 0);
@@ -18770,11 +18764,13 @@ int BlueStore::store_snap_map_listing_file(const std::vector<snap_listing_entry_
   p_handle->append(entries_bl);
   p_handle->append(header_bl);
 
-  dout(20) << "GBH::SNAPMAP::files_count=" << header.entries_count << ", bytes_size=" << header.bytes_size << ", crc32=" << header.crc32 << dendl;
+  dout(1) << "GBH::SNAPMAP::files_count=" << header.entries_count << ", bytes_size=" << header.bytes_size << ", crc32=" << header.crc32 << dendl;
 
   bluefs->fsync(p_handle);
   dout(20) <<"GBH::SNAPMAP::p_handle->pos=" << p_handle->pos << dendl;
   bluefs->close_writer(p_handle);
+
+  dout(1) << "GBH::SNAPMAP::store_snap_map_listing_file - completed" << dendl;
   return 0;
 }
 
@@ -18811,7 +18807,7 @@ int BlueStore::store_snap_maps_single_shard(std::vector<snap_listing_entry_t> &s
     const auto & objs    = itr->second;
 
     const std::string snap_maps_file(get_snap_file_name(*shard, snap_id));
-    dout(10) << "GBH::SNAPMAP::snap_maps_file=" << snap_maps_file << " ::shard=" << *shard << dendl;
+    dout(1) << "GBH::SNAPMAP::snap_maps_file=" << snap_maps_file << " ::shard=" << *shard << dendl;
     // reuse previous file-allocation if exists
     int ret = bluefs->stat(snap_maps_dir, snap_maps_file, nullptr, nullptr);
     bool overwrite_file = (ret == 0);
@@ -18844,7 +18840,7 @@ int BlueStore::store_snap_maps_single_shard(std::vector<snap_listing_entry_t> &s
     uint64_t file_size = p_handle->pos;
     bluefs->close_writer(p_handle);
     sdir.emplace_back(*shard, snap_id, file_size, count, crc32);
-    dout(20) << "GBH::SNAPMAP::snap_id=" << snap_id << ", file_size=" << file_size << ", entries_count=" << count << ", crc=" << crc32 << dendl;
+    dout(1) << "GBH::SNAPMAP::snap_id=" << snap_id << ", file_size=" << file_size << ", entries_count=" << count << ", crc=" << crc32 << dendl;
   }
 
   return 0;
@@ -18853,6 +18849,7 @@ int BlueStore::store_snap_maps_single_shard(std::vector<snap_listing_entry_t> &s
 //-----------------------------------------------------------------------------------
 int BlueStore::store_snap_maps(const GlobalSnapMapper & gsnap_mapper)
 {
+  dout(1) << "GBH::SNAPMAP::store_snap_maps - started" << dendl;
   // create dir if doesn't exist already
   if (!bluefs->dir_exists(snap_maps_dir) ) {
     int ret = bluefs->mkdir(snap_maps_dir);
@@ -18870,8 +18867,14 @@ int BlueStore::store_snap_maps(const GlobalSnapMapper & gsnap_mapper)
       continue;
     }
     SnapMapperShard shard = gsnap_mapper.get_snap_mapper_shard(snap_to_objs);
-    dout(10) << "GBH::SNAPMAP::shard=" << shard.get_id() << "/" << idx << " has valid mapping" << dendl;
+    dout(1) << "GBH::SNAPMAP::shard=" << shard.get_id() << "/" << idx << " has valid mapping" << dendl;
     store_snap_maps_single_shard(sdir, snap_to_objs, &shard);
+  }
+  dout(1) << "GBH::SNAPMAP::store_snap_maps - completed" << dendl;
+
+  if (sdir.empty()) {
+    dout(1) << "GBH::SNAPMAP:: No SNAPS exist -> nothing to do" << dendl;
+    return 0;
   }
 
   return store_snap_map_listing_file(sdir);
@@ -18961,8 +18964,17 @@ int BlueStore::restore_snap_mapper(GlobalSnapMapper & sm)
     return 0;
   }
   dout(10) << "GBH::SNAPMAP::restore_snap_mapper [directory exists]" << dendl;
+
+  dout(1) << "GBH::SNAPMAP::snap_maps_dir =" << snap_maps_dir << ", snap_maps_listing=" << snap_maps_listing << dendl;
+  BlueFS::FileReader *p_temp_handle = nullptr;
+  int ret = bluefs->open_for_read(snap_maps_dir, snap_maps_listing, &p_temp_handle, false);
+  if (ret != 0) {
+    dout(1) << "GBH::SNAPMAP::snap_maps_listing file <" << snap_maps_listing << "> doesn't exist (i.e. no snaps)" << dendl;
+    return 0;
+  }
+
   std::vector<snap_listing_entry_t> sdir;
-  int ret = restore_snap_map_listing_file(sdir);
+  ret = restore_snap_map_listing_file(sdir, p_temp_handle);
   if (ret != 0) {
     derr << "GBH::SNAPMAP::failed restore_snap_map_listing_file() with error code=" << ret << dendl;
     return ret;
@@ -18970,7 +18982,7 @@ int BlueStore::restore_snap_mapper(GlobalSnapMapper & sm)
   dout(10) << "GBH::SNAPMAP::restore_snap_mapper [listing file was restored]" << dendl;
   int i = 0;
   for (const snap_listing_entry_t& entry : sdir) {
-    dout(10) << "GBH::SNAPMAP::restoring entry ||[" << i++ << "]=" << entry << dendl;
+    dout(1) << "GBH::SNAPMAP::restoring entry ||[" << i++ << "]=" << entry << dendl;
     restore_from_snap_maps_file(sm, &entry);
   }
 
@@ -19520,7 +19532,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
     return -ENOENT;
   }
   dout(1) << "GBH::SNAPMAP::recovery started" << dendl;
-  // we don't need driver and split bits for the SnapMapper here
+  uint32_t             snap_obj_count = 0;
   GlobalSnapMapper     snap_map(cct);
   mempool::bluestore_cache_meta::string ss_attr_name(SS_ATTR);
   uint64_t             kv_count       = 0;
@@ -19562,6 +19574,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
 	bufferlist attr;
 	attr.push_back(dummy_on.onode.attrs[ss_attr_name]);
 	add_snapset_info_to_mapper(attr, oid.hobj, oid.shard_id, &snap_map);
+	snap_obj_count++;
       }
 
       ++stats.onode_count;
@@ -19591,7 +19604,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
   // bool did_recovery_upgrade = !new_snap_map_mode();
   // by storing the maps we will prevent conversion from old snapmapper objects
   // which was done already here (we piggybacked SnapMapper recovery)
-  dout(1) << "GBH::SNAPMAP::recovery completed!!!" << dendl;
+  dout(1) << "GBH::SNAPMAP::recovery completed!!! snap_obj_count=" << snap_obj_count << dendl;
   store_snap_maps(snap_map);
 
   std::lock_guard l(vstatfs_lock);
