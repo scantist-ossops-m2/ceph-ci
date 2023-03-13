@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Iterator, Optional, Dict, Any
 
 from ceph.deployment.service_spec import PlacementSpec, ServiceSpec, HostPlacementSpec
 from cephadm.schedule import HostAssignment
+from cephadm.utils import SpecialHostLabels
 import rados
 
 from mgr_module import NFS_POOL_NAME
@@ -300,7 +301,7 @@ class Migrations:
         if 'client.admin' not in self.mgr.keys.keys:
             self.mgr._client_keyring_set(
                 entity='client.admin',
-                placement='label:_admin',
+                placement=f'label:{SpecialHostLabels.admin_label}',
             )
         return True
 
