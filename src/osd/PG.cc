@@ -2682,6 +2682,7 @@ void PG::C_DeleteMore::complete(int r) {
   delete this;
 }
 
+#if 0
 std::pair<ghobject_t, bool> PG::do_delete_work(
   ObjectStore::Transaction &t,
   ghobject_t _next)
@@ -2797,6 +2798,142 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
   }
   return {next, running};
 }
+#else
+std::pair<ghobject_t, bool> PG::do_delete_work(
+  ObjectStore::Transaction &t,
+  ghobject_t _next)
+{
+  dout(10) << __func__ << dendl;
+
+  {
+    float osd_delete_sleep = osd->osd->get_osd_delete_sleep();
+    if (osd_delete_sleep > 0 && delete_needs_sleep) {
+      epoch_t e = get_osdmap()->get_epoch();
+      PGRef pgref(this);
+      auto delete_requeue_callback = new LambdaContext([this, pgref, e](int r) {
+        dout(20) << "do_delete_work() [cb] wake up at "
+                 << ceph_clock_now()
+	         << ", re-queuing delete" << dendl;
+        std::scoped_lock locker{*this};
+        delete_needs_sleep = false;
+        if (!pg_has_reset_since(e)) {
+          osd->queue_for_pg_delete(get_pgid(), e);
+        }
+      });
+
+      auto delete_schedule_time = ceph::real_clock::now();
+      delete_schedule_time += ceph::make_timespan(osd_delete_sleep);
+      std::lock_guard l{osd->sleep_lock};
+      osd->sleep_timer.add_event_at(delete_schedule_time,
+				    delete_requeue_callback);
+      dout(20) << __func__ << " Delete scheduled at " << delete_schedule_time << dendl;
+      return std::make_pair(_next, true);
+    }
+  }
+
+  delete_needs_sleep = true;
+
+  ghobject_t next;
+
+  vector<ghobject_t> olist;
+  int max = std::min(osd->store->get_ideal_list_max(),
+		     (int)cct->_conf->osd_target_transaction_size);
+
+  osd->store->collection_list(
+    ch,
+    _next,
+    ghobject_t::get_max(),
+    max,
+    &olist,
+    &next);
+  dout(20) << __func__ << " " << olist << dendl;
+
+  // make sure we've removed everything
+  // by one more listing from the beginning
+  if (_next != ghobject_t() && olist.empty()) {
+    next = ghobject_t();
+    osd->store->collection_list(
+      ch,
+      next,
+      ghobject_t::get_max(),
+      max,
+      &olist,
+      &next);
+    for (auto& oid : olist) {
+      if (oid == pgmeta_oid) {
+        dout(20) << __func__ << " removing pgmeta object " << oid << dendl;
+      } else {
+        dout(0) << __func__ << " additional unexpected onode"
+                <<" new onode has appeared since PG removal started"
+                << oid << dendl;
+      }
+    }
+  }
+
+  //SNAPMAPPER
+  //OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
+  int64_t num = 0;
+  for (auto& oid : olist) {
+    if (oid == pgmeta_oid) {
+      continue;
+    }
+    if (oid.is_pgmeta()) {
+      osd->clog->warn() << info.pgid << " found stray pgmeta-like " << oid
+			<< " during PG removal";
+    }
+#if 0
+    //SNAPMAPPER
+    int r = snap_mapper.remove_oid(oid.hobj, &_t);
+    if (r != 0 && r != -ENOENT) {
+      ceph_abort();
+    }
+#endif
+    t.remove(coll, oid);
+    ++num;
+  }
+  bool running = true;
+  if (num) {
+    dout(20) << __func__ << " deleting " << num << " objects" << dendl;
+    Context *fin = new C_DeleteMore(this, get_osdmap_epoch());
+    t.register_on_commit(fin);
+  } else {
+    if (cct->_conf->osd_inject_failure_on_pg_removal) {
+      _exit(1);
+    }
+
+    // final flush here to ensure completions drop refs.  Of particular concern
+    // are the SnapMapper ContainerContexts.
+    {
+      PGRef pgref(this);
+      PGLog::clear_info_log(info.pgid, &t);
+      t.remove_collection(coll);
+      t.register_on_commit(new ContainerContext<PGRef>(pgref));
+      t.register_on_applied(new ContainerContext<PGRef>(pgref));
+      osd->store->queue_transaction(ch, std::move(t));
+    }
+    ch->flush();
+
+    if (!osd->try_finish_pg_delete(this, pool.info.get_pg_num())) {
+      dout(1) << __func__ << " raced with merge, reinstantiating" << dendl;
+      ch = osd->store->create_new_collection(coll);
+      create_pg_collection(t,
+	      info.pgid,
+	      info.pgid.get_split_bits(pool.info.get_pg_num()));
+      init_pg_ondisk(t, info.pgid, &pool.info);
+      recovery_state.reset_last_persisted();
+    } else {
+      recovery_state.set_delete_complete();
+
+      // cancel reserver here, since the PG is about to get deleted and the
+      // exit() methods don't run when that happens.
+      osd->local_reserver.cancel_reservation(info.pgid);
+
+      running = false;
+    }
+  }
+  return {next, running};
+}
+#endif
 
 int PG::pg_stat_adjust(osd_stat_t *ns)
 {

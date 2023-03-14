@@ -1836,7 +1836,7 @@ bool ReplicatedBackend::handle_pull_response(
     // make *any*change to the ONode.
     // Subsequnet calls to snap_mapper.remove_oid() will become a NOP when the old_snap
     // is removed from the ONode
-    get_parent()->pgb_clear_object_snap_mapping(t, pi.recovery_info.soid);
+    get_parent()->pgb_clear_object_snap_mapping(t, pull_info.recovery_info.soid);
 
     // attrs only reference the origin bufferlist (decode from
     // MOSDPGPush message) whose size is much greater than attrs in

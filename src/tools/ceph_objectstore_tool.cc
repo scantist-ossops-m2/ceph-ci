@@ -3586,18 +3586,6 @@ int main(int argc, char **argv)
     return 1;
   }
 
-  // Special handling for filestore journal, so we can dump it without mounting
-  if (op == "dump-journal" && type == "filestore") {
-    int ret = mydump_journal(formatter, jpath, g_conf()->journal_dio);
-    if (ret < 0) {
-      cerr << "journal-path: " << jpath << ": "
-	   << cpp_strerror(ret) << std::endl;
-      return 1;
-    }
-    formatter->flush(cout);
-    return 0;
-  }
-
   //Verify that data-path really exists
   struct stat st;
   if (::stat(dpath.c_str(), &st) == -1) {
