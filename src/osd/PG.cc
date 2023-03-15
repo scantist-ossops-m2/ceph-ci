@@ -2804,7 +2804,6 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
   ghobject_t _next)
 {
   dout(10) << __func__ << dendl;
-
   {
     float osd_delete_sleep = osd->osd->get_osd_delete_sleep();
     if (osd_delete_sleep > 0 && delete_needs_sleep) {
@@ -2870,8 +2869,6 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     }
   }
 
-  //SNAPMAPPER
-  //OSDriver::OSTransaction _t(osdriver.get_transaction(&t));
   int64_t num = 0;
   for (auto& oid : olist) {
     if (oid == pgmeta_oid) {
@@ -2881,16 +2878,10 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
       osd->clog->warn() << info.pgid << " found stray pgmeta-like " << oid
 			<< " during PG removal";
     }
-#if 0
-    //SNAPMAPPER
-    int r = snap_mapper.remove_oid(oid.hobj, &_t);
-    if (r != 0 && r != -ENOENT) {
-      ceph_abort();
-    }
-#endif
     t.remove(coll, oid);
     ++num;
   }
+
   bool running = true;
   if (num) {
     dout(20) << __func__ << " deleting " << num << " objects" << dendl;
@@ -2900,6 +2891,9 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
     if (cct->_conf->osd_inject_failure_on_pg_removal) {
       _exit(1);
     }
+    // remove *all* COBJ owned by this PG from the SnapMapper
+    // it will be done only once after all OBJ where removed from the coll
+    snap_mapper.reset();
 
     // final flush here to ensure completions drop refs.  Of particular concern
     // are the SnapMapper ContainerContexts.
