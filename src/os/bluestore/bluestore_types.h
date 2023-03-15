@@ -72,7 +72,7 @@ std::ostream& operator<<(std::ostream& out, const bluestore_cnode_t& l);
 template <typename OFFS_TYPE, typename LEN_TYPE>
 struct bluestore_interval_t
 {
-  static const uint64_t INVALID_OFFSET = ~0ull;
+  static constexpr uint64_t INVALID_OFFSET = ~0ull;
 
   OFFS_TYPE offset = 0;
   LEN_TYPE length = 0;
@@ -301,6 +301,29 @@ struct bluestore_blob_use_tracker_t {
   bool is_empty() const {
     return !is_not_empty();
   }
+  // Returns how many allocation units are currently tracked.
+  // Simplifies logic when num_au = 0, but in reality we track just one
+  uint32_t get_num_au() const {
+    return num_au == 0 ? 1 : num_au;
+  }
+  // Returns array of used sizes per au.
+  // It has at least get_num_au() elements.
+  const uint32_t* get_au_array() const {
+    if (num_au > 0) {
+      return bytes_per_au;
+    } else {
+      return &total_bytes;
+    }
+  }
+  // Returns array of used sizes per au.
+  // It has at least get_num_au() elements.
+  uint32_t* dirty_au_array() {
+    if (num_au > 0) {
+      return bytes_per_au;
+    } else {
+      return &total_bytes;
+    }
+  }
   void prune_tail(uint32_t new_len) {
     if (num_au) {
       new_len = round_up_to(new_len, au_size);
@@ -372,7 +395,8 @@ struct bluestore_blob_use_tracker_t {
   void split(
     uint32_t blob_offset,
     bluestore_blob_use_tracker_t* r);
-
+  void dup(const bluestore_blob_use_tracker_t& from,
+	   uint32_t start, uint32_t len);
   bool equal(
     const bluestore_blob_use_tracker_t& other) const;
     
@@ -459,6 +483,11 @@ public:
   ceph::buffer::ptr csum_data;                ///< opaque std::vector of csum data
 
   bluestore_blob_t(uint32_t f = 0) : flags(f) {}
+
+  void dup(const bluestore_blob_t& from);
+
+  // initialize blob to accomodate data from other blob, but do not copy yet
+  void adjust_to(const bluestore_blob_t& other, uint32_t new_logical_length);
 
   const PExtentVector& get_extents() const {
     return extents;
@@ -862,7 +891,6 @@ public:
     }
   }
   void add_tail(uint32_t new_len) {
-    ceph_assert(is_mutable());
     ceph_assert(!has_unused());
     ceph_assert(new_len > logical_length);
     extents.emplace_back(
