@@ -4885,7 +4885,6 @@ void OSD::recursive_remove_collection(CephContext* cct,
 {
   // PGs are offline so we don't have any active SnapMapper
   // Simply remove the SnapMapper files associated with this pgid
-  //ldout(cct, 1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->remove_snap_mapper(" << pgid << ")" << dendl;  
   uint32_t   pg_num     = get_pg_num_from_history(pg_num_history, pgid.pool());
   int64_t    pool       = pgid.pool();
   uint32_t   split_bits = pgid.get_split_bits(pg_num);
@@ -4894,8 +4893,8 @@ void OSD::recursive_remove_collection(CephContext* cct,
   // SnapMapper is already loaded, so simply remove objects in memory
   uint32_t hash_prefix = (match & ~((uint32_t)(~0) << split_bits));
   uint32_t hash_prefix_reversed = hobject_t::_reverse_bits(hash_prefix);
-  gsnap_mapper->delete_pg(SnapMapperShard(pgid.shard), pool, pgid, hash_prefix,
-			  hash_prefix_reversed, split_bits, match);
+  gsnap_mapper->delete_objs_from_pg(SnapMapperShard(pgid.shard), pool, pgid, hash_prefix,
+				    hash_prefix_reversed, split_bits, match, UINT64_MAX);
 
   ObjectStore::CollectionHandle ch = store->open_collection(tmp);
   ObjectStore::Transaction t;

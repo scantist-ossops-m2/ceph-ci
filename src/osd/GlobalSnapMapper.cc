@@ -45,9 +45,9 @@ void GlobalSnapMapper::object_snaps::decode(ceph::buffer::list::const_iterator &
 }
 
 //----------------------------------------------------
-uint32_t GlobalSnapMapper::count_objects() const
+uint64_t GlobalSnapMapper::count_objects() const
 {
-  uint32_t count = 0;
+  uint64_t count = 0;
   std::shared_lock rd_lock(m_mutex); // <<<<<<
   for (auto snap_to_objs : snap_to_objs_arr) {
     if (snap_to_objs == nullptr) {
@@ -63,6 +63,83 @@ uint32_t GlobalSnapMapper::count_objects() const
       count += objs.set.size();
     }
   }
+  return count;
+}
+
+//----------------------------------------------------
+uint64_t GlobalSnapMapper::count_objects_per_pg_snap(
+  snap_to_objs_map_t *snap_to_objs,
+  SnapMapperShard     shard,
+  int64_t             pool,
+  const spg_t        &pgid,
+  uint32_t            hash_prefix,
+  uint32_t            hash_prefix_reversed,
+  uint32_t            mask_bits,
+  uint32_t            match,
+  snapid_t            snapid)
+{
+  const uint32_t hash_mask = ~( (uint32_t)(~0) >> mask_bits);
+  hobject_t      start_obj(snapid, hash_prefix, false, pool);
+  uint64_t       count = 0;
+
+  // first take a shared-lock on the snap_to_objs map
+  std::shared_lock rd_lock(m_mutex); // <<<<<<
+  auto itr = snap_to_objs->find(snapid);
+  if (itr != snap_to_objs->end()) {
+    auto & objs = itr->second;
+    // then take a Full Lock on the  obj_set
+    std::unique_lock lock(objs.lock); // <<<<<<
+    auto start_itr = objs.set.lower_bound(start_obj);
+    auto itr       = start_itr;
+    for (; itr != objs.set.end(); itr++, count++) {
+      if (unlikely( (itr->pool != pool) || ((itr->get_bitwise_key() & hash_mask) != hash_prefix_reversed) ) ) {
+	dout(20) << "GBH::SNAPMAP::COUNT_OBJS is Done-- count=" << count << dendl;
+	break;
+      }
+    }
+    if (itr == objs.set.end() ) {
+      dout(20) << "GBH::SNAPMAP::COUNT_OBJS--LOOP-END-- count=" << count << dendl;
+    }
+  }
+  else {
+    dout(10) << "GBH::SNAPMAP::" << __func__ << "::There is no mapping for snap " << snapid << " (-ENOENT)" << dendl;
+  }
+  return count;
+}
+
+//-----------------------------------------------------------------------------------------------------
+uint64_t GlobalSnapMapper::count_objects_per_pg(
+  SnapMapperShard     shard,
+  int64_t             pool,
+  const spg_t        &pgid,
+  uint32_t            hash_prefix,
+  uint32_t            hash_prefix_reversed,
+  uint32_t            mask_bits,
+  uint32_t            match)
+{
+  dout(20) << "GBH::SNAPMAP::count_objects_per_pg() pgid=" << pgid << " shard=" << shard << " pool=" << pool << dendl;
+
+  // first create a vector with all existing snap-ids
+  std::vector<snapid_t> snaps_vec;
+  std::shared_lock rd_lock(m_mutex); // <<<<<<
+
+  auto snap_to_objs = get_snap_to_objs(shard);
+  if (snap_to_objs == nullptr || snap_to_objs->empty()) {
+    rd_lock.unlock(); // >>>>>>
+    dout(10) << "GBH::SNAPMAP::" << __func__ << "::There is no mapping for shard " << shard << " (-ENOENT)" << dendl;
+    return 0;
+  }
+
+  for (const auto& [snapid, objs] : *snap_to_objs) {
+    snaps_vec.push_back(snapid);
+  }
+  rd_lock.unlock(); // >>>>>>
+
+  uint64_t count = 0;
+  for (snapid_t snapid : snaps_vec) {
+    count += count_objects_per_pg_snap(snap_to_objs, shard, pool, pgid, hash_prefix, hash_prefix_reversed, mask_bits, match, snapid);
+  }
+
   return count;
 }
 
@@ -193,6 +270,7 @@ void GlobalSnapMapper::add_oid(SnapMapperShard shard, const hobject_t & coid, sn
   (*snap_to_objs)[snapid].set.insert(coid);
 }
 
+#if 0
 //---------------------------------------------------------------------------
 int GlobalSnapMapper::delete_pg_snap(
   snap_to_objs_map_t *snap_to_objs,
@@ -279,6 +357,102 @@ int GlobalSnapMapper::delete_pg(
 
   return ret;
 }
+#endif
+
+#if 1
+//---------------------------------------------------------------------------
+uint64_t GlobalSnapMapper::delete_objs_from_pg_snap(
+  snap_to_objs_map_t *snap_to_objs,
+  SnapMapperShard     shard,
+  int64_t             pool,
+  const spg_t        &pgid,
+  uint32_t            hash_prefix,
+  uint32_t            hash_prefix_reversed,
+  uint32_t            mask_bits,
+  uint32_t            match,
+  snapid_t            snapid,
+  uint64_t            max_count)
+{
+  const uint32_t hash_mask = ~( (uint32_t)(~0) >> mask_bits);
+  hobject_t      start_obj(snapid, hash_prefix, false, pool);
+  uint64_t       count = 0;
+
+  // first take a shared-lock on the snap_to_objs map
+  std::shared_lock rd_lock(m_mutex); // <<<<<<
+  auto itr = snap_to_objs->find(snapid);
+  if (itr != snap_to_objs->end()) {
+    auto & objs = itr->second;
+    // then take a Full Lock on the  obj_set
+    std::unique_lock lock(objs.lock); // <<<<<<
+    auto start_itr = objs.set.lower_bound(start_obj);
+    auto itr       = start_itr;
+    for (; itr != objs.set.end(); itr++, count++) {
+      if (unlikely( (count > max_count) || (itr->pool != pool) || ((itr->get_bitwise_key() & hash_mask) != hash_prefix_reversed) ) ) {
+	dout(1) << "GBH::SNAPMAP::DeletePG::" << ((count > max_count) ? "BREAK[" : "DONE[") << itr->snap << "] --> [" << *itr << "] count=" << count << dendl;
+	objs.set.erase(start_itr, itr);
+	break;
+      }
+    }
+    if (itr == objs.set.end() ) {
+      dout(1) << "GBH::SNAPMAP::DeletePG--LOOP-END-- count=" << count << dendl;
+      objs.set.erase(start_itr, itr);
+    }
+  }
+  else {
+    rd_lock.unlock(); // >>>>>>
+    // There is no mapping from @snap on the system (should not happen normally as the system did start yet)
+    // It could happen in the future if this function is called for a live system since we release locks between snapids
+    dout(1) << "GBH::SNAPMAP::" << __func__ << "::There is no mapping for snap " << snapid << " (-ENOENT)" << dendl;
+    return 0;
+  }
+  dout(20) << "GBH::SNAPMAP::" << __func__ << "::Snapid " << snapid << " successfully deleted "<< count << " objs" << dendl;
+  return count;
+}
+
+//---------------------------------------
+uint64_t GlobalSnapMapper::delete_objs_from_pg(
+  SnapMapperShard    shard,
+  int64_t            pool,
+  const spg_t       &pgid,
+  uint32_t           hash_prefix,
+  uint32_t           hash_prefix_reversed,
+  uint32_t           mask_bits,
+  uint32_t           match,
+  uint64_t           max_count)
+{
+  uint64_t count_before = count_objects_per_pg(shard, pool, pgid, hash_prefix, hash_prefix_reversed, mask_bits, match);
+  dout(10) << "GBH::SNAPMAP::delete_pg() pgid=" << pgid << " shard=" << shard << " pool=" << pool << " count_before=" << count_before << " max_count=" << max_count << dendl;
+
+  // first create a vector with all existing snap-ids
+  std::vector<snapid_t> snaps_vec;
+  std::shared_lock rd_lock(m_mutex); // <<<<<<
+
+  auto snap_to_objs = get_snap_to_objs(shard);
+  if (snap_to_objs == nullptr || snap_to_objs->empty()) {
+    rd_lock.unlock(); // >>>>>>
+    dout(10) << "GBH::SNAPMAP::" << __func__ << "::There is no mapping for shard " << shard << " (-ENOENT)" << dendl;
+    return 0;
+  }
+
+  for (const auto& [snapid, objs] : *snap_to_objs) {
+    snaps_vec.push_back(snapid);
+  }
+  rd_lock.unlock(); // >>>>>>
+
+  uint64_t count = 0;
+  for (snapid_t snapid : snaps_vec) {
+    count += delete_objs_from_pg_snap(snap_to_objs, shard, pool, pgid, hash_prefix, hash_prefix_reversed, mask_bits, match, snapid, max_count);
+    if (count >= max_count) {
+      dout(1) << "GBH::SNAPMAP::delete_pg() count=" << count << " max_count=" << max_count << " take a break" << dendl;
+      break;
+    }
+  }
+
+  uint64_t count_after = count_objects_per_pg(shard, pool, pgid, hash_prefix, hash_prefix_reversed, mask_bits, match);
+  dout(1) << "GBH::SNAPMAP::delete_pg() pgid=" << pgid << " count_before=" << count_before << " count_after=" << count_after << " delete_count=" << count << dendl;
+  return count;
+}
+#endif
 
 //---------------------------------------
 int GlobalSnapMapper::get_next_objects_to_trim(
@@ -328,7 +502,6 @@ int GlobalSnapMapper::get_next_objects_to_trim(
       out->push_back(coid);
       if (out->size() == max) {
 	++itr;
-	//objs.set.erase(start_itr, itr);
 	objs.lock.unlock();      // >>>>>>
 	rd_lock.unlock(); // >>>>>>
 	dout(20) << "GBH::SNAPMAP::" << __func__ << "::got max objects!!" << dendl;

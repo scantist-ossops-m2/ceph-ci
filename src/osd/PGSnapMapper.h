@@ -102,7 +102,13 @@ public:
 
   // clear all data stored by this mapper (done before collection removal)
   int reset() {
-    return gsnap_ref->delete_pg(shard, pool, pgid, hash_prefix, hash_prefix_reversed, mask_bits, match);
+    //return gsnap_ref->delete_pg(shard, pool, pgid, hash_prefix, hash_prefix_reversed, mask_bits, match);
+    return delete_objs(UINT64_MAX);
+  }
+
+  // clear @count objs from this PG mapper (done before collection removal)
+  int delete_objs(uint64_t count) {
+    return gsnap_ref->delete_objs_from_pg(shard, pool, pgid, hash_prefix, hash_prefix_reversed, mask_bits, match, count);
   }
 
   /// Get snaps for oid - alternative interface

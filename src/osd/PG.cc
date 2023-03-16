@@ -2884,6 +2884,8 @@ std::pair<ghobject_t, bool> PG::do_delete_work(
 
   bool running = true;
   if (num) {
+    //dout(1) << "GBH::SNAPMAP::" << __func__ << ":: deleting " << num << " objects" << dendl;
+    snap_mapper.delete_objs(num);
     dout(20) << __func__ << " deleting " << num << " objects" << dendl;
     Context *fin = new C_DeleteMore(this, get_osdmap_epoch());
     t.register_on_commit(fin);

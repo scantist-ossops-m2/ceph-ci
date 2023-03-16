@@ -63,7 +63,7 @@ public:
   auto operator<=>(const SnapMapperShard&) const = default;
 private:
   void set_id(unsigned id) {
-     id = id;
+    id = id;
   }
   uint16_t id;
 };
@@ -100,7 +100,7 @@ public:
     }
   }
 
-  uint32_t count_objects() const;
+  uint64_t count_objects() const;
   void     print_snaps(const char *s) const;
 
   /// Add mapping for oid, must not already be mapped
@@ -115,13 +115,22 @@ public:
     const std::vector<snapid_t> &old_snaps  ///< [in] old snap vector
 		   ); ///@ return error, 0 on success
 
-  int delete_pg(SnapMapperShard    shard,
-		int64_t            pool,
-		const spg_t       &pgid,
-		uint32_t           hash_prefix,
-		uint32_t           hash_prefix_reversed,
-		uint32_t           mask_bits,
-		uint32_t           match);
+  uint64_t delete_objs_from_pg(SnapMapperShard    shard,
+			       int64_t            pool,
+			       const spg_t       &pgid,
+			       uint32_t           hash_prefix,
+			       uint32_t           hash_prefix_reversed,
+			       uint32_t           mask_bits,
+			       uint32_t           match,
+			       uint64_t           max_count);
+
+  uint64_t count_objects_per_pg(SnapMapperShard     shard,
+				int64_t             pool,
+				const spg_t        &pgid,
+				uint32_t            hash_prefix,
+				uint32_t            hash_prefix_reversed,
+				uint32_t            mask_bits,
+				uint32_t            match);
 
   /// Returns first object with snap as a snap
   ///< @return error, -ENOENT if no more objects
@@ -178,15 +187,27 @@ private:
   bool check(const hobject_t &hoid, uint32_t mask_bits, uint32_t match) const;
   int  remove_mapping_from_snapid_to_hobject(SnapMapperShard shard, const hobject_t& oid, const snapid_t & snapid);
   int  _remove_oid(SnapMapperShard shard, const hobject_t &oid, const std::vector<snapid_t> &old_snaps);
-  int  delete_pg_snap(snap_to_objs_map_t *snap_to_objs,
-		      SnapMapperShard     shard,
-		      int64_t             pool,
-		      const spg_t        &pgid,
-		      uint32_t            hash_prefix,
-		      uint32_t            hash_prefix_reversed,
-		      uint32_t            mask_bits,
-		      uint32_t            match,
-		      snapid_t            snapid);
+
+  uint64_t delete_objs_from_pg_snap(snap_to_objs_map_t *snap_to_objs,
+				    SnapMapperShard     shard,
+				    int64_t             pool,
+				    const spg_t        &pgid,
+				    uint32_t            hash_prefix,
+				    uint32_t            hash_prefix_reversed,
+				    uint32_t            mask_bits,
+				    uint32_t            match,
+				    snapid_t            snapid,
+				    uint64_t            max_count);
+
+  uint64_t count_objects_per_pg_snap(snap_to_objs_map_t *snap_to_objs,
+				     SnapMapperShard     shard,
+				     int64_t             pool,
+				     const spg_t        &pgid,
+				     uint32_t            hash_prefix,
+				     uint32_t            hash_prefix_reversed,
+				     uint32_t            mask_bits,
+				     uint32_t            match,
+				     snapid_t            snapid);
 
   shard_tables_t snap_to_objs_arr{};
 
