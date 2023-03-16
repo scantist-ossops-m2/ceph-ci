@@ -4,6 +4,10 @@
 #include <sys/types.h>
 #include <signal.h>
 #endif
+#ifdef __linux__
+#include <sys/syscall.h>
+#include <linux/close_range.h>
+#endif
 #include <stdarg.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -200,6 +204,12 @@ int SubProcess::spawn() {
     int maxfd = sysconf(_SC_OPEN_MAX);
     if (maxfd == -1)
       maxfd = 16384;
+
+#ifdef __linux__
+    if (::syscall(SYS_close_range, STDERR_FILENO + 1, ~0U, 0) == 0)
+      maxfd = STDERR_FILENO;
+#endif
+
     for (int fd = 0; fd <= maxfd; fd++) {
       if (fd == STDIN_FILENO && stdin_op != CLOSE)
 	continue;
