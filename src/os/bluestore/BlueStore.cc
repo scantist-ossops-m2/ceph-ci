@@ -2123,8 +2123,8 @@ void BlueStore::OnodeSpace::dump(CephContext *cct)
 
 void BlueStore::SharedBlob::dump(Formatter* f) const
 {
-  f->dump_bool("loaded", loaded);
-  if (loaded) {
+  f->dump_bool("loaded", loadedx);
+  if (loadedx) {
     persistent->dump(f);
   } else {
     f->dump_unsigned("sbid_unloaded", sbid_unloaded);
@@ -2135,7 +2135,7 @@ ostream& operator<<(ostream& out, const BlueStore::SharedBlob& sb)
 {
   out << "SharedBlob(" << &sb;
   
-  if (sb.loaded) {
+  if (sb.loadedx) {
     out << " loaded " << *sb.persistent;
   } else {
     out << " sbid 0x" << std::hex << sb.sbid_unloaded << std::dec;
@@ -2154,7 +2154,7 @@ BlueStore::SharedBlob::SharedBlob(uint64_t i, Collection *_coll)
 
 BlueStore::SharedBlob::~SharedBlob()
 {
-  if (loaded && persistent) {
+  if (loadedx && persistent) {
     delete persistent; 
   }
 }
@@ -3056,12 +3056,13 @@ void BlueStore::ExtentMap::scan_shared_blobs(
     }
     if (ep->blob->last_encoded_id == -1) {
       const bluestore_blob_t& blob = ep->blob->get_blob();
-      if (blob.is_shared() && !blob.is_compressed()) {
+      if (blob.is_shared()) {
 	// excellent time to load the blob
 	c->load_shared_blob(ep->blob->shared_blob);
-
-	// todo consider change to emplace_hint
-	candidates.emplace(ep->blob_start(), ep->blob.get());
+	if (!blob.is_compressed()) {
+	  // todo consider change to emplace_hint
+	  candidates.emplace(ep->blob_start(), ep->blob.get());
+	}
       }
       // mark as processed
       ep->blob->last_encoded_id = 0;
@@ -4774,7 +4775,7 @@ void BlueStore::Collection::load_shared_blob(SharedBlobRef sb)
       ceph_abort_msg("uh oh, missing shared_blob");
     }
 
-    sb->loaded = true;
+    sb->loadedx = true;
     sb->persistent = new bluestore_shared_blob_t(sbid);
     auto p = v.cbegin();
     decode(*(sb->persistent), p);
@@ -4786,6 +4787,10 @@ void BlueStore::Collection::load_shared_blob(SharedBlobRef sb)
 void BlueStore::Collection::make_blob_shared(uint64_t sbid, BlobRef b)
 {
   ldout(store->cct, 10) << __func__ << " " << *b << dendl;
+  //jak to się stało?
+  //wolamy kiedy blob.is_shared() == false
+  //czyli
+  // shared = false, loaded = true
   ceph_assert(!b->shared_blob->is_loaded());
 
   // update blob
@@ -4794,7 +4799,7 @@ void BlueStore::Collection::make_blob_shared(uint64_t sbid, BlobRef b)
   // drop any unused parts, unlikely we could use them in future
   blob.clear_flag(bluestore_blob_t::FLAG_HAS_UNUSED);
   // update shared blob
-  b->shared_blob->loaded = true;
+  b->shared_blob->loadedx = true;
   b->shared_blob->persistent = new bluestore_shared_blob_t(sbid);
   shared_blob_set.add(this, b->shared_blob.get());
   for (auto p : blob.get_extents()) {
@@ -4814,7 +4819,7 @@ uint64_t BlueStore::Collection::make_blob_unshared(SharedBlob *sb)
 
   uint64_t sbid = sb->get_sbid();
   shared_blob_set.remove(sb);
-  sb->loaded = false;
+  sb->loadedx = false;
   delete sb->persistent;
   sb->sbid_unloaded = 0;
   ldout(store->cct, 20) << __func__ << " now " << *sb << dendl;
@@ -17214,7 +17219,13 @@ int BlueStore::_do_remove(
   if (!h || !h->exists) {
     return 0;
   }
-
+  // maybe_unshared_blobs ma te shared bloby którym zostały same nref=1
+  // pytanie teraz jest, czy .head używa ich wszystkich
+  // jesli head używa wszystkich, to można pozbyć się shared blobów i
+  // wyprasować do zwykłego
+  // założenie jest - jeśli head używa wszystkiego, to nikt inny nie używa
+  // procesujemy tylko te bloby które są loaded
+  
   dout(20) << __func__ << " checking for unshareable blobs on " << h
 	   << " " << h->oid << dendl;
   map<SharedBlob*,bluestore_extent_ref_map_t> expect;
@@ -17222,7 +17233,7 @@ int BlueStore::_do_remove(
     const bluestore_blob_t& b = e.blob->get_blob();
     SharedBlob *sb = e.blob->shared_blob.get();
     if (b.is_shared() &&
-	sb->loaded &&
+	sb->loadedx &&
 	maybe_unshared_blobs.count(sb)) {
       if (b.is_compressed()) {
 	expect[sb].get(0, b.get_ondisk_length());
@@ -17234,12 +17245,14 @@ int BlueStore::_do_remove(
       }
     }
   }
-
+  // expect ma teraz refy poustawiane w tych miejscach gdzie jest używane przez .head
+  
   vector<SharedBlob*> unshared_blobs;
   unshared_blobs.reserve(maybe_unshared_blobs.size());
   for (auto& p : expect) {
     dout(20) << " ? " << *p.first << " vs " << p.second << dendl;
     if (p.first->persistent->ref_map == p.second) {
+      // całe refy porównane i wszystko się zgdza
       SharedBlob *sb = p.first;
       dout(20) << __func__ << "  unsharing " << *sb << dendl;
       unshared_blobs.push_back(sb);

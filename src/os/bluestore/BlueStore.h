@@ -505,7 +505,7 @@ public:
     MEMPOOL_CLASS_HELPERS();
 
     std::atomic_int nref = {0}; ///< reference count
-    bool loaded = false;
+    bool loadedx = false;
 
     CollectionRef coll;
     union {
@@ -522,7 +522,7 @@ public:
     ~SharedBlob();
 
     uint64_t get_sbid() const {
-      return loaded ? persistent->sbid : sbid_unloaded;
+      return loadedx ? persistent->sbid : sbid_unloaded;
     }
 
     friend void intrusive_ptr_add_ref(SharedBlob *b) { b->get(); }
@@ -553,7 +553,7 @@ public:
       return coll ? &(coll->shared_blob_set) : nullptr;
     }
     inline bool is_loaded() const {
-      return loaded;
+      return loadedx;
     }
 
   };
