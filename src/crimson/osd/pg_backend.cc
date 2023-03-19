@@ -789,12 +789,17 @@ PGBackend::rollback_iertr::future<> PGBackend::rollback(
     [this, &os, &txn, &delta_stats, &osd_op_params]
     (auto resolved_obc) {
     if (resolved_obc->obs.oi.soid.is_head()) {
-      // no-op: The resolved oid returned the head object.
+      // no-op: The resolved oid returned the head object
       logger().debug("PGBackend::rollback: loaded head_obc: {}"
                      " do nothing",
                      resolved_obc->obs.oi.soid);
       return rollback_iertr::now();
     }
+    /*
+     * The case where a CEPH_OSD_OP_ROLLBACK is not the only OSDOp
+     * included in the rados operation is *not* supported as there aren't
+     * any clients that make use of this of this kind of transaction.
+     */
     logger().debug("PGBackend::rollback: loaded clone_obc: {}",
                    resolved_obc->obs.oi.soid);
     // 1) Delete current head
