@@ -5253,6 +5253,16 @@ void OSDMonitor::tick()
       do_propose = true;
     }
   }
+  for (auto p = osdmap.range_blocklist.begin();
+       p != osdmap.range_blocklist.end();
+       ++p) {
+    if (p->second < now) {
+      dout(10) << "expiring range_blocklist item " << p->first
+	       << " expired " << p->second << " < now " << now << dendl;
+      pending_inc.old_range_blocklist.push_back(p->first);
+      do_propose = true;
+    }
+  }
 
   if (try_prune_purged_snaps()) {
     do_propose = true;
@@ -6032,7 +6042,31 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       f->close_section();
       f->flush(rdata);
     }
-    ss << "listed " << osdmap.blocklist.size() << " entries";
+    if (f)
+      f->open_array_section("range_blocklist");
+
+    for (auto p = osdmap.range_blocklist.begin();
+	 p != osdmap.range_blocklist.end();
+	 ++p) {
+      if (f) {
+	f->open_object_section("entry");
+	f->dump_string("range", p->first.get_legacy_str());
+	f->dump_stream("until") << p->second;
+	f->close_section();
+      } else {
+	stringstream ss;
+	string s;
+	ss << p->first << " " << p->second;
+	getline(ss, s);
+	s += "\n";
+	rdata.append(s);
+      }
+    }
+    if (f) {
+      f->close_section();
+      f->flush(rdata);
+    }
+    ss << "listed " << osdmap.blocklist.size() + osdmap.range_blocklist.size() << " entries";
 
   } else if (prefix == "osd pool ls") {
     string detail;
@@ -7868,65 +7902,74 @@ int OSDMonitor::get_crush_rule(const string &rule_name,
   return 0;
 }
 
-int OSDMonitor::check_pg_num(int64_t pool, int pg_num, int size, int crush_rule, ostream *ss)
+/*
+* Get the number of 'in' osds according to the crush_rule,
+*/
+uint32_t OSDMonitor::get_osd_num_by_crush(int crush_rule)
+{
+  set<int> out_osds;
+  set<int> crush_in_osds;
+  set<int> roots;
+  CrushWrapper newcrush = _get_pending_crush();
+  newcrush.find_takes_by_rule(crush_rule, &roots);
+  for (auto root : roots) {
+    const char *rootname = newcrush.get_item_name(root);
+    set<int> crush_all_osds;
+    newcrush.get_leaves(rootname, &crush_all_osds);
+    std::set_difference(crush_all_osds.begin(), crush_all_osds.end(),
+                        out_osds.begin(), out_osds.end(),
+                        std::inserter(crush_in_osds, crush_in_osds.end()));
+  }
+  return crush_in_osds.size();
+}
+
+int OSDMonitor::check_pg_num(int64_t pool,
+                             int pg_num,
+                             int size,
+                             int crush_rule,
+                             ostream *ss)
 {
   auto max_pgs_per_osd = g_conf().get_val<uint64_t>("mon_max_pg_per_osd");
   uint64_t projected = 0;
-  unsigned osd_num = 0;
-  // assume min cluster size 3
-  auto num_osds = std::max(osdmap.get_num_in_osds(), 3u);
+  uint32_t osd_num_by_crush = 0;
+  set<int64_t> crush_pool_ids;
   if (pool < 0) {
     // a new pool
     projected += pg_num * size;
   }
-  if (mapping.get_epoch() >= osdmap.get_epoch()) {
-    set<int> roots;
-    CrushWrapper newcrush = _get_pending_crush();
-    newcrush.find_takes_by_rule(crush_rule, &roots);
-    int max_osd = osdmap.get_max_osd();
-    for (auto root : roots) {
-      const char *rootname = newcrush.get_item_name(root);
-      set<int> osd_ids;
-      newcrush.get_leaves(rootname, &osd_ids);
-      unsigned out_osd = 0;
-      for (auto id : osd_ids) {
-	if (id > max_osd) { 
-	  out_osd++;
-	  continue;
-	}
-	projected += mapping.get_osd_acting_pgs(id).size();
-      }
-      osd_num += osd_ids.size() - out_osd;
-    }
-    if (pool >= 0) {   
-      // update an existing pool's pg num
-      const auto& pg_info = osdmap.get_pools().at(pool);    
-      // already counted the pgs of this `pool` by iterating crush map, so 
-      // remove them using adding the specified pg num
-      projected += pg_num * size;
-      projected -= pg_info.get_pg_num_target() * pg_info.get_size();
-    }
-    num_osds = std::max(osd_num, 3u);  // assume min cluster size 3
-  } else {
-    // use pg_num target for evaluating the projected pg num
-    for (const auto& [pool_id, pool_info] : osdmap.get_pools()) {
+
+  osd_num_by_crush = get_osd_num_by_crush(crush_rule);
+  osdmap.get_pool_ids_by_rule(crush_rule, &crush_pool_ids);
+
+  for (const auto& [pool_id, pool_info] : osdmap.get_pools()) {
+    // Check only for pools affected by crush rule
+    if (crush_pool_ids.count(pool_id)) {
       if (pool_id == pool) {
-	projected += pg_num * size;
+        // Specified pool, use given pg_num and size values.
+        projected += pg_num * size;
       } else {
-	projected += pool_info.get_pg_num_target() * pool_info.get_size();
+        // Use pg_num_target for evaluating the projected pg num
+        projected += pool_info.get_pg_num_target() * pool_info.get_size();
       }
     }
   }
-  auto max_pgs = max_pgs_per_osd * num_osds;
-  if (projected > max_pgs) {
+  // assume min cluster size 3
+  osd_num_by_crush = std::max(osd_num_by_crush, 3u);
+  auto projected_pgs_per_osd = projected / osd_num_by_crush;
+
+  if (projected_pgs_per_osd > max_pgs_per_osd) {
     if (pool >= 0) {
       *ss << "pool id " << pool;
     }
-    *ss << " pg_num " << pg_num << " size " << size
-	<< " would mean " << projected
-	<< " total pgs, which exceeds max " << max_pgs
-	<< " (mon_max_pg_per_osd " << max_pgs_per_osd
-	<< " * num_in_osds " << num_osds << ")";
+    *ss << " pg_num " << pg_num
+        << " size " << size
+        << " for this pool would result in "
+        << projected_pgs_per_osd
+        << " cumulative PGs per OSD (" << projected
+        << " total PG replicas on " << osd_num_by_crush
+        << " 'in' root OSDs by crush rule) "
+        << "which exceeds the mon_max_pg_per_osd "
+        << "value of " << max_pgs_per_osd;
     return -ERANGE;
   }
   return 0;
@@ -8021,7 +8064,8 @@ int OSDMonitor::prepare_new_pool(string& name,
     tester.set_rule(crush_rule);
     tester.set_num_rep(size);
     auto start = ceph::coarse_mono_clock::now();
-    r = tester.test_with_fork(g_conf()->mon_lease);
+    r = tester.test_with_fork(cct, g_conf()->mon_lease);
+    dout(10) << __func__ << " crush test_with_fork tester created " << dendl;
     auto duration = ceph::coarse_mono_clock::now() - start;
     if (r < 0) {
       dout(10) << "tester.test_with_fork returns " << r
@@ -8310,9 +8354,12 @@ int OSDMonitor::prepare_command_pool_set(const cmdmap_t& cmdmap,
       ss << "crush rule " << p.get_crush_rule() << " type does not match pool";
       return -EINVAL;
     }
-    int r = check_pg_num(pool, p.get_pg_num(), n, p.get_crush_rule(), &ss);
-    if (r < 0) {
-      return r;
+    if (n > p.size) {
+      // only when increasing pool size
+      int r = check_pg_num(pool, p.get_pg_num(), n, p.get_crush_rule(), &ss);
+      if (r < 0) {
+        return r;
+      }
     }
     p.size = n;
     p.min_size = g_conf().get_osd_pool_default_min_size(p.size);
@@ -9999,7 +10046,7 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       tester.set_max_x(50);
       tester.set_num_rep(3);  // arbitrary
       auto start = ceph::coarse_mono_clock::now();
-      int r = tester.test_with_fork(g_conf()->mon_lease);
+      int r = tester.test_with_fork(cct, g_conf()->mon_lease);
       auto duration = ceph::coarse_mono_clock::now() - start;
       if (r < 0) {
 	dout(10) << " tester.test_with_fork returns " << r
@@ -12566,6 +12613,14 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       return false;
     }
 
+    // make sure kvmon is writeable.
+    if (!mon.kvmon()->is_writeable()) {
+      dout(10) << __func__ << " waiting for kv mon to be writeable for "
+               << "osd new" << dendl;
+      mon.kvmon()->wait_for_writeable(op, new C_RetryMessage(this, op));
+      return false;
+    }
+
     map<string,string> param_map;
 
     bufferlist bl = m->get_data();
@@ -12676,9 +12731,13 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 	     prefix == "osd blacklist clear") {
     pending_inc.new_blocklist.clear();
     std::list<std::pair<entity_addr_t,utime_t > > blocklist;
-    osdmap.get_blocklist(&blocklist);
+    std::list<std::pair<entity_addr_t,utime_t > > range_b;
+    osdmap.get_blocklist(&blocklist, &range_b);
     for (const auto &entry : blocklist) {
       pending_inc.old_blocklist.push_back(entry.first);
+    }
+    for (const auto &entry : range_b) {
+      pending_inc.old_range_blocklist.push_back(entry.first);
     }
     ss << " removed all blocklist entries";
     getline(ss, rs);
@@ -12687,8 +12746,18 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
     return true;
   } else if (prefix == "osd blocklist" ||
 	     prefix == "osd blacklist") {
-    string addrstr;
+    string addrstr, rangestr;
+    bool range = false;
     cmd_getval(cmdmap, "addr", addrstr);
+    if (cmd_getval(cmdmap, "range", rangestr)) {
+      if (rangestr == "range") {
+	range = true;
+      } else {
+	ss << "Did you mean to specify \"osd blocklist range\"?";
+	err = -EINVAL;
+	goto reply;
+      }
+    }
     entity_addr_t addr;
     if (!addr.parse(addrstr)) {
       ss << "unable to parse address " << addrstr;
@@ -12696,11 +12765,31 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
       goto reply;
     }
     else {
-      if (osdmap.require_osd_release >= ceph_release_t::nautilus) {
-	// always blocklist type ANY
-	addr.set_type(entity_addr_t::TYPE_ANY);
+      if (range) {
+	if (!addr.maybe_cidr()) {
+	  ss << "You specified a range command, but " << addr
+	     << " does not parse as a CIDR range";
+	  err = -EINVAL;
+	  goto reply;
+	}
+	addr.type = entity_addr_t::TYPE_CIDR;
+	err = check_cluster_features(CEPH_FEATUREMASK_RANGE_BLOCKLIST, ss);
+	if (err) {
+	  goto reply;
+	}
+	if ((addr.is_ipv4() && addr.get_nonce() > 32) ||
+	    (addr.is_ipv6() && addr.get_nonce() > 128)) {
+	  ss << "Too many bits in range for that protocol!";
+	  err = -EINVAL;
+	  goto reply;
+	}
       } else {
-	addr.set_type(entity_addr_t::TYPE_LEGACY);
+	if (osdmap.require_osd_release >= ceph_release_t::nautilus) {
+	  // always blocklist type ANY
+	  addr.set_type(entity_addr_t::TYPE_ANY);
+	} else {
+	  addr.set_type(entity_addr_t::TYPE_LEGACY);
+	}
       }
 
       string blocklistop;
@@ -12714,16 +12803,27 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
           g_conf()->mon_osd_blocklist_default_expire);
 	expires += d;
 
-	pending_inc.new_blocklist[addr] = expires;
+	auto add_to_pending_blocklists = [](auto& nb, auto& ob,
+					    const auto& addr,
+					    const auto& expires) {
+	  nb[addr] = expires;
+	  // cancel any pending un-blocklisting request too
+	  auto it = std::find(ob.begin(),
+			      ob.end(), addr);
+	  if (it != ob.end()) {
+	    ob.erase(it);
+	  }
+	};
+	if (range) {
+	  add_to_pending_blocklists(pending_inc.new_range_blocklist,
+				    pending_inc.old_range_blocklist,
+				    addr, expires);
 
-        {
-          // cancel any pending un-blocklisting request too
-          auto it = std::find(pending_inc.old_blocklist.begin(),
-            pending_inc.old_blocklist.end(), addr);
-          if (it != pending_inc.old_blocklist.end()) {
-            pending_inc.old_blocklist.erase(it);
-          }
-        }
+	} else {
+	  add_to_pending_blocklists(pending_inc.new_blocklist,
+				    pending_inc.old_blocklist,
+				    addr, expires);
+	}
 
 	ss << "blocklisting " << addr << " until " << expires << " (" << d << " sec)";
 	getline(ss, rs);
@@ -12731,12 +12831,24 @@ bool OSDMonitor::prepare_command_impl(MonOpRequestRef op,
 						  get_last_committed() + 1));
 	return true;
       } else if (blocklistop == "rm") {
-	if (osdmap.is_blocklisted(addr) ||
-	    pending_inc.new_blocklist.count(addr)) {
-	  if (osdmap.is_blocklisted(addr))
-	    pending_inc.old_blocklist.push_back(addr);
-	  else
-	    pending_inc.new_blocklist.erase(addr);
+	auto rm_from_pending_blocklists = [](const auto& addr,
+					     auto& blocklist,
+					     auto& ob, auto& pb) {
+	  if (blocklist.count(addr)) {
+	    ob.push_back(addr);
+	    return true;
+	  } else if (pb.count(addr)) {
+	    pb.erase(addr);
+	    return true;
+	  }
+	  return false;
+	};
+	if ((!range && rm_from_pending_blocklists(addr, osdmap.blocklist,
+						  pending_inc.old_blocklist,
+						  pending_inc.new_blocklist)) ||
+	    (range && rm_from_pending_blocklists(addr, osdmap.range_blocklist,
+						 pending_inc.old_range_blocklist,
+						 pending_inc.new_range_blocklist))) {
 	  ss << "un-blocklisting " << addr;
 	  getline(ss, rs);
 	  wait_for_finished_proposal(op, new Monitor::C_Command(mon, op, 0, rs,
@@ -13950,6 +14062,16 @@ bool OSDMonitor::prepare_pool_op(MonOpRequestRef op)
 
   const pg_pool_t *pool = osdmap.get_pg_pool(m->pool);
 
+  if (m->op == POOL_OP_CREATE_SNAP ||
+      m->op == POOL_OP_CREATE_UNMANAGED_SNAP) {
+    if (const auto& fsmap = mon.mdsmon()->get_fsmap(); fsmap.pool_in_use(m->pool)) {
+      dout(20) << "monitor-managed snapshots have been disabled for pools "
+		  " attached to an fs - pool:" << m->pool << dendl;
+      _pool_op_reply(op, -EOPNOTSUPP, osdmap.get_epoch());
+      return false;
+    }
+  }
+
   switch (m->op) {
     case POOL_OP_CREATE_SNAP:
       if (pool->is_tier()) {
@@ -14620,7 +14742,7 @@ void OSDMonitor::trigger_degraded_stretch_mode(const set<int>& dead_buckets,
       newp.peering_crush_bucket_count = new_site_count;
       newp.peering_crush_mandatory_member = remaining_site;
       newp.min_size = pgi.second.min_size / 2; // only support 2 zones now
-      newp.last_force_op_resend = pending_inc.epoch;
+      newp.set_last_force_op_resend(pending_inc.epoch);
     }
   }
   propose_pending();
@@ -14640,7 +14762,7 @@ void OSDMonitor::trigger_recovery_stretch_mode()
   for (auto pgi : osdmap.pools) {
     if (pgi.second.peering_crush_bucket_count) {
       pg_pool_t& newp = *pending_inc.get_new_pool(pgi.first, &pgi.second);
-      newp.last_force_op_resend = pending_inc.epoch;
+      newp.set_last_force_op_resend(pending_inc.epoch);
     }
   }
   propose_pending();
@@ -14726,7 +14848,7 @@ void OSDMonitor::trigger_healthy_stretch_mode()
       newp.peering_crush_bucket_count = osdmap.stretch_bucket_count;
       newp.peering_crush_mandatory_member = CRUSH_ITEM_NONE;
       newp.min_size = g_conf().get_val<uint64_t>("mon_stretch_pool_min_size");
-      newp.last_force_op_resend = pending_inc.epoch;
+      newp.set_last_force_op_resend(pending_inc.epoch);
     }
   }
   propose_pending();

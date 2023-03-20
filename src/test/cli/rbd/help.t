@@ -56,7 +56,6 @@
       group snap remove (... rm)        Remove a snapshot from a group.
       group snap rename                 Rename group's snapshot.
       group snap rollback               Rollback group to snapshot.
-      image-cache invalidate            Discard existing / dirty image cache
       image-meta get                    Image metadata get the value associated
                                         with the key.
       image-meta list (image-meta ls)   Image metadata list keys with values.
@@ -125,6 +124,9 @@
       object-map rebuild                Rebuild an invalid object map.
       perf image iostat                 Display image IO statistics.
       perf image iotop                  Display a top-like IO monitor.
+      persistent-cache flush            Flush persistent cache.
+      persistent-cache invalidate       Invalidate (discard) existing / dirty
+                                        persistent cache.
       pool init                         Initialize pool for use by RBD.
       pool stats                        Display pool statistics.
       remove (rm)                       Delete an image.
@@ -579,7 +581,8 @@
                            [--snap <snap>] --device <device> [--show-cookie] 
                            [--cookie <cookie>] [--read-only] [--force] 
                            [--exclusive] [--quiesce] 
-                           [--quiesce-hook <quiesce-hook>] [--options <options>] 
+                           [--quiesce-hook <quiesce-hook>] [--snap-id <snap-id>] 
+                           [--options <options>] 
                            <image-or-snap-spec> 
   
   Attach image to device.
@@ -604,11 +607,13 @@
     --exclusive              disable automatic exclusive lock transitions
     --quiesce                use quiesce hooks
     --quiesce-hook arg       quiesce hook path
+    --snap-id arg            snapshot id
     -o [ --options ] arg     device specific options
   
   rbd help device detach
   usage: rbd device detach [--device-type <device-type>] [--pool <pool>] 
-                           [--image <image>] [--snap <snap>] 
+                           [--namespace <namespace>] [--image <image>] 
+                           [--snap <snap>] [--snap-id <snap-id>] 
                            [--options <options>] 
                            <image-or-snap-or-device-spec> 
   
@@ -616,14 +621,16 @@
   
   Positional arguments
     <image-or-snap-or-device-spec>  image, snapshot, or device specification
-                                    [<pool-name>/]<image-name>[@<snap-name>] or
-                                    <device-path>
+                                    [<pool-name>/[<namespace>/]]<image-name>[@<sna
+                                    p-name>] or <device-path>
   
   Optional arguments
     -t [ --device-type ] arg        device type [ggate, krbd (default), nbd]
     -p [ --pool ] arg               pool name
+    --namespace arg                 namespace name
     --image arg                     image name
     --snap arg                      snapshot name
+    --snap-id arg                   snapshot id
     -o [ --options ] arg            device specific options
   
   rbd help device list
@@ -642,7 +649,8 @@
                         [--namespace <namespace>] [--image <image>] 
                         [--snap <snap>] [--show-cookie] [--cookie <cookie>] 
                         [--read-only] [--exclusive] [--quiesce] 
-                        [--quiesce-hook <quiesce-hook>] [--options <options>] 
+                        [--quiesce-hook <quiesce-hook>] [--snap-id <snap-id>] 
+                        [--options <options>] 
                         <image-or-snap-spec> 
   
   Map an image to a block device.
@@ -665,25 +673,30 @@
     --exclusive              disable automatic exclusive lock transitions
     --quiesce                use quiesce hooks
     --quiesce-hook arg       quiesce hook path
+    --snap-id arg            snapshot id
     -o [ --options ] arg     device specific options
   
   rbd help device unmap
   usage: rbd device unmap [--device-type <device-type>] [--pool <pool>] 
-                          [--image <image>] [--snap <snap>] [--options <options>] 
+                          [--namespace <namespace>] [--image <image>] 
+                          [--snap <snap>] [--snap-id <snap-id>] 
+                          [--options <options>] 
                           <image-or-snap-or-device-spec> 
   
   Unmap a rbd device.
   
   Positional arguments
     <image-or-snap-or-device-spec>  image, snapshot, or device specification
-                                    [<pool-name>/]<image-name>[@<snap-name>] or
-                                    <device-path>
+                                    [<pool-name>/[<namespace>/]]<image-name>[@<sna
+                                    p-name>] or <device-path>
   
   Optional arguments
     -t [ --device-type ] arg        device type [ggate, krbd (default), nbd]
     -p [ --pool ] arg               pool name
+    --namespace arg                 namespace name
     --image arg                     image name
     --snap arg                      snapshot name
+    --snap-id arg                   snapshot id
     -o [ --options ] arg            device specific options
   
   rbd help diff
@@ -1106,23 +1119,6 @@
     --namespace arg      namespace name
     --group arg          group name
     --snap arg           snapshot name
-  
-  rbd help image-cache invalidate
-  usage: rbd image-cache invalidate [--pool <pool>] [--namespace <namespace>] 
-                                    [--image <image>] [--image-id <image-id>] 
-                                    <image-spec> 
-  
-  Discard existing / dirty image cache
-  
-  Positional arguments
-    <image-spec>         image specification
-                         (example: [<pool-name>/[<namespace>/]]<image-name>)
-  
-  Optional arguments
-    -p [ --pool ] arg    pool name
-    --namespace arg      namespace name
-    --image arg          image name
-    --image-id arg       image id
   
   rbd help image-meta get
   usage: rbd image-meta get [--pool <pool>] [--namespace <namespace>] 
@@ -2123,6 +2119,42 @@
   Optional arguments
     -p [ --pool ] arg    pool name
     --namespace arg      namespace name
+  
+  rbd help persistent-cache flush
+  usage: rbd persistent-cache flush [--pool <pool>] [--namespace <namespace>] 
+                                    [--image <image>] [--image-id <image-id>] 
+                                    <image-spec> 
+  
+  Flush persistent cache.
+  
+  Positional arguments
+    <image-spec>         image specification
+                         (example: [<pool-name>/[<namespace>/]]<image-name>)
+  
+  Optional arguments
+    -p [ --pool ] arg    pool name
+    --namespace arg      namespace name
+    --image arg          image name
+    --image-id arg       image id
+  
+  rbd help persistent-cache invalidate
+  usage: rbd persistent-cache invalidate
+                                        [--pool <pool>] 
+                                        [--namespace <namespace>] 
+                                        [--image <image>] [--image-id <image-id>] 
+                                        <image-spec> 
+  
+  Invalidate (discard) existing / dirty persistent cache.
+  
+  Positional arguments
+    <image-spec>         image specification
+                         (example: [<pool-name>/[<namespace>/]]<image-name>)
+  
+  Optional arguments
+    -p [ --pool ] arg    pool name
+    --namespace arg      namespace name
+    --image arg          image name
+    --image-id arg       image id
   
   rbd help pool init
   usage: rbd pool init [--pool <pool>] [--force] 

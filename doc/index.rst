@@ -2,8 +2,14 @@
  Welcome to Ceph
 =================
 
-Ceph uniquely delivers **object, block, and file storage in one unified
-system**.
+Ceph delivers **object, block, and file storage in one unified system**.
+
+.. warning:: 
+
+   :ref:`If this is your first time using Ceph, read the "Basic Workflow" 
+   page in the Ceph Developer Guide to learn how to contribute to the 
+   Ceph project. (Click anywhere in this paragraph to read the "Basic 
+   Workflow" page of the Ceph Developer Guide.) <basic workflow dev guide>`.
 
 .. container:: columns-3
 
@@ -105,8 +111,8 @@ about Ceph, see our `Architecture`_ section.
    governance
    foundation
    ceph-volume/index
-   releases/general
-   releases/index
+   Ceph Releases (general) <https://docs.ceph.com/en/latest/releases/general/>
+   Ceph Releases (index) <https://docs.ceph.com/en/latest/releases/>
    security/index
    Glossary <glossary>
    Tracing <jaegertracing/index>

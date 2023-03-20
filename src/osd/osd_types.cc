@@ -15,6 +15,7 @@
  *
  */
 
+#include <algorithm>
 #include <list>
 #include <map>
 #include <ostream>
@@ -5219,7 +5220,8 @@ static void _handle_dups(CephContext* cct, pg_log_t &target, const pg_log_t &oth
 {
   auto earliest_dup_version =
 	        target.head.version < maxdups ? 0u : target.head.version - maxdups + 1;
-  lgeneric_subdout(cct, osd, 20) << "copy_up_to/copy_after earliest_dup_version " << earliest_dup_version << dendl;
+  lgeneric_subdout(cct, osd, 20) << __func__ << " earliest_dup_version "
+				 << earliest_dup_version << dendl;
 
   for (auto d = other.dups.cbegin(); d != other.dups.cend(); ++d) {
     if (d->version.version >= earliest_dup_version) {
@@ -5249,7 +5251,9 @@ void pg_log_t::copy_after(CephContext* cct, const pg_log_t &other, eversion_t v)
   can_rollback_to = other.can_rollback_to;
   head = other.head;
   tail = other.tail;
-  lgeneric_subdout(cct, osd, 20) << __func__ << " v " << v << dendl;
+  lgeneric_subdout(cct, osd, 20) << __func__ << " v " << v
+				 << " dups.size()=" << dups.size()
+				 << " other.dups.size()=" << other.dups.size() << dendl;
   for (auto i = other.log.crbegin(); i != other.log.crend(); ++i) {
     ceph_assert(i->version > other.tail);
     if (i->version <= v) {
@@ -5261,6 +5265,9 @@ void pg_log_t::copy_after(CephContext* cct, const pg_log_t &other, eversion_t v)
     log.push_front(*i);
   }
   _handle_dups(cct, *this, other, cct->_conf->osd_pg_log_dups_tracked);
+  lgeneric_subdout(cct, osd, 20) << __func__ << " END v " << v
+				 << " dups.size()=" << dups.size()
+				 << " other.dups.size()=" << other.dups.size() << dendl;
 }
 
 void pg_log_t::copy_up_to(CephContext* cct, const pg_log_t &other, int max)
@@ -5269,7 +5276,9 @@ void pg_log_t::copy_up_to(CephContext* cct, const pg_log_t &other, int max)
   int n = 0;
   head = other.head;
   tail = other.tail;
-  lgeneric_subdout(cct, osd, 20) << __func__ << " max " << max << dendl;
+  lgeneric_subdout(cct, osd, 20) << __func__ << " max " << max
+				<< " dups.size()=" << dups.size()
+				<< " other.dups.size()=" << other.dups.size() << dendl;
   for (auto i = other.log.crbegin(); i != other.log.crend(); ++i) {
     ceph_assert(i->version > other.tail);
     if (n++ >= max) {
@@ -5280,6 +5289,9 @@ void pg_log_t::copy_up_to(CephContext* cct, const pg_log_t &other, int max)
     log.push_front(*i);
   }
   _handle_dups(cct, *this, other, cct->_conf->osd_pg_log_dups_tracked);
+  lgeneric_subdout(cct, osd, 20) << __func__ << " END max " << max
+				 << " dups.size()=" << dups.size()
+				 << " other.dups.size()=" << other.dups.size() << dendl;
 }
 
 ostream& pg_log_t::print(ostream& out) const
@@ -6677,9 +6689,34 @@ ostream& operator<<(ostream& out, const PushReplyOp &op)
 
 uint64_t PushReplyOp::cost(CephContext *cct) const
 {
-
-  return cct->_conf->osd_push_per_object_cost +
-    cct->_conf->osd_recovery_max_chunk;
+  if (cct->_conf->osd_op_queue == "mclock_scheduler") {
+    /* In general, we really never want to throttle PushReplyOp messages.
+     * As long as the object is smaller than osd_recovery_max_chunk (8M at
+     * time of writing this comment, so this is basically always true),
+     * processing the PushReplyOp does not cost any further IO and simply
+     * permits the object once more to be written to.
+     *
+     * In the unlikely event that the object is larger than
+     * osd_recovery_max_chunk (again, 8M at the moment, so never for common
+     * configurations of rbd and virtually never for cephfs and rgw),
+     * we *still* want to push out the next portion immediately so that we can
+     * release the object for IO.
+     *
+     * The throttling for this operation on the primary occurs at the point
+     * where we queue the PGRecoveryContext which calls into recover_missing
+     * and recover_backfill to initiate pushes.
+     * See OSD::queue_recovery_context.
+     */
+    return 1;
+  } else {
+    /* We retain this legacy behavior for WeightedPriorityQueue. It seems to
+     * require very large costs for several messages in order to do any
+     * meaningful amount of throttling.  This branch should be removed after
+     * Reef.
+     */
+    return cct->_conf->osd_push_per_object_cost +
+      cct->_conf->osd_recovery_max_chunk;
+  }
 }
 
 // -- PullOp --
@@ -6743,8 +6780,20 @@ ostream& operator<<(ostream& out, const PullOp &op)
 
 uint64_t PullOp::cost(CephContext *cct) const
 {
-  return cct->_conf->osd_push_per_object_cost +
-    cct->_conf->osd_recovery_max_chunk;
+  if (cct->_conf->osd_op_queue == "mclock_scheduler") {
+    return std::clamp<uint64_t>(
+      recovery_progress.estimate_remaining_data_to_recover(recovery_info),
+      1,
+      cct->_conf->osd_recovery_max_chunk);
+  } else {
+    /* We retain this legacy behavior for WeightedPriorityQueue. It seems to
+     * require very large costs for several messages in order to do any
+     * meaningful amount of throttling.  This branch should be removed after
+     * Reef.
+     */
+    return cct->_conf->osd_push_per_object_cost +
+      cct->_conf->osd_recovery_max_chunk;
+  }
 }
 
 // -- PushOp --

@@ -1102,12 +1102,28 @@ int rgw_bucket_complete_op(cls_method_context_t hctx, bufferlist *in, bufferlist
   if (op.op == CLS_RGW_OP_CANCEL) {
     log_op = false; // don't log cancelation
     if (op.tag.size()) {
-      // we removed this tag from pending_map so need to write the changes
-      bufferlist new_key_bl;
-      encode(entry, new_key_bl);
-      rc = cls_cxx_map_set_val(hctx, idx, &new_key_bl);
-      if (rc < 0) {
-        return rc;
+      if (!entry.exists && entry.pending_map.empty()) {
+        // a racing delete succeeded, and we canceled the last pending op
+        CLS_LOG(20, "INFO: %s: removing map entry with key=%s",
+                __func__, escape_str(idx).c_str());
+        rc = cls_cxx_map_remove_key(hctx, idx);
+        if (rc < 0) {
+          CLS_LOG(1, "ERROR: %s: unable to remove map key, key=%s, rc=%d",
+                  __func__, escape_str(idx).c_str(), rc);
+          return rc;
+        }
+      } else {
+        // we removed this tag from pending_map so need to write the changes
+        CLS_LOG(20, "INFO: %s: setting map entry at key=%s",
+                __func__, escape_str(idx).c_str());
+        bufferlist new_key_bl;
+        encode(entry, new_key_bl);
+        rc = cls_cxx_map_set_val(hctx, idx, &new_key_bl);
+        if (rc < 0) {
+          CLS_LOG(1, "ERROR: %s: unable to set map val, key=%s, rc=%d",
+                  __func__, escape_str(idx).c_str(), rc);
+          return rc;
+        }
       }
     }
   } // CLS_RGW_OP_CANCEL
@@ -2205,6 +2221,8 @@ int rgw_dir_suggest_changes(cls_method_context_t hctx,
         return -EINVAL;
       }
 
+      // remove any pending entries whose tag timeout has expired. until expiry,
+      // these pending entries will prevent us from applying suggested changes
       real_time cur_time = real_clock::now();
       auto iter = cur_disk.pending_map.begin();
       while(iter != cur_disk.pending_map.end()) {
@@ -2215,9 +2233,18 @@ int rgw_dir_suggest_changes(cls_method_context_t hctx,
       }
     }
 
-    CLS_LOG(20, "cur_disk.pending_map.empty()=%d op=%d cur_disk.exists=%d cur_change.pending_map.size()=%d cur_change.exists=%d",
+    CLS_LOG(20, "cur_disk.pending_map.empty()=%d op=%d cur_disk.exists=%d "
+            "cur_disk.index_ver=%d cur_change.exists=%d cur_change.index_ver=%d",
 	    cur_disk.pending_map.empty(), (int)op, cur_disk.exists,
-	    (int)cur_change.pending_map.size(), cur_change.exists);
+            (int)cur_disk.index_ver, cur_change.exists,
+            (int)cur_change.index_ver);
+
+    if (cur_change.index_ver < cur_disk.index_ver) {
+      // a pending on-disk entry was completed since this suggestion was made,
+      // don't apply it yet. if the index really is inconsistent, the next
+      // listing will get the latest version and resend the suggestion
+      continue;
+    }
 
     if (cur_disk.pending_map.empty()) {
       if (cur_disk.exists) {
@@ -2751,7 +2778,9 @@ static int list_instance_entries(cls_method_context_t hctx,
   if (ret < 0 && ret != -ENOENT) {
     return ret;
   }
-  bool found_first = (ret == 0);
+  // we need to include the exact match if a filter (name) is
+  // specified and the marker has not yet advanced (i.e., been set)
+  bool found_first = (ret == 0) && (start_after_key != marker);
   if (found_first) {
     --max;
   }
@@ -2841,7 +2870,9 @@ static int list_olh_entries(cls_method_context_t hctx,
   if (ret < 0 && ret != -ENOENT) {
     return ret;
   }
-  bool found_first = (ret == 0);
+    // we need to include the exact match if a filter (name) is
+   // specified and the marker has not yet advanced (i.e., been set)
+  bool found_first = (ret == 0) && (start_after_key != marker);
   if (found_first) {
     --max;
   }

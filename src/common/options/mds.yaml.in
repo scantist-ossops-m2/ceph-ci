@@ -196,6 +196,14 @@ options:
   services:
   - mds
   with_legacy: true
+- name: mds_heartbeat_reset_grace
+  type: uint
+  level: advanced
+  desc: the basic unit of tolerance in how many circles in a loop, which will
+    keep running by holding the mds_lock, it must trigger to reset heartbeat
+  default: 1000
+  services:
+  - mds
 - name: mds_heartbeat_grace
   type: float
   level: advanced
@@ -1027,6 +1035,12 @@ options:
   services:
   - mds
   with_legacy: true
+- name: mds_inject_health_dummy
+  type: bool
+  level: dev
+  default: false
+  services:
+  - mds
 #  percentage of MDS modify replies to skip sending the client a trace on [0-1]
 - name: mds_inject_traceless_reply_probability
   type: float
@@ -1308,14 +1322,6 @@ options:
   desc: number of seconds after which clients which have not responded to cap revoke
     messages by the MDS are evicted.
   default: 0
-  services:
-  - mds
-- name: mds_max_retries_on_remount_failure
-  type: uint
-  level: advanced
-  desc: number of consecutive failed remount attempts for invalidating kernel dcache
-    after which client would abort.
-  default: 5
   services:
   - mds
 - name: mds_dump_cache_threshold_formatter

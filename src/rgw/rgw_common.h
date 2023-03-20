@@ -348,6 +348,7 @@ class RGWHTTPArgs {
   /** parse the received arguments */
   int parse(const DoutPrefixProvider *dpp);
   void append(const std::string& name, const std::string& val);
+  void remove(const std::string& name);
   /** Get the value for a specific argument parameter */
   const std::string& get(const std::string& name, bool *exists = NULL) const;
   boost::optional<const std::string&>
@@ -1225,6 +1226,7 @@ struct req_info {
   const RGWEnv *env;
   RGWHTTPArgs args;
   meta_map_t x_meta_map;
+  meta_map_t crypt_attribute_map;
 
   std::string host;
   const char *method;
@@ -2051,6 +2053,15 @@ void rgw_add_amz_meta_header(
   meta_map_t& x_meta_map,
   const std::string& k,
   const std::string& v);
+
+enum rgw_set_action_if_set {
+  DISCARD=0, OVERWRITE, APPEND
+};
+
+bool rgw_set_amz_meta_header(
+  meta_map_t& x_meta_map,
+  const std::string& k,
+  const std::string& v, rgw_set_action_if_set f);
 
 extern std::string rgw_string_unquote(const std::string& s);
 extern void parse_csv_string(const std::string& ival, std::vector<std::string>& ovals);

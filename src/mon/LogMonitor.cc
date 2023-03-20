@@ -387,6 +387,10 @@ void LogMonitor::log_external(const LogEntry& le)
   }
 
   if (g_conf()->mon_cluster_log_to_file) {
+    if (this->log_rotated.exchange(false)) {
+      this->log_external_close_fds();
+    }
+
     auto p = channel_fds.find(channel);
     int fd;
     if (p == channel_fds.end()) {
@@ -411,7 +415,7 @@ void LogMonitor::log_external(const LogEntry& le)
     }
 
     if (fd >= 0) {
-      fmt::format_to(file_log_buffer, "{}\n", le);
+      fmt::format_to(std::back_inserter(file_log_buffer), "{}\n", le);
       int err = safe_write(fd, file_log_buffer.data(), file_log_buffer.size());
       file_log_buffer.clear();
       if (err < 0) {
@@ -909,7 +913,7 @@ bool LogMonitor::preprocess_command(MonOpRequestRef op)
 	  } else {
 	    start = from;
 	  }
-	  dout(10) << __func__ << " channnel " << p.first
+	  dout(10) << __func__ << " channel " << p.first
 		   << " from " << from << " to " << to << dendl;
 	  for (version_t v = start; v < to; ++v) {
 	    bufferlist ebl;
@@ -930,6 +934,9 @@ bool LogMonitor::preprocess_command(MonOpRequestRef op)
 	  entries.erase(entries.begin());
 	}
 	for (auto& p : entries) {
+	  if (!match(p.second)) {
+	    continue;
+	  }
 	  if (f) {
 	    f->dump_object("entry", p.second);
 	  } else {
@@ -961,10 +968,12 @@ bool LogMonitor::preprocess_command(MonOpRequestRef op)
 	    LogEntry le;
 	    auto p = ebl.cbegin();
 	    decode(le, p);
-	    if (f) {
-	      f->dump_object("entry", le);
-	    } else {
-	      ss << le << "\n";
+	    if (match(le)) {
+	      if (f) {
+	        f->dump_object("entry", le);
+	      } else {
+	        ss << le << "\n";
+	      }
 	    }
 	  }
 	}

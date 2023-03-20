@@ -116,6 +116,7 @@ public:
   int call(
     std::string_view command,
     const cmdmap_t& cmdmap,
+    const bufferlist&,
     Formatter *f,
     std::ostream& errss,
     ceph::buffer::list& out) override {
@@ -183,7 +184,9 @@ void MDSDaemon::asok_command(
       if (cmd_getval(cmdmap, "value", value)) {
 	heapcmd_vec.push_back(value);
       }
-      ceph_heap_profiler_handle_command(heapcmd_vec, ss);
+      std::stringstream outss;
+      ceph_heap_profiler_handle_command(heapcmd_vec, outss);
+      outbl.append(outss);
       r = 0;
     }
   } else if (command == "cpu_profiler") {
@@ -544,7 +547,8 @@ int MDSDaemon::init()
       continue;
     }
     derr << "ERROR: failed to refresh rotating keys, "
-         << "maximum retry time reached." << dendl;
+         << "maximum retry time reached."
+	 << " Maybe I have a clock skew against the monitors?" << dendl;
     std::lock_guard locker{mds_lock};
     suicide();
     return -CEPHFS_ETIMEDOUT;

@@ -2397,6 +2397,8 @@ void RGWListBuckets::execute(optional_yield y)
       break;
     }
 
+    is_truncated = buckets.is_truncated();
+
     /* We need to have stats for all our policies - even if a given policy
      * isn't actually used in a given account. In such situation its usage
      * stats would be simply full of zeros. */
@@ -3427,6 +3429,11 @@ void RGWDeleteBucket::execute(optional_yield y)
     return;
   }
 
+  op_ret = rgw_remove_sse_s3_bucket_key(s);
+  if (op_ret != 0) {
+      // do nothing; it will already have been logged
+  }
+
   op_ret = s->bucket->remove_bucket(this, false, false, nullptr, y);
   if (op_ret < 0 && op_ret == -ECANCELED) {
       // lost a race, either with mdlog sync or another delete bucket operation.
@@ -3631,15 +3638,15 @@ int RGWPutObj::verify_permission(optional_yield y)
 
     constexpr auto encrypt_attr = "x-amz-server-side-encryption";
     constexpr auto s3_encrypt_attr = "s3:x-amz-server-side-encryption";
-    auto enc_header = s->info.x_meta_map.find(encrypt_attr);
-    if (enc_header != s->info.x_meta_map.end()){
+    auto enc_header = s->info.crypt_attribute_map.find(encrypt_attr);
+    if (enc_header != s->info.crypt_attribute_map.end()){
       rgw_add_to_iam_environment(s->env, s3_encrypt_attr, enc_header->second);
     }
 
     constexpr auto kms_attr = "x-amz-server-side-encryption-aws-kms-key-id";
     constexpr auto s3_kms_attr = "s3:x-amz-server-side-encryption-aws-kms-key-id";
-    auto kms_header = s->info.x_meta_map.find(kms_attr);
-    if (kms_header != s->info.x_meta_map.end()){
+    auto kms_header = s->info.crypt_attribute_map.find(kms_attr);
+    if (kms_header != s->info.crypt_attribute_map.end()){
       rgw_add_to_iam_environment(s->env, s3_kms_attr, kms_header->second);
     }
 
@@ -5781,23 +5788,23 @@ void RGWPutLC::execute(optional_yield y)
   RGWXMLParser parser;
   RGWLifecycleConfiguration_S3 new_config(s->cct);
 
-  content_md5 = s->info.env->get("HTTP_CONTENT_MD5");
-  if (content_md5 == nullptr) {
-    op_ret = -ERR_INVALID_REQUEST;
-    s->err.message = "Missing required header for this request: Content-MD5";
-    ldpp_dout(this, 5) << s->err.message << dendl;
-    return;
-  }
+  // amazon says that Content-MD5 is required for this op specifically, but MD5
+  // is not a security primitive and FIPS mode makes it difficult to use. if the
+  // client provides the header we'll try to verify its checksum, but the header
+  // itself is no longer required
+  std::optional<std::string> content_md5_bin;
 
-  std::string content_md5_bin;
-  try {
-    content_md5_bin = rgw::from_base64(std::string_view(content_md5));
-  } catch (...) {
-    s->err.message = "Request header Content-MD5 contains character "
-                     "that is not base64 encoded.";
-    ldpp_dout(this, 5) << s->err.message << dendl;
-    op_ret = -ERR_BAD_DIGEST;
-    return;
+  content_md5 = s->info.env->get("HTTP_CONTENT_MD5");
+  if (content_md5 != nullptr) {
+    try {
+      content_md5_bin = rgw::from_base64(std::string_view(content_md5));
+    } catch (...) {
+      s->err.message = "Request header Content-MD5 contains character "
+                       "that is not base64 encoded.";
+      ldpp_dout(this, 5) << s->err.message << dendl;
+      op_ret = -ERR_BAD_DIGEST;
+      return;
+    }
   }
 
   if (!parser.init()) {
@@ -5812,21 +5819,23 @@ void RGWPutLC::execute(optional_yield y)
   char* buf = data.c_str();
   ldpp_dout(this, 15) << "read len=" << data.length() << " data=" << (buf ? buf : "") << dendl;
 
-  MD5 data_hash;
-  // Allow use of MD5 digest in FIPS mode for non-cryptographic purposes
-  data_hash.SetFlags(EVP_MD_CTX_FLAG_NON_FIPS_ALLOW);
-  unsigned char data_hash_res[CEPH_CRYPTO_MD5_DIGESTSIZE];
-  data_hash.Update(reinterpret_cast<const unsigned char*>(buf), data.length());
-  data_hash.Final(data_hash_res);
+  if (content_md5_bin) {
+    MD5 data_hash;
+    // Allow use of MD5 digest in FIPS mode for non-cryptographic purposes
+    data_hash.SetFlags(EVP_MD_CTX_FLAG_NON_FIPS_ALLOW);
+    unsigned char data_hash_res[CEPH_CRYPTO_MD5_DIGESTSIZE];
+    data_hash.Update(reinterpret_cast<const unsigned char*>(buf), data.length());
+    data_hash.Final(data_hash_res);
 
-  if (memcmp(data_hash_res, content_md5_bin.c_str(), CEPH_CRYPTO_MD5_DIGESTSIZE) != 0) {
-    op_ret = -ERR_BAD_DIGEST;
-    s->err.message = "The Content-MD5 you specified did not match what we received.";
-    ldpp_dout(this, 5) << s->err.message
-                     << " Specified content md5: " << content_md5
-                     << ", calculated content md5: " << data_hash_res
-                     << dendl;
-    return;
+    if (memcmp(data_hash_res, content_md5_bin->c_str(), CEPH_CRYPTO_MD5_DIGESTSIZE) != 0) {
+      op_ret = -ERR_BAD_DIGEST;
+      s->err.message = "The Content-MD5 you specified did not match what we received.";
+      ldpp_dout(this, 5) << s->err.message
+                       << " Specified content md5: " << content_md5
+                       << ", calculated content md5: " << data_hash_res
+                       << dendl;
+      return;
+    }
   }
 
   if (!parser.parse(buf, data.length(), 1)) {
@@ -6759,6 +6768,23 @@ int RGWDeleteMultiObj::verify_permission(optional_yield y)
 void RGWDeleteMultiObj::pre_exec()
 {
   rgw_bucket_object_pre_exec(s);
+}
+
+void RGWDeleteMultiObj::write_ops_log_entry(rgw_log_entry& entry) const {
+  int num_err = 0;
+  int num_ok = 0;
+  for (auto iter = ops_log_entries.begin();
+       iter != ops_log_entries.end();
+       ++iter) {
+    if (iter->error) {
+      num_err++;
+    } else {
+      num_ok++;
+    }
+  }
+  entry.delete_multi_obj_meta.num_err = num_err;
+  entry.delete_multi_obj_meta.num_ok = num_ok;
+  entry.delete_multi_obj_meta.objects = std::move(ops_log_entries);
 }
 
 void RGWDeleteMultiObj::execute(optional_yield y)
@@ -8651,36 +8677,17 @@ void RGWPutBucketEncryption::execute(optional_yield y)
     return;
   }
 
-  if(bucket_encryption_conf.kms_master_key_id().compare("") != 0) {
-    ldpp_dout(this, 5) << "encryption not supported with sse-kms" << dendl;
-    op_ret = -ERR_NOT_IMPLEMENTED;
-    s->err.message = "SSE-KMS support is not provided";
-    return;
-  }
-
-  if(bucket_encryption_conf.sse_algorithm().compare("AES256") != 0) {
-    ldpp_dout(this, 5) << "only aes256 algorithm is supported for encryption" << dendl;
-    op_ret = -ERR_NOT_IMPLEMENTED;
-    s->err.message = "Encryption is supported only with AES256 algorithm";
-    return;
-  }
-
   op_ret = store->forward_request_to_master(this, s->user.get(), nullptr, data, nullptr, s->info, y);
   if (op_ret < 0) {
     ldpp_dout(this, 20) << "forward_request_to_master returned ret=" << op_ret << dendl;
     return;
   }
 
-  bufferlist key_id_bl;
-  string bucket_owner_id = s->bucket->get_info().owner.id;
-  key_id_bl.append(bucket_owner_id.c_str(), bucket_owner_id.size() + 1);
-
   bufferlist conf_bl;
   bucket_encryption_conf.encode(conf_bl);
-  op_ret = retry_raced_bucket_write(this, s->bucket.get(), [this, y, &conf_bl, &key_id_bl] {
+  op_ret = retry_raced_bucket_write(this, s->bucket.get(), [this, y, &conf_bl] {
     rgw::sal::Attrs attrs = s->bucket->get_attrs();
     attrs[RGW_ATTR_BUCKET_ENCRYPTION_POLICY] = conf_bl;
-    attrs[RGW_ATTR_BUCKET_ENCRYPTION_KEY_ID] = key_id_bl;
     return s->bucket->merge_and_store_attrs(this, attrs, y);
   });
 }

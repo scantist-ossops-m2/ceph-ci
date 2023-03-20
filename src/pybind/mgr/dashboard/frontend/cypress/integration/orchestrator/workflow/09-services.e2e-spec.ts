@@ -1,7 +1,10 @@
-import { ServicesPageHelper } from 'cypress/integration/cluster/services.po';
+/* tslint:disable*/
+import { ServicesPageHelper } from '../../cluster/services.po';
+/* tslint:enable*/
 
 describe('Services page', () => {
   const services = new ServicesPageHelper();
+  const mdsDaemonName = 'mds.test';
   beforeEach(() => {
     cy.login();
     Cypress.Cookies.preserveOnce('token');
@@ -15,56 +18,68 @@ describe('Services page', () => {
   it('should create an mds service', () => {
     services.navigateTo('create');
     services.addService('mds', false);
-    services.checkExist('mds.test', true);
+    services.checkExist(mdsDaemonName, true);
 
-    services.clickServiceTab('mds.test', 'Details');
+    services.clickServiceTab(mdsDaemonName, 'Details');
     cy.get('cd-service-details').within(() => {
-      services.checkServiceStatus('mds');
+      services.checkServiceStatus(mdsDaemonName);
     });
   });
 
   it('should stop a daemon', () => {
-    services.clickServiceTab('mds.test', 'Details');
-    services.checkServiceStatus('mds');
+    services.clickServiceTab(mdsDaemonName, 'Details');
+    services.checkServiceStatus(mdsDaemonName);
 
     services.daemonAction('mds', 'stop');
-    services.checkServiceStatus('mds', 'stopped');
+    cy.get('cd-service-details').within(() => {
+      services.checkServiceStatus(mdsDaemonName, 'stopped');
+    });
   });
 
   it('should restart a daemon', () => {
-    services.checkExist('mds.test', true);
-    services.clickServiceTab('mds.test', 'Details');
+    services.checkExist(mdsDaemonName, true);
+    services.clickServiceTab(mdsDaemonName, 'Details');
     services.daemonAction('mds', 'restart');
-    services.checkServiceStatus('mds', 'running');
+    cy.get('cd-service-details').within(() => {
+      services.checkServiceStatus(mdsDaemonName, 'running');
+    });
   });
 
   it('should redeploy a daemon', () => {
-    services.checkExist('mds.test', true);
-    services.clickServiceTab('mds.test', 'Details');
+    services.checkExist(mdsDaemonName, true);
+    services.clickServiceTab(mdsDaemonName, 'Details');
 
     services.daemonAction('mds', 'stop');
-    services.checkServiceStatus('mds', 'stopped');
+    cy.get('cd-service-details').within(() => {
+      services.checkServiceStatus(mdsDaemonName, 'stopped');
+    });
     services.daemonAction('mds', 'redeploy');
-    services.checkServiceStatus('mds', 'running');
+    cy.get('cd-service-details').within(() => {
+      services.checkServiceStatus(mdsDaemonName, 'running');
+    });
   });
 
   it('should start a daemon', () => {
-    services.checkExist('mds.test', true);
-    services.clickServiceTab('mds.test', 'Details');
+    services.checkExist(mdsDaemonName, true);
+    services.clickServiceTab(mdsDaemonName, 'Details');
 
     services.daemonAction('mds', 'stop');
-    services.checkServiceStatus('mds', 'stopped');
+    cy.get('cd-service-details').within(() => {
+      services.checkServiceStatus(mdsDaemonName, 'stopped');
+    });
     services.daemonAction('mds', 'start');
-    services.checkServiceStatus('mds', 'running');
+    cy.get('cd-service-details').within(() => {
+      services.checkServiceStatus(mdsDaemonName, 'running');
+    });
   });
 
   it('should delete an mds service', () => {
-    services.deleteService('mds.test');
+    services.deleteService(mdsDaemonName);
   });
 
   it('should create and delete snmp-gateway service with version V2c', () => {
     services.navigateTo('create');
-    services.addService('snmp-gateway', false, '1', 'V2c');
+    services.addService('snmp-gateway', false, 1, 'V2c');
     services.checkExist('snmp-gateway', true);
 
     services.clickServiceTab('snmp-gateway', 'Details');
@@ -77,7 +92,7 @@ describe('Services page', () => {
 
   it('should create and delete snmp-gateway service with version V3', () => {
     services.navigateTo('create');
-    services.addService('snmp-gateway', false, '1', 'V3', true);
+    services.addService('snmp-gateway', false, 1, 'V3', true);
     services.checkExist('snmp-gateway', true);
 
     services.clickServiceTab('snmp-gateway', 'Details');
@@ -90,7 +105,7 @@ describe('Services page', () => {
 
   it('should create and delete snmp-gateway service with version V3 and w/o privacy protocol', () => {
     services.navigateTo('create');
-    services.addService('snmp-gateway', false, '1', 'V3', false);
+    services.addService('snmp-gateway', false, 1, 'V3', false);
     services.checkExist('snmp-gateway', true);
 
     services.clickServiceTab('snmp-gateway', 'Details');
@@ -99,5 +114,13 @@ describe('Services page', () => {
     });
 
     services.deleteService('snmp-gateway');
+  });
+
+  it('should create ingress as unmanaged', () => {
+    services.navigateTo('create');
+    services.addService('ingress', false, undefined, undefined, undefined, true);
+    services.checkExist('ingress.rgw.foo', true);
+    services.isUnmanaged('ingress.rgw.foo', true);
+    services.deleteService('ingress.rgw.foo');
   });
 });

@@ -2,14 +2,22 @@ declare global {
   namespace Cypress {
     interface Chainable<Subject> {
       login(): void;
+      logToConsole(message: string, optional?: any): void;
       text(): Chainable<string>;
+      checkAccessibility(subject: any, axeOptions?: any, skip?: boolean): void;
     }
   }
 }
-
-import { CdHelperClass } from '~/app/shared/classes/cd-helper.class';
-import { Permissions } from '~/app/shared/models/permissions';
-
+// Disabling tslint rule since cypress-cucumber has
+// issues with absolute import paths.
+// This can be removed when
+// https://github.com/cypress-io/cypress-browserify-preprocessor/issues/53
+// is fixed.
+/* tslint:disable*/
+import { CdHelperClass } from '../../src/app/shared/classes/cd-helper.class';
+import { Permissions } from '../../src/app/shared/models/permissions';
+import { table } from 'table';
+/* tslint:enable*/
 let auth: any;
 
 const fillAuth = () => {
@@ -44,6 +52,39 @@ Cypress.Commands.add('login', () => {
 });
 
 // @ts-ignore
-Cypress.Commands.add('text', { prevSubject: true }, (subject) => {
+Cypress.Commands.add('text', { prevSubject: true }, (subject: any) => {
   return subject.text();
+});
+
+Cypress.Commands.add('logToConsole', (message: string, optional?: any) => {
+  cy.task('log', { message: `(${new Date().toISOString()}) ${message}`, optional });
+});
+
+// Print cypress-axe violations to the terminal
+function a11yErrorLogger(violations: any) {
+  const violationData = violations.flatMap(({ id, impact, description, nodes }: any) => {
+    return nodes.flatMap(({ html }: any) => {
+      return [
+        ['Test', Cypress.currentTest.title],
+        ['Error', id],
+        ['Impact', impact],
+        ['Description', description],
+        ['Element', html],
+        ['', '']
+      ];
+    });
+  });
+
+  cy.task('log', {
+    message: table(violationData, {
+      header: {
+        alignment: 'left',
+        content: Cypress.spec.relative
+      }
+    })
+  });
+}
+
+Cypress.Commands.add('checkAccessibility', (subject: any, axeOptions?: any, skip?: boolean) => {
+  cy.checkA11y(subject, axeOptions, a11yErrorLogger, skip);
 });

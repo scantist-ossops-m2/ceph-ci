@@ -1639,14 +1639,29 @@ void OSDService::enqueue_front(OpSchedulerItem&& qi)
 
 void OSDService::queue_recovery_context(
   PG *pg,
-  GenContext<ThreadPool::TPHandle&> *c)
+  GenContext<ThreadPool::TPHandle&> *c,
+  uint64_t cost)
 {
   epoch_t e = get_osdmap_epoch();
+
+  uint64_t cost_for_queue = [this, cost] {
+    if (cct->_conf->osd_op_queue == "mclock_scheduler") {
+      return cost;
+    } else {
+      /* We retain this legacy behavior for WeightedPriorityQueue. It seems to
+       * require very large costs for several messages in order to do any
+       * meaningful amount of throttling.  This branch should be removed after
+       * Reef.
+       */
+      return cct->_conf->osd_recovery_cost;
+    }
+  }();
+
   enqueue_back(
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(
 	new PGRecoveryContext(pg->get_pgid(), c, e)),
-      cct->_conf->osd_recovery_cost,
+      cost_for_queue,
       cct->_conf->osd_recovery_priority,
       ceph_clock_now(),
       0,
@@ -1966,20 +1981,36 @@ void OSDService::prune_sent_ready_to_merge(const OSDMapRef& osdmap)
 // ---
 
 void OSDService::_queue_for_recovery(
-  std::pair<epoch_t, PGRef> p,
+  pg_awaiting_throttle_t p,
   uint64_t reserved_pushes)
 {
   ceph_assert(ceph_mutex_is_locked_by_me(recovery_lock));
+
+  uint64_t cost_for_queue = [this, &reserved_pushes, &p] {
+    if (cct->_conf->osd_op_queue == "mclock_scheduler") {
+      return p.cost_per_object * reserved_pushes;
+    } else {
+      /* We retain this legacy behavior for WeightedPriorityQueue. It seems to
+       * require very large costs for several messages in order to do any
+       * meaningful amount of throttling.  This branch should be removed after
+       * Reef.
+       */
+      return cct->_conf->osd_recovery_cost;
+    }
+  }();
+
   enqueue_back(
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(
 	new PGRecovery(
-	  p.second->get_pgid(), p.first, reserved_pushes)),
-      cct->_conf->osd_recovery_cost,
+	  p.pg->get_pgid(),
+	  p.epoch_queued,
+          reserved_pushes)),
+      cost_for_queue,
       cct->_conf->osd_recovery_priority,
       ceph_clock_now(),
       0,
-      p.first));
+      p.epoch_queued));
 }
 
 // ====================================================================
@@ -1991,7 +2022,10 @@ void OSDService::_queue_for_recovery(
 // Commands shared between OSD's console and admin console:
 namespace ceph::osd_cmds {
 
-int heap(CephContext& cct, const cmdmap_t& cmdmap, Formatter& f, std::ostream& os);
+int heap(CephContext& cct,
+         const cmdmap_t& cmdmap,
+         std::ostream& outos,
+         std::ostream& erros);
 
 } // namespace ceph::osd_cmds
 
@@ -2128,6 +2162,17 @@ int OSD::write_meta(CephContext *cct, ObjectStore *store, uuid_d& cluster_fsid, 
     if (r < 0)
       return r;
   }
+
+  r = store->write_meta("ceph_version_when_created", pretty_version_to_str());
+  if (r < 0)
+    return r;
+
+  ostringstream created_at;
+  utime_t now = ceph_clock_now();
+  now.gmtime(created_at);
+  r = store->write_meta("created_at", created_at.str());
+  if (r < 0)
+    return r;
 
   r = store->write_meta("ready", "ready");
   if (r < 0)
@@ -2419,6 +2464,7 @@ class OSDSocketHook : public AdminSocketHook {
 public:
   explicit OSDSocketHook(OSD *o) : osd(o) {}
   int call(std::string_view prefix, const cmdmap_t& cmdmap,
+	   const bufferlist& inbl,
 	   Formatter *f,
 	   std::ostream& ss,
 	   bufferlist& out) override {
@@ -2656,12 +2702,24 @@ will start to track new ops received afterwards.";
     f->close_section();
   } else if (prefix == "dump_blocklist") {
     list<pair<entity_addr_t,utime_t> > bl;
+    list<pair<entity_addr_t,utime_t> > rbl;
     OSDMapRef curmap = service.get_osdmap();
+    curmap->get_blocklist(&bl, &rbl);
 
     f->open_array_section("blocklist");
-    curmap->get_blocklist(&bl);
     for (list<pair<entity_addr_t,utime_t> >::iterator it = bl.begin();
 	it != bl.end(); ++it) {
+      f->open_object_section("entry");
+      f->open_object_section("entity_addr_t");
+      it->first.dump(f);
+      f->close_section(); //entity_addr_t
+      it->second.localtime(f->dump_stream("expire_time"));
+      f->close_section(); //entry
+    }
+    f->close_section(); //blocklist
+    f->open_array_section("range_blocklist");
+    for (list<pair<entity_addr_t,utime_t> >::iterator it = rbl.begin();
+	it != rbl.end(); ++it) {
       f->open_object_section("entry");
       f->open_object_section("entity_addr_t");
       it->first.dump(f);
@@ -2771,6 +2829,8 @@ will start to track new ops received afterwards.";
     store->generate_db_histogram(f);
   } else if (prefix == "flush_store_cache") {
     store->flush_cache(&ss);
+  } else if (prefix == "rotate-stored-key") {
+    store->write_meta("osd_key", inbl.to_str());
   } else if (prefix == "dump_pgstate_history") {
     f->open_object_section("pgstate_history");
     f->open_array_section("pgs");
@@ -2884,7 +2944,9 @@ will start to track new ops received afterwards.";
   }
 
   else if (prefix == "heap") {
-    ret = ceph::osd_cmds::heap(*cct, cmdmap, *f, ss);
+    std::stringstream outss;
+    ret = ceph::osd_cmds::heap(*cct, cmdmap, outss, ss);
+    outbl.append(outss);
   }
 
   else if (prefix == "debug dump_missing") {
@@ -3154,6 +3216,7 @@ int OSD::run_osd_bench_test(
   ostream &ss)
 {
   int ret = 0;
+  srand(time(NULL) % (unsigned long) -1);
   uint32_t duration = cct->_conf->osd_bench_duration;
 
   if (bsize > (int64_t) cct->_conf->osd_bench_max_block_size) {
@@ -3235,12 +3298,6 @@ int OSD::run_osd_bench_test(
     }
   }
 
-  bufferlist bl;
-  bufferptr bp(bsize);
-  memset(bp.c_str(), 'a', bp.length());
-  bl.push_back(std::move(bp));
-  bl.rebuild_page_aligned();
-
   {
     C_SaferCond waiter;
     if (!service.meta_ch->flush_commit(&waiter)) {
@@ -3248,10 +3305,15 @@ int OSD::run_osd_bench_test(
     }
   }
 
+  bufferlist bl;
   utime_t start = ceph_clock_now();
   for (int64_t pos = 0; pos < count; pos += bsize) {
     char nm[30];
     unsigned offset = 0;
+    bufferptr bp(bsize);
+    memset(bp.c_str(), rand() & 0xff, bp.length());
+    bl.push_back(std::move(bp));
+    bl.rebuild_page_aligned();
     if (onum && osize) {
       snprintf(nm, sizeof(nm), "disk_bw_test_%d", (int)(rand() % onum));
       offset = rand() % (osize / bsize) * bsize;
@@ -3266,6 +3328,7 @@ int OSD::run_osd_bench_test(
     if (!onum || !osize) {
       cleanupt.remove(coll_t::meta(), ghobject_t(soid));
     }
+    bl.clear();
   }
 
   {
@@ -3295,6 +3358,7 @@ class TestOpsSocketHook : public AdminSocketHook {
 public:
   TestOpsSocketHook(OSDService *s, ObjectStore *st) : service(s), store(st) {}
   int call(std::string_view command, const cmdmap_t& cmdmap,
+	   const bufferlist&,
 	   Formatter *f,
 	   std::ostream& errss,
 	   bufferlist& out) override {
@@ -3796,7 +3860,8 @@ int OSD::init()
     derr << "unable to obtain rotating service keys; retrying" << dendl;
     ++rotating_auth_attempts;
     if (rotating_auth_attempts > g_conf()->max_rotating_auth_attempts) {
-        derr << __func__ << " wait_auth_rotating timed out" << dendl;
+        derr << __func__ << " wait_auth_rotating timed out"
+	     <<" -- maybe I have a clock skew against the monitors?" << dendl;
 	exit(1);
     }
   }
@@ -3844,8 +3909,9 @@ int OSD::init()
   start_boot();
 
   // Override a few options if mclock scheduler is enabled.
-  maybe_override_max_osd_capacity_for_qos();
+  maybe_override_sleep_options_for_qos();
   maybe_override_options_for_qos();
+  maybe_override_max_osd_capacity_for_qos();
 
   return 0;
 
@@ -3955,6 +4021,10 @@ void OSD::final_init()
   r = admin_socket->register_command("flush_store_cache",
                                      asok_hook,
                                      "Flush bluestore internal cache");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command("rotate-stored-key",
+                                     asok_hook,
+                                     "Update the stored osd_key");
   ceph_assert(r == 0);
   r = admin_socket->register_command("dump_pgstate_history",
 				     asok_hook,
@@ -4293,6 +4363,12 @@ int OSD::shutdown()
     cct->_conf.apply_changes(nullptr);
   }
 
+  // stop MgrClient earlier as it's more like an internal consumer of OSD
+  // 
+  // should occur before unmounting the database in fast-shutdown to avoid
+  // a race condition (see https://tracker.ceph.com/issues/56101)
+  mgrc.shutdown();
+
   if (cct->_conf->osd_fast_shutdown) {
     // first, stop new task from being taken from op_shardedwq
     // and clear all pending tasks
@@ -4331,9 +4407,6 @@ int OSD::shutdown()
     // now it is safe to exit
     _exit(0);
   }
-
-  // stop MgrClient earlier as it's more like an internal consumer of OSD
-  mgrc.shutdown();
 
   service.start_shutdown();
 
@@ -6767,6 +6840,18 @@ void OSD::_collect_metadata(map<string,string> *pm)
     osdspec_affinity = "";
   }
   (*pm)["osdspec_affinity"] = osdspec_affinity;
+  string ceph_version_when_created;
+  r = store->read_meta("ceph_version_when_created", &ceph_version_when_created);
+  if (r <0 || ceph_version_when_created.empty()) {
+    ceph_version_when_created = "";
+  }
+  (*pm)["ceph_version_when_created"] = ceph_version_when_created;
+  string created_at;
+  r = store->read_meta("created_at", &created_at);
+  if (r < 0 || created_at.empty()) {
+    created_at = "";
+  }
+  (*pm)["created_at"] = created_at;
   store->collect_metadata(pm);
 
   collect_sys_info(pm, cct);
@@ -9947,7 +10032,17 @@ void OSD::handle_conf_change(const ConfigProxy& conf,
   std::lock_guard l{osd_lock};
 
   if (changed.count("osd_max_backfills") ||
-      changed.count("osd_delete_sleep") ||
+      changed.count("osd_recovery_max_active") ||
+      changed.count("osd_recovery_max_active_hdd") ||
+      changed.count("osd_recovery_max_active_ssd")) {
+    if (!maybe_override_options_for_qos(&changed) &&
+        changed.count("osd_max_backfills")) {
+      // Scheduler is not "mclock". Fallback to earlier behavior
+      service.local_reserver.set_max(cct->_conf->osd_max_backfills);
+      service.remote_reserver.set_max(cct->_conf->osd_max_backfills);
+    }
+  }
+  if (changed.count("osd_delete_sleep") ||
       changed.count("osd_delete_sleep_hdd") ||
       changed.count("osd_delete_sleep_ssd") ||
       changed.count("osd_delete_sleep_hybrid") ||
@@ -9959,16 +10054,8 @@ void OSD::handle_conf_change(const ConfigProxy& conf,
       changed.count("osd_recovery_sleep") ||
       changed.count("osd_recovery_sleep_hdd") ||
       changed.count("osd_recovery_sleep_ssd") ||
-      changed.count("osd_recovery_sleep_hybrid") ||
-      changed.count("osd_recovery_max_active") ||
-      changed.count("osd_recovery_max_active_hdd") ||
-      changed.count("osd_recovery_max_active_ssd")) {
-    if (!maybe_override_options_for_qos() &&
-        changed.count("osd_max_backfills")) {
-      // Scheduler is not "mclock". Fallback to earlier behavior
-      service.local_reserver.set_max(cct->_conf->osd_max_backfills);
-      service.remote_reserver.set_max(cct->_conf->osd_max_backfills);
-    }
+      changed.count("osd_recovery_sleep_hybrid")) {
+    maybe_override_sleep_options_for_qos();
   }
   if (changed.count("osd_min_recovery_priority")) {
     service.local_reserver.set_min_priority(cct->_conf->osd_min_recovery_priority);
@@ -10077,11 +10164,11 @@ void OSD::maybe_override_max_osd_capacity_for_qos()
       max_capacity_iops_config = "osd_mclock_max_capacity_iops_ssd";
     }
 
+    double default_iops = 0.0;
+    double cur_iops = 0.0;
     if (!force_run_benchmark) {
-      double default_iops = 0.0;
-
       // Get the current osd iops capacity
-      double cur_iops = cct->_conf.get_val<double>(max_capacity_iops_config);
+      cur_iops = cct->_conf.get_val<double>(max_capacity_iops_config);
 
       // Get the default max iops capacity
       auto val = cct->_conf.get_val_default(max_capacity_iops_config);
@@ -10132,44 +10219,151 @@ void OSD::maybe_override_max_osd_capacity_for_qos()
             << " elapsed_sec: " << elapsed
             << dendl;
 
-    // Persist iops to the MON store
-    ret = mon_cmd_set_config(max_capacity_iops_config, std::to_string(iops));
-    if (ret < 0) {
-      // Fallback to setting the config within the in-memory "values" map.
-      cct->_conf.set_val(max_capacity_iops_config, std::to_string(iops));
+    // Get the threshold IOPS set for the underlying hdd/ssd.
+    double threshold_iops = 0.0;
+    if (store_is_rotational) {
+      threshold_iops = cct->_conf.get_val<double>(
+        "osd_mclock_iops_capacity_threshold_hdd");
+    } else {
+      threshold_iops = cct->_conf.get_val<double>(
+        "osd_mclock_iops_capacity_threshold_ssd");
     }
 
-    // Override the max osd capacity for all shards
-    for (auto& shard : shards) {
-      shard->update_scheduler_config();
+    // Persist the iops value to the MON store or throw cluster warning
+    // if the measured iops exceeds the set threshold. If the iops exceed
+    // the threshold, the default value is used.
+    if (iops > threshold_iops) {
+      clog->warn() << "OSD bench result of " << std::to_string(iops)
+                   << " IOPS exceeded the threshold limit of "
+                   << std::to_string(threshold_iops) << " IOPS for osd."
+                   << std::to_string(whoami) << ". IOPS capacity is unchanged"
+                   << " at " << std::to_string(cur_iops) << " IOPS. The"
+                   << " recommendation is to establish the osd's IOPS capacity"
+                   << " using other benchmark tools (e.g. Fio) and then"
+                   << " override osd_mclock_max_capacity_iops_[hdd|ssd].";
+    } else {
+      mon_cmd_set_config(max_capacity_iops_config, std::to_string(iops));
     }
   }
 }
 
-bool OSD::maybe_override_options_for_qos()
+bool OSD::maybe_override_options_for_qos(const std::set<std::string> *changed)
 {
-  // If the scheduler enabled is mclock, override the recovery, backfill
-  // and sleep options so that mclock can meet the QoS goals.
+  // Override options only if the scheduler enabled is mclock and the
+  // underlying objectstore is supported by mclock
   if (cct->_conf.get_val<std::string>("osd_op_queue") == "mclock_scheduler" &&
       !unsupported_objstore_for_qos()) {
-    dout(1) << __func__
-            << ": Changing recovery/backfill/sleep settings for QoS" << dendl;
+    static const std::map<std::string, uint64_t> recovery_qos_defaults {
+      {"osd_recovery_max_active", 0},
+      {"osd_recovery_max_active_hdd", 3},
+      {"osd_recovery_max_active_ssd", 10},
+      {"osd_max_backfills", 3},
+    };
 
-    // Set high value for recovery max active
-    uint32_t rec_max_active = 1000;
-    cct->_conf.set_val(
-      "osd_recovery_max_active", std::to_string(rec_max_active));
-    cct->_conf.set_val(
-      "osd_recovery_max_active_hdd", std::to_string(rec_max_active));
-    cct->_conf.set_val(
-      "osd_recovery_max_active_ssd", std::to_string(rec_max_active));
+    // Check if we were called because of a configuration change
+    if (changed != nullptr) {
+      if (cct->_conf.get_val<bool>("osd_mclock_override_recovery_settings")) {
+        if (changed->count("osd_max_backfills")) {
+          dout(1) << __func__ << " Set local and remote max backfills to "
+                   << cct->_conf->osd_max_backfills << dendl;
+          service.local_reserver.set_max(cct->_conf->osd_max_backfills);
+          service.remote_reserver.set_max(cct->_conf->osd_max_backfills);
+        }
+      } else {
+        // Recovery options change was attempted without setting
+        // the 'osd_mclock_override_recovery_settings' option.
+        // Find the key to remove from the configuration db.
+        std::string key;
+        if (changed->count("osd_max_backfills")) {
+          key = "osd_max_backfills";
+        } else if (changed->count("osd_recovery_max_active")) {
+          key = "osd_recovery_max_active";
+        } else if (changed->count("osd_recovery_max_active_hdd")) {
+          key = "osd_recovery_max_active_hdd";
+        } else if (changed->count("osd_recovery_max_active_ssd")) {
+          key = "osd_recovery_max_active_ssd";
+        } else {
+          // No key that we are interested in. Return.
+          return true;
+        }
 
-    // Set high value for osd_max_backfill
-    uint32_t max_backfills = 1000;
-    cct->_conf.set_val("osd_max_backfills", std::to_string(max_backfills));
-    service.local_reserver.set_max(max_backfills);
-    service.remote_reserver.set_max(max_backfills);
+        // Remove the current entry from the configuration if
+        // different from its default value.
+        auto val = recovery_qos_defaults.find(key);
+        if (val != recovery_qos_defaults.end() &&
+            cct->_conf.get_val<uint64_t>(key) != val->second) {
+          static const std::vector<std::string> osds = {
+            "osd",
+            "osd." + std::to_string(whoami)
+          };
 
+          for (auto osd : osds) {
+            std::string cmd =
+              "{"
+                "\"prefix\": \"config rm\", "
+                "\"who\": \"" + osd + "\", "
+                "\"name\": \"" + key + "\""
+              "}";
+            vector<std::string> vcmd{cmd};
+
+            dout(1) << __func__ << " Removing Key: " << key
+                    << " for " << osd << " from Mon db" << dendl;
+            monc->start_mon_command(vcmd, {}, nullptr, nullptr, nullptr);
+          }
+
+          // Raise a cluster warning indicating that the changes did not
+          // take effect and indicate the reason why.
+          clog->warn() << "Change to " << key << " on osd."
+                       << std::to_string(whoami) << " did not take effect."
+                       << " Enable osd_mclock_override_recovery_settings before"
+                       << " setting this option.";
+        }
+      }
+    } else { // if (changed != nullptr) (osd boot-up)
+      // Override the default recovery max active (hdd & ssd) and max
+      // backfills to mClock defaults. This section is executed only
+      // during osd boot-up.
+      for (auto opt : recovery_qos_defaults) {
+        // Get the current and built-in default value
+        uint64_t def_val = 0;
+        uint64_t cur_val = cct->_conf.get_val<uint64_t>(opt.first);
+        dout(1) << __func__ << " Current value of " << opt.first
+                << ": " << cur_val << dendl;
+        auto val = cct->_conf.get_val_default(opt.first);
+        if (val.has_value()) {
+        def_val = std::strtoull(val.value().c_str(), nullptr, 10);
+        dout(1) << __func__ << " Default value of " << opt.first
+                << ": " << def_val << dendl;
+        }
+
+        // Determine if we really need to set default value
+        if ((def_val == cur_val) && (cur_val != opt.second)) {
+          // The built-in default is equal to the current value.
+          // Therefore, the value must be updated to the mclock
+          // default if different from the current value.
+          cct->_conf.set_val_default(opt.first, std::to_string(opt.second));
+          dout(1) << __func__ << " Set default value of " << opt.first
+                  << " to " << opt.second << dendl;
+          if (opt.first == "osd_max_backfills") {
+            service.local_reserver.set_max(opt.second);
+            service.remote_reserver.set_max(opt.second);
+          }
+        }
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+void OSD::maybe_override_sleep_options_for_qos()
+{
+  // Override options only if the scheduler enabled is mclock and the
+  // underlying objectstore is supported by mclock
+  if (cct->_conf.get_val<std::string>("osd_op_queue") == "mclock_scheduler" &&
+      !unsupported_objstore_for_qos()) {
+
+    // Override the various sleep settings
     // Disable recovery sleep
     cct->_conf.set_val("osd_recovery_sleep", std::to_string(0));
     cct->_conf.set_val("osd_recovery_sleep_hdd", std::to_string(0));
@@ -10190,12 +10384,44 @@ bool OSD::maybe_override_options_for_qos()
 
     // Disable scrub sleep
     cct->_conf.set_val("osd_scrub_sleep", std::to_string(0));
-    return true;
   }
-  return false;
 }
 
-int OSD::mon_cmd_set_config(const std::string &key, const std::string &val)
+/**
+ * A context for receiving status from a background mon command to set
+ * a config option and optionally apply the changes on each op shard.
+ */
+class MonCmdSetConfigOnFinish : public Context {
+  OSD *osd;
+  CephContext *cct;
+  std::string key;
+  std::string val;
+  bool update_shard;
+public:
+  explicit MonCmdSetConfigOnFinish(
+    OSD *o,
+    CephContext *cct,
+    const std::string &k,
+    const std::string &v,
+    const bool s)
+      : osd(o), cct(cct), key(k), val(v), update_shard(s) {}
+  void finish(int r) override {
+    if (r != 0) {
+      // Fallback to setting the config within the in-memory "values" map.
+      cct->_conf.set_val_default(key, val);
+    }
+
+    // If requested, apply this option on the
+    // active scheduler of each op shard.
+    if (update_shard) {
+      for (auto& shard : osd->shards) {
+        shard->update_scheduler_config();
+      }
+    }
+  }
+};
+
+void OSD::mon_cmd_set_config(const std::string &key, const std::string &val)
 {
   std::string cmd =
     "{"
@@ -10204,21 +10430,20 @@ int OSD::mon_cmd_set_config(const std::string &key, const std::string &val)
       "\"name\": \"" + key + "\", "
       "\"value\": \"" + val + "\""
     "}";
-
   vector<std::string> vcmd{cmd};
-  bufferlist inbl;
-  std::string outs;
-  C_SaferCond cond;
-  monc->start_mon_command(vcmd, inbl, nullptr, &outs, &cond);
-  int r = cond.wait();
-  if (r < 0) {
-    derr << __func__ << " Failed to set config key " << key
-         << " err: " << cpp_strerror(r)
-         << " errstr: " << outs << dendl;
-    return r;
-  }
 
-  return 0;
+  // List of config options to be distributed across each op shard.
+  // Currently limited to a couple of mClock options.
+  static const std::vector<std::string> shard_option =
+    { "osd_mclock_max_capacity_iops_hdd", "osd_mclock_max_capacity_iops_ssd" };
+  const bool update_shard = std::find(shard_option.begin(),
+                                      shard_option.end(),
+                                      key) != shard_option.end();
+
+  auto on_finish = new MonCmdSetConfigOnFinish(this, cct, key,
+                                               val, update_shard);
+  dout(10) << __func__ << " Set " << key << " = " << val << dendl;
+  monc->start_mon_command(vcmd, {}, nullptr, nullptr, on_finish);
 }
 
 bool OSD::unsupported_objstore_for_qos()
@@ -10747,8 +10972,8 @@ OSDShard::OSDShard(
     shard_lock_name(shard_name + "::shard_lock"),
     shard_lock{make_mutex(shard_lock_name)},
     scheduler(ceph::osd::scheduler::make_scheduler(
-      cct, osd->num_shards, osd->store->is_rotational(),
-      osd->store->get_type())),
+      cct, osd->whoami, osd->num_shards, id, osd->store->is_rotational(),
+      osd->store->get_type(), osd->monc)),
     context_queue(sdata_wait_lock, sdata_cond)
 {
   dout(0) << "using op scheduler " << *scheduler << dendl;
@@ -10865,7 +11090,7 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
       if (is_smallest_thread_index) {
         sdata->shard_lock.unlock();
         handle_oncommits(oncommits);
-        return;
+        sdata->shard_lock.lock();
       }
       std::unique_lock wait_lock{sdata->sdata_wait_lock};
       auto future_time = ceph::real_clock::from_double(*when_ready);
@@ -10881,6 +11106,11 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
       // Reapply default wq timeouts
       osd->cct->get_heartbeat_map()->reset_timeout(hb,
         timeout_interval, suicide_interval);
+      // Populate the oncommits list if there were any additions
+      // to the context_queue while we were waiting
+      if (is_smallest_thread_index) {
+        sdata->context_queue.move_to(oncommits);
+      }
     }
   } // while
 
@@ -11205,17 +11435,19 @@ void OSD::ShardedOpWQ::stop_for_fast_shutdown()
 
 namespace ceph::osd_cmds {
 
-int heap(CephContext& cct, const cmdmap_t& cmdmap, Formatter& f,
-	 std::ostream& os)
+int heap(CephContext& cct,
+         const cmdmap_t& cmdmap,
+         std::ostream& outos,
+         std::ostream& erros)
 {
   if (!ceph_using_tcmalloc()) {
-        os << "could not issue heap profiler command -- not using tcmalloc!";
+        erros << "could not issue heap profiler command -- not using tcmalloc!";
         return -EOPNOTSUPP;
   }
 
   string cmd;
   if (!cmd_getval(cmdmap, "heapcmd", cmd)) {
-        os << "unable to get value for command \"" << cmd << "\"";
+        erros << "unable to get value for command \"" << cmd << "\"";
        return -EINVAL;
   }
 
@@ -11227,7 +11459,7 @@ int heap(CephContext& cct, const cmdmap_t& cmdmap, Formatter& f,
     cmd_vec.push_back(val);
   }
 
-  ceph_heap_profiler_handle_command(cmd_vec, os);
+  ceph_heap_profiler_handle_command(cmd_vec, outos);
 
   return 0;
 }

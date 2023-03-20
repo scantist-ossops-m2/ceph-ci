@@ -80,17 +80,6 @@ int rgw_init_ioctx(const DoutPrefixProvider *dpp,
 	ldpp_dout(dpp, 10) << __func__ << " warning: failed to set pg_autoscale_bias on "
 		 << pool.name << dendl;
       }
-      // set pg_num_min
-      int min = g_conf().get_val<uint64_t>("rgw_rados_pool_pg_num_min");
-      r = rados->mon_command(
-	"{\"prefix\": \"osd pool set\", \"pool\": \"" +
-	pool.name + "\", \"var\": \"pg_num_min\", \"val\": \"" +
-	stringify(min) + "\"}",
-	inbl, NULL, NULL);
-      if (r < 0) {
-	ldpp_dout(dpp, 10) << __func__ << " warning: failed to set pg_num_min on "
-		 << pool.name << dendl;
-      }
       // set recovery_priority
       int p = g_conf().get_val<uint64_t>("rgw_rados_pool_recovery_priority");
       r = rados->mon_command(
@@ -179,6 +168,21 @@ int rgw_put_system_obj(const DoutPrefixProvider *dpp,
 
   return ret;
 }
+
+int rgw_stat_system_obj(const DoutPrefixProvider *dpp,
+      RGWSysObjectCtx& obj_ctx, const rgw_pool& pool,
+			const std::string& key, RGWObjVersionTracker *objv_tracker,
+			real_time *pmtime, optional_yield y,
+			std::map<std::string, bufferlist> *pattrs)
+{
+  rgw_raw_obj obj(pool, key);
+  auto sysobj = obj_ctx.get_obj(obj);
+  return sysobj.rop()
+               .set_attrs(pattrs)
+               .set_last_mod(pmtime)
+               .stat(y, dpp);
+}
+
 
 int rgw_get_system_obj(RGWSysObjectCtx& obj_ctx, const rgw_pool& pool, const string& key, bufferlist& bl,
                        RGWObjVersionTracker *objv_tracker, real_time *pmtime, optional_yield y, const DoutPrefixProvider *dpp, map<string, bufferlist> *pattrs,

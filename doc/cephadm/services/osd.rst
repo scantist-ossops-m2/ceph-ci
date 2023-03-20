@@ -138,6 +138,12 @@ There are a few ways to create new OSDs:
 
     ceph orch daemon add osd host1:/dev/sdb
 
+  Advanced OSD creation from specific devices on a specific host:
+
+  .. prompt:: bash #
+
+    ceph orch daemon add osd host1:data_devices=/dev/sda,/dev/sdb,db_devices=/dev/sdc,osds_per_device=2
+
 * You can use :ref:`drivegroups` to categorize device(s) based on their
   properties. This might be useful in forming a clearer picture of which
   devices are available to consume. Properties include device type (SSD or
@@ -239,6 +245,18 @@ Expected output::
 
 OSDs that are not safe to destroy will be rejected.
 
+.. note::
+    After removing OSDs, if the drives the OSDs were deployed on once again
+    become available, cephadm may automatically try to deploy more OSDs
+    on these drives if they match an existing drivegroup spec. If you deployed
+    the OSDs you are removing with a spec and don't want any new OSDs deployed on
+    the drives after removal, it's best to modify the drivegroup spec before removal.
+    Either set ``unmanaged: true`` to stop it from picking up new drives at all,
+    or modify it in some way that it no longer matches the drives used for the
+    OSDs you wish to remove. Then re-apply the spec. For more info on drivegroup
+    specs see :ref:`drivegroups`. For more info on the declarative nature of
+    cephadm in reference to deploying OSDs, see :ref:`cephadm-osd-declarative`
+
 Monitoring OSD State
 --------------------
 
@@ -283,6 +301,7 @@ Expected output::
 
 This resets the initial state of the OSD and takes it off the removal queue.
 
+.. _cephadm-replacing-an-osd:
 
 Replacing an OSD
 ----------------
@@ -894,6 +913,57 @@ It is also possible to specify directly device paths in specific hosts like the 
 
 
 This can easily be done with other filters, like `size` or `vendor` as well.
+
+It's possible to specify the `crush_device_class` parameter within the
+DriveGroup spec, and it's applied to all the devices defined by the `paths`
+keyword:
+
+.. code-block:: yaml
+
+    service_type: osd
+    service_id: osd_using_paths
+    placement:
+      hosts:
+        - Node01
+        - Node02
+    crush_device_class: ssd
+    spec:
+      data_devices:
+        paths:
+        - /dev/sdb
+        - /dev/sdc
+      db_devices:
+        paths:
+        - /dev/sdd
+      wal_devices:
+        paths:
+        - /dev/sde
+
+The `crush_device_class` parameter, however, can be defined for each OSD passed
+using the `paths` keyword with the following syntax:
+
+.. code-block:: yaml
+
+    service_type: osd
+    service_id: osd_using_paths
+    placement:
+      hosts:
+        - Node01
+        - Node02
+    crush_device_class: ssd
+    spec:
+      data_devices:
+        paths:
+        - path: /dev/sdb
+          crush_device_class: ssd
+        - path: /dev/sdc
+          crush_device_class: nvme
+      db_devices:
+        paths:
+        - /dev/sdd
+      wal_devices:
+        paths:
+        - /dev/sde
 
 .. _cephadm-osd-activate:
 

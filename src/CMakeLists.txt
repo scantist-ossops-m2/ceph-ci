@@ -158,12 +158,6 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
   endif()
 endif(CMAKE_CXX_COMPILER_ID STREQUAL GNU)
 
-if(NOT CMAKE_BUILD_TYPE AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
-  set(default_build_type "Debug")
-  set(CMAKE_BUILD_TYPE "${default_build_type}" CACHE
-      STRING "Default BUILD_TYPE is Debug, other options are: RelWithDebInfo, Release, and MinSizeRel." FORCE)
-endif()
-
 if(WITH_CEPH_DEBUG_MUTEX)
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-DCEPH_DEBUG_MUTEX>)
 endif()
@@ -280,27 +274,6 @@ endif()
 option(WITH_CEPHFS_JAVA "build libcephfs Java bindings" OFF)
 if(WITH_CEPHFS_JAVA)
   add_subdirectory(java)
-endif()
-
-# sort out which allocator to use
-if(ALLOCATOR STREQUAL "tcmalloc")
-  set(ALLOC_LIBS gperftools::tcmalloc)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-malloc>)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-calloc>)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-realloc>)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-free>)
-elseif(ALLOCATOR STREQUAL "tcmalloc_minimal")
-  set(ALLOC_LIBS gperftools::tcmalloc_minimal)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-malloc>)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-calloc>)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-realloc>)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-free>)
-elseif(ALLOCATOR STREQUAL "jemalloc")
-  set(ALLOC_LIBS JeMalloc::JeMalloc)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-malloc>)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-calloc>)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-realloc>)
-  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-builtin-free>)
 endif()
 
 if (WITH_BLKIN)
@@ -602,6 +575,7 @@ endif(NOT WITH_SYSTEM_ROCKSDB)
 
 if(WITH_MGR)
   add_subdirectory(mgr)
+  add_subdirectory(exporter)
 endif()
 
 set(librados_config_srcs
@@ -632,8 +606,10 @@ add_executable(ceph-mon ${ceph_mon_srcs}
   $<TARGET_OBJECTS:common_texttable_obj>)
 add_dependencies(ceph-mon erasure_code_plugins)
 target_link_libraries(ceph-mon mon os global-static ceph-common
+  ${ALLOC_LIBS}
   ${EXTRALIBS}
-  ${CMAKE_DL_LIBS} ${GSSAPI_LIBRARIES})
+  ${CMAKE_DL_LIBS}
+  ${GSSAPI_LIBRARIES})
 install(TARGETS ceph-mon DESTINATION bin)
 
 # OSD/ObjectStore
@@ -661,6 +637,7 @@ set(ceph_osd_srcs
 add_executable(ceph-osd ${ceph_osd_srcs})
 add_dependencies(ceph-osd erasure_code_plugins)
 target_link_libraries(ceph-osd osd os global-static common
+  ${ALLOC_LIBS}
   ${BLKID_LIBRARIES})
 if(WITH_FUSE)
   target_link_libraries(ceph-osd FUSE::FUSE)
@@ -678,7 +655,8 @@ if (WITH_CEPHFS)
     ceph_mds.cc)
   add_executable(ceph-mds ${ceph_mds_srcs})
   target_link_libraries(ceph-mds mds ${CMAKE_DL_LIBS} global-static ceph-common
-    Boost::thread)
+    Boost::thread
+    ${ALLOC_LIBS})
   install(TARGETS ceph-mds DESTINATION bin)
 endif()
 
@@ -895,6 +873,7 @@ add_custom_target(vstart-base DEPENDS
     ceph-mon
     ceph-authtool
     ceph-conf
+    ceph-exporter
     monmaptool
     crushtool
     rados)
@@ -907,6 +886,7 @@ endif()
 
 if (WITH_MGR)
   add_dependencies(vstart-base ceph-mgr)
+  add_dependencies(vstart-base ceph-exporter)
 endif()
 
 add_custom_target(vstart DEPENDS vstart-base)

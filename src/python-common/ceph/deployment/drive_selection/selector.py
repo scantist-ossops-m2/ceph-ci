@@ -121,6 +121,24 @@ class DriveSelection(object):
         for disk in self.disks:
             logger.debug("Processing disk {}".format(disk.path))
 
+            if not disk.available and not disk.ceph_device:
+                logger.debug(
+                    ("Ignoring disk {}. "
+                     "Disk is unavailable due to {}".format(disk.path, disk.rejected_reasons))
+                )
+                continue
+
+            if not disk.available and disk.ceph_device and disk.lvs:
+                other_osdspec_affinity = ''
+                for lv in disk.lvs:
+                    if lv['osdspec_affinity'] != self.spec.service_id:
+                        other_osdspec_affinity = lv['osdspec_affinity']
+                        break
+                if other_osdspec_affinity:
+                    logger.debug("{} is already used in spec {}, "
+                                 "skipping it.".format(disk.path, other_osdspec_affinity))
+                    continue
+
             if not self._has_mandatory_idents(disk):
                 logger.debug(
                     "Ignoring disk {}. Missing mandatory idents".format(

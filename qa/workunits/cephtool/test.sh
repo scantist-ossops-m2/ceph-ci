@@ -600,8 +600,7 @@ function test_auth()
   ceph auth caps client.xx mon 'allow command "osd tree"'
   ceph auth export | grep client.xx
   ceph auth export -o authfile
-  ceph auth import -i authfile 2>$TMPFILE
-  check_response "imported keyring"
+  ceph auth import -i authfile
 
   ceph auth export -o authfile2
   diff authfile authfile2
@@ -1426,11 +1425,20 @@ function test_mon_osd()
   ceph osd blocklist ls | grep $bl
   ceph osd blocklist rm $bl
   ceph osd blocklist ls | expect_false grep $bl
-  expect_false "ceph osd blocklist $bl/-1"
-  expect_false "ceph osd blocklist $bl/foo"
+  expect_false "ceph osd blocklist add $bl/-1"
+  expect_false "ceph osd blocklist add $bl/foo"
 
-  # test with wrong address
-  expect_false "ceph osd blocklist 1234.56.78.90/100"
+  # test with invalid address
+  expect_false "ceph osd blocklist add 1234.56.78.90/100"
+
+  # test range blocklisting
+  bl=192.168.0.1:0/24
+  ceph osd blocklist range add $bl
+  ceph osd blocklist ls | grep $bl
+  ceph osd blocklist range rm $bl
+  ceph osd blocklist ls | expect_false grep $bl
+  bad_bl=192.168.0.1/33
+  expect_false ceph osd blocklist range add $bad_bl
 
   # Test `clear`
   ceph osd blocklist add $bl
