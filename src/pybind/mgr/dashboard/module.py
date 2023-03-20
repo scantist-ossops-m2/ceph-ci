@@ -178,9 +178,9 @@ class CherryPyConfig(object):
             context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             context.load_cert_chain(cert_fname, pkey_fname)
             if sys.version_info >= (3, 7):
-                context.minimum_version = ssl.TLSVersion.TLSv1_2
+                context.minimum_version = ssl.TLSVersion.TLSv1_3
             else:
-                context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+                context.options |= ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1 | ssl.OP_NO_TLSv1_2
 
             config['server.ssl_module'] = 'builtin'
             config['server.ssl_certificate'] = cert_fname
@@ -246,16 +246,19 @@ class CherryPyConfig(object):
         resp_head = cherrypy.response.headers
 
         # Always set response headers necessary for 'simple' CORS.
-        req_header_origin_url = req_head.get('Access-Control-Allow-Origin')
+        req_header_cross_origin_url = req_head.get('Access-Control-Allow-Origin')
         cross_origin_urls = mgr.get_localized_module_option('cross_origin_url', '')
         cross_origin_url_list = [url.strip() for url in cross_origin_urls.split(',')]
-        if req_header_origin_url in cross_origin_url_list:
-            resp_head['Access-Control-Allow-Origin'] = req_header_origin_url
+        if req_header_cross_origin_url in cross_origin_url_list:
+            resp_head['Access-Control-Allow-Origin'] = req_header_cross_origin_url
         resp_head['Access-Control-Expose-Headers'] = 'GET, POST'
         resp_head['Access-Control-Allow-Credentials'] = 'true'
 
         # Non-simple CORS preflight request; short-circuit the normal handler.
         if cherrypy.request.method == 'OPTIONS':
+            req_header_origin_url = req_head.get('Origin')
+            if req_header_origin_url in cross_origin_url_list:
+                resp_head['Access-Control-Allow-Origin'] = req_header_origin_url
             ac_method = req_head.get('Access-Control-Request-Method', None)
 
             allowed_methods = ['GET', 'POST']

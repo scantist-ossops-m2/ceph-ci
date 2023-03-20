@@ -419,7 +419,17 @@ void PG::queue_recovery()
   } else {
     dout(10) << "queue_recovery -- queuing" << dendl;
     recovery_queued = true;
-    osd->queue_for_recovery(this);
+    // Let cost per object be the average object size
+    auto num_bytes = static_cast<uint64_t>(
+      std::max<int64_t>(
+	0, // ensure bytes is non-negative
+	info.stats.stats.sum.num_bytes));
+    auto num_objects = static_cast<uint64_t>(
+      std::max<int64_t>(
+	1, // ensure objects is non-negative and non-zero
+	info.stats.stats.sum.num_objects));
+    uint64_t cost_per_object = std::max<uint64_t>(num_bytes / num_objects, 1);
+    osd->queue_for_recovery(this, cost_per_object);
   }
 }
 
@@ -1246,11 +1256,12 @@ void PG::requeue_op(OpRequestRef op)
 {
   auto p = waiting_for_map.find(op->get_source());
   if (p != waiting_for_map.end()) {
-    dout(20) << __func__ << " " << op << " (waiting_for_map " << p->first << ")"
+    dout(20) << __func__ << " " << *op->get_req()
+             << " (waiting_for_map " << p->first << ")"
 	     << dendl;
     p->second.push_front(op);
   } else {
-    dout(20) << __func__ << " " << op << dendl;
+    dout(20) << __func__ << " " << *op->get_req() << dendl;
     osd->enqueue_front(
       OpSchedulerItem(
         unique_ptr<OpSchedulerItem::OpQueueable>(new PGOpItem(info.pgid, op)),
@@ -1737,16 +1748,16 @@ void PG::on_new_interval()
   projected_last_update = eversion_t();
   cancel_recovery();
 
-  assert(m_scrubber);
+  ceph_assert(m_scrubber);
   // log some scrub data before we react to the interval
-  dout(30) << __func__ << (is_scrub_queued_or_active() ? " scrubbing " : " ")
+  dout(20) << __func__ << (is_scrub_queued_or_active() ? " scrubbing " : " ")
            << "flags: " << m_planned_scrub << dendl;
 
   m_scrubber->on_primary_change(__func__, m_planned_scrub);
 }
 
-epoch_t PG::oldest_stored_osdmap() {
-  return osd->get_superblock().oldest_map;
+epoch_t PG::cluster_osdmap_trim_lower_bound() {
+  return osd->get_superblock().cluster_osdmap_trim_lower_bound;
 }
 
 OstreamTemp PG::get_clog_info() {
