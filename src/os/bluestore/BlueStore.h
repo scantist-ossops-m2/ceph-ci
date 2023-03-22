@@ -401,7 +401,8 @@ public:
     void _rm_buffer(BufferCacheShard* cache, Buffer *b) {
       _rm_buffer(cache, buffer_map.find(b->offset));
     }
-    void _rm_buffer(BufferCacheShard* cache,
+    std::map<uint32_t, std::unique_ptr<Buffer>>::iterator
+    _rm_buffer(BufferCacheShard* cache,
 		    std::map<uint32_t, std::unique_ptr<Buffer>>::iterator p) {
       ceph_assert(p != buffer_map.end());
       cache->_audit("_rm_buffer start");
@@ -410,8 +411,24 @@ public:
       } else {
 	cache->_rm(p->second.get());
       }
-      buffer_map.erase(p);
+      p = buffer_map.erase(p);
       cache->_audit("_rm_buffer end");
+      return p;
+    }
+    Buffer*
+    _extract_buffer(BufferCacheShard* cache,
+	    std::map<uint32_t, std::unique_ptr<Buffer>>::iterator& p) {
+      ceph_assert(p != buffer_map.end());
+      cache->_audit("_rm_buffer start");
+      if (p->second->is_writing()) {
+        writing.erase(writing.iterator_to(*p->second));
+      } else {
+	cache->_rm(p->second.get());
+      }
+      Buffer* buf = p->second.release();
+      p = buffer_map.erase(p);
+      cache->_audit("_rm_buffer end");
+      return buf;
     }
 
     std::map<uint32_t,std::unique_ptr<Buffer>>::iterator _data_lower_bound(
@@ -464,6 +481,7 @@ public:
       discard(cache, offset, (uint32_t)-1 - offset);
     }
 
+    bool _dup_writing(BufferCacheShard* cache, BufferSpace* to);
     void split(BufferCacheShard* cache, size_t pos, BufferSpace &r);
 
     void dump(BufferCacheShard* cache, ceph::Formatter *f) const {
@@ -477,6 +495,7 @@ public:
       }
       f->close_section();
     }
+    friend std::ostream& operator<<(std::ostream& out, const BufferSpace& bc);
   };
 
   struct SharedBlobSet;
@@ -486,14 +505,13 @@ public:
     MEMPOOL_CLASS_HELPERS();
 
     std::atomic_int nref = {0}; ///< reference count
-    bool loaded = false;
+    bool loadedx = false;
 
     CollectionRef coll;
     union {
       uint64_t sbid_unloaded;              ///< sbid if persistent isn't loaded
       bluestore_shared_blob_t *persistent; ///< persistent part of the shared blob if any
     };
-    BufferSpace bc;             ///< buffer cache
 
     SharedBlob(Collection *_coll) : coll(_coll), sbid_unloaded(0) {
       if (get_cache()) {
@@ -504,7 +522,7 @@ public:
     ~SharedBlob();
 
     uint64_t get_sbid() const {
-      return loaded ? persistent->sbid : sbid_unloaded;
+      return loadedx ? persistent->sbid : sbid_unloaded;
     }
 
     friend void intrusive_ptr_add_ref(SharedBlob *b) { b->get(); }
@@ -525,8 +543,6 @@ public:
     void put_ref(uint64_t offset, uint32_t length,
 		 PExtentVector *r, bool *unshare);
 
-    void finish_write(uint64_t seq);
-
     friend bool operator==(const SharedBlob &l, const SharedBlob &r) {
       return l.get_sbid() == r.get_sbid();
     }
@@ -537,7 +553,7 @@ public:
       return coll ? &(coll->shared_blob_set) : nullptr;
     }
     inline bool is_loaded() const {
-      return loaded;
+      return loadedx;
     }
 
   };
@@ -602,7 +618,7 @@ public:
     int16_t id = -1;                ///< id, for spanning blobs only, >= 0
     int16_t last_encoded_id = -1;   ///< (ephemeral) used during encoding only
     SharedBlobRef shared_blob;      ///< shared blob state (if any)
-
+    BufferSpace bc;
   private:
     mutable bluestore_blob_t blob;  ///< decoded blob metadata
 #ifdef CACHE_BLOB_BL
@@ -622,6 +638,9 @@ public:
     const bluestore_blob_use_tracker_t& get_blob_use_tracker() const {
       return used_in_blob;
     }
+    bluestore_blob_use_tracker_t& dirty_blob_use_tracker() {
+      return used_in_blob;
+    }
     bool is_referenced() const {
       return used_in_blob.is_not_empty();
     }
@@ -636,10 +655,13 @@ public:
     bool can_split() const {
       std::lock_guard l(shared_blob->get_cache()->lock);
       // splitting a BufferSpace writing list is too hard; don't try.
-      return shared_blob->bc.writing.empty() &&
+      return bc.writing.empty() &&
              used_in_blob.can_split() &&
              get_blob().can_split();
     }
+
+    bool can_merge_blob(const Blob* other, uint32_t& blob_end) const;
+    uint32_t merge_blob(CephContext* cct, Blob* blob_to_dissolve);
 
     bool can_split_at(uint32_t blob_offset) const {
       return used_in_blob.can_split_at(blob_offset) &&
@@ -651,13 +673,12 @@ public:
 			uint32_t b_offset,
 			uint32_t *length0);
 
-    void dup(Blob& o) {
-      o.shared_blob = shared_blob;
-      o.blob = blob;
-#ifdef CACHE_BLOB_BL
-      o.blob_bl = blob_bl;
-#endif
-    }
+    void dup(const Blob& from, bool copy_used_in_blob);
+    void copy_from(CephContext* cct, const Blob& from,
+		   uint32_t min_release_size, uint32_t start, uint32_t len);
+    void copy_extents(CephContext* cct, const Blob& from, uint32_t start,
+		      uint32_t pre_len, uint32_t main_len, uint32_t post_len);
+    void copy_extents_over_empty(CephContext* cct, const Blob& from, uint32_t start, uint32_t len);
 
     inline const bluestore_blob_t& get_blob() const {
       return blob;
@@ -668,6 +689,8 @@ public:
 #endif
       return blob;
     }
+    /// clear buffers from unused sections
+    void discard_unused_buffers(CephContext* cct, BufferCacheShard* cache);
 
     /// discard buffers for unallocated regions
     void discard_unallocated(Collection *coll);
@@ -677,7 +700,8 @@ public:
     /// put logical references, and get back any released extents
     bool put_ref(Collection *coll, uint32_t offset, uint32_t length,
 		 PExtentVector *r);
-
+    // update caches to reflect content up to seq
+    void finish_write(uint64_t seq);
     /// split the blob
     void split(Collection *coll, uint32_t blob_offset, Blob *o);
 
@@ -688,7 +712,7 @@ public:
       if (--nref == 0)
 	delete this;
     }
-
+    ~Blob();
 
 #ifdef CACHE_BLOB_BL
     void _encode() const {
@@ -881,6 +905,17 @@ public:
     uint32_t needs_reshard_begin = 0;
     uint32_t needs_reshard_end = 0;
 
+    void scan_shared_blobs(CollectionRef& c, OnodeRef& oldo, uint64_t start, uint64_t length,
+			   std::multimap<uint64_t /*blob_start*/, Blob*>& candidates);
+
+    Blob* find_mergable_companion(Blob* blob_to_dissolve, uint32_t blob_start, uint32_t& blob_width,
+				  std::multimap<uint64_t /*blob_start*/, Blob*>& candidates);
+
+    void make_range_shared(BlueStore* store, TransContext* txc, CollectionRef& c,
+			   OnodeRef& oldo, uint64_t srcoff, uint64_t length);
+    void reblob_extents(uint32_t blob_start, uint32_t blob_end,
+			BlobRef from_blob, BlobRef to_blob);
+
     void dup(BlueStore* b, TransContext*, CollectionRef&, OnodeRef&, OnodeRef&,
       uint64_t&, uint64_t&, uint64_t&);
 
@@ -896,6 +931,14 @@ public:
       }
       if (end > needs_reshard_end) {
 	needs_reshard_end = end;
+      }
+    }
+    // signals that there was a modification on range <begin, end)
+    // if this spans over a shard boundary, then shards no longer
+    // can be encoded separately, and reshard run is needed
+    void maybe_reshard(uint32_t begin, uint32_t end) {
+      if (spans_shard(begin, end - begin)) {
+	request_reshard(begin, end);
       }
     }
 
@@ -1468,6 +1511,7 @@ private:
     OnodeCacheShard *cache;
 
   private:
+  public:
     /// forward lookups
     mempool::bluestore_cache_meta::unordered_map<ghobject_t,OnodeRef> onode_map;
 
@@ -1780,7 +1824,7 @@ private:
 #endif
     
     std::set<SharedBlobRef> shared_blobs;  ///< these need to be updated/written
-    std::set<SharedBlobRef> shared_blobs_written; ///< update these on io completion
+    std::set<BlobRef> blobs_written; ///< update these on io completion
 
     KeyValueDB::Transaction t; ///< then we will commit this
     std::list<Context*> oncommits;  ///< more commit completions
@@ -2797,6 +2841,9 @@ private:
     int64_t& errors,
     int64_t &warnings,
     BlueStoreRepairer* repairer);
+  // When cb returns false stops iterating.
+  void _fsck_foreach_shared_blob(
+    std::function< bool (coll_t, ghobject_t, uint64_t, const bluestore_blob_t&)> cb);
   void _fsck_repair_shared_blobs(
     BlueStoreRepairer& repairer,
     shared_blob_2hash_tracker_t& sb_ref_counts,
@@ -2811,9 +2858,9 @@ private:
     uint64_t offset,
     ceph::buffer::list& bl,
     unsigned flags) {
-    b->shared_blob->bc.write(b->shared_blob->get_cache(), txc->seq, offset, bl,
+    b->bc.write(b->shared_blob->get_cache(), txc->seq, offset, bl,
 			     flags);
-    txc->shared_blobs_written.insert(b->shared_blob);
+    txc->blobs_written.insert(b);
   }
 
   int _collection_list(
