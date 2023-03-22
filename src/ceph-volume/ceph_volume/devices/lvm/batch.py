@@ -238,11 +238,6 @@ class Batch(object):
             help='bluestore objectstore (default)',
         )
         parser.add_argument(
-            '--filestore',
-            action='store_true',
-            help='filestore objectstore',
-        )
-        parser.add_argument(
             '--report',
             action='store_true',
             help='Only report on OSD that would be created and exit',
@@ -399,10 +394,7 @@ class Batch(object):
             # no need for additional sorting, we'll only deploy standalone on ssds
             return
         self.args.devices = rotating
-        if self.args.filestore:
-            self.args.journal_devices = ssd
-        else:
-            self.args.db_devices = ssd
+        self.args.db_devices = ssd
 
     @decorators.needs_root
     def main(self):
@@ -411,7 +403,7 @@ class Batch(object):
 
         # Default to bluestore here since defaulting it in add_argument may
         # cause both to be True
-        if not self.args.bluestore and not self.args.filestore:
+        if not self.args.bluestore:
             self.args.bluestore = True
 
         if (self.args.auto and not self.args.db_devices and not
@@ -444,7 +436,6 @@ class Batch(object):
         defaults = common.get_default_args()
         global_args = [
             'bluestore',
-            'filestore',
             'dmcrypt',
             'crush_device_class',
             'no_systemd',
@@ -464,8 +455,6 @@ class Batch(object):
         if args.bluestore:
             plan = self.get_deployment_layout(args, args.devices, args.db_devices,
                                               args.wal_devices)
-        elif args.filestore:
-            plan = self.get_deployment_layout(args, args.devices, args.journal_devices)
         return plan
 
     def get_deployment_layout(self, args, devices, fast_devices=[],
