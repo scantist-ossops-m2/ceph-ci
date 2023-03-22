@@ -3,3 +3,5 @@ overrides:
     conf:
       osd:
         osd op complaint time: 180
+        debug osd: 30
+        debug mclock: 20
