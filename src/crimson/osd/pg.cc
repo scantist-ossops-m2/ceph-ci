@@ -451,6 +451,7 @@ Context *PG::on_clean()
 
 void PG::on_active_actmap()
 {
+  return;
   logger().debug("{}: {} snap_trimq={}", *this, __func__, snap_trimq);
   peering_state.state_clear(PG_STATE_SNAPTRIM_ERROR);
   std::ignore = seastar::do_until(
@@ -495,6 +496,7 @@ void PG::on_active_actmap()
 
 void PG::on_active_advmap(const OSDMapRef &osdmap)
 {
+  return;
   const auto new_removed_snaps = osdmap->get_new_removed_snaps();
   if (auto it = new_removed_snaps.find(get_pgid().pool());
       it != new_removed_snaps.end()) {

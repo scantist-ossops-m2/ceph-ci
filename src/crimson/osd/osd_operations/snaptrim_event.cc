@@ -197,6 +197,7 @@ CommonPGPipeline& SnapTrimObjSubEvent::pp()
 SnapTrimObjSubEvent::remove_or_update_iertr::future<>
 SnapTrimObjSubEvent::start()
 {
+  return seastar::now();
   logger().debug("{}: start", *this);
   return with_pg(
     pg->get_shard_services(), pg
