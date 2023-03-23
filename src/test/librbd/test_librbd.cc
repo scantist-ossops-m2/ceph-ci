@@ -12112,6 +12112,7 @@ TEST_F(TestLibRBD, QuiesceWatchPP)
 
 TEST_F(TestLibRBD, QuiesceWatchError)
 {
+  SKIP_IF_CRIMSON()
   librbd::RBD rbd;
   librados::IoCtx ioctx;
   ASSERT_EQ(0, _rados.ioctx_create(m_pool_name.c_str(), ioctx));
