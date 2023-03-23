@@ -444,12 +444,15 @@ void mClockScheduler::enqueue(OpSchedulerItem&& item)
 {
   auto id = get_scheduler_id(item);
   unsigned priority = item.get_priority();
-  unsigned cutoff = get_io_prio_cut(cct);
+  // unsigned cutoff = get_io_prio_cut(cct);
   
   // TODO: move this check into OpSchedulerItem, handle backwards compat
   if (op_scheduler_class::immediate == id.class_id) {
+    dout(20) << __func__ << " immediate " << id << dendl;
     enqueue_high(immediate_class_priority, std::move(item));
   } else if (priority >= cutoff) {
+    dout(20) << __func__ << " prio cutoff: " << cutoff << dendl;
+    dout(20) << __func__ << " high priority " << id << dendl;
     enqueue_high(priority, std::move(item));
   } else {
     int cost = calc_scaled_cost(item.get_cost());
@@ -482,12 +485,15 @@ void mClockScheduler::enqueue(OpSchedulerItem&& item)
 void mClockScheduler::enqueue_front(OpSchedulerItem&& item)
 {
   unsigned priority = item.get_priority();
-  unsigned cutoff = get_io_prio_cut(cct);
+  // unsigned cutoff = get_io_prio_cut(cct);
   auto id = get_scheduler_id(item);
 
   if (op_scheduler_class::immediate == id.class_id) {
+    dout(20) << __func__ << " immediate " << id << dendl;
     enqueue_high(immediate_class_priority, std::move(item), true);
   } else if (priority >= cutoff) {
+    dout(20) << __func__ << " prio cutoff: " << cutoff << dendl;
+    dout(20) << __func__ << " high priority " << id << dendl;
     enqueue_high(priority, std::move(item), true);
   } else {
     // mClock does not support enqueue at front, so we use
