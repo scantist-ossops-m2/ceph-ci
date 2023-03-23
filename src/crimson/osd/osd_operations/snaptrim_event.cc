@@ -198,6 +198,7 @@ SnapTrimObjSubEvent::remove_or_update_iertr::future<>
 SnapTrimObjSubEvent::start()
 {
   logger().debug("{}: start", *this);
+  return seastar::now();
   return with_pg(
     pg->get_shard_services(), pg
   ).finally([ref=IRef{this}, this] {
