@@ -30,7 +30,7 @@ namespace {
 }
 
 Heartbeat::Heartbeat(osd_id_t whoami,
-                     crimson::osd::ShardServices& service,
+                     const crimson::osd::ShardServices& service,
                      crimson::mon::Client& monc,
                      crimson::net::Messenger &front_msgr,
                      crimson::net::Messenger &back_msgr)
@@ -292,26 +292,7 @@ seastar::future<> Heartbeat::handle_ping(crimson::net::ConnectionRef conn,
       service.get_mnow(),
       service.get_up_epoch(),
       min_message);
-  return conn->send(std::move(reply)
-  ).then([this, m, conn] {
-    return maybe_share_osdmap(conn, m);
-  });
-}
-
-seastar::future<> Heartbeat::maybe_share_osdmap(
-  crimson::net::ConnectionRef conn,
-  Ref<MOSDPing> m)
-{
-  const osd_id_t from = m->get_source().num();
-  auto found = peers.find(from);
-  if (found == peers.end()) {
-    return seastar::now();
-  }
-  auto &peer = found->second;
-  if (m->map_epoch < peer.get_epoch()) {
-    return service.send_incremental_map_to_osd(from, m->map_epoch);
-  }
-  return seastar::now();
+  return conn->send(std::move(reply));
 }
 
 seastar::future<> Heartbeat::handle_reply(crimson::net::ConnectionRef conn,
@@ -324,10 +305,7 @@ seastar::future<> Heartbeat::handle_reply(crimson::net::ConnectionRef conn,
     return seastar::now();
   }
   auto& peer = found->second;
-  return peer.handle_reply(conn, m
-  ).then([this, conn, m] {
-    return maybe_share_osdmap(conn, m);
-  });
+  return peer.handle_reply(conn, m);
 }
 
 seastar::future<> Heartbeat::handle_you_died()
