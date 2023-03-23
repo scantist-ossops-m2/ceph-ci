@@ -10561,6 +10561,7 @@ TEST_F(TestLibRBD, ExclusiveLock)
 
 TEST_F(TestLibRBD, BreakLock)
 {
+  SKIP_IF_CRIMSON()
   REQUIRE_FEATURE(RBD_FEATURE_EXCLUSIVE_LOCK);
   REQUIRE(!is_rbd_pwl_enabled((CephContext *)_rados.cct()));
 
