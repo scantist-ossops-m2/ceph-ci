@@ -12469,6 +12469,7 @@ TEST_F(TestLibRBD, WriteZeroesThickProvision) {
 
 TEST_F(TestLibRBD, ConcurentOperations)
 {
+  SKIP_IF_CRIMSON()
   REQUIRE_FEATURE(RBD_FEATURE_EXCLUSIVE_LOCK);
 
   librbd::RBD rbd;
