@@ -18933,6 +18933,26 @@ int BlueStore::restore_from_snap_maps_file(GlobalSnapMapper           &sm,
 //-----------------------------------------------------------------------------------
 int BlueStore::restore_snap_mapper(GlobalSnapMapper & sm)
 {
+  dout(1) << "GBH::SNAPMAP::snap_maps_dir =" << snap_maps_dir << ", snap_maps_listing=" << snap_maps_listing << ", bluefs=" << (void*)bluefs << dendl;
+  bool need_to_close_db = false;
+  if (bluefs == nullptr) {
+    dout(1) << "GBH::SNAPMAP::open_db_and_around" << dendl;
+    int ret = _open_db_and_around(true, false);
+    if (ret < 0) {
+      return ret;
+    }
+
+    need_to_close_db = true;
+  }
+
+  auto shutdown_cache = make_scope_guard([&] {
+    if (need_to_close_db) {
+      _close_db_and_around();
+    }
+  });
+
+  ceph_assert(bluefs);
+
   if (bluefs->dir_exists(snap_maps_dir) == false) {
     dout(10) << "GBH::SNAPMAP::snap_maps directory <" << snap_maps_dir << "> doesn't exist" << dendl;
     return 0;
@@ -18941,6 +18961,7 @@ int BlueStore::restore_snap_mapper(GlobalSnapMapper & sm)
 
   dout(1) << "GBH::SNAPMAP::snap_maps_dir =" << snap_maps_dir << ", snap_maps_listing=" << snap_maps_listing << dendl;
   BlueFS::FileReader *p_temp_handle = nullptr;
+  ceph_assert(bluefs);
   int ret = bluefs->open_for_read(snap_maps_dir, snap_maps_listing, &p_temp_handle, false);
   if (ret != 0) {
     dout(1) << "GBH::SNAPMAP::snap_maps_listing file <" << snap_maps_listing << "> doesn't exist (i.e. no snaps)" << dendl;
