@@ -220,6 +220,7 @@ void BlueFS::_init_logger()
 {
   PerfCountersBuilder b(cct, "bluefs",
                         l_bluefs_first, l_bluefs_last);
+  // TODO sdfsd fds
   b.add_u64(l_bluefs_db_total_bytes, "db_total_bytes",
 	    "Total bytes (main db device)",
 	    "b", PerfCountersBuilder::PRIO_USEFUL, unit_t(UNIT_BYTES));
@@ -2752,6 +2753,7 @@ void BlueFS::_compact_log_async_LD_LNF_D() //also locks FW for new_writer
   bool old_is_comp = std::atomic_exchange(&log_is_compacting, true);
   if (old_is_comp) {
     dout(10) << __func__ << " ongoing" <<dendl;
+    log.lock.unlock();
     return;
   }
   auto t0 = mono_clock::now();
@@ -2780,8 +2782,6 @@ void BlueFS::_compact_log_async_LD_LNF_D() //also locks FW for new_writer
 
   // 1.1 allocate new log extents and store them at fnode_tail
   File *log_file = log.writer->file.get();
-  // we expect the log to have been flushed before compacting
-  ceph_assert(log.t.expected_size() == 0);
 
   old_log_jump_to = log_file->fnode.get_allocated();
   bluefs_fnode_t fnode_tail;
@@ -3072,6 +3072,7 @@ int64_t BlueFS::_maybe_extend_log() {
   return runway;
 }
 
+// TODO: dfsdaf
 int64_t BlueFS::_extend_log(uint64_t amount) {
   ceph_assert(ceph_mutex_is_locked(log.lock));
   std::unique_lock<ceph::mutex> ll(log.lock, std::adopt_lock);
@@ -3085,8 +3086,8 @@ int64_t BlueFS::_extend_log(uint64_t amount) {
       amount,
       0,
       &log.writer->file->fnode);
-  amount -= std::min(cct->_conf->bluefs_max_log_runway, amount);
   ceph_assert(r == 0);
+  dout(10) << "extended log by " << amount << " bytes " << dendl;
   vselector->add_usage(log.writer->file->vselector_hint, log.writer->file->fnode);
 
   bluefs_transaction_t log_extend_transaction;
@@ -3100,8 +3101,6 @@ int64_t BlueFS::_extend_log(uint64_t amount) {
   if (realign && realign != super.block_size)
     bl.append_zero(realign);
   log.writer->append(bl);
-  uint64_t new_data = _flush_special(log.writer);
-  vselector->add_usage(log.writer->file->vselector_hint, new_data);
   log.t.seq = log.seq_live;
 
   // before sync_core we advance the seq
@@ -3113,7 +3112,7 @@ int64_t BlueFS::_extend_log(uint64_t amount) {
   return log.writer->file->fnode.get_allocated() - log.writer->get_effective_write_pos();
 }
 
-void BlueFS::_flush_and_sync_log_core(bool ignore_compaction)
+void BlueFS::_flush_and_sync_log_core()
 {
   ceph_assert(ceph_mutex_is_locked(log.lock));
   dout(10) << __func__ << " " << log.t << dendl;
@@ -3235,7 +3234,7 @@ int BlueFS::_flush_and_sync_log_LD(uint64_t want_seq)
 }
 
 // Flushes log and immediately adjusts log_writer pos.
-int BlueFS::_flush_and_sync_log_jump_D(uint64_t jump_to, bool ignore_compaction)
+int BlueFS::_flush_and_sync_log_jump_D(uint64_t jump_to)
 {
   ceph_assert(ceph_mutex_is_locked(log.lock));
 

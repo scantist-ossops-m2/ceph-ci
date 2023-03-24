@@ -459,8 +459,8 @@ private:
   void _clear_dirty_set_stable_D(uint64_t seq_stable);
   void _release_pending_allocations(std::vector<interval_set<uint64_t>>& to_release);
 
-  void _flush_and_sync_log_core(bool ignore_compaction = false);
-  int _flush_and_sync_log_jump_D(uint64_t jump_to, bool ignore_compaction = false);
+  void _flush_and_sync_log_core();
+  int _flush_and_sync_log_jump_D(uint64_t jump_to);
   int _flush_and_sync_log_LD(uint64_t want_seq = 0);
 
   uint64_t _estimate_transaction_size(bluefs_transaction_t* t);
