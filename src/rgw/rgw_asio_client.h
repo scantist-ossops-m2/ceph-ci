@@ -1,8 +1,7 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
 // vim: ts=8 sw=2 smarttab ft=cpp
 
-#ifndef RGW_ASIO_CLIENT_H
-#define RGW_ASIO_CLIENT_H
+#pragma once
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
@@ -26,15 +25,18 @@ class ClientIO : public io::RestfulClient,
   using endpoint_type = boost::asio::ip::tcp::endpoint;
   endpoint_type local_endpoint;
   endpoint_type remote_endpoint;
+  std::string_view extra_response_headers;
 
   RGWEnv env;
 
   rgw::io::StaticOutputBufferer<> txbuf;
+  bool sent100continue = false;
 
  public:
   ClientIO(parser_type& parser, bool is_ssl,
            const endpoint_type& local_endpoint,
-           const endpoint_type& remote_endpoint);
+           const endpoint_type& remote_endpoint,
+           std::string_view extra_response_headers);
   ~ClientIO() override;
 
   int init_env(CephContext *cct) override;
@@ -54,9 +56,9 @@ class ClientIO : public io::RestfulClient,
   RGWEnv& get_env() noexcept override {
     return env;
   }
+
+  bool sent_100_continue() const { return sent100continue; }
 };
 
 } // namespace asio
 } // namespace rgw
-
-#endif // RGW_ASIO_CLIENT_H

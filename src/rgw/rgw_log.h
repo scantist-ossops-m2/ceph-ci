@@ -1,8 +1,7 @@
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
 // vim: ts=8 sw=2 smarttab ft=cpp
 
-#ifndef CEPH_RGW_LOG_H
-#define CEPH_RGW_LOG_H
+#pragma once
 
 #include <boost/container/flat_map.hpp>
 #include "rgw_common.h"
@@ -272,11 +271,11 @@ public:
 };
 
 class OpsLogRados : public OpsLogSink {
-  // main()'s Store pointer as a reference, possibly modified by RGWRealmReloader
-  rgw::sal::Store* const& store;
+  // main()'s driver pointer as a reference, possibly modified by RGWRealmReloader
+  rgw::sal::Driver* const& driver;
 
 public:
-  OpsLogRados(rgw::sal::Store* const& store);
+  OpsLogRados(rgw::sal::Driver* const& driver);
   int log(req_state* s, struct rgw_log_entry& entry) override;
 };
 
@@ -284,10 +283,7 @@ class RGWREST;
 
 int rgw_log_op(RGWREST* const rest, struct req_state* s,
 	             const RGWOp* op, OpsLogSink* olog);
-void rgw_log_usage_init(CephContext* cct, rgw::sal::Store* store);
+void rgw_log_usage_init(CephContext* cct, rgw::sal::Driver* driver);
 void rgw_log_usage_finalize();
 void rgw_format_ops_log_entry(struct rgw_log_entry& entry,
 			      ceph::Formatter *formatter);
-
-#endif /* CEPH_RGW_LOG_H */
-

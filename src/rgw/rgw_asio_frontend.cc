@@ -16,6 +16,7 @@
 #include "common/async/shared_mutex.h"
 #include "common/errno.h"
 #include "common/strtol.h"
+#include "ceph_ver.h"
 
 #include "rgw_asio_client.h"
 #include "rgw_asio_frontend.h"
@@ -72,16 +73,21 @@ class StreamIO : public rgw::asio::ClientIO {
   timeout_timer& timeout;
   yield_context yield;
   parse_buffer& buffer;
+  boost::system::error_code fatal_ec;
  public:
   StreamIO(CephContext *cct, Stream& stream, timeout_timer& timeout,
            rgw::asio::parser_type& parser, yield_context yield,
            parse_buffer& buffer, bool is_ssl,
            const tcp::endpoint& local_endpoint,
-           const tcp::endpoint& remote_endpoint)
-      : ClientIO(parser, is_ssl, local_endpoint, remote_endpoint),
+           const tcp::endpoint& remote_endpoint,
+           std::string_view extra_response_headers)
+      : ClientIO(parser, is_ssl, local_endpoint, remote_endpoint,
+                 extra_response_headers),
         cct(cct), stream(stream), timeout(timeout), yield(yield),
         buffer(buffer)
   {}
+
+  boost::system::error_code get_fatal_error_code() const { return fatal_ec; }
 
   size_t write_data(const char* buf, size_t len) override {
     boost::system::error_code ec;
@@ -94,6 +100,9 @@ class StreamIO : public rgw::asio::ClientIO {
       if (ec == boost::asio::error::broken_pipe) {
         boost::system::error_code ec_ignored;
         stream.lowest_layer().shutdown(tcp_socket::shutdown_both, ec_ignored);
+      }
+      if (!fatal_ec) {
+        fatal_ec = ec;
       }
       throw rgw::io::Exception(ec.value(), std::system_category());
     }
@@ -116,6 +125,9 @@ class StreamIO : public rgw::asio::ClientIO {
       }
       if (ec) {
         ldout(cct, 4) << "failed to read body: " << ec.message() << dendl;
+        if (!fatal_ec) {
+          fatal_ec = ec;
+        }
         throw rgw::io::Exception(ec.value(), std::system_category());
       }
     }
@@ -183,14 +195,15 @@ void handle_connection(boost::asio::io_context& context,
                        parse_buffer& buffer, bool is_ssl,
                        SharedMutex& pause_mutex,
                        rgw::dmclock::Scheduler *scheduler,
-                       std::unique_ptr<rgw::sal::LuaManager>& lua_manager,
+                       const std::string& uri_prefix,
+                       std::string_view extra_response_headers,
                        boost::system::error_code& ec,
                        yield_context yield)
 {
   // don't impose a limit on the body, since we read it in pieces
   static constexpr size_t body_limit = std::numeric_limits<size_t>::max();
 
-  auto cct = env.store->ctx();
+  auto cct = env.driver->ctx();
 
   // read messages from the stream until eof
   for (;;) {
@@ -229,6 +242,8 @@ void handle_connection(boost::asio::io_context& context,
       return;
     }
 
+    bool expect_continue = (message[http::field::expect] == "100-continue");
+
     {
       auto lock = pause_mutex.async_lock_shared(yield[ec]);
       if (ec == boost::asio::error::operation_aborted) {
@@ -239,7 +254,7 @@ void handle_connection(boost::asio::io_context& context,
       }
 
       // process the request
-      RGWRequest req{env.store->get_new_req_id()};
+      RGWRequest req{env.driver->get_new_req_id()};
 
       auto& socket = stream.lowest_layer();
       const auto& remote_endpoint = socket.remote_endpoint(ec);
@@ -247,10 +262,15 @@ void handle_connection(boost::asio::io_context& context,
         ldout(cct, 1) << "failed to connect client: " << ec.message() << dendl;
         return;
       }
+      const auto& local_endpoint = socket.local_endpoint(ec);
+      if (ec) {
+        ldout(cct, 1) << "failed to connect client: " << ec.message() << dendl;
+        return;
+      }
 
       StreamIO real_client{cct, stream, timeout, parser, yield, buffer,
-                           is_ssl, socket.local_endpoint(),
-                           remote_endpoint};
+                           is_ssl, local_endpoint, remote_endpoint,
+                           extra_response_headers};
 
       auto real_client_io = rgw::io::add_reordering(
                               rgw::io::add_buffering(cct,
@@ -266,13 +286,8 @@ void handle_connection(boost::asio::io_context& context,
       string user = "-";
       const auto started = ceph::coarse_real_clock::now();
       ceph::coarse_real_clock::duration latency{};
-      process_request(env.store, env.rest, &req, env.uri_prefix,
-                      *env.auth_registry, &client, env.olog, y,
-                      scheduler, &user, &latency,
-                      env.ratelimiting->get_active(),
-                      env.lua_background,
-                      lua_manager,
-                      &http_ret);
+      process_request(env, &req, uri_prefix, &client, y,
+                      scheduler, &user, &latency, &http_ret);
 
       if (cct->_conf->subsys.should_gather(ceph_subsys_rgw_access, 1)) {
         // access log line elements begin per Apache Combined Log Format with additions following
@@ -286,6 +301,17 @@ void handle_connection(boost::asio::io_context& context,
             << log_header{message, http::field::range} << " latency="
             << latency << dendl;
       }
+
+      // process_request() can't distinguish between connection errors and
+      // http/s3 errors, so check StreamIO for fatal connection errors
+      ec = real_client.get_fatal_error_code();
+      if (ec) {
+        return;
+      }
+
+      if (real_client.sent_100_continue()) {
+        expect_continue = false;
+      }
     }
 
     if (!parser.keep_alive()) {
@@ -294,7 +320,7 @@ void handle_connection(boost::asio::io_context& context,
 
     // if we failed before reading the entire message, discard any remaining
     // bytes before reading the next
-    while (!parser.is_done()) {
+    while (!expect_continue && !parser.is_done()) {
       static std::array<char, 1024> discard_buffer;
 
       auto& body = parser.get().body();
@@ -333,6 +359,8 @@ struct Connection : boost::intrusive::list_base_hook<>,
   void close(boost::system::error_code& ec) {
     socket.close(ec);
   }
+
+  tcp_socket& get_socket() { return socket; }
 };
 
 class ConnectionList {
@@ -370,9 +398,10 @@ class ConnectionList {
 
 namespace dmc = rgw::dmclock;
 class AsioFrontend {
-  RGWProcessEnv env;
+  RGWProcessEnv& env;
   RGWFrontendConfig* conf;
   boost::asio::io_context context;
+  std::string uri_prefix;
   ceph::timespan request_timeout = std::chrono::milliseconds(REQUEST_TIMEOUT);
   size_t header_limit = 16384;
 #ifdef WITH_RADOSGW_BEAST_OPENSSL
@@ -386,7 +415,6 @@ class AsioFrontend {
 #endif
   SharedMutex pause_mutex;
   std::unique_ptr<rgw::dmclock::Scheduler> scheduler;
-  std::unique_ptr<rgw::sal::LuaManager> lua_manager;
 
   struct Listener {
     tcp::endpoint endpoint;
@@ -409,16 +437,17 @@ class AsioFrontend {
   std::vector<std::thread> threads;
   std::atomic<bool> going_down{false};
 
-  CephContext* ctx() const { return env.store->ctx(); }
+  CephContext* ctx() const { return env.driver->ctx(); }
   std::optional<dmc::ClientCounters> client_counters;
   std::unique_ptr<dmc::ClientConfig> client_config;
   void accept(Listener& listener, boost::system::error_code ec);
 
+  std::string extra_response_headers;
+
  public:
-  AsioFrontend(const RGWProcessEnv& env, RGWFrontendConfig* conf,
+  AsioFrontend(RGWProcessEnv& env, RGWFrontendConfig* conf,
 	       dmc::SchedulerCtx& sched_ctx)
-    : env(env), conf(conf), pause_mutex(context.get_executor()),
-    lua_manager(env.store->get_lua_manager())
+    : env(env), conf(conf), pause_mutex(context.get_executor())
   {
     auto sched_t = dmc::get_scheduler_t(ctx());
     switch(sched_t){
@@ -444,7 +473,7 @@ class AsioFrontend {
   void stop();
   void join();
   void pause();
-  void unpause(rgw::sal::Store* store, rgw_auth_registry_ptr_t);
+  void unpause();
 };
 
 unsigned short parse_port(const char *input, boost::system::error_code& ec)
@@ -535,6 +564,13 @@ int AsioFrontend::init()
 {
   boost::system::error_code ec;
   auto& config = conf->get_config_map();
+
+  // format the Server response header
+  extra_response_headers = "Server: Ceph Object Gateway (" CEPH_RELEASE_NAME ")\r\n";
+
+  if (auto i = config.find("prefix"); i != config.end()) {
+    uri_prefix = i->second;
+  }
 
 // Setting global timeout
   auto timeout = config.find("request_timeout_ms");
@@ -755,7 +791,7 @@ int AsioFrontend::get_config_key_val(string name,
     return -EINVAL;
   }
 
-  int r = env.store->get_config_key_val(name, pbl);
+  int r = env.driver->get_config_key_val(name, pbl);
   if (r < 0) {
     lderr(ctx()) << type << " was not found: " << name << dendl;
     return r;
@@ -911,7 +947,7 @@ int AsioFrontend::init_ssl()
       key_is_cert = true;
     }
 
-    ExpandMetaVar emv(env.store->get_zone());
+    ExpandMetaVar emv(env.driver->get_zone());
 
     cert = emv.process_str(*cert);
     key = emv.process_str(*key);
@@ -1009,8 +1045,7 @@ void AsioFrontend::accept(Listener& l, boost::system::error_code ec)
         conn->buffer.consume(bytes);
         handle_connection(context, env, stream, timeout, header_limit,
                           conn->buffer, true, pause_mutex, scheduler.get(),
-                          lua_manager,
-                          ec, yield);
+                          uri_prefix, extra_response_headers, ec, yield);
         if (!ec) {
           // ssl shutdown (ignoring errors)
           stream.async_shutdown(yield[ec]);
@@ -1029,8 +1064,7 @@ void AsioFrontend::accept(Listener& l, boost::system::error_code ec)
         boost::system::error_code ec;
         handle_connection(context, env, conn->socket, timeout, header_limit,
                           conn->buffer, false, pause_mutex, scheduler.get(),
-                          lua_manager,
-                          ec, yield);
+                          uri_prefix, extra_response_headers, ec, yield);
         conn->socket.shutdown(tcp_socket::shutdown_both, ec);
       }, make_stack_allocator());
   }
@@ -1110,13 +1144,8 @@ void AsioFrontend::pause()
   }
 }
 
-void AsioFrontend::unpause(rgw::sal::Store* const store,
-                           rgw_auth_registry_ptr_t auth_registry)
+void AsioFrontend::unpause()
 {
-  env.store = store;
-  env.auth_registry = std::move(auth_registry);
-  lua_manager = store->get_lua_manager();
-
   // unpause to unblock connections
   pause_mutex.unlock();
 
@@ -1135,12 +1164,12 @@ void AsioFrontend::unpause(rgw::sal::Store* const store,
 
 class RGWAsioFrontend::Impl : public AsioFrontend {
  public:
-  Impl(const RGWProcessEnv& env, RGWFrontendConfig* conf,
+  Impl(RGWProcessEnv& env, RGWFrontendConfig* conf,
        rgw::dmclock::SchedulerCtx& sched_ctx)
     : AsioFrontend(env, conf, sched_ctx) {}
 };
 
-RGWAsioFrontend::RGWAsioFrontend(const RGWProcessEnv& env,
+RGWAsioFrontend::RGWAsioFrontend(RGWProcessEnv& env,
                                  RGWFrontendConfig* conf,
 				 rgw::dmclock::SchedulerCtx& sched_ctx)
   : impl(new Impl(env, conf, sched_ctx))
@@ -1174,9 +1203,7 @@ void RGWAsioFrontend::pause_for_new_config()
   impl->pause();
 }
 
-void RGWAsioFrontend::unpause_with_new_config(
-  rgw::sal::Store* const store,
-  rgw_auth_registry_ptr_t auth_registry
-) {
-  impl->unpause(store, std::move(auth_registry));
+void RGWAsioFrontend::unpause_with_new_config()
+{
+  impl->unpause();
 }
