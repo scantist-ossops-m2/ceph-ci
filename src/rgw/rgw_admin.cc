@@ -4321,9 +4321,9 @@ int main(int argc, const char **argv)
   }
 
   if (format ==  "xml")
-    formatter = make_unique<XMLFormatter>(new XMLFormatter(pretty_format));
+    formatter = make_unique<XMLFormatter>(pretty_format);
   else if (format == "json")
-    formatter = make_unique<JSONFormatter>(new JSONFormatter(pretty_format));
+    formatter = make_unique<JSONFormatter>(pretty_format);
   else {
     cerr << "unrecognized format: " << format << std::endl;
     exit(1);
@@ -8279,6 +8279,11 @@ next:
         handled = decode_dump<RGWCompressionInfo>("compression", bl, formatter.get());
       } else if (iter->first == RGW_ATTR_DELETE_AT) {
         handled = decode_dump<utime_t>("delete_at", bl, formatter.get());
+      } else if (iter->first == RGW_ATTR_TORRENT) {
+        // contains bencoded binary data which shouldn't be output directly
+        // TODO: decode torrent info for display as json?
+        formatter->dump_string("torrent", "<contains binary data>");
+        handled = true;
       }
 
       if (!handled)
