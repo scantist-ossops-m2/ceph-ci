@@ -1,6 +1,6 @@
 import cherrypy
 from collections import defaultdict
-from distutils.version import StrictVersion
+from packaging.version import Version
 import json
 import math
 import os
@@ -32,10 +32,10 @@ DEFAULT_PORT = 9283
 # ipv6 isn't yet configured / supported and CherryPy throws an uncaught
 # exception.
 if cherrypy is not None:
-    v = StrictVersion(cherrypy.__version__)
+    v = Version(cherrypy.__version__)
     # the issue was fixed in 3.2.3. it's present in 3.2.2 (current version on
     # centos:7) and back to at least 3.0.0.
-    if StrictVersion("3.1.2") <= v < StrictVersion("3.2.3"):
+    if Version("3.1.2") <= v < Version("3.2.3"):
         # https://github.com/cherrypy/cherrypy/issues/1100
         from cherrypy.process import servers
         servers.wait_for_occupied_port = lambda host, port: None
@@ -68,6 +68,8 @@ def health_status_to_number(status: str) -> int:
 
 
 DF_CLUSTER = ['total_bytes', 'total_used_bytes', 'total_used_raw_bytes']
+
+OSD_BLOCKLIST = ['osd_blocklist_count']
 
 DF_POOL = ['max_avail', 'avail_raw', 'stored', 'stored_raw', 'objects', 'dirty',
            'quota_bytes', 'quota_objects', 'rd', 'rd_bytes', 'wr', 'wr_bytes',
@@ -554,7 +556,8 @@ class Module(MgrModule):
             'server_port',
             type='int',
             default=DEFAULT_PORT,
-            desc='the port on which the module listens for HTTP requests'
+            desc='the port on which the module listens for HTTP requests',
+            runtime=True
         ),
         Option(
             'scrape_interval',
@@ -793,6 +796,13 @@ class Module(MgrModule):
                 path,
                 'DF {}'.format(state),
             )
+            path = 'cluster_by_class_{}'.format(state)
+            metrics[path] = Metric(
+                'gauge',
+                path,
+                'DF {}'.format(state),
+                ('device_class',)
+            )
         for state in DF_POOL:
             path = 'pool_{}'.format(state)
             metrics[path] = Metric(
@@ -800,6 +810,13 @@ class Module(MgrModule):
                 path,
                 'DF pool {}'.format(state),
                 ('pool_id',)
+            )
+        for state in OSD_BLOCKLIST:
+            path = 'cluster_{}'.format(state)
+            metrics[path] = Metric(
+                'gauge',
+                path,
+                'OSD Blocklist Count {}'.format(state),
             )
         for state in NUM_OBJECTS:
             path = 'num_objects_{}'.format(state)
@@ -818,6 +835,31 @@ class Module(MgrModule):
             )
 
         return metrics
+
+    def get_server_addr(self) -> str:
+        """
+        Return the current mgr server IP.
+        """
+        server_addr = cast(str, self.get_localized_module_option('server_addr', get_default_addr()))
+        if server_addr in ['::', '0.0.0.0']:
+            return self.get_mgr_ip()
+        return server_addr
+
+    def config_notify(self) -> None:
+        """
+        This method is called whenever one of our config options is changed.
+        """
+        # https://stackoverflow.com/questions/7254845/change-cherrypy-port-and-restart-web-server
+        # if we omit the line: cherrypy.server.httpserver = None
+        # then the cherrypy server is not restarted correctly
+        self.log.info('Restarting engine...')
+        cherrypy.engine.stop()
+        cherrypy.server.httpserver = None
+        server_port = cast(int, self.get_localized_module_option('server_port', DEFAULT_PORT))
+        self.set_uri(build_url(scheme='http', host=self.get_server_addr(), port=server_port, path='/'))
+        cherrypy.config.update({'server.socket_port': server_port})
+        cherrypy.engine.start()
+        self.log.info('Engine started.')
 
     @profile_method()
     def get_health(self) -> None:
@@ -895,6 +937,9 @@ class Module(MgrModule):
         df = self.get('df')
         for stat in DF_CLUSTER:
             self.metrics['cluster_{}'.format(stat)].set(df['stats'][stat])
+            for device_class in df['stats_by_class']:
+                self.metrics['cluster_by_class_{}'.format(stat)].set(
+                    df['stats_by_class'][device_class][stat], (device_class,))
 
         for pool in df['pools']:
             for stat in DF_POOL:
@@ -902,6 +947,17 @@ class Module(MgrModule):
                     pool['stats'][stat],
                     (pool['id'],)
                 )
+
+    @profile_method()
+    def get_osd_blocklisted_entries(self) -> None:
+        r = self.mon_command({
+            'prefix': 'osd blocklist ls',
+            'format': 'json'
+        })
+        blocklist_entries = r[2].split(' ')
+        blocklist_count = blocklist_entries[1]
+        for stat in OSD_BLOCKLIST:
+            self.metrics['cluster_{}'.format(stat)].set(int(blocklist_count))
 
     @profile_method()
     def get_fs(self) -> None:
@@ -947,11 +1003,11 @@ class Module(MgrModule):
         for mon in mon_status['monmap']['mons']:
             rank = mon['rank']
             id_ = mon['name']
-            host_version = servers.get((id_, 'mon'), ('', '', ''))
+            mon_version = servers.get((id_, 'mon'), ('', '', ''))
             self.metrics['mon_metadata'].set(1, (
-                'mon.{}'.format(id_), host_version[0],
+                'mon.{}'.format(id_), mon_version[0],
                 mon['public_addr'].rsplit(':', 1)[0], rank,
-                host_version[1]
+                mon_version[1]
             ))
             in_quorum = int(rank in mon_status['quorum'])
             self.metrics['mon_quorum_status'].set(in_quorum, (
@@ -1007,7 +1063,9 @@ class Module(MgrModule):
         pg_summary = self.get('pg_summary')
 
         for pool in pg_summary['by_pool']:
-            num_by_state = defaultdict(int)  # type: DefaultDict[str, int]
+            num_by_state: DefaultDict[str, int] = defaultdict(int)
+            for state in PG_STATES:
+                num_by_state[state] = 0
 
             for state_name, count in pg_summary['by_pool'][pool].items():
                 for state in state_name.split('+'):
@@ -1034,10 +1092,10 @@ class Module(MgrModule):
     def get_service_list(self) -> Dict[Tuple[str, str], Tuple[str, str, str]]:
         ret = {}
         for server in self.list_servers():
-            version = cast(str, server.get('ceph_version', ''))
             host = cast(str, server.get('hostname', ''))
             for service in cast(List[ServiceInfoT], server.get('services', [])):
-                ret.update({(service['id'], service['type']): (host, version, service.get('name', ''))})
+                ret.update({(service['id'], service['type']): (
+                    host, service['ceph_version'], service.get('name', ''))})
         return ret
 
     @profile_method()
@@ -1075,7 +1133,7 @@ class Module(MgrModule):
                               "skipping output".format(id_))
                 continue
 
-            host_version = servers.get((str(id_), 'osd'), ('', '', ''))
+            osd_version = servers.get((str(id_), 'osd'), ('', '', ''))
 
             # collect disk occupation metadata
             osd_metadata = self.get_metadata("osd", str(id_))
@@ -1092,10 +1150,10 @@ class Module(MgrModule):
                 c_addr,
                 dev_class,
                 f_iface,
-                host_version[0],
+                osd_version[0],
                 obj_store,
                 p_addr,
-                host_version[1]
+                osd_version[1]
             ))
 
             # collect osd status
@@ -1527,6 +1585,35 @@ class Module(MgrModule):
                 cast(MetricCounter, sum_metric).add(duration, (method_name,))
                 cast(MetricCounter, count_metric).add(1, (method_name,))
 
+    def get_pool_repaired_objects(self) -> None:
+        dump = self.get('pg_dump')
+        for stats in dump['pool_stats']:
+            path = f'pool_objects_repaired{stats["poolid"]}'
+            self.metrics[path] = Metric(
+                'counter',
+                'pool_objects_repaired',
+                'Number of objects repaired in a pool Count',
+                ('poolid',)
+            )
+
+            self.metrics[path].set(stats['stat_sum']['num_objects_repaired'],
+                                   labelvalues=(stats['poolid'],))
+
+    def get_all_daemon_health_metrics(self) -> None:
+        daemon_metrics = self.get_daemon_health_metrics()
+        self.log.debug('metrics jeje %s' % (daemon_metrics))
+        for daemon_name, health_metrics in daemon_metrics.items():
+            for health_metric in health_metrics:
+                path = f'daemon_health_metrics{daemon_name}{health_metric["type"]}'
+                self.metrics[path] = Metric(
+                    'counter',
+                    'daemon_health_metrics',
+                    'Health metrics for Ceph daemons',
+                    ('type', 'ceph_daemon',)
+                )
+                self.metrics[path].set(health_metric['value'], labelvalues=(
+                    health_metric['type'], daemon_name,))
+
     @profile_method(True)
     def collect(self) -> str:
         # Clear the metrics before scraping
@@ -1535,6 +1622,7 @@ class Module(MgrModule):
 
         self.get_health()
         self.get_df()
+        self.get_osd_blocklisted_entries()
         self.get_pool_stats()
         self.get_fs()
         self.get_osd_stats()
@@ -1542,7 +1630,9 @@ class Module(MgrModule):
         self.get_mgr_status()
         self.get_metadata_and_osd_status()
         self.get_pg_status()
+        self.get_pool_repaired_objects()
         self.get_num_objects()
+        self.get_all_daemon_health_metrics()
 
         for daemon, counters in self.get_all_perf_counters().items():
             for path, counter_info in counters.items():
@@ -1732,9 +1822,7 @@ class Module(MgrModule):
         })
         # Publish the URI that others may use to access the service we're
         # about to start serving
-        if server_addr in ['::', '0.0.0.0']:
-            server_addr = self.get_mgr_ip()
-        self.set_uri(build_url(scheme='http', host=server_addr, port=server_port, path='/'))
+        self.set_uri(build_url(scheme='http', host=self.get_server_addr(), port=server_port, path='/'))
 
         cherrypy.tree.mount(Root(), "/")
         self.log.info('Starting engine...')
@@ -1746,6 +1834,7 @@ class Module(MgrModule):
         # tell metrics collection thread to stop collecting new metrics
         self.metrics_thread.stop()
         cherrypy.engine.stop()
+        cherrypy.server.httpserver = None
         self.log.info('Engine stopped.')
         self.shutdown_rbd_stats()
         # wait for the metrics collection thread to stop
@@ -1842,6 +1931,7 @@ class StandbyModule(MgrStandbyModule):
         self.shutdown_event.wait()
         self.shutdown_event.clear()
         cherrypy.engine.stop()
+        cherrypy.server.httpserver = None
         self.log.info('Engine stopped.')
 
     def shutdown(self) -> None:

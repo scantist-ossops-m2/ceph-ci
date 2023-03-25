@@ -158,12 +158,6 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL Clang)
   endif()
 endif(CMAKE_CXX_COMPILER_ID STREQUAL GNU)
 
-if(NOT CMAKE_BUILD_TYPE AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
-  set(default_build_type "Debug")
-  set(CMAKE_BUILD_TYPE "${default_build_type}" CACHE
-      STRING "Default BUILD_TYPE is Debug, other options are: RelWithDebInfo, Release, and MinSizeRel." FORCE)
-endif()
-
 if(WITH_CEPH_DEBUG_MUTEX)
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-DCEPH_DEBUG_MUTEX>)
 endif()
@@ -602,6 +596,7 @@ endif(NOT WITH_SYSTEM_ROCKSDB)
 
 if(WITH_MGR)
   add_subdirectory(mgr)
+  add_subdirectory(exporter)
 endif()
 
 set(librados_config_srcs
@@ -895,6 +890,7 @@ add_custom_target(vstart-base DEPENDS
     ceph-mon
     ceph-authtool
     ceph-conf
+    ceph-exporter
     monmaptool
     crushtool
     rados)
@@ -907,6 +903,7 @@ endif()
 
 if (WITH_MGR)
   add_dependencies(vstart-base ceph-mgr)
+  add_dependencies(vstart-base ceph-exporter)
 endif()
 
 add_custom_target(vstart DEPENDS vstart-base)
