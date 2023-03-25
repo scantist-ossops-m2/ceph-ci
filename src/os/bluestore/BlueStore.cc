@@ -17286,7 +17286,7 @@ int BlueStore::_do_remove(
 	// This is illegal, as empty shared blobs should be unique.
 	// Fixing by re-creation.
 	e.blob->shared_blob = new SharedBlob(c.get());
-	dout(20) << __func__ << " detached blob from shared " << e << dendl;
+	dout(20) << __func__ << " recreated empty shared blob " << e << dendl;
       }
       h->extent_map.dirty_range(e.logical_offset, 1);
     }
