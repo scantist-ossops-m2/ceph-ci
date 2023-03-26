@@ -871,12 +871,13 @@ constexpr auto PLACEMENT_HINT_NULL = placement_hint_t::NUM_HINTS;
 
 std::ostream& operator<<(std::ostream& out, placement_hint_t h);
 
-enum class alignas(4) device_type_t : uint_fast8_t {
+enum class device_type_t : uint8_t {
   NONE = 0,
   HDD,
   SSD,
   ZNS,
-  SEGMENTED_EPHEMERAL,
+  EPHEMERAL_COLD,
+  EPHEMERAL_MAIN,
   RANDOM_BLOCK_SSD,
   RANDOM_BLOCK_EPHEMERAL,
   NUM_TYPES
@@ -899,7 +900,7 @@ constexpr backend_type_t get_default_backend_of_device(device_type_t dtype) {
   assert(dtype != device_type_t::NONE &&
 	 dtype != device_type_t::NUM_TYPES);
   if (dtype >= device_type_t::HDD &&
-      dtype <= device_type_t::SEGMENTED_EPHEMERAL) {
+      dtype <= device_type_t::EPHEMERAL_MAIN) {
     return backend_type_t::SEGMENTED;
   } else {
     return backend_type_t::RANDOM_BLOCK;
@@ -1113,6 +1114,11 @@ constexpr bool is_backref_node(extent_types_t type)
     type == extent_types_t::BACKREF_LEAF;
 }
 
+constexpr bool is_lba_backref_node(extent_types_t type)
+{
+  return is_lba_node(type) || is_backref_node(type);
+}
+
 std::ostream &operator<<(std::ostream &out, extent_types_t t);
 
 /**
@@ -1144,14 +1150,9 @@ constexpr rewrite_gen_t OOL_GENERATION = 2;
 
 // All the rewritten extents start with MIN_REWRITE_GENERATION
 constexpr rewrite_gen_t MIN_REWRITE_GENERATION = 3;
-constexpr rewrite_gen_t MAX_REWRITE_GENERATION = 4;
-
-/**
- * TODO:
- * For tiering, might introduce 5 and 6 for the cold tier, and 1 ~ 4 for the
- * hot tier.
- */
-
+// without cold tier, the largest generation is less than MIN_COLD_GENERATION
+constexpr rewrite_gen_t MIN_COLD_GENERATION = 5;
+constexpr rewrite_gen_t MAX_REWRITE_GENERATION = 7;
 constexpr rewrite_gen_t REWRITE_GENERATIONS = MAX_REWRITE_GENERATION + 1;
 constexpr rewrite_gen_t NULL_GENERATION =
   std::numeric_limits<rewrite_gen_t>::max();
@@ -1190,7 +1191,7 @@ std::ostream &operator<<(std::ostream &out, data_category_t c);
 
 constexpr data_category_t get_extent_category(extent_types_t type) {
   if (type == extent_types_t::OBJECT_DATA_BLOCK ||
-      type == extent_types_t::COLL_BLOCK) {
+      type == extent_types_t::TEST_BLOCK) {
     return data_category_t::DATA;
   } else {
     return data_category_t::METADATA;
@@ -1746,7 +1747,8 @@ enum class transaction_type_t : uint8_t {
   READ, // including weak and non-weak read transactions
   TRIM_DIRTY,
   TRIM_ALLOC,
-  CLEANER,
+  CLEANER_MAIN,
+  CLEANER_COLD,
   MAX
 };
 
@@ -2106,78 +2108,6 @@ WRITE_CLASS_DENC_BOUNDED(crimson::os::seastore::segment_header_t)
 WRITE_CLASS_DENC_BOUNDED(crimson::os::seastore::alloc_blk_t)
 WRITE_CLASS_DENC_BOUNDED(crimson::os::seastore::alloc_delta_t)
 WRITE_CLASS_DENC_BOUNDED(crimson::os::seastore::segment_tail_t)
-
-template<>
-struct denc_traits<crimson::os::seastore::device_type_t> {
-  static constexpr bool supported = true;
-  static constexpr bool featured = false;
-  static constexpr bool bounded = true;
-  static constexpr bool need_contiguous = false;
-
-  static void bound_encode(
-    const crimson::os::seastore::device_type_t &o,
-    size_t& p,
-    uint64_t f=0) {
-    p += sizeof(crimson::os::seastore::device_type_t);
-  }
-  template<class It>
-  requires (!is_const_iterator<It>)
-  static void encode(
-    const crimson::os::seastore::device_type_t &o,
-    It& p,
-    uint64_t f=0) {
-    get_pos_add<crimson::os::seastore::device_type_t>(p) = o;
-  }
-  template<is_const_iterator It>
-  static void decode(
-    crimson::os::seastore::device_type_t& o,
-    It& p,
-    uint64_t f=0) {
-    o = get_pos_add<crimson::os::seastore::device_type_t>(p);
-  }
-  static void decode(
-    crimson::os::seastore::device_type_t& o,
-    ceph::buffer::list::const_iterator &p) {
-    p.copy(sizeof(crimson::os::seastore::device_type_t),
-           reinterpret_cast<char*>(&o));
-  }
-};
-
-template<>
-struct denc_traits<crimson::os::seastore::segment_type_t> {
-  static constexpr bool supported = true;
-  static constexpr bool featured = false;
-  static constexpr bool bounded = true;
-  static constexpr bool need_contiguous = false;
-
-  static void bound_encode(
-    const crimson::os::seastore::segment_type_t &o,
-    size_t& p,
-    uint64_t f=0) {
-    p += sizeof(crimson::os::seastore::segment_type_t);
-  }
-  template<class It>
-  requires (!is_const_iterator<It>)
-  static void encode(
-    const crimson::os::seastore::segment_type_t &o,
-    It& p,
-    uint64_t f=0) {
-    get_pos_add<crimson::os::seastore::segment_type_t>(p) = o;
-  }
-  template<is_const_iterator It>
-  static void decode(
-    crimson::os::seastore::segment_type_t& o,
-    It& p,
-    uint64_t f=0) {
-    o = get_pos_add<crimson::os::seastore::segment_type_t>(p);
-  }
-  static void decode(
-    crimson::os::seastore::segment_type_t& o,
-    ceph::buffer::list::const_iterator &p) {
-    p.copy(sizeof(crimson::os::seastore::segment_type_t),
-           reinterpret_cast<char*>(&o));
-  }
-};
 
 #if FMT_VERSION >= 90000
 template <> struct fmt::formatter<crimson::os::seastore::data_category_t> : fmt::ostream_formatter {};
