@@ -291,6 +291,7 @@ class AdminHook : public AdminSocketHook {
 public:
   explicit AdminHook(Monitor *m) : mon(m) {}
   int call(std::string_view command, const cmdmap_t& cmdmap,
+	   const bufferlist&,
 	   Formatter *f,
 	   std::ostream& errss,
 	   bufferlist& out) override {
@@ -2988,7 +2989,7 @@ void Monitor::update_pending_metadata()
   const std::string current_version = mon_metadata[rank]["ceph_version_short"];
   const std::string pending_version = metadata["ceph_version_short"];
 
-  if (current_version.compare(0, version_size, pending_version) < 0) {
+  if (current_version.compare(0, version_size, pending_version) != 0) {
     mgr_client.update_daemon_metadata("mon", name, metadata);
   }
 }
@@ -3456,9 +3457,9 @@ void Monitor::handle_command(MonOpRequestRef op)
   // Catch bad_cmd_get exception if _generate_command_map() throws it
   try {
     _generate_command_map(cmdmap, param_str_map);
-  }
-  catch(bad_cmd_get& e) {
+  } catch (const bad_cmd_get& e) {
     reply_command(op, -EINVAL, e.what(), 0);
+    return;
   }
 
   if (!_allowed_command(session, service, prefix, cmdmap,
@@ -4515,6 +4516,7 @@ void Monitor::dispatch_op(MonOpRequestRef op)
   switch (op->get_req()->get_type()) {
     // auth
     case MSG_MON_GLOBAL_ID:
+    case MSG_MON_USED_PENDING_KEYS:
     case CEPH_MSG_AUTH:
       op->set_type_service();
       /* no need to check caps here */

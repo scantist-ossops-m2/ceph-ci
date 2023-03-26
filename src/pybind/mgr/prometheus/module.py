@@ -1,6 +1,6 @@
 import cherrypy
 from collections import defaultdict
-from packaging.version import Version
+from pkg_resources import packaging  # type: ignore
 import json
 import math
 import os
@@ -32,6 +32,7 @@ DEFAULT_PORT = 9283
 # ipv6 isn't yet configured / supported and CherryPy throws an uncaught
 # exception.
 if cherrypy is not None:
+    Version = packaging.version.Version
     v = Version(cherrypy.__version__)
     # the issue was fixed in 3.2.3. it's present in 3.2.2 (current version on
     # centos:7) and back to at least 3.0.0.
@@ -1094,8 +1095,9 @@ class Module(MgrModule):
         for server in self.list_servers():
             host = cast(str, server.get('hostname', ''))
             for service in cast(List[ServiceInfoT], server.get('services', [])):
-                ret.update({(service['id'], service['type']): (
-                    host, service['ceph_version'], service.get('name', ''))})
+                ret.update({(service['id'], service['type']): (host,
+                                                               service.get('ceph_version', 'unknown'),
+                                                               service.get('name', ''))})
         return ret
 
     @profile_method()

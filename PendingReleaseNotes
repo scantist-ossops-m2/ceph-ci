@@ -1,3 +1,10 @@
+>=17.2.6
+--------
+
+* `ceph mgr dump` command now outputs `last_failure_osd_epoch` and
+  `active_clients` fields at the top level.  Previously, these fields were
+  output under `always_on_modules` field.
+
 >=17.2.5
 --------
 
@@ -17,6 +24,10 @@
   namespaces was added to RBD in Nautilus 14.2.0 and it has been possible to
   map and unmap images in namespaces using the `image-spec` syntax since then
   but the corresponding option available in most other commands was missing.
+* CEPHFS: Rename the `mds_max_retries_on_remount_failure` option to
+  `client_max_retries_on_remount_failure` and move it from mds.yaml.in to
+  mds-client.yaml.in because this option was only used by MDS client from its
+  birth.
 
 >=17.2.4
 --------
