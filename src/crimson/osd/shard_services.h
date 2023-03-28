@@ -237,7 +237,9 @@ private:
     crimson::net::Connection &conn,
     epoch_t first);
 
-  seastar::future<> send_incremental_map_to_osd(int osd, epoch_t first);
+  seastar::future<> send_incremental_map_to_osd(
+    const entity_addr_t& peer_addr,
+    epoch_t first);
 
   auto get_pool_info(int64_t poolid) {
     return get_meta_coll().load_final_pool_info(poolid);

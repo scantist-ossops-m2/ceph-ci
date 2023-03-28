@@ -438,6 +438,7 @@ class Heartbeat::Peer final : private Heartbeat::ConnectionListener {
       _conn.accepted(conn);
     });
   }
+  entity_addr_t get_peer_addr();
 
  private:
   entity_addr_t get_peer_addr(type_t type) override;

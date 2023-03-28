@@ -308,8 +308,9 @@ seastar::future<> Heartbeat::maybe_share_osdmap(
     return seastar::now();
   }
   auto &peer = found->second;
-  if (m->map_epoch < peer.get_epoch()) {
-    return service.send_incremental_map_to_osd(from, m->map_epoch);
+  if (service.get_map()->get_epoch() > peer.get_epoch()) {
+    return service.send_incremental_map_to_osd(peer.get_peer_addr(),
+                                               service.get_map()->get_epoch());
   }
   return seastar::now();
 }
@@ -597,6 +598,13 @@ seastar::future<> Heartbeat::Peer::handle_reply(
     }
   }
   return seastar::now();
+}
+
+
+entity_addr_t Heartbeat::Peer::get_peer_addr()
+{
+  const auto osdmap = heartbeat.service.get_map();
+  return osdmap->get_hb_front_addrs(peer).front();
 }
 
 entity_addr_t Heartbeat::Peer::get_peer_addr(type_t type)
