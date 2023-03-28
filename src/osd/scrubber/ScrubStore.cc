@@ -12,6 +12,54 @@ using std::vector;
 
 using ceph::bufferlist;
 
+int OSDriver::get_keys(
+  const std::set<std::string> &keys,
+  std::map<std::string, ceph::buffer::list> *out)
+{
+  return os->omap_get_values(ch, hoid, keys, out);
+}
+
+int OSDriver::get_next(
+  const std::string &key,
+  std::pair<std::string, ceph::buffer::list> *next)
+{
+  ObjectMap::ObjectMapIterator iter =
+    os->get_omap_iterator(ch, hoid);
+  if (!iter) {
+    ceph_abort();
+    return -EINVAL;
+  }
+  iter->upper_bound(key);
+  if (iter->valid()) {
+    if (next)
+      *next = make_pair(iter->key(), iter->value());
+    return 0;
+  } else {
+    return -ENOENT;
+  }
+}
+
+int OSDriver::get_next_or_current(
+  const std::string &key,
+  std::pair<std::string, ceph::buffer::list> *next_or_current)
+{
+  ObjectMap::ObjectMapIterator iter =
+    os->get_omap_iterator(ch, hoid);
+  if (!iter) {
+    ceph_abort();
+    return -EINVAL;
+  }
+  iter->lower_bound(key);
+  if (iter->valid()) {
+    if (next_or_current)
+      *next_or_current = make_pair(iter->key(), iter->value());
+    return 0;
+  } else {
+    return -ENOENT;
+  }
+}
+
+
 namespace {
 ghobject_t make_scrub_object(const spg_t& pgid)
 {
@@ -115,12 +163,8 @@ Store::create(ObjectStore* store,
 Store::Store(const coll_t& coll, const ghobject_t& oid, ObjectStore* store)
   : coll(coll),
     hoid(oid),
-#ifdef SNAPMAPPER_OSDriver
     driver(store, coll, hoid),
     backend(&driver)
-#else
-    backend(nullptr)
-#endif  
 {}
 
 Store::~Store()
@@ -159,7 +203,8 @@ bool Store::empty() const
 
 void Store::flush(ObjectStore::Transaction* t)
 {
-#ifdef SNAPMAPPER_OSDriver
+  //#ifdef SNAPMAPPER_OSDriver
+#if 1
   if (t) {
     OSDriver::OSTransaction txn = driver.get_transaction(t);
     backend.set_keys(results, &txn);
@@ -192,6 +237,7 @@ Store::get_object_errors(int64_t pool,
   const string begin = (start.name.empty() ?
 			first_object_key(pool) : to_object_key(pool, start));
   const string end = last_object_key(pool);
+  //dout(1) << "GBH::SNAPMAP::begin=" << begin << ",  end=" << end << dendl;
   return get_errors(begin, end, max_return);
 }
 
@@ -202,12 +248,15 @@ Store::get_errors(const string& begin,
 {
   vector<bufferlist> errors;
   auto next = std::make_pair(begin, bufferlist{});
+  //#ifdef SNAPMAPPER_OSDriver
+#if 1
   while (max_return && !backend.get_next(next.first, &next)) {
     if (next.first >= end)
       break;
     errors.push_back(next.second);
     max_return--;
   }
+#endif
   return errors;
 }
 

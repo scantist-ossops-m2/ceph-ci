@@ -37,6 +37,7 @@ bool PrimaryLogScrub::get_store_errors(const scrub_ls_arg_t& arg,
 					      arg.start_after,
 					      arg.max_return);
   } else {
+    ceph_assert(m_pg);
     res_inout.vals = m_store->get_object_errors(m_pg->get_pgid().pool(),
 						arg.start_after,
 						arg.max_return);

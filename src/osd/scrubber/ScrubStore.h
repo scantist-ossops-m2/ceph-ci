@@ -4,8 +4,72 @@
 #ifndef CEPH_SCRUB_RESULT_H
 #define CEPH_SCRUB_RESULT_H
 
+#include "common/hobject.h"
 #include "common/map_cacher.hpp"
-#include "osd/PGSnapMapper.h"  // for OSDriver
+#include "include/buffer.h"
+#include "include/encoding.h"
+#include "include/object.h"
+#include "os/ObjectStore.h"
+#include "osd/OSDMap.h"
+#include "osd/SnapMapReaderI.h"
+
+class OSDriver : public MapCacher::StoreDriver<std::string, ceph::buffer::list> {
+  using ObjectStoreT = ObjectStore;
+  using CollectionHandleT = ObjectStoreT::CollectionHandle;
+
+  ObjectStoreT *os;
+  CollectionHandleT ch;
+  ghobject_t hoid;
+
+public:
+  class OSTransaction : public MapCacher::Transaction<std::string, ceph::buffer::list> {
+    friend class OSDriver;
+    coll_t cid;
+    ghobject_t hoid;
+    ceph::os::Transaction *t;
+    OSTransaction(
+      const coll_t &cid,
+      const ghobject_t &hoid,
+      ceph::os::Transaction *t)
+      : cid(cid), hoid(hoid), t(t) {}
+  public:
+    void set_keys(
+      const std::map<std::string, ceph::buffer::list> &to_set) override {
+      t->omap_setkeys(cid, hoid, to_set);
+    }
+    void remove_keys(
+      const std::set<std::string> &to_remove) override {
+      t->omap_rmkeys(cid, hoid, to_remove);
+    }
+    void add_callback(
+      Context *c) override {
+      t->register_on_applied(c);
+    }
+  };
+
+  OSTransaction get_transaction(
+    ceph::os::Transaction *t) const {
+    return OSTransaction(ch->get_cid(), hoid, t);
+  }
+
+  OSDriver(ObjectStoreT *os, const coll_t& cid, const ghobject_t &hoid) :
+    OSDriver(os, os->open_collection(cid), hoid) {}
+
+  OSDriver(ObjectStoreT *os, CollectionHandleT ch, const ghobject_t &hoid) :
+    os(os),
+    ch(ch),
+    hoid(hoid) {}
+
+  int get_keys(
+    const std::set<std::string> &keys,
+    std::map<std::string, ceph::buffer::list> *out) override;
+  int get_next(
+    const std::string &key,
+    std::pair<std::string, ceph::buffer::list> *next) override;
+  int get_next_or_current(
+    const std::string &key,
+    std::pair<std::string, ceph::buffer::list> *next_or_current) override;
+};
 
 namespace librados {
 struct object_id_t;
@@ -54,7 +118,8 @@ class Store {
   const ghobject_t hoid;
   // a temp object holding mappings from seq-id to inconsistencies found in
   // scrubbing
-  //OSDriver driver;
+
+  OSDriver driver;
   mutable MapCacher::MapCacher<std::string, ceph::buffer::list> backend;
   std::map<std::string, ceph::buffer::list> results;
 };
