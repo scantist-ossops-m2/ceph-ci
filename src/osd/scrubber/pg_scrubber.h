@@ -721,9 +721,12 @@ class PgScrubber : public ScrubPgIF,
 
   int num_digest_updates_pending{0};
   hobject_t m_start, m_end;  ///< note: half-closed: [start,end)
+  int m_num_objects_current_chunk{0};
 
   /// Returns epoch of current osdmap
   epoch_t get_osdmap_epoch() const { return get_osdmap()->get_epoch(); }
+
+  uint64_t get_scrub_cost(int chunk_size, bool is_deep);
 
   // collected statistics
   int m_shallow_errors{0};

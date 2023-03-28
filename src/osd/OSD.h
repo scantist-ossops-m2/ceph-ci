@@ -118,6 +118,7 @@ public:
 
   void enqueue_back(OpSchedulerItem&& qi);
   void enqueue_front(OpSchedulerItem&& qi);
+  double get_cost_per_io() const;
 
   void maybe_inject_dispatch_delay() {
     if (g_conf()->osd_debug_inject_dispatch_delay_probability > 0) {
@@ -514,7 +515,7 @@ public:
   void queue_scrub_applied_update(PG* pg, Scrub::scrub_prio_t with_priority);
 
   /// Signals that the selected chunk (objects range) is available for scrubbing
-  void queue_scrub_chunk_free(PG* pg, Scrub::scrub_prio_t with_priority);
+  void queue_scrub_chunk_free(PG* pg, Scrub::scrub_prio_t with_priority, uint64_t cost_per_object);
 
   /// The chunk selected is blocked by user operations, and cannot be scrubbed now
   void queue_scrub_chunk_busy(PG* pg, Scrub::scrub_prio_t with_priority);
@@ -540,7 +541,8 @@ public:
   void queue_for_rep_scrub(PG* pg,
 			   Scrub::scrub_prio_t with_high_priority,
 			   unsigned int qu_priority,
-			   Scrub::act_token_t act_token);
+			   Scrub::act_token_t act_token,
+                           uint64_t cost_per_object);
 
   /// Signals a change in the number of in-flight recovery writes
   void queue_scrub_replica_pushes(PG *pg, Scrub::scrub_prio_t with_priority);
@@ -573,13 +575,15 @@ private:
   void queue_scrub_event_msg(PG* pg,
 			     Scrub::scrub_prio_t with_priority,
 			     unsigned int qu_priority,
-			     Scrub::act_token_t act_token);
+			     Scrub::act_token_t act_token,
+                             uint64_t cost_per_object);
 
   /// An alternative version of queue_scrub_event_msg(), in which the queuing priority is
   /// provided by the executing scrub (i.e. taken from PgScrubber::m_flags)
   template <class MSG_TYPE>
-  void queue_scrub_event_msg(PG* pg, Scrub::scrub_prio_t with_priority);
-  int64_t get_scrub_cost();
+  void queue_scrub_event_msg(PG* pg, Scrub::scrub_prio_t with_priority, uint64_t cost_per_object);
+  template <class MSG_TYPE>
+  void queue_simple_scrub_event_msg(PG* pg, Scrub::scrub_prio_t with_priority);
 
   utime_t defer_recovery_until;
   uint64_t recovery_ops_active;
@@ -1609,6 +1613,12 @@ protected:
       for (auto p : oncommits) {
 	p->complete(0);
       }
+    }
+
+    double get_cost_per_io() const {
+      uint32_t shard_index = 0;
+      auto &&sdata = osd->shards[shard_index];
+      return sdata->scheduler->get_cost_per_io();
     }
   } op_shardedwq;
 
