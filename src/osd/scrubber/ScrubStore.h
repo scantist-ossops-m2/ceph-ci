@@ -51,10 +51,10 @@ public:
     ceph::os::Transaction *t) const {
     return OSTransaction(ch->get_cid(), hoid, t);
   }
-
+#ifndef WITH_SEASTAR
   OSDriver(ObjectStoreT *os, const coll_t& cid, const ghobject_t &hoid) :
     OSDriver(os, os->open_collection(cid), hoid) {}
-
+#endif
   OSDriver(ObjectStoreT *os, CollectionHandleT ch, const ghobject_t &hoid) :
     os(os),
     ch(ch),
