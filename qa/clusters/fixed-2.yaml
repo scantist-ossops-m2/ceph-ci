@@ -10,3 +10,5 @@ overrides:
     conf:
       osd:
         osd shutdown pgref assert: true
+    log-ignorelist:
+      - \(POOL_APP_NOT_ENABLED\)
