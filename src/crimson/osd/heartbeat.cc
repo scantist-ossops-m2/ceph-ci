@@ -304,7 +304,28 @@ seastar::future<> Heartbeat::maybe_share_osdmap(
 {
   const osd_id_t from = m->get_source().num();
   const epoch_t osdmap_epoch = service.get_map()->get_epoch();
-  logger().debug("{} peer osd id: {} epoch is {} while latest map is {}",
+  const epoch_t peer_epoch = m->map_epoch;
+  auto found = peers.find(from);
+  if (found == peers.end()) {
+    return seastar::now();
+  }
+  auto& peer = found->second;
+
+  if (peer_epoch > peer.get_last_epoch_sent()) {
+    logger().debug("{} updating session's last "
+      "epoch sent from {} to peer (id: {}) map epoch: {}",
+      __func__, peer.get_last_epoch_sent(), from, peer_epoch);
+    peer.set_last_epoch_sent(peer_epoch);
+  }
+
+  if (osdmap_epoch <= peer.get_last_epoch_sent()) {
+    //latest epoch sent is later that osdmap_epoch- we are ok
+    logger().debug("{} latest epoch sent {} is already later then latest map is {}",
+                __func__ , peer.get_last_epoch_sent(), osdmap_epoch);
+    return seastar::now();
+  }
+
+  logger().debug("{} peer id: {} epoch is {} while latest map is {}",
                 __func__ , from, m->map_epoch, osdmap_epoch);
   if (osdmap_epoch > m->map_epoch) {
     logger().debug("{} sharing osdmap epoch of {} with peer id {}",
