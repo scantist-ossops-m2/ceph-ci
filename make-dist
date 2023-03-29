@@ -3,11 +3,11 @@
 SCRIPTNAME="$(basename "${0}")"
 BASEDIR="$(readlink -f "$(dirname "${0}")")"
 
-if [ ! -d .git ]; then
-    echo "$SCRIPTNAME: Full path to the script: $BASEDIR/$SCRIPTNAME"
-    echo "$SCRIPTNAME: No .git present. Run this from the base dir of the git checkout."
-    exit 1
-fi
+# if [ ! -d .git ]; then
+#     echo "$SCRIPTNAME: Full path to the script: $BASEDIR/$SCRIPTNAME"
+#     echo "$SCRIPTNAME: No .git present. Run this from the base dir of the git checkout."
+#     exit 1
+# fi
 
 # Running the script from a directory containing a colon anywhere in the path
 # will expose us to the dreaded "[BUG] npm run [command] failed if the directory
@@ -210,7 +210,16 @@ pmdk_version=1.10
 download_pmdk $pmdk_version 08dafcf94db5ac13fac9139c92225d9aa5f3724ea74beee4e6ca19a01a2eb20c \
                https://github.com/pmem/pmdk/releases/download/$pmdk_version
 build_dashboard_frontend
-build_mgr_pip_pkgs
+
+set -x
+if [ -e /etc/os-release ]; then
+  source /etc/os-release
+  if [[ $ID != "centos" ]] && [[ $VERSION_ID != "8" ]] ; then
+    build_mgr_pip_pkgs
+  fi
+fi
+set +x
+
 generate_rook_ceph_client
 for tarball in $outfile.version   \
                $outfile.boost     \
