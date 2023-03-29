@@ -168,13 +168,13 @@ class Zap(object):
         """
         lv = api.get_single_lv(filters={'lv_name': device.lv_name, 'vg_name':
                                         device.vg_name})
-        pv = api.get_single_pv(filters={'lv_uuid': lv.lv_uuid})
         self.unmount_lv(lv)
 
         wipefs(device.path)
         zap_data(device.path)
 
         if self.args.destroy:
+            pv = api.get_single_pv(filters={'lv_uuid': lv.lv_uuid})
             lvs = api.get_lvs(filters={'vg_name': device.vg_name})
             if lvs == []:
                 mlogger.info('No LVs left, exiting', device.vg_name)
