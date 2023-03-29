@@ -303,14 +303,16 @@ seastar::future<> Heartbeat::maybe_share_osdmap(
   Ref<MOSDPing> m)
 {
   const osd_id_t from = m->get_source().num();
-  auto found = peers.find(from);
-  if (found == peers.end()) {
-    return seastar::now();
-  }
-  auto &peer = found->second;
-  if (m->map_epoch < peer.get_epoch()) {
+  const epoch_t osdmap_epoch = service.get_map()->get_epoch();
+  logger().debug("{} peer osd id: {} epoch is {} while latest map is {}",
+                __func__ , from, m->map_epoch, osdmap_epoch);
+  if (osdmap_epoch > m->map_epoch) {
+    logger().debug("{} sharing osdmap epoch of {} with peer id {}",
+                __func__, osdmap_epoch, from);
+    // Peer's newest map is m->map_epoch. Therfore it misses
+    // the osdmaps in the range of `m->map_epoch` to `osdmap_epoch`.
     return service.send_incremental_map_to_osd(from, m->map_epoch);
-  }
+    }
   return seastar::now();
 }
 
