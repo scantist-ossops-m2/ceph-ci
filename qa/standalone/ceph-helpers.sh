@@ -1742,6 +1742,22 @@ function test_wait_for_peered() {
     teardown $dir || return 1
 }
 
+function wait_for_string() {
+    local logfile=$1
+    local searchstr=$2
+
+    status=1
+    for ((i=0; i < $TIMEOUT; i++)); do
+        echo $i
+        if ! cat $logfile | grep "$searchstr"; then
+            sleep 1
+        else
+            status=0
+            break
+        fi
+    done
+    return $status
+}
 
 #######################################################################
 
