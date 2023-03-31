@@ -143,7 +143,140 @@ EOF
 
     sleep 3
 
-    teardown $dir || return 1
+}
+
+TEST_stretched_cluster_uneven_weight(){
+    local dir=$1
+    local OSDS=4
+    local weight=0.09000
+    setup $dir || return 1
+
+    run_mon $dir a --public-addr $CEPH_MON_A || return 1
+    wait_for_quorum 300 1 || return 1
+
+    run_mon $dir b --public-addr $CEPH_MON_B || return 1
+    CEPH_ARGS="$BASE_CEPH_ARGS --mon-host=$CEPH_MON_A,$CEPH_MON_B"
+    wait_for_quorum 300 2 || return 1
+
+    run_mon $dir c --public-addr $CEPH_MON_C || return 1
+    CEPH_ARGS="$BASE_CEPH_ARGS --mon-host=$CEPH_MON_A,$CEPH_MON_B,$CEPH_MON_C"
+    wait_for_quorum 300 3 || return 1
+
+    run_mon $dir d --public-addr $CEPH_MON_D || return 1
+    CEPH_ARGS="$BASE_CEPH_ARGS --mon-host=$CEPH_MON_A,$CEPH_MON_B,$CEPH_MON_C,$CEPH_MON_D"
+    wait_for_quorum 300 4 || return 1
+
+    run_mon $dir e --public-addr $CEPH_MON_E || return 1
+    CEPH_ARGS="$BASE_CEPH_ARGS --mon-host=$CEPH_MON_A,$CEPH_MON_B,$CEPH_MON_C,$CEPH_MON_D,$CEPH_MON_E"
+    wait_for_quorum 300 5 || return 1
+
+    ceph mon set election_strategy connectivity
+    ceph mon add disallowed_leader e
+
+    run_mgr $dir x || return 1
+    run_mgr $dir y || return 1
+    run_mgr $dir z || return 1
+
+    for osd in $(seq 0 $(expr $OSDS - 1))
+    do
+      run_osd $dir $osd || return 1
+    done
+    
+    for zone in iris pze
+    do
+      ceph osd crush add-bucket $zone zone
+      ceph osd crush move $zone root=default
+    done
+
+    ceph osd crush add-bucket node-2 host
+    ceph osd crush add-bucket node-3 host
+    ceph osd crush add-bucket node-4 host
+    ceph osd crush add-bucket node-5 host
+
+    ceph osd crush move node-2 zone=iris
+    ceph osd crush move node-3 zone=iris
+    ceph osd crush move node-4 zone=pze
+    ceph osd crush move node-5 zone=pze
+
+    ceph osd crush move osd.0 host=node-2
+    ceph osd crush move osd.1 host=node-3
+    ceph osd crush move osd.2 host=node-4
+    ceph osd crush move osd.3 host=node-5
+    
+    ceph mon set_location a zone=iris host=node-2
+    ceph mon set_location b zone=iris host=node-3
+    ceph mon set_location c zone=pze host=node-4
+    ceph mon set_location d zone=pze host=node-5
+
+    ceph osd crush reweight osd.0 $weight
+    ceph osd crush reweight osd.1 $weight
+    ceph osd crush reweight osd.2 $weight
+    ceph osd crush reweight osd.3 $weight
+
+    hostname=$(hostname -s)
+    ceph osd crush remove $hostname || return 1
+    ceph osd getcrushmap > crushmap || return 1
+    crushtool --decompile crushmap > crushmap.txt || return 1
+    sed 's/^# end crush map$//' crushmap.txt > crushmap_modified.txt || return 1
+    cat >> crushmap_modified.txt << EOF
+rule stretch_rule {
+        id 1
+        type replicated
+        min_size 1
+        max_size 10
+        step take iris
+        step chooseleaf firstn 2 type host
+        step emit
+        step take pze
+        step chooseleaf firstn 2 type host
+        step emit
+}
+# end crush map
+EOF
+
+    crushtool --compile crushmap_modified.txt -o crushmap.bin || return 1
+    ceph osd setcrushmap -i crushmap.bin  || return 1
+    local stretched_poolname=stretched_rbdpool
+    ceph osd pool create $stretched_poolname 32 32 stretch_rule || return 1
+    ceph osd pool set $stretched_poolname size 4 || return 1
+
+    ceph mon set_location e zone=arbiter host=node-1 || return 1
+    ceph mon enable_stretch_mode e stretch_rule zone || return 1 # Enter strech mode
+
+    # Firstly, we test for stretch mode buckets != 2
+
+    ceph osd crush add-bucket sham zone
+    ceph osd crush move sham root=default
+
+    sleep 5 # buffer time for health details to appear
+
+    local res1=`ceph health detail | grep -o INCORRECT_NUM_BUCKETS_STRETCH_MODE`
+    test $res1 == "INCORRECT_NUM_BUCKETS_STRETCH_MODE" || return 1
+
+    ceph osd crush rm sham # clear the health warn
+
+    sleep 5 # buffer time for health details to disappear
+
+    res1=`ceph health detail | grep -o INCORRECT_NUM_BUCKETS_STRETCH_MODE`
+
+    if [ $res1 ]; then return 1; fi # check if health details disappeared
+
+    # Next, we test for uneven weights across buckets
+
+    ceph osd crush reweight osd.0 0.70000
+
+    sleep 5 # buffer time for health details to appear
+
+    local res2=`ceph health detail | grep -o UNEVEN_WEIGHTS_STRETCH_MODE`
+
+    test $res2 == "UNEVEN_WEIGHTS_STRETCH_MODE" || return 1
+
+    ceph osd crush reweight osd.0 $weight # clear the health warn
+
+    sleep 5 # buffer time for health details to disappear
+
+    res2=`ceph health detail | grep -o UNEVEN_WEIGHTS_STRETCH_MODE`
+    if [ $res2 ]; then return 1; fi # check if health details disappeared
 
 }
 main mon-stretched-cluster "$@"
