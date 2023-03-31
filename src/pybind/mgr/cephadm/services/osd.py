@@ -544,7 +544,7 @@ class RemoveUtil(object):
         if osd.hostname is not None:
             out, err, code = self.mgr.wait_async(CephadmServe(self.mgr)._run_cephadm(
                 osd.hostname, 'osd', 'ceph-volume',
-                ['--', 'lvm', 'zap', '--destroy', '--osd-id', str(osd.osd_id)],
+                ['--', 'lvm', 'zap', '--osd-id', str(osd.osd_id)],
                 error_ok=True))
             self.mgr.cache.invalidate_host_devices(osd.hostname)
             if code:
