@@ -90,7 +90,7 @@ def get_radosgw_endpoint():
     if port == '443':
         proto = "https"
 
-    endpoint = proto + "://" + hostname + ":" + port
+    endpoint = hostname + ":" + port
     log.info("radosgw endpoint is: %s", endpoint)
     return endpoint, proto
 
