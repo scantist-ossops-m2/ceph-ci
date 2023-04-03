@@ -34,7 +34,9 @@ class local_shared_foreign_ptr {
 
   /// Wraps a pointer object and remembers the current core.
   local_shared_foreign_ptr(seastar::foreign_ptr<PtrType> &&fptr)
-    : ptr(seastar::make_lw_shared(std::move(fptr))) {}
+    : ptr(seastar::make_lw_shared(std::move(fptr))) {
+    assert(ptr && *ptr);
+  }
 
   template <typename T>
   friend local_shared_foreign_ptr<T> make_local_shared_foreign(
@@ -58,6 +60,7 @@ public:
 
   /// Creates a copy of this foreign ptr. Only works if the stored ptr is copyable.
   seastar::future<seastar::foreign_ptr<PtrType>> get_foreign() {
+    assert(ptr && *ptr);
     return ptr->copy();
   }
 
@@ -95,6 +98,18 @@ public:
     ptr = std::move(other.ptr);
     return *this;
   }
+
+  /// Copy-assigns a \c local_shared_foreign_ptr<>.
+  local_shared_foreign_ptr& operator=(const local_shared_foreign_ptr& other) noexcept {
+    ptr = other.ptr;
+    return *this;
+  }
+
+  /// Reset the containing ptr
+  void reset() {
+    assert(!ptr || (ptr && *ptr));
+    ptr = nullptr;
+  }
 };
 
 /// Wraps a smart_ptr T in a local_shared_foreign_ptr<>.
@@ -110,6 +125,114 @@ local_shared_foreign_ptr<T> make_local_shared_foreign(T &&ptr) {
   return make_local_shared_foreign<T>(
     seastar::make_foreign(std::forward<T>(ptr)));
 }
+
+template <typename T, typename U>
+inline bool operator==(const local_shared_foreign_ptr<T> &x,
+                       const local_shared_foreign_ptr<U> &y) {
+  return x.get() == y.get();
+}
+
+template <typename T>
+inline bool operator==(const local_shared_foreign_ptr<T> &x, std::nullptr_t) {
+  return x.get() == nullptr;
+}
+
+template <typename T>
+inline bool operator==(std::nullptr_t, const local_shared_foreign_ptr<T>& y) {
+  return nullptr == y.get();
+}
+
+template <typename T, typename U>
+inline bool operator!=(const local_shared_foreign_ptr<T> &x,
+                       const local_shared_foreign_ptr<U> &y) {
+  return x.get() != y.get();
+}
+
+template <typename T>
+inline bool operator!=(const local_shared_foreign_ptr<T> &x, std::nullptr_t) {
+  return x.get() != nullptr;
+}
+
+template <typename T>
+inline bool operator!=(std::nullptr_t, const local_shared_foreign_ptr<T>& y) {
+  return nullptr != y.get();
+}
+
+template <typename T, typename U>
+inline bool operator<(const local_shared_foreign_ptr<T> &x,
+                      const local_shared_foreign_ptr<U> &y) {
+  return x.get() < y.get();
+}
+
+template <typename T>
+inline bool operator<(const local_shared_foreign_ptr<T> &x, std::nullptr_t) {
+  return x.get() < nullptr;
+}
+
+template <typename T>
+inline bool operator<(std::nullptr_t, const local_shared_foreign_ptr<T>& y) {
+  return nullptr < y.get();
+}
+
+template <typename T, typename U>
+inline bool operator<=(const local_shared_foreign_ptr<T> &x,
+                       const local_shared_foreign_ptr<U> &y) {
+  return x.get() <= y.get();
+}
+
+template <typename T>
+inline bool operator<=(const local_shared_foreign_ptr<T> &x, std::nullptr_t) {
+  return x.get() <= nullptr;
+}
+
+template <typename T>
+inline bool operator<=(std::nullptr_t, const local_shared_foreign_ptr<T>& y) {
+  return nullptr <= y.get();
+}
+
+template <typename T, typename U>
+inline bool operator>(const local_shared_foreign_ptr<T> &x,
+                      const local_shared_foreign_ptr<U> &y) {
+  return x.get() > y.get();
+}
+
+template <typename T>
+inline bool operator>(const local_shared_foreign_ptr<T> &x, std::nullptr_t) {
+  return x.get() > nullptr;
+}
+
+template <typename T>
+inline bool operator>(std::nullptr_t, const local_shared_foreign_ptr<T>& y) {
+  return nullptr > y.get();
+}
+
+template <typename T, typename U>
+inline bool operator>=(const local_shared_foreign_ptr<T> &x,
+                       const local_shared_foreign_ptr<U> &y) {
+  return x.get() >= y.get();
+}
+
+template <typename T>
+inline bool operator>=(const local_shared_foreign_ptr<T> &x, std::nullptr_t) {
+  return x.get() >= nullptr;
+}
+
+template <typename T>
+inline bool operator>=(std::nullptr_t, const local_shared_foreign_ptr<T>& y) {
+  return nullptr >= y.get();
+}
+
+}
+
+namespace std {
+
+template <typename T>
+struct hash<crimson::local_shared_foreign_ptr<T>>
+    : private hash<typename std::pointer_traits<T>::element_type *> {
+  size_t operator()(const crimson::local_shared_foreign_ptr<T>& p) const {
+    return hash<typename std::pointer_traits<T>::element_type *>::operator()(p.get());
+  }
+};
 
 }
 
