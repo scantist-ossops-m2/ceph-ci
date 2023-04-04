@@ -37,7 +37,7 @@ using crimson::common::local_conf;
 using crimson::common::sharded_conf;
 using crimson::common::sharded_perf_coll;
 
-static seastar::logger& logger()
+static seastar::logger& logger() 
 {
   return crimson::get_logger(ceph_subsys_osd);
 }
