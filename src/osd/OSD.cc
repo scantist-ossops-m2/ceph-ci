@@ -7376,7 +7376,7 @@ void OSD::ms_fast_dispatch(Message *m)
   if (m->otel_trace.IsValid()) {
     op->osd_parent_span = tracing::osd::tracer.add_span("op-request-created", m->otel_trace);
   } else {
-    op->osd_parent_span = tracing::osd::tracer.start_trace("op-request-created");
+    op->osd_parent_span = tracing::osd::tracer.start_trace("op-request-created", tracing::osd::tracer.is_enabled());
   }
 
   if (m->trace)
