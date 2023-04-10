@@ -2204,8 +2204,8 @@ private:
   bool has_null_fm();
 
   bool new_snap_map_mode();
-  int  store_snap_maps   (const GlobalSnapMapper & gsnap_mapper);
-  int  restore_snap_mapper(GlobalSnapMapper & sm);
+  int  store_snap_maps    (const GlobalSnapMapper & gsnap_mapper, const char *caller);
+  int  restore_snap_mapper(GlobalSnapMapper & sm, const char *caller);
   void foreach_old_snap_mapper_obj(std::function<void(const bufferlist &, const char *shard)> cb);
   void remove_old_snap_mapper_from_db();
   // --------------------------------------------------------

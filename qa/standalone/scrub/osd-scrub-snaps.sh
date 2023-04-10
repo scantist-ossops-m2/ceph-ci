@@ -89,6 +89,9 @@ function create_scenario() {
 
     kill_daemons $dir TERM osd || return 1
 
+    # force early termination
+    # return 0
+
     # Don't need to use ceph_objectstore_tool() function because osd stopped
 
     JSON="$(ceph-objectstore-tool --data-path $dir/${osd} --head --op list obj1)"
@@ -99,16 +102,20 @@ function create_scenario() {
 
     JSON="$(ceph-objectstore-tool --data-path $dir/${osd} --op list obj5 | grep \"snapid\":1)"
     OBJ5SAVE="$JSON"
+: << 'NEW SNAPMAPPER'
     # Starts with a snapmap
     ceph-kvstore-tool bluestore-kv $dir/${osd} list 2> /dev/null > $dir/drk.log
     grep SNA_ $dir/drk.log
     grep "^[pm].*SNA_.*[.]1[.]obj5[.][.]$" $dir/drk.log || return 1
+NEW SNAPMAPPER
     ceph-objectstore-tool --data-path $dir/${osd} --rmtype nosnapmap "$JSON" remove || return 1
+: << 'NEW SNAPMAPPER'
     # Check that snapmap is stil there
     ceph-kvstore-tool bluestore-kv $dir/${osd} list 2> /dev/null > $dir/drk.log
     grep SNA_ $dir/drk.log
     grep "^[pm].*SNA_.*[.]1[.]obj5[.][.]$" $dir/drk.log || return 1
     rm -f $dir/drk.log
+NEW SNAPMAPPER
 
     JSON="$(ceph-objectstore-tool --data-path $dir/${osd} --op list obj5 | grep \"snapid\":4)"
     dd if=/dev/urandom of=$TESTDATA bs=256 count=18
@@ -122,16 +129,22 @@ function create_scenario() {
     ceph-objectstore-tool --data-path $dir/${osd} "$JSON" remove || return 1
 
     # Starts with a snapmap
+: << 'NEW SNAPMAPPER'
     ceph-kvstore-tool bluestore-kv $dir/${osd} list 2> /dev/null > $dir/drk.log
     grep SNA_ $dir/drk.log
     grep "^[pm].*SNA_.*[.]7[.]obj16[.][.]$" $dir/drk.log || return 1
     JSON="$(ceph-objectstore-tool --data-path $dir/${osd} --op list obj16 | grep \"snapid\":7)"
+NEW SNAPMAPPER
+    JSON='["1.0",{"oid":"obj16","key":"","snapid":7,"hash":2060580962,"max":0,"pool":1,"namespace":"","max":0}]'
     ceph-objectstore-tool --data-path $dir/${osd} --rmtype snapmap "$JSON" remove || return 1
+
+: << 'NEW SNAPMAPPER'
     # Check that snapmap is now removed
     ceph-kvstore-tool bluestore-kv $dir/${osd} list 2> /dev/null > $dir/drk.log
     grep SNA_ $dir/drk.log
     ! grep "^[pm].*SNA_.*[.]7[.]obj16[.][.]$" $dir/drk.log || return 1
     rm -f $dir/drk.log
+NEW SNAPMAPPER
 
     JSON="$(ceph-objectstore-tool --data-path $dir/${osd} --head --op list obj2)"
     ceph-objectstore-tool --data-path $dir/${osd} "$JSON" rm-attr snapset || return 1

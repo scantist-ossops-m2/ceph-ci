@@ -3792,7 +3792,7 @@ int OSD::init()
 
   gsnap_mapper = new GlobalSnapMapper(cct);
   ceph_assert(gsnap_mapper != nullptr);
-  store->restore_snap_mapper(*gsnap_mapper);
+  store->restore_snap_mapper(*gsnap_mapper, "OSD::init()");
   //gsnap_mapper->print_snaps(__func__);
 
   // load up pgs (as they previously existed)
@@ -4406,12 +4406,12 @@ PerfCounters* OSD::create_recoverystate_perf()
   return recoverystate_perf;
 }
 
-void OSD::store_snap_maps()
+void OSD::store_snap_maps(const char *caller)
 {
   // GBH:: hold a ref to SnapMapper in the OSD instead of search PGs
-  dout(1) << "GBH::SNAPMAP::" <<__func__ << "::calling store->store_snap_maps()" << dendl;
+  dout(1) << "GBH::SNAPMAP::" <<__func__ << "::" << caller << "::calling store->store_snap_maps()" << dendl;
   //gsnap_mapper->print_snaps(__func__);
-  store->store_snap_maps(*gsnap_mapper);
+  store->store_snap_maps(*gsnap_mapper, caller);
 }
 
 int OSD::shutdown()
@@ -4430,7 +4430,7 @@ int OSD::shutdown()
     if (cct->_conf->osd_fast_shutdown_notify_mon)
       service.prepare_to_stop();
 
-    // There is no state we need to keep wehn running in NULL-FM moode
+    // There is no state we need to keep when running in NULL-FM moode
     if (!store->has_null_manager()) {
       cct->_log->flush();
       _exit(0);
@@ -4491,8 +4491,7 @@ int OSD::shutdown()
     store->prepare_for_fast_shutdown();
 
     std::lock_guard lock(osd_lock);
-    store_snap_maps();
-    // TBD: assert in allocator that nothing is being add
+    store_snap_maps("Fast Shutdown");
     store->umount();
 
     utime_t end_time = ceph_clock_now();
@@ -4515,8 +4514,7 @@ int OSD::shutdown()
   // from racing with on_shutdown and potentially entering the pg after.
   op_shardedwq.drain();
 
-  dout(1) << "calling OSD::store_snap_maps()" << dendl;
-  store_snap_maps();
+  //store_snap_maps("Full Shutdown");
   
   // Shutdown PGs
   {
@@ -4652,7 +4650,7 @@ int OSD::shutdown()
 
   std::lock_guard lock(osd_lock);
 
-  //store_snap_maps();
+  store_snap_maps("Full Shutdown");
   store->umount();
   store.reset();
   dout(10) << "Store synced" << dendl;

@@ -1251,6 +1251,7 @@ void PgScrubber::persist_scrub_results(inconsistent_objs_t&& all_errors)
     std::visit([this](auto& e) { m_store->add_error(m_pg->pool.id, e); }, e);
   }
 
+  //This code stores scrub results in RocksDB::OMAP using OSDriver defined in ScrubStore.h
   ObjectStore::Transaction t;
   m_store->flush(&t);
   m_osds->store->queue_transaction(m_pg->ch, std::move(t), nullptr);

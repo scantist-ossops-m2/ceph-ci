@@ -3337,6 +3337,16 @@ bool ends_with(const string& check, const string& ending)
     return check.size() >= ending.size() && check.rfind(ending) == (check.size() - ending.size());
 }
 
+
+GlobalSnapMapper* store_and_dispose_snap_mapper(GlobalSnapMapper *gsnap_mapper, ObjectStore *store, const char *caller)
+{
+  if (gsnap_mapper && store) {
+    store->store_snap_maps(*gsnap_mapper, caller);
+    delete gsnap_mapper;
+  }
+  return nullptr;
+}
+
 int main(int argc, char **argv)
 {
   string dpath, jpath, pgidstr, op, file, mountpoint, mon_store_path, object;
@@ -3607,7 +3617,12 @@ int main(int argc, char **argv)
 
   GlobalSnapMapper *gsnap_mapper = new GlobalSnapMapper(cct.get());
   ceph_assert(gsnap_mapper != nullptr);
-  fs.get()->restore_snap_mapper(*gsnap_mapper);
+  fs.get()->restore_snap_mapper(*gsnap_mapper, "ceph_objectstore_tool::main()");
+  // make sure all changes to snapmapper will be reflected on disk
+  auto store_snap_mapper = make_scope_guard([&] {
+    gsnap_mapper = store_and_dispose_snap_mapper(gsnap_mapper, fs.get(), "ceph_objectstore_tool::scope_gurad");
+  });
+
   ObjectStoreTool tool = ObjectStoreTool(file_fd, dry_run, gsnap_mapper);
 
   if (op == "dump-export") {
@@ -3708,6 +3723,7 @@ int main(int argc, char **argv)
     FuseStore fuse(fs.get(), mountpoint);
     cout << "mounting fuse at " << mountpoint << " ..." << std::endl;
     int r = fuse.main();
+    gsnap_mapper = store_and_dispose_snap_mapper(gsnap_mapper, fs.get(), "ceph_objectstore_tool::FuseStore");
     fs->umount();
     if (r < 0) {
       cerr << "failed to mount fuse: " << cpp_strerror(r) << std::endl;
@@ -4548,6 +4564,7 @@ out:
     cout <<  ostr.str() << std::endl;
   }
 
+  gsnap_mapper = store_and_dispose_snap_mapper(gsnap_mapper, fs.get(), "ceph_objectstore_tool::main()::out");
   int r = fs->umount();
   if (r < 0) {
     cerr << "umount failed: " << cpp_strerror(r) << std::endl;

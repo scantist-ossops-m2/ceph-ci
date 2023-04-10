@@ -282,13 +282,11 @@ bool Store::empty() const
 
 void Store::flush(ObjectStore::Transaction* t)
 {
-  //#ifdef SNAPMAPPER_OSDriver
-#if 1
+  //This code stores scrub results in RocksDB::OMAP using OSDriver defined in ScrubStore.h
   if (t) {
     OSDriver::OSTransaction txn = driver.get_transaction(t);
     backend.set_keys(results, &txn);
   }
-#endif
   results.clear();
 }
 

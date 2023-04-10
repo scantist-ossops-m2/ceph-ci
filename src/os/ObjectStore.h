@@ -343,8 +343,8 @@ public:
   virtual void prepare_for_fast_shutdown() {}
   virtual bool has_null_manager() const { return false; }
   //virtual bool has_null_manager() { return false; }
-  virtual int  store_snap_maps(const GlobalSnapMapper & gsnap_mapper) {return 0;}
-  virtual int  restore_snap_mapper(GlobalSnapMapper & sm) { return 0;}
+  virtual int  store_snap_maps(const GlobalSnapMapper & gsnap_mapper, const char *caller) {return 0;}
+  virtual int  restore_snap_mapper(GlobalSnapMapper & sm, const char *caller) { return 0;}
   virtual void foreach_old_snap_mapper_obj(std::function<void(const bufferlist &, const char *shard)> cb) {};
   virtual void remove_old_snap_mapper_from_db() {};
   virtual bool new_snap_map_mode() { return false;}
