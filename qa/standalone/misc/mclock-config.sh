@@ -51,7 +51,7 @@ function TEST_profile_builtin_to_custom() {
     for id in $(seq 0 $(expr $OSDS - 1))
     do
       local mclock_profile=$(ceph config get osd.$id osd_mclock_profile)
-      test "$mclock_profile" = "high_client_ops" || return 1
+      test "$mclock_profile" = "balanced" || return 1
     done
 
     # Change the mclock profile to 'custom'
@@ -106,10 +106,11 @@ function TEST_profile_custom_to_builtin() {
     done
 
     # Verify that the default mclock profile is set on the OSDs
+    local orig_mclock_profile
     for id in $(seq 0 $(expr $OSDS - 1))
     do
-      local mclock_profile=$(ceph config get osd.$id osd_mclock_profile)
-      test "$mclock_profile" = "high_client_ops" || return 1
+      orig_mclock_profile=$(ceph config get osd.$id osd_mclock_profile)
+      test "$orig_mclock_profile" = "balanced" || return 1
     done
 
     # Change the mclock profile to 'custom'
@@ -160,12 +161,12 @@ function TEST_profile_custom_to_builtin() {
     # before proceeding to remove the entry from the config monitor db. After
     # the config entry is removed, the original value for the config option is
     # restored and is verified.
-    ceph config set osd osd_mclock_profile high_client_ops || return 1
-    # Verify that the mclock profile is set to 'high_client_ops' on the OSDs
+    ceph config set osd osd_mclock_profile $orig_mclock_profile || return 1
+    # Verify that the mclock profile is set to 'balanced' on the OSDs
     for id in $(seq 0 $(expr $OSDS - 1))
     do
       local mclock_profile=$(ceph config get osd.$id osd_mclock_profile)
-      test "$mclock_profile" = "high_client_ops" || return 1
+      test "$mclock_profile" = "$orig_mclock_profile" || return 1
     done
 
     # Verify that the new value is still in effect
@@ -318,7 +319,7 @@ function TEST_profile_disallow_builtin_params_modify() {
 
     # Verify that the default mclock profile is set on the OSD
     local mclock_profile=$(ceph config get osd.0 osd_mclock_profile)
-    test "$mclock_profile" = "high_client_ops" || return 1
+    test "$mclock_profile" = "balanced" || return 1
 
     declare -a options=("osd_mclock_scheduler_background_recovery_res"
       "osd_mclock_scheduler_client_res")
