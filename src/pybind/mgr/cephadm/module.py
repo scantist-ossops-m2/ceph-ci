@@ -47,7 +47,8 @@ from . import utils
 from . import ssh
 from .migrations import Migrations
 from .services.cephadmservice import MonService, MgrService, MdsService, RgwService, \
-    RbdMirrorService, CrashService, CephadmService, CephfsMirrorService, CephadmAgent
+    RbdMirrorService, CrashService, CephadmService, CephfsMirrorService, CephadmAgent, \
+    CephExporterService
 from .services.ingress import IngressService
 from .services.container import CustomContainerService
 from .services.iscsi import IscsiService
@@ -401,6 +402,12 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             default=True,
             desc='Pass --cgroups=split when cephadm creates containers (currently podman only)'
         ),
+        Option(
+            'log_refresh_metadata',
+            type='bool',
+            default=False,
+            desc='Log all refresh metadata. Includes daemon, device, and host info collected regularly. Only has effect if logging at debug level'
+        ),
     ]
 
     def __init__(self, *args: Any, **kwargs: Any):
@@ -472,6 +479,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             self.max_osd_draining_count = 10
             self.device_enhanced_scan = False
             self.cgroups_split = True
+            self.log_refresh_metadata = False
 
         self.notify(NotifyType.mon_map, None)
         self.config_notify()
@@ -538,7 +546,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             RgwService, RbdMirrorService, GrafanaService, AlertmanagerService,
             PrometheusService, NodeExporterService, LokiService, PromtailService, CrashService, IscsiService,
             IngressService, CustomContainerService, CephfsMirrorService,
-            CephadmAgent, SNMPGatewayService
+            CephadmAgent, SNMPGatewayService, CephExporterService
         ]
 
         # https://github.com/python/mypy/issues/8993
@@ -548,6 +556,8 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         self.mgr_service: MgrService = cast(MgrService, self.cephadm_services['mgr'])
         self.osd_service: OSDService = cast(OSDService, self.cephadm_services['osd'])
         self.iscsi_service: IscsiService = cast(IscsiService, self.cephadm_services['iscsi'])
+
+        self.scheduled_async_actions: List[Callable] = []
 
         self.template = TemplateMgr(self)
 
@@ -691,7 +701,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         Generate a unique random service name
         """
         suffix = daemon_type not in [
-            'mon', 'crash',
+            'mon', 'crash', 'ceph-exporter',
             'prometheus', 'node-exporter', 'grafana', 'alertmanager',
             'container', 'agent', 'snmp-gateway', 'loki', 'promtail'
         ]
@@ -780,6 +790,7 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
             sd.rank_generation = int(d['rank_generation']) if d.get(
                 'rank_generation') is not None else None
             sd.extra_container_args = d.get('extra_container_args')
+            sd.extra_entrypoint_args = d.get('extra_entrypoint_args')
             if 'state' in d:
                 sd.status_desc = d['state']
                 sd.status = {
@@ -1057,6 +1068,10 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
                                                                              error_ok=True, no_fsid=True))
             if code:
                 return 1, '', ('check-host failed:\n' + '\n'.join(err))
+        except ssh.HostConnectionError as e:
+            self.log.exception(f"check-host failed for '{host}' at addr ({e.addr}) due to connection failure: {str(e)}")
+            return 1, '', ('check-host failed:\n'
+                           + f"Failed to connect to {host} at address ({e.addr}): {str(e)}")
         except OrchestratorError:
             self.log.exception(f"check-host failed for '{host}'")
             return 1, '', ('check-host failed:\n'
@@ -1510,8 +1525,8 @@ Then run the following:
                 self.log.info(f"removing: {d.name()}")
 
                 if d.daemon_type != 'osd':
-                    self.cephadm_services[str(d.daemon_type)].pre_remove(d)
-                    self.cephadm_services[str(d.daemon_type)].post_remove(d, is_failed_deploy=False)
+                    self.cephadm_services[daemon_type_to_service(str(d.daemon_type))].pre_remove(d)
+                    self.cephadm_services[daemon_type_to_service(str(d.daemon_type))].post_remove(d, is_failed_deploy=False)
                 else:
                     cmd_args = {
                         'prefix': 'osd purge-actual',
@@ -1529,6 +1544,7 @@ Then run the following:
         self.inventory.rm_host(host)
         self.cache.rm_host(host)
         self.ssh.reset_con(host)
+        self.offline_hosts_remove(host)  # if host was in offline host list, we should remove it now.
         self.event.set()  # refresh stray health check
         self.log.info('Removed host %s' % host)
         return "Removed {} host '{}'".format('offline' if offline else '', host)
@@ -1948,6 +1964,52 @@ Then run the following:
             for dd in dds
         ]
 
+    def _rotate_daemon_key(self, daemon_spec: CephadmDaemonDeploySpec) -> str:
+        self.log.info(f'Rotating authentication key for {daemon_spec.name()}')
+        rc, out, err = self.mon_command({
+            'prefix': 'auth get-or-create-pending',
+            'entity': daemon_spec.entity_name(),
+            'format': 'json',
+        })
+        j = json.loads(out)
+        pending_key = j[0]['pending_key']
+
+        # deploy a new keyring file
+        if daemon_spec.daemon_type != 'osd':
+            daemon_spec = self.cephadm_services[daemon_type_to_service(
+                daemon_spec.daemon_type)].prepare_create(daemon_spec)
+        self.wait_async(CephadmServe(self)._create_daemon(daemon_spec, reconfig=True))
+
+        # try to be clever, or fall back to restarting the daemon
+        rc = -1
+        if daemon_spec.daemon_type == 'osd':
+            rc, out, err = self.tool_exec(
+                args=['ceph', 'tell', daemon_spec.name(), 'rotate-stored-key', '-i', '-'],
+                stdin=pending_key.encode()
+            )
+            if not rc:
+                rc, out, err = self.tool_exec(
+                    args=['ceph', 'tell', daemon_spec.name(), 'rotate-key', '-i', '-'],
+                    stdin=pending_key.encode()
+                )
+        elif daemon_spec.daemon_type == 'mds':
+            rc, out, err = self.tool_exec(
+                args=['ceph', 'tell', daemon_spec.name(), 'rotate-key', '-i', '-'],
+                stdin=pending_key.encode()
+            )
+        elif (
+                daemon_spec.daemon_type == 'mgr'
+                and daemon_spec.daemon_id == self.get_mgr_id()
+        ):
+            rc, out, err = self.tool_exec(
+                args=['ceph', 'tell', daemon_spec.name(), 'rotate-key', '-i', '-'],
+                stdin=pending_key.encode()
+            )
+        if rc:
+            self._daemon_action(daemon_spec, 'restart')
+
+        return f'Rotated key for {daemon_spec.name()}'
+
     def _daemon_action(self,
                        daemon_spec: CephadmDaemonDeploySpec,
                        action: str,
@@ -1959,6 +2021,9 @@ Then run the following:
                                                                                  daemon_spec.daemon_id):
             self.mgr_service.fail_over()
             return ''  # unreachable
+
+        if action == 'rotate-key':
+            return self._rotate_daemon_key(daemon_spec)
 
         if action == 'redeploy' or action == 'reconfig':
             if daemon_spec.daemon_type != 'osd':
@@ -2017,6 +2082,13 @@ Then run the following:
             raise OrchestratorError(
                 f'Unable to schedule redeploy for {daemon_name}: No standby MGRs')
 
+        if action == 'rotate-key':
+            if d.daemon_type not in ['mgr', 'osd', 'mds',
+                                     'rgw', 'crash', 'nfs', 'rbd-mirror', 'iscsi']:
+                raise OrchestratorError(
+                    f'key rotation not supported for {d.daemon_type}'
+                )
+
         self._daemon_action_set_image(action, image, d.daemon_type, d.daemon_id)
 
         self.log.info(f'Schedule {action} daemon {daemon_name}')
@@ -2040,6 +2112,7 @@ Then run the following:
             raise OrchestratorError(
                 f'Unable to schedule redeploy for {daemon_name}: No standby MGRs')
         self.cache.schedule_daemon_action(dd.hostname, dd.name(), action)
+        self.cache.save_host(dd.hostname)
         msg = "Scheduled to {} {} on host '{}'".format(action, daemon_name, dd.hostname)
         self._kick_serve_loop()
         return msg
@@ -2376,7 +2449,7 @@ Then run the following:
                 deps = [self.get_mgr_ip()]
         else:
             need = {
-                'prometheus': ['mgr', 'alertmanager', 'node-exporter', 'ingress'],
+                'prometheus': ['mgr', 'alertmanager', 'node-exporter', 'ingress', 'ceph-exporter'],
                 'grafana': ['prometheus', 'loki'],
                 'alertmanager': ['mgr', 'alertmanager', 'snmp-gateway'],
                 'promtail': ['loki'],
@@ -2674,6 +2747,7 @@ Then run the following:
                 'alertmanager': PlacementSpec(count=1),
                 'prometheus': PlacementSpec(count=1),
                 'node-exporter': PlacementSpec(host_pattern='*'),
+                'ceph-exporter': PlacementSpec(host_pattern='*'),
                 'loki': PlacementSpec(count=1),
                 'promtail': PlacementSpec(host_pattern='*'),
                 'crash': PlacementSpec(host_pattern='*'),
@@ -2785,6 +2859,10 @@ Then run the following:
         return self._apply(spec)
 
     @handle_orch_error
+    def apply_ceph_exporter(self, spec: ServiceSpec) -> str:
+        return self._apply(spec)
+
+    @handle_orch_error
     def apply_crash(self, spec: ServiceSpec) -> str:
         return self._apply(spec)
 
@@ -2866,7 +2944,9 @@ Then run the following:
     def upgrade_start(self, image: str, version: str, daemon_types: Optional[List[str]] = None, host_placement: Optional[str] = None,
                       services: Optional[List[str]] = None, limit: Optional[int] = None) -> str:
         if self.inventory.get_host_with_state("maintenance"):
-            raise OrchestratorError("upgrade aborted - you have host(s) in maintenance state")
+            raise OrchestratorError("Upgrade aborted - you have host(s) in maintenance state")
+        if self.offline_hosts:
+            raise OrchestratorError(f"Upgrade aborted - Some host(s) are currently offline: {self.offline_hosts}")
         if daemon_types is not None and services is not None:
             raise OrchestratorError('--daemon-types and --services are mutually exclusive')
         if daemon_types is not None:

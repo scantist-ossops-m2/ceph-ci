@@ -1525,6 +1525,10 @@ public:
     grade_table.resize(0);
   }
 
+  bool has_snaps() const {
+    return snaps.size() > 0;
+  }
+
   bool is_stretch_pool() const {
     return peering_crush_bucket_count != 0;
   }
@@ -6055,6 +6059,11 @@ struct ObjectRecoveryProgress {
       info.copy_subset.empty() ?
       0 : info.copy_subset.range_end())) &&
       omap_complete;
+  }
+
+  uint64_t estimate_remaining_data_to_recover(const ObjectRecoveryInfo& info) const {
+    // Overestimates in case of clones, but avoids traversing copy_subset
+    return info.size - data_recovered_to;
   }
 
   static void generate_test_instances(std::list<ObjectRecoveryProgress*>& o);
