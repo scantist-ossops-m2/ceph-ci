@@ -545,7 +545,9 @@ class RemoveUtil(object):
     def zap_osd(self, osd: "OSD") -> str:
         "Zaps all devices that are associated with an OSD"
         if osd.hostname is not None:
-            cv_args = ['--', 'lvm', 'zap', '--destroy', '--osd-id', str(osd.osd_id)]
+            cv_args = ['--', 'lvm', 'zap', '--osd-id', str(osd.osd_id)]
+            if not osd.no_destroy:
+                cv_args.append('--destroy')
             with self.mgr.async_timeout_handler(osd.hostname, f'cephadm ceph-volume {" ".join(cv_args)}'):
                 out, err, code = self.mgr.wait_async(CephadmServe(self.mgr)._run_cephadm(
                     osd.hostname, 'osd', 'ceph-volume', cv_args, error_ok=True))
@@ -611,7 +613,8 @@ class OSD:
                  replace: bool = False,
                  force: bool = False,
                  hostname: Optional[str] = None,
-                 zap: bool = False):
+                 zap: bool = False,
+                 no_destroy: bool = False):
         # the ID of the OSD
         self.osd_id = osd_id
 
@@ -650,6 +653,8 @@ class OSD:
 
         # Whether devices associated with the OSD should be zapped (DATA ERASED)
         self.zap = zap
+        # Whether all associated LV devices should be destroyed.
+        self.no_destroy = no_destroy
 
     def start(self) -> None:
         if self.started:
