@@ -21,6 +21,7 @@
 #include "include/err.h"
 #include "common/ceph_mutex.h"
 #include "json_spirit/json_spirit.h"
+#include "test/librados/crimson_utils.h"
 
 #include "gtest/gtest.h"
 
@@ -6924,6 +6925,7 @@ TEST_F(TestLibRBD, ListChildren)
 
 TEST_F(TestLibRBD, ListChildrenTiered)
 {
+  SKIP_IF_CRIMSON();
   REQUIRE_FEATURE(RBD_FEATURE_LAYERING);
 
   librbd::RBD rbd;
@@ -10559,6 +10561,7 @@ TEST_F(TestLibRBD, ExclusiveLock)
 
 TEST_F(TestLibRBD, BreakLock)
 {
+  SKIP_IF_CRIMSON()
   REQUIRE_FEATURE(RBD_FEATURE_EXCLUSIVE_LOCK);
   REQUIRE(!is_rbd_pwl_enabled((CephContext *)_rados.cct()));
 
@@ -12120,6 +12123,7 @@ TEST_F(TestLibRBD, QuiesceWatchPP)
 
 TEST_F(TestLibRBD, QuiesceWatchError)
 {
+  SKIP_IF_CRIMSON()
   librbd::RBD rbd;
   librados::IoCtx ioctx;
   ASSERT_EQ(0, _rados.ioctx_create(m_pool_name.c_str(), ioctx));
@@ -12478,6 +12482,7 @@ TEST_F(TestLibRBD, WriteZeroesThickProvision) {
 
 TEST_F(TestLibRBD, ConcurentOperations)
 {
+  SKIP_IF_CRIMSON()
   REQUIRE_FEATURE(RBD_FEATURE_EXCLUSIVE_LOCK);
 
   librbd::RBD rbd;
