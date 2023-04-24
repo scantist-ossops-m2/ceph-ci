@@ -149,6 +149,11 @@ SnapTrimEvent::with_pg(
             pg,
             object,
             snapid);
+          if (pg->get_peering_state().state_test(PG_STATE_SNAPTRIM_ERROR)) {
+            logger().debug("{}: SNAPTRIM_ERRORS - stopping iteration!", *this);
+            return snap_trim_iertr::make_ready_future<seastar::stop_iteration>(
+              seastar::stop_iteration::yes);
+          }
           subop_blocker.emplace_back(
             op->get_id(),
             std::move(fut)
@@ -525,9 +530,17 @@ SnapTrimObjSubEvent::with_pg(
           });
         });
       });
-    }).handle_error_interruptible(PG::load_obc_ertr::all_same_way([] {
-      return seastar::now();
-    }));
+    }).handle_error_interruptible(
+      // See how classic handles this case at the beginning of
+      // PrimaryLogPG::trim_object,
+      crimson::ct_error::enoent::handle([this](auto &) {
+        logger().error("{}: saw ENOENT while loading obc,"
+                       "setting pg state to SNAPTRIM_ERROR", *this);
+        pg->get_peering_state().state_set(PG_STATE_SNAPTRIM_ERROR);
+        return seastar::now();
+      }),
+      crimson::ct_error::assert_all{"Error in SnapTrimObjSubEvent::with_pg"}
+    );
   });
 }
 
