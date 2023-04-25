@@ -7,9 +7,11 @@ from textwrap import dedent
 
 from ceph_volume import decorators, terminal, process
 from ceph_volume.api import lvm as api
-from ceph_volume.util import system, encryption, disk, arg_validators, str_to_int, merge_dict
-from ceph_volume.util.device import Device
+from ceph_volume.util import system, encryption, disk, str_to_int, merge_dict
+from ceph_volume.util.arg_validators import valid_osd_id
+from ceph_volume.util.device import Device, ValidZapDevice
 from ceph_volume.systemd import systemctl
+from ceph_volume.devices.raw.list import List
 
 logger = logging.getLogger(__name__)
 mlogger = terminal.MultiLogger(__name__)
@@ -77,18 +79,36 @@ def find_associated_devices(osd_id=None, osd_fsid=None):
     part of the OSD, and then return the set of LVs and partitions (if any).
     """
     lv_tags = {}
+    raw_filter = {}
     if osd_id:
+        raw_filter['osd_id'] = int(osd_id)
         lv_tags['ceph.osd_id'] = osd_id
     if osd_fsid:
+        raw_filter['osd_uuid'] = osd_fsid
         lv_tags['ceph.osd_fsid'] = osd_fsid
 
     lvs = api.get_lvs(tags=lv_tags)
-    if not lvs:
-        raise RuntimeError('Unable to find any LV for zapping OSD: '
+    paths = []
+    osd_details = {}
+    if lvs:
+        devices_to_zap = ensure_associated_lvs(lvs, lv_tags)
+        paths = [path for path in set(devices_to_zap) if path]
+    else:
+        # maybe this is a 'raw method' OSD?
+        raw_list = List([]).generate()
+        for osd, details in raw_list.items():
+            if dict(raw_filter.items() & details.items()) == raw_filter:
+                osd_details = details
+                break
+        if osd_details:
+            for dev_type in ['device', 'device_db', 'device_wal']:
+                if osd_details.get(dev_type):
+                    paths.append(osd_details[dev_type])
+    if not paths:
+        raise RuntimeError('Unable to find any devices for zapping OSD: '
                            '%s' % osd_id or osd_fsid)
 
-    devices_to_zap = ensure_associated_lvs(lvs, lv_tags)
-    return [Device(path) for path in set(devices_to_zap) if path]
+    return [Device(path) for path in paths]
 
 
 def ensure_associated_lvs(lvs, lv_tags={}):
@@ -265,13 +285,16 @@ class Zap(object):
 
     @decorators.needs_root
     def zap(self, devices=None):
+        if self.args.osd_id and not self.args.no_systemd:
+            osd_is_running = systemctl.osd_is_active(self.args.osd_id)
+            if osd_is_running:
+                mlogger.error("OSD ID %s is running, stop it with:" % self.args.osd_id)
+                mlogger.error("systemctl stop ceph-osd@%s" % self.args.osd_id)
+                raise SystemExit("Unable to zap devices associated with OSD ID: %s" % self.args.osd_id)
         devices = devices or self.args.devices
 
         for device in devices:
             mlogger.info("Zapping: %s", device.path)
-            if device.is_mapper and not device.is_mpath:
-                terminal.error("Refusing to zap the mapper device: {}".format(device))
-                raise SystemExit(1)
             if device.is_lvm_member:
                 self.zap_lvm_member(device)
             if device.is_lv:
@@ -290,17 +313,6 @@ class Zap(object):
             terminal.success(
                 "Zapping successful for OSD: %s" % identifier
             )
-
-    @decorators.needs_root
-    def zap_osd(self):
-        if self.args.osd_id and not self.args.no_systemd:
-            osd_is_running = systemctl.osd_is_active(self.args.osd_id)
-            if osd_is_running:
-                mlogger.error("OSD ID %s is running, stop it with:" % self.args.osd_id)
-                mlogger.error("systemctl stop ceph-osd@%s" % self.args.osd_id)
-                raise SystemExit("Unable to zap devices associated with OSD ID: %s" % self.args.osd_id)
-        devices = find_associated_devices(self.args.osd_id, self.args.osd_fsid)
-        self.zap(devices)
 
     def dmcrypt_close(self, dmcrypt_uuid):
         dmcrypt_path = "/dev/mapper/{}".format(dmcrypt_uuid)
@@ -365,7 +377,8 @@ class Zap(object):
             'devices',
             metavar='DEVICES',
             nargs='*',
-            type=arg_validators.ValidZapDevice(gpt_ok=True),
+            # type=arg_validators.ValidZapDevice(gpt_ok=True),
+            type=str,
             default=[],
             help='Path to one or many lv (as vg/lv), partition (as /dev/sda1) or device (as /dev/sda)'
         )
@@ -379,7 +392,7 @@ class Zap(object):
 
         parser.add_argument(
             '--osd-id',
-            type=arg_validators.valid_osd_id,
+            type=valid_osd_id,
             help='Specify an OSD ID to detect associated devices for zapping',
         )
 
@@ -395,6 +408,13 @@ class Zap(object):
             help='Skip systemd unit checks',
         )
 
+        parser.add_argument(
+            '--force',
+            action='store_true',
+            default=False,
+            help='Do not check if the corresponding OSD is present in osd crush tree',
+        )
+
         if len(self.argv) == 0:
             print(sub_command_help)
             return
@@ -402,6 +422,8 @@ class Zap(object):
         self.args = parser.parse_args(self.argv)
 
         if self.args.osd_id or self.args.osd_fsid:
-            self.zap_osd()
-        else:
-            self.zap()
+            self.args.devices = find_associated_devices(self.args.osd_id, self.args.osd_fsid)
+            self.args.devices = [device.path for device in self.args.devices]
+        self.args.devices = [ValidZapDevice(device, force=self.args.force).check_device() for device in self.args.devices]
+
+        self.zap()

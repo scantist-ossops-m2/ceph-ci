@@ -1,10 +1,10 @@
 import logging
 import os
+import fcntl
 import re
 import stat
 import time
 from ceph_volume import process
-from ceph_volume.api import lvm
 from ceph_volume.util.system import get_file_contents
 
 
@@ -740,12 +740,21 @@ def is_locked_raw_device(disk_path):
     To detect that case, the device is opened in Read/Write and exclusive mode
     """
     open_flags = (os.O_RDWR | os.O_EXCL)
+    lockf_flags = (fcntl.LOCK_EX | fcntl.LOCK_NB)
     open_mode = 0
     fd = None
 
     try:
         fd = os.open(disk_path, open_flags, open_mode)
+    except FileNotFoundError:
+        raise
     except OSError:
+        return 1
+
+    try:
+        fcntl.lockf(fd, lockf_flags)
+    except BlockingIOError:
+        os.close(fd)
         return 1
 
     try:
@@ -845,7 +854,7 @@ def get_devices(_sys_block_path='/sys/block', device=''):
 
     block_devs = get_block_devs_sysfs(_sys_block_path)
 
-    block_types = ['disk', 'mpath']
+    block_types = ['disk', 'mpath', 'lvm']
     if allow_loop_devices():
         block_types.append('loop')
 
@@ -862,9 +871,11 @@ def get_devices(_sys_block_path='/sys/block', device=''):
             continue
 
         # If the mapper device is a logical volume it gets excluded
-        if is_mapper_device(diskname):
-            if lvm.get_device_lvs(diskname):
-                continue
+#        if is_mapper_device(diskname):
+#            if lvm.get_device_lvs(diskname):
+#                continue
+#        if block[2] and has_bluestore_label(diskname):
+#            continue
 
         # all facts that have no defaults
         # (<name>, <path relative to _sys_block_path>)
