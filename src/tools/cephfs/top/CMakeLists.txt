@@ -7,5 +7,4 @@ if(WITH_TESTS)
 endif()
 
 set(MINIMUM_COMPATIBLE_VERSION 3.6.0)
-find_package(Python3 ${MINIMUM_COMPATIBLE_VERSION} REQUIRED
-  COMPONENTS Interpreter Development)
+find_package(Python3 ${MINIMUM_COMPATIBLE_VERSION} REQUIRED)
