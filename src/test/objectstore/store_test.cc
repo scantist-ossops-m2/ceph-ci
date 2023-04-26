@@ -26,7 +26,6 @@
 #include <gtest/gtest.h>
 
 #include "os/ObjectStore.h"
-#include "os/filestore/FileStore.h"
 #if defined(WITH_BLUESTORE)
 #include "os/bluestore/BlueStore.h"
 #include "os/bluestore/BlueFS.h"
@@ -6839,7 +6838,6 @@ INSTANTIATE_TEST_SUITE_P(
   StoreTest,
   ::testing::Values(
     "memstore",
-    "filestore",
 #if defined(WITH_BLUESTORE)
     "bluestore",
 #endif
@@ -6851,7 +6849,6 @@ INSTANTIATE_TEST_SUITE_P(
   StoreTestSpecificAUSize,
   ::testing::Values(
     "memstore",
-    "filestore",
 #if defined(WITH_BLUESTORE)
     "bluestore",
 #endif
@@ -6863,7 +6860,6 @@ INSTANTIATE_TEST_SUITE_P(
   StoreTestOmapUpgrade,
   ::testing::Values(
     "memstore",
-    "filestore",
 #if defined(WITH_BLUESTORE)
     "bluestore",
 #endif
@@ -7112,10 +7108,14 @@ TEST_P(StoreTestSpecificAUSize, OnodeSizeTracking) {
   coll_t cid;
   ghobject_t hoid(hobject_t("test_hint", "", CEPH_NOSNAP, 0, -1, ""));
   size_t obj_size = 4 * 1024  * 1024;
+  uint64_t total_bytes_prev;
   uint64_t total_bytes, total_bytes2;
   uint64_t total_onodes;
   get_mempool_stats(&total_bytes, &total_onodes);
-  ASSERT_EQ(total_onodes, 0u);
+  total_bytes_prev = total_bytes;
+  // 5u for onode_cache_shards vector
+  ASSERT_EQ(total_onodes, 5u);
+  ASSERT_EQ(total_bytes, 40u);
 
   auto ch = store->create_new_collection(cid);
   {
@@ -7134,8 +7134,8 @@ TEST_P(StoreTestSpecificAUSize, OnodeSizeTracking) {
     ASSERT_EQ(r, 0);
   }
   get_mempool_stats(&total_bytes, &total_onodes);
-  ASSERT_NE(total_bytes, 0u);
-  ASSERT_EQ(total_onodes, 1u);
+  ASSERT_GT(total_bytes - total_bytes_prev, 0u);
+  ASSERT_EQ(total_onodes, 6u);
 
   {
     ObjectStore::Transaction t;
@@ -7155,7 +7155,7 @@ TEST_P(StoreTestSpecificAUSize, OnodeSizeTracking) {
     }
     get_mempool_stats(&total_bytes2, &total_onodes);
     ASSERT_NE(total_bytes2, 0u);
-    ASSERT_EQ(total_onodes, 1u);
+    ASSERT_EQ(total_onodes, 6u);
   }
   {
     cout <<" mempool dump:\n";
@@ -7174,7 +7174,7 @@ TEST_P(StoreTestSpecificAUSize, OnodeSizeTracking) {
   }
   get_mempool_stats(&total_bytes, &total_onodes);
   ASSERT_NE(total_bytes, 0u);
-  ASSERT_EQ(total_onodes, 1u);
+  ASSERT_EQ(total_onodes, 6u);
 
   {
     cout <<" mempool dump:\n";
@@ -10393,6 +10393,14 @@ TEST_P(StoreTestSpecificAUSize, SpilloverTest) {
   SetVal(g_conf(), "bluestore_block_db_create", "true");
   SetVal(g_conf(), "bluestore_block_db_size", "3221225472");
   SetVal(g_conf(), "bluestore_volume_selection_policy", "rocksdb_original");
+  // original RocksDB settings used before https://github.com/ceph/ceph/pull/47221/
+  // which enable BlueFS spillover.
+  SetVal(g_conf(), "bluestore_rocksdb_options",
+    "compression=kNoCompression,max_write_buffer_number=4,"
+    "min_write_buffer_number_to_merge=1,recycle_log_file_num=4,"
+    "write_buffer_size=268435456,writable_file_max_buffer_size=0,"
+    "compaction_readahead_size=2097152,max_background_compactions=2,"
+    "max_total_wal_size=1073741824");
 
   g_conf().apply_changes(nullptr);
 

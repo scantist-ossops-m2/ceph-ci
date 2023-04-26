@@ -80,7 +80,7 @@ pool named ``swimmingpool``, run this command:
 
 If you don't specify a pool when you create an image, then the image will be
 stored in the default pool ``rbd``. For example, if you ran this command, you
-wuold create a 1GB image named ``foo`` that is stored in the default pool
+would create a 1GB image named ``foo`` that is stored in the default pool
 ``rbd``:
 
 .. prompt:: bash $
@@ -168,9 +168,7 @@ For example:
 .. note:: Other naming conventions are possible, and might conflict with the
    naming convention described here. For example, ``userid/<uuid>`` is a
    possible name for an RBD image, and such a name might (at the least) be
-   confusing. In the intrest of helping the reader of this documentation to
-   form a clear idea of the way that RBD images are named, we offer this
-   syntax: ``rbd -p {pool-name} | info {image-name}``.
+   confusing. 
 
 Resizing a Block Device Image
 =============================

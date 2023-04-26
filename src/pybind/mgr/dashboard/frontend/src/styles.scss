@@ -217,3 +217,23 @@ a.btn-light {
 .badge-dark {
   @extend .badge, .bg-dark;
 }
+
+formly-form {
+  .ng-touched.ng-invalid {
+    @extend .is-invalid;
+  }
+
+  .ng-touched.ng-valid {
+    @extend .is-valid;
+  }
+
+  .form-label {
+    @extend .cd-col-form-label;
+    text-align: start;
+    width: 50%;
+
+    span[aria-hidden='true'] {
+      color: $danger;
+    }
+  }
+}
