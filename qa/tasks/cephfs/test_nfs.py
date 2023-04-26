@@ -866,6 +866,7 @@ class TestNFS(MgrTestCase):
         self._create_cluster_with_fs(self.fs_name, mnt_pt)
         self.ctx.cluster.run(args=['mkdir', f'{mnt_pt}/testdir'])
         self.ctx.cluster.run(args=['ln', '-s', '/testdir', '/testdir_symlink'])
+        self.ctx.cluster.run(args=['sudo', 'ls', '-l', '/'])
         try:
             self._create_export(export_id='123',
                                 extra_cmd=['--pseudo-path',
