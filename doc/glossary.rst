@@ -14,10 +14,10 @@
                 was designed specifically for use with Ceph. BlueStore was
                 introduced in the Ceph Kraken release. In the Ceph Luminous
                 release, BlueStore became Ceph's default storage back end,
-                supplanting FileStore. Unlike :term:`filestore`, BlueStore
-                stores objects directly on Ceph block devices without any file
-                system interface. Since Luminous (12.2), BlueStore has been
-                Ceph's default and recommended storage back end.
+                supplanting FileStore. BlueStore stores objects directly on 
+                Ceph block devices without any file system interface. 
+                Since Luminous (12.2), BlueStore has been Ceph's default 
+                and recommended storage back end.
 
         Bucket
                 In the context of :term:`RGW`, a bucket is a group of objects.
@@ -234,10 +234,6 @@
                 Another name for :term:`Dashboard`.
 
 	Dashboard Plugin
-	filestore
-                A back end for OSD daemons, where a Journal is needed and files
-                are written to the filesystem.
-
         FQDN
                 **F**\ully **Q**\ualified **D**\omain **N**\ame. A domain name
                 that is applied to a node in a network and that specifies the
@@ -310,6 +306,20 @@
                 state of the :term:`Realm`. The period stores the configuration
                 state of a multi-site configuration. When the period is updated,
                 the "epoch" is said thereby to have been changed.
+
+        Placement Groups (PGs)
+                Placement groups (PGs) are subsets of each logical Ceph pool.
+                Placement groups perform the function of placing objects (as a
+                group) into OSDs. Ceph manages data internally at
+                placement-group granularity: this scales better than would
+                managing individual (and therefore more numerous) RADOS
+                objects. A cluster that has a larger number of placement groups
+                (for example, 100 per OSD) is better balanced than an otherwise
+                identical cluster with a smaller number of placement groups. 
+                
+                Ceph's internal RADOS objects are each mapped to a specific
+                placement group, and each placement group belongs to exactly
+                one Ceph pool. 
 
 	:ref:`Pool<rados_pools>`
 		A pool is a logical partition used to store objects.
