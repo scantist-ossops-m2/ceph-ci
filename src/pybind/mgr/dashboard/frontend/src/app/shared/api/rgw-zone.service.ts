@@ -52,18 +52,30 @@ export class RgwZoneService {
     });
   }
 
+  delete(zonegroupName: string, zoneName: string, deletePools: boolean): Observable<any> {
+    return this.rgwDaemonService.request((params: HttpParams) => {
+      params = params.appendAll({
+        zonegroup_name: zonegroupName,
+        zone_name: zoneName,
+        delete_pools: deletePools
+      });
+      return this.http.delete(`${this.url}/${zoneName}`, { params: params });
+    });
+  }
+
   getZoneTree(zone: RgwZone, defaultZoneId: string, zonegroup?: RgwZonegroup, realm?: RgwRealm) {
     let nodes = {};
     let zoneIds = [];
     nodes['id'] = zone.id;
     zoneIds.push(zone.id);
-    nodes['name'] = zone.name + ' (zone)';
+    nodes['name'] = zone.name;
     nodes['info'] = zone;
     nodes['icon'] = Icons.deploy;
     nodes['parent'] = zonegroup ? zonegroup.name : '';
     nodes['second_parent'] = realm ? realm.name : '';
     nodes['is_default'] = zone.id === defaultZoneId ? true : false;
     nodes['is_master'] = zonegroup && zonegroup.master_zone === zone.id ? true : false;
+    nodes['type'] = 'zone';
     return {
       nodes: nodes,
       zoneIds: zoneIds

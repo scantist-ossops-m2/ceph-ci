@@ -35,7 +35,16 @@ export class DataGatewayService {
     });
   }
 
-  form(dataPath: string): Observable<JsonFormUISchema> {
+  delete(dataPath: string, key: string): Observable<any> {
+    const { url, version } = this.getUrlAndVersion(dataPath);
+
+    return this.http.delete<any>(`${url}/${key}`, {
+      headers: { Accept: `application/vnd.ceph.api.v${version}+json` },
+      observe: 'response'
+    });
+  }
+
+  form(dataPath: string, formPath: string): Observable<JsonFormUISchema> {
     const cacheable = this.getCacheable(dataPath, 'get');
     if (this.cache[cacheable] === undefined) {
       const { url, version } = this.getUrlAndVersion(dataPath);
@@ -46,7 +55,7 @@ export class DataGatewayService {
     }
     return this.cache[cacheable].pipe(
       map((response) => {
-        return this.crudFormAdapater.processJsonSchemaForm(response);
+        return this.crudFormAdapater.processJsonSchemaForm(response, formPath);
       })
     );
   }
