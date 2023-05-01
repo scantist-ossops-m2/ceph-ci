@@ -1639,14 +1639,30 @@ void OSDService::enqueue_front(OpSchedulerItem&& qi)
 
 void OSDService::queue_recovery_context(
   PG *pg,
-  GenContext<ThreadPool::TPHandle&> *c)
+  GenContext<ThreadPool::TPHandle&> *c,
+  uint64_t cost,
+  int priority)
 {
   epoch_t e = get_osdmap_epoch();
+
+  uint64_t cost_for_queue = [this, cost] {
+    if (cct->_conf->osd_op_queue == "mclock_scheduler") {
+      return cost;
+    } else {
+      /* We retain this legacy behavior for WeightedPriorityQueue. It seems to
+       * require very large costs for several messages in order to do any
+       * meaningful amount of throttling.  This branch should be removed after
+       * Reef.
+       */
+      return cct->_conf->osd_recovery_cost;
+    }
+  }();
+
   enqueue_back(
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(
-	new PGRecoveryContext(pg->get_pgid(), c, e)),
-      cct->_conf->osd_recovery_cost,
+	new PGRecoveryContext(pg->get_pgid(), c, e, priority)),
+      cost_for_queue,
       cct->_conf->osd_recovery_priority,
       ceph_clock_now(),
       0,
@@ -1966,20 +1982,37 @@ void OSDService::prune_sent_ready_to_merge(const OSDMapRef& osdmap)
 // ---
 
 void OSDService::_queue_for_recovery(
-  std::pair<epoch_t, PGRef> p,
+  pg_awaiting_throttle_t p,
   uint64_t reserved_pushes)
 {
   ceph_assert(ceph_mutex_is_locked_by_me(recovery_lock));
+
+  uint64_t cost_for_queue = [this, &reserved_pushes, &p] {
+    if (cct->_conf->osd_op_queue == "mclock_scheduler") {
+      return p.cost_per_object * reserved_pushes;
+    } else {
+      /* We retain this legacy behavior for WeightedPriorityQueue. It seems to
+       * require very large costs for several messages in order to do any
+       * meaningful amount of throttling.  This branch should be removed after
+       * Reef.
+       */
+      return cct->_conf->osd_recovery_cost;
+    }
+  }();
+
   enqueue_back(
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(
 	new PGRecovery(
-	  p.second->get_pgid(), p.first, reserved_pushes)),
-      cct->_conf->osd_recovery_cost,
+	  p.pg->get_pgid(),
+	  p.epoch_queued,
+          reserved_pushes,
+	  p.priority)),
+      cost_for_queue,
       cct->_conf->osd_recovery_priority,
       ceph_clock_now(),
       0,
-      p.first));
+      p.epoch_queued));
 }
 
 // ====================================================================
@@ -2131,6 +2164,17 @@ int OSD::write_meta(CephContext *cct, ObjectStore *store, uuid_d& cluster_fsid, 
     if (r < 0)
       return r;
   }
+
+  r = store->write_meta("ceph_version_when_created", pretty_version_to_str());
+  if (r < 0)
+    return r;
+
+  ostringstream created_at;
+  utime_t now = ceph_clock_now();
+  now.gmtime(created_at);
+  r = store->write_meta("created_at", created_at.str());
+  if (r < 0)
+    return r;
 
   r = store->write_meta("ready", "ready");
   if (r < 0)
@@ -2422,6 +2466,7 @@ class OSDSocketHook : public AdminSocketHook {
 public:
   explicit OSDSocketHook(OSD *o) : osd(o) {}
   int call(std::string_view prefix, const cmdmap_t& cmdmap,
+	   const bufferlist& inbl,
 	   Formatter *f,
 	   std::ostream& ss,
 	   bufferlist& out) override {
@@ -2786,6 +2831,8 @@ will start to track new ops received afterwards.";
     store->generate_db_histogram(f);
   } else if (prefix == "flush_store_cache") {
     store->flush_cache(&ss);
+  } else if (prefix == "rotate-stored-key") {
+    store->write_meta("osd_key", inbl.to_str());
   } else if (prefix == "dump_pgstate_history") {
     f->open_object_section("pgstate_history");
     f->open_array_section("pgs");
@@ -3171,6 +3218,7 @@ int OSD::run_osd_bench_test(
   ostream &ss)
 {
   int ret = 0;
+  srand(time(NULL) % (unsigned long) -1);
   uint32_t duration = cct->_conf->osd_bench_duration;
 
   if (bsize > (int64_t) cct->_conf->osd_bench_max_block_size) {
@@ -3252,12 +3300,6 @@ int OSD::run_osd_bench_test(
     }
   }
 
-  bufferlist bl;
-  bufferptr bp(bsize);
-  memset(bp.c_str(), 'a', bp.length());
-  bl.push_back(std::move(bp));
-  bl.rebuild_page_aligned();
-
   {
     C_SaferCond waiter;
     if (!service.meta_ch->flush_commit(&waiter)) {
@@ -3265,10 +3307,15 @@ int OSD::run_osd_bench_test(
     }
   }
 
+  bufferlist bl;
   utime_t start = ceph_clock_now();
   for (int64_t pos = 0; pos < count; pos += bsize) {
     char nm[30];
     unsigned offset = 0;
+    bufferptr bp(bsize);
+    memset(bp.c_str(), rand() & 0xff, bp.length());
+    bl.push_back(std::move(bp));
+    bl.rebuild_page_aligned();
     if (onum && osize) {
       snprintf(nm, sizeof(nm), "disk_bw_test_%d", (int)(rand() % onum));
       offset = rand() % (osize / bsize) * bsize;
@@ -3283,6 +3330,7 @@ int OSD::run_osd_bench_test(
     if (!onum || !osize) {
       cleanupt.remove(coll_t::meta(), ghobject_t(soid));
     }
+    bl.clear();
   }
 
   {
@@ -3312,6 +3360,7 @@ class TestOpsSocketHook : public AdminSocketHook {
 public:
   TestOpsSocketHook(OSDService *s, ObjectStore *st) : service(s), store(st) {}
   int call(std::string_view command, const cmdmap_t& cmdmap,
+	   const bufferlist&,
 	   Formatter *f,
 	   std::ostream& errss,
 	   bufferlist& out) override {
@@ -3813,7 +3862,8 @@ int OSD::init()
     derr << "unable to obtain rotating service keys; retrying" << dendl;
     ++rotating_auth_attempts;
     if (rotating_auth_attempts > g_conf()->max_rotating_auth_attempts) {
-        derr << __func__ << " wait_auth_rotating timed out" << dendl;
+        derr << __func__ << " wait_auth_rotating timed out"
+	     <<" -- maybe I have a clock skew against the monitors?" << dendl;
 	exit(1);
     }
   }
@@ -3973,6 +4023,10 @@ void OSD::final_init()
   r = admin_socket->register_command("flush_store_cache",
                                      asok_hook,
                                      "Flush bluestore internal cache");
+  ceph_assert(r == 0);
+  r = admin_socket->register_command("rotate-stored-key",
+                                     asok_hook,
+                                     "Update the stored osd_key");
   ceph_assert(r == 0);
   r = admin_socket->register_command("dump_pgstate_history",
 				     asok_hook,
@@ -4311,6 +4365,12 @@ int OSD::shutdown()
     cct->_conf.apply_changes(nullptr);
   }
 
+  // stop MgrClient earlier as it's more like an internal consumer of OSD
+  // 
+  // should occur before unmounting the database in fast-shutdown to avoid
+  // a race condition (see https://tracker.ceph.com/issues/56101)
+  mgrc.shutdown();
+
   if (cct->_conf->osd_fast_shutdown) {
     // first, stop new task from being taken from op_shardedwq
     // and clear all pending tasks
@@ -4349,9 +4409,6 @@ int OSD::shutdown()
     // now it is safe to exit
     _exit(0);
   }
-
-  // stop MgrClient earlier as it's more like an internal consumer of OSD
-  mgrc.shutdown();
 
   service.start_shutdown();
 
@@ -6785,6 +6842,18 @@ void OSD::_collect_metadata(map<string,string> *pm)
     osdspec_affinity = "";
   }
   (*pm)["osdspec_affinity"] = osdspec_affinity;
+  string ceph_version_when_created;
+  r = store->read_meta("ceph_version_when_created", &ceph_version_when_created);
+  if (r <0 || ceph_version_when_created.empty()) {
+    ceph_version_when_created = "";
+  }
+  (*pm)["ceph_version_when_created"] = ceph_version_when_created;
+  string created_at;
+  r = store->read_meta("created_at", &created_at);
+  if (r < 0 || created_at.empty()) {
+    created_at = "";
+  }
+  (*pm)["created_at"] = created_at;
   store->collect_metadata(pm);
 
   collect_sys_info(pm, cct);
@@ -9603,7 +9672,7 @@ unsigned OSDService::get_target_pg_log_entries() const
 }
 
 void OSD::do_recovery(
-  PG *pg, epoch_t queued, uint64_t reserved_pushes,
+  PG *pg, epoch_t queued, uint64_t reserved_pushes, int priority,
   ThreadPool::TPHandle &handle)
 {
   uint64_t started = 0;
@@ -9620,13 +9689,14 @@ void OSD::do_recovery(
     std::lock_guard l(service.sleep_lock);
     if (recovery_sleep > 0 && service.recovery_needs_sleep) {
       PGRef pgref(pg);
-      auto recovery_requeue_callback = new LambdaContext([this, pgref, queued, reserved_pushes](int r) {
+      auto recovery_requeue_callback = new LambdaContext(
+	[this, pgref, queued, reserved_pushes, priority](int r) {
         dout(20) << "do_recovery wake up at "
                  << ceph_clock_now()
 	         << ", re-queuing recovery" << dendl;
 	std::lock_guard l(service.sleep_lock);
         service.recovery_needs_sleep = false;
-        service.queue_recovery_after_sleep(pgref.get(), queued, reserved_pushes);
+        service.queue_recovery_after_sleep(pgref.get(), queued, reserved_pushes, priority);
       });
 
       // This is true for the first recovery op and when the previous recovery op
@@ -9778,8 +9848,7 @@ void OSD::enqueue_op(spg_t pg, OpRequestRef&& op, epoch_t epoch)
 
   op->mark_queued_for_pg();
   logger->tinc(l_osd_op_before_queue_op_lat, latency);
-  if (type == MSG_OSD_PG_PUSH ||
-      type == MSG_OSD_PG_PUSH_REPLY) {
+  if (PGRecoveryMsg::is_recovery_msg(op)) {
     op_shardedwq.queue(
       OpSchedulerItem(
         unique_ptr<OpSchedulerItem::OpQueueable>(new PGRecoveryMsg(pg, std::move(op))),
@@ -10188,9 +10257,9 @@ bool OSD::maybe_override_options_for_qos(const std::set<std::string> *changed)
       !unsupported_objstore_for_qos()) {
     static const std::map<std::string, uint64_t> recovery_qos_defaults {
       {"osd_recovery_max_active", 0},
-      {"osd_recovery_max_active_hdd", 10},
-      {"osd_recovery_max_active_ssd", 20},
-      {"osd_max_backfills", 10},
+      {"osd_recovery_max_active_hdd", 3},
+      {"osd_recovery_max_active_ssd", 10},
+      {"osd_max_backfills", 1},
     };
 
     // Check if we were called because of a configuration change
@@ -10253,17 +10322,28 @@ bool OSD::maybe_override_options_for_qos(const std::set<std::string> *changed)
         }
       }
     } else { // if (changed != nullptr) (osd boot-up)
-      // Override the default recovery max active and max backfills to
-      // higher values based on the type of backing device (hdd/ssd).
-      // This section is executed only during osd boot-up.
+      /**
+       * This section is executed only during osd boot-up.
+       * Override the default recovery max active (hdd & ssd) and max backfills
+       * config options to either the mClock defaults or retain their respective
+       * overridden values before the osd was restarted.
+       */
       for (auto opt : recovery_qos_defaults) {
+        /**
+         * Note: set_val_default doesn't overwrite an option if it was earlier
+         * set at a config level greater than CONF_DEFAULT. It doesn't return
+         * a status. With get_val(), the config subsystem is guaranteed to
+         * either return the overridden value (if any) or the default value.
+         */
         cct->_conf.set_val_default(opt.first, std::to_string(opt.second));
+        auto opt_val = cct->_conf.get_val<uint64_t>(opt.first);
+        dout(1) << __func__ << " "
+                << opt.first << " set to " << opt_val
+                << dendl;
         if (opt.first == "osd_max_backfills") {
-          service.local_reserver.set_max(opt.second);
-          service.remote_reserver.set_max(opt.second);
+          service.local_reserver.set_max(opt_val);
+          service.remote_reserver.set_max(opt_val);
         }
-        dout(1) << __func__ << " Set default value for " << opt.first
-                << " to " << opt.second << dendl;
       }
     }
     return true;
@@ -10887,8 +10967,8 @@ OSDShard::OSDShard(
     shard_lock_name(shard_name + "::shard_lock"),
     shard_lock{make_mutex(shard_lock_name)},
     scheduler(ceph::osd::scheduler::make_scheduler(
-      cct, osd->num_shards, osd->store->is_rotational(),
-      osd->store->get_type())),
+      cct, osd->whoami, osd->num_shards, id, osd->store->is_rotational(),
+      osd->store->get_type(), osd->monc)),
     context_queue(sdata_wait_lock, sdata_cond)
 {
   dout(0) << "using op scheduler " << *scheduler << dendl;
@@ -11274,9 +11354,6 @@ void OSD::ShardedOpWQ::_enqueue(OpSchedulerItem&& item) {
 
   OSDShard* sdata = osd->shards[shard_index];
   assert (NULL != sdata);
-  if (sdata->get_scheduler_type() == "mClockScheduler") {
-    item.maybe_set_is_qos_item();
-  }
 
   dout(20) << __func__ << " " << item << dendl;
 

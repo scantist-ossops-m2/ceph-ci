@@ -11,9 +11,9 @@ Run a command of this form to list hosts associated with the cluster:
 
 .. prompt:: bash #
 
-   ceph orch host ls [--format yaml] [--host-pattern <name>] [--label <label>] [--host-status <status>]
+   ceph orch host ls [--format yaml] [--host-pattern <name>] [--label <label>] [--host-status <status>] [--detail]
 
-In commands of this form, the arguments "host-pattern", "label" and
+In commands of this form, the arguments "host-pattern", "label", and
 "host-status" are optional and are used for filtering. 
 
 - "host-pattern" is a regex that matches against hostnames and returns only
@@ -24,6 +24,16 @@ In commands of this form, the arguments "host-pattern", "label" and
 - Any combination of these filtering flags is valid. It is possible to filter
   against name, label and status simultaneously, or to filter against any
   proper subset of name, label and status.
+
+The "detail" parameter provides more host related information for cephadm based
+clusters. For example:
+
+.. prompt:: bash #
+
+   # ceph orch host ls --detail 
+   HOSTNAME     ADDRESS         LABELS  STATUS  VENDOR/MODEL                           CPU    HDD      SSD  NIC  
+   ceph-master  192.168.122.73  _admin          QEMU (Standard PC (Q35 + ICH9, 2009))  4C/4T  4/1.6TB  -    1    
+   1 hosts in cluster
 
 .. _cephadm-adding-hosts:    
     
@@ -193,10 +203,18 @@ Place a host in and out of maintenance mode (stops all Ceph daemons on host):
 
 .. prompt:: bash #
 
-   ceph orch host maintenance enter <hostname> [--force]
+   ceph orch host maintenance enter <hostname> [--force] [--yes-i-really-mean-it]
    ceph orch host maintenance exit <hostname>
 
-Where the force flag when entering maintenance allows the user to bypass warnings (but not alerts)
+The ``--force`` flag allows the user to bypass warnings (but not alerts). The ``--yes-i-really-mean-it``
+flag bypasses all safety checks and will attempt to force the host into maintenance mode no
+matter what.
+
+.. warning:: Using the --yes-i-really-mean-it flag to force the host to enter maintenance
+   mode can potentially cause loss of data availability, the mon quorum to break down due
+   to too few running monitors, mgr module commands (such as ``ceph orch . . .`` commands)
+   to be become unresponsive, and a number of other possible issues. Please only use this
+   flag if you're absolutely certain you know what you're doing.
 
 See also :ref:`cephadm-fqdn`
 
@@ -247,9 +265,10 @@ Many hosts can be added at once using
     hostname: node-02
     addr: 192.168.0.12
 
-This can be combined with service specifications (below) to create a cluster spec
-file to deploy a whole cluster in one command.  see ``cephadm bootstrap --apply-spec``
-also to do this during bootstrap. Cluster SSH Keys must be copied to hosts prior to adding them.
+This can be combined with :ref:`service specifications<orchestrator-cli-service-spec>`
+to create a cluster spec file to deploy a whole cluster in one command.  see
+``cephadm bootstrap --apply-spec`` also to do this during bootstrap. Cluster
+SSH Keys must be copied to hosts prior to adding them.
 
 Setting the initial CRUSH location of host
 ==========================================
