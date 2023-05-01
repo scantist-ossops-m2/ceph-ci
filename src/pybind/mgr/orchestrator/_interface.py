@@ -406,7 +406,7 @@ class Orchestrator(object):
         """
         raise NotImplementedError()
 
-    def enter_host_maintenance(self, hostname: str, force: bool = False) -> OrchResult:
+    def enter_host_maintenance(self, hostname: str, force: bool = False, yes_i_really_mean_it: bool = False) -> OrchResult:
         """
         Place a host in maintenance, stopping daemons and disabling it's systemd target
         """
@@ -475,6 +475,7 @@ class Orchestrator(object):
             'mon': self.apply_mon,
             'nfs': self.apply_nfs,
             'node-exporter': self.apply_node_exporter,
+            'ceph-exporter': self.apply_ceph_exporter,
             'osd': lambda dg: self.apply_drivegroups([dg]),  # type: ignore
             'prometheus': self.apply_prometheus,
             'loki': self.apply_loki,
@@ -492,6 +493,14 @@ class Orchestrator(object):
             l_res.append(r_res)
             return OrchResult(l_res)
         return raise_if_exception(reduce(merge, [fns[spec.service_type](spec) for spec in specs], OrchResult([])))
+
+    def set_unmanaged(self, service_name: str, value: bool) -> OrchResult[str]:
+        """
+        Set unmanaged parameter to True/False for a given service
+
+        :return: None
+        """
+        raise NotImplementedError()
 
     def plan(self, spec: Sequence["GenericSpec"]) -> OrchResult[List]:
         """
@@ -655,6 +664,10 @@ class Orchestrator(object):
         """Update existing a Node-Exporter daemon(s)"""
         raise NotImplementedError()
 
+    def apply_ceph_exporter(self, spec: ServiceSpec) -> OrchResult[str]:
+        """Update existing a ceph exporter daemon(s)"""
+        raise NotImplementedError()
+
     def apply_loki(self, spec: ServiceSpec) -> OrchResult[str]:
         """Update existing a Loki daemon(s)"""
         raise NotImplementedError()
@@ -764,6 +777,7 @@ def daemon_type_to_service(dtype: str) -> str:
         'alertmanager': 'alertmanager',
         'prometheus': 'prometheus',
         'node-exporter': 'node-exporter',
+        'ceph-exporter': 'ceph-exporter',
         'loki': 'loki',
         'promtail': 'promtail',
         'crash': 'crash',
@@ -793,6 +807,7 @@ def service_to_daemon_types(stype: str) -> List[str]:
         'loki': ['loki'],
         'promtail': ['promtail'],
         'node-exporter': ['node-exporter'],
+        'ceph-exporter': ['ceph-exporter'],
         'crash': ['crash'],
         'container': ['container'],
         'agent': ['agent'],
@@ -891,6 +906,7 @@ class DaemonDescription(object):
                  rank: Optional[int] = None,
                  rank_generation: Optional[int] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  ) -> None:
 
         #: Host is at the same granularity as InventoryHost
@@ -956,6 +972,7 @@ class DaemonDescription(object):
         self.is_active = is_active
 
         self.extra_container_args = extra_container_args
+        self.extra_entrypoint_args = extra_entrypoint_args
 
     @property
     def status(self) -> Optional[DaemonDescriptionStatus]:
@@ -980,6 +997,24 @@ class DaemonDescription(object):
         if service_name:
             return (daemon_type_to_service(self.daemon_type) + '.' + self.daemon_id).startswith(service_name + '.')
         return False
+
+    def matches_digests(self, digests: Optional[List[str]]) -> bool:
+        # the DaemonDescription class maintains a list of container digests
+        # for the container image last reported as being used for the daemons.
+        # This function checks if any of those digests match any of the digests
+        # in the list of digests provided as an arg to this function
+        if not digests or not self.container_image_digests:
+            return False
+        return any(d in digests for d in self.container_image_digests)
+
+    def matches_image_name(self, image_name: Optional[str]) -> bool:
+        # the DaemonDescription class has an attribute that tracks the image
+        # name of the container image last reported as being used by the daemon.
+        # This function compares if the image name provided as an arg matches
+        # the image name in said attribute
+        if not image_name or not self.container_image_name:
+            return False
+        return image_name == self.container_image_name
 
     def service_id(self) -> str:
         assert self.daemon_id is not None

@@ -234,6 +234,9 @@ public:
 
   void handle_client_fsync(MDRequestRef& mdr);
 
+  bool is_unlink_pending(CDentry *dn);
+  void wait_for_pending_unlink(CDentry *dn, MDRequestRef& mdr);
+
   // open
   void handle_client_open(MDRequestRef& mdr);
   void handle_client_openc(MDRequestRef& mdr);  // O_CREAT variant.
@@ -498,6 +501,8 @@ private:
   unsigned delegate_inos_pct = 0;
   uint64_t dir_max_entries = 0;
   int64_t bal_fragment_size_max = 0;
+
+  double inject_rename_corrupt_dentry_first = 0.0;
 
   DecayCounter recall_throttle;
   time last_recall_state;
