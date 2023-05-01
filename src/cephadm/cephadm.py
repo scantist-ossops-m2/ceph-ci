@@ -54,7 +54,7 @@ DEFAULT_NODE_EXPORTER_IMAGE = 'quay.io/prometheus/node-exporter:v1.3.1'
 DEFAULT_ALERT_MANAGER_IMAGE = 'quay.io/prometheus/alertmanager:v0.23.0'
 DEFAULT_GRAFANA_IMAGE = 'quay.io/ceph/ceph-grafana:8.3.5'
 DEFAULT_HAPROXY_IMAGE = 'quay.io/ceph/haproxy:2.3'
-DEFAULT_KEEPALIVED_IMAGE = 'quay.io/ceph/keepalived:2.1.5'
+DEFAULT_KEEPALIVED_IMAGE = 'quay.io/ceph/keepalived:2.2.4'
 DEFAULT_SNMP_GATEWAY_IMAGE = 'docker.io/maxwo/snmp-notifier:v1.2.1'
 DEFAULT_ELASTICSEARCH_IMAGE = 'quay.io/omrizeneva/elasticsearch:6.8.23'
 DEFAULT_JAEGER_COLLECTOR_IMAGE = 'quay.io/jaegertracing/jaeger-collector:1.29'
@@ -3139,6 +3139,18 @@ def get_container_mounts(ctx, fsid, daemon_type, daemon_id,
         data_dir = get_data_dir(fsid, ctx.data_dir, daemon_type, daemon_id)
         mounts.update(cc.get_container_mounts(data_dir))
 
+    # Modifications podman makes to /etc/hosts causes issues with
+    # certain daemons (specifically referencing "host.containers.internal" entry
+    # being added to /etc/hosts in this case). To avoid that, but still
+    # allow users to use /etc/hosts for hostname resolution, we can
+    # mount the host's /etc/hosts file.
+    # https://tracker.ceph.com/issues/58532
+    # https://tracker.ceph.com/issues/57018
+    if isinstance(ctx.container_engine, Podman):
+        if os.path.exists('/etc/hosts'):
+            if '/etc/hosts' not in mounts:
+                mounts['/etc/hosts'] = '/etc/hosts:ro'
+
     return mounts
 
 
@@ -3290,6 +3302,14 @@ def get_container(ctx: CephadmContext,
         ])
         if ctx.container_engine.version >= CGROUPS_SPLIT_PODMAN_VERSION and not ctx.no_cgroups_split:
             container_args.append('--cgroups=split')
+        # if /etc/hosts doesn't exist, we can be confident
+        # users aren't using it for host name resolution
+        # and adding --no-hosts avoids bugs created in certain daemons
+        # by modifications podman makes to /etc/hosts
+        # https://tracker.ceph.com/issues/58532
+        # https://tracker.ceph.com/issues/57018
+        if not os.path.exists('/etc/hosts'):
+            container_args.extend(['--no-hosts'])
 
     return CephContainer.for_daemon(
         ctx,
@@ -3516,13 +3536,13 @@ def deploy_daemon_units(
 ) -> None:
     # cmd
 
-    def add_stop_actions(f: TextIO) -> None:
+    def add_stop_actions(f: TextIO, timeout: Optional[int]) -> None:
         # following generated script basically checks if the container exists
         # before stopping it. Exit code will be success either if it doesn't
         # exist or if it exists and is stopped successfully.
         container_exists = f'{ctx.container_engine.path} inspect %s &>/dev/null'
-        f.write(f'! {container_exists % c.old_cname} || {" ".join(c.stop_cmd(old_cname=True))} \n')
-        f.write(f'! {container_exists % c.cname} || {" ".join(c.stop_cmd())} \n')
+        f.write(f'! {container_exists % c.old_cname} || {" ".join(c.stop_cmd(old_cname=True, timeout=timeout))} \n')
+        f.write(f'! {container_exists % c.cname} || {" ".join(c.stop_cmd(timeout=timeout))} \n')
 
     data_dir = get_data_dir(fsid, ctx.data_dir, daemon_type, daemon_id)
     with open(data_dir + '/unit.run.new', 'w') as f, \
@@ -3608,11 +3628,12 @@ def deploy_daemon_units(
         os.rename(data_dir + '/unit.meta.new',
                   data_dir + '/unit.meta')
 
+    timeout = 30 if daemon_type == 'osd' else None
     # post-stop command(s)
     with open(data_dir + '/unit.poststop.new', 'w') as f:
         # this is a fallback to eventually stop any underlying container that was not stopped properly by unit.stop,
         # this could happen in very slow setups as described in the issue https://tracker.ceph.com/issues/58242.
-        add_stop_actions(f)
+        add_stop_actions(f, timeout)
         if daemon_type == 'osd':
             assert osd_fsid
             poststop = get_ceph_volume_container(
@@ -3642,7 +3663,7 @@ def deploy_daemon_units(
 
     # post-stop command(s)
     with open(data_dir + '/unit.stop.new', 'w') as f:
-        add_stop_actions(f)
+        add_stop_actions(f, timeout)
         os.fchmod(f.fileno(), 0o600)
         os.rename(data_dir + '/unit.stop.new',
                   data_dir + '/unit.stop')
@@ -4271,11 +4292,18 @@ class CephContainer:
             ret.append(self.cname)
         return ret
 
-    def stop_cmd(self, old_cname: bool = False) -> List[str]:
-        ret = [
-            str(self.ctx.container_engine.path),
-            'stop', self.old_cname if old_cname else self.cname,
-        ]
+    def stop_cmd(self, old_cname: bool = False, timeout: Optional[int] = None) -> List[str]:
+        if timeout is None:
+            ret = [
+                str(self.ctx.container_engine.path),
+                'stop', self.old_cname if old_cname else self.cname,
+            ]
+        else:
+            ret = [
+                str(self.ctx.container_engine.path),
+                'stop', '-t', f'{timeout}',
+                self.old_cname if old_cname else self.cname,
+            ]
         return ret
 
     def run(self, timeout=DEFAULT_TIMEOUT, verbosity=CallVerbosity.VERBOSE_ON_FAILURE):
@@ -5083,7 +5111,7 @@ def infer_mon_network(ctx: CephadmContext, mon_eps: List[EndPoint]) -> Optional[
     mon_networks = []
     for net, ifaces in list_networks(ctx).items():
         # build local_ips list for the specified network
-        local_ips: List[str] = []
+        local_ips: List[Union[ipaddress.IPv4Address, ipaddress.IPv6Address]] = []
         for _, ls in ifaces.items():
             local_ips.extend([ipaddress.ip_address(ip) for ip in ls])
 
@@ -5422,12 +5450,22 @@ def prepare_ssh(
     if not ctx.skip_monitoring_stack:
         for t in ['ceph-exporter', 'prometheus', 'grafana', 'node-exporter', 'alertmanager']:
             logger.info('Deploying %s service with default placement...' % t)
-            cli(['orch', 'apply', t])
+            try:
+                cli(['orch', 'apply', t])
+            except RuntimeError:
+                ctx.error_code = -errno.EINVAL
+                logger.error(f'Failed to apply service type {t}. '
+                             'Perhaps the ceph version being bootstrapped does not support it')
 
     if ctx.with_centralized_logging:
         for t in ['loki', 'promtail']:
             logger.info('Deploying %s service with default placement...' % t)
-            cli(['orch', 'apply', t])
+            try:
+                cli(['orch', 'apply', t])
+            except RuntimeError:
+                ctx.error_code = -errno.EINVAL
+                logger.error(f'Failed to apply service type {t}. '
+                             'Perhaps the ceph version being bootstrapped does not support it')
 
 
 def enable_cephadm_mgr_module(
@@ -6119,8 +6157,21 @@ def command_deploy(ctx):
         uid, gid = extract_uid_gid(ctx)
         make_var_run(ctx, ctx.fsid, uid, gid)
 
+        config_json: Optional[Dict[str, str]] = None
+        if 'config_json' in ctx and ctx.config_json:
+            config_json = get_parm(ctx.config_json)
+
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id,
                                      ptrace=ctx.allow_ptrace)
+
+        if daemon_type == 'mon' and config_json is not None:
+            if 'crush_location' in config_json:
+                c_loc = config_json['crush_location']
+                # was originally "c.args.extend(['--set-crush-location', c_loc])"
+                # but that doesn't seem to persist in the object after it's passed
+                # in further function calls
+                c.args = c.args + ['--set-crush-location', c_loc]
+
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
                       config=config, keyring=keyring,
                       osd_fsid=ctx.osd_fsid,

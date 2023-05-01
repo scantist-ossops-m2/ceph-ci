@@ -8362,7 +8362,16 @@ next:
   }
 
   if (opt_cmd == OPT::GC_PROCESS) {
-    int ret = static_cast<rgw::sal::RadosStore*>(driver)->getRados()->process_gc(!include_all);
+    rgw::sal::RadosStore* rados_store = dynamic_cast<rgw::sal::RadosStore*>(driver);
+    if (!rados_store) {
+      cerr <<
+	"WARNING: this command can only work when the cluster has a RADOS backing store." <<
+	std::endl;
+      return 0;
+    }
+    RGWRados* store = rados_store->getRados();
+
+    int ret = store->process_gc(!include_all);
     if (ret < 0) {
       cerr << "ERROR: gc processing returned error: " << cpp_strerror(-ret) << std::endl;
       return 1;
@@ -10108,7 +10117,7 @@ next:
                            have_max_read_ops, have_max_write_ops,
                            have_max_read_bytes, have_max_write_bytes);
     } else if (!rgw::sal::User::empty(user)) {
-      } if (ratelimit_scope == "user") {
+      if (ratelimit_scope == "user") {
         return set_user_ratelimit(opt_cmd, user, max_read_ops, max_write_ops,
                          max_read_bytes, max_write_bytes,
                          have_max_read_ops, have_max_write_ops,
@@ -10117,6 +10126,7 @@ next:
         cerr << "ERROR: invalid ratelimit scope specification. Please specify either --ratelimit-scope=bucket, or --ratelimit-scope=user" << std::endl;
         return EINVAL;
       }
+    }
   }
 
   if (ratelimit_op_get) {
@@ -10132,12 +10142,13 @@ next:
       }
       return show_bucket_ratelimit(driver, tenant, bucket_name, formatter.get());
     } else if (!rgw::sal::User::empty(user)) {
-      } if (ratelimit_scope == "user") {
+      if (ratelimit_scope == "user") {
         return show_user_ratelimit(user, formatter.get());
       } else {
         cerr << "ERROR: invalid ratelimit scope specification. Please specify either --ratelimit-scope=bucket, or --ratelimit-scope=user" << std::endl;
         return EINVAL;
       }
+    }
   }
 
   if (opt_cmd == OPT::MFA_CREATE) {

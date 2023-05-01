@@ -2518,8 +2518,15 @@ static inline void map_qs_metadata(req_state* s, bool crypto_too)
 
 int RGWPutObj_ObjStore_S3::get_params(optional_yield y)
 {
-  if (!s->length)
-    return -ERR_LENGTH_REQUIRED;
+  if (!s->length) {
+    const char *encoding = s->info.env->get("HTTP_TRANSFER_ENCODING");
+    if (!encoding || strcmp(encoding, "chunked") != 0) {
+      ldout(s->cct, 20) << "neither length nor chunked encoding" << dendl;
+      return -ERR_LENGTH_REQUIRED;
+    }
+
+    chunked_upload = true;
+  }
 
   int ret;
 
@@ -3419,12 +3426,6 @@ int RGWCopyObj_ObjStore_S3::get_params(optional_yield y)
   if_match = s->info.env->get("HTTP_X_AMZ_COPY_SOURCE_IF_MATCH");
   if_nomatch = s->info.env->get("HTTP_X_AMZ_COPY_SOURCE_IF_NONE_MATCH");
 
-  src_tenant_name = s->src_tenant_name;
-  src_bucket_name = s->src_bucket_name;
-  dest_tenant_name = s->bucket->get_tenant();
-  dest_bucket_name = s->bucket->get_name();
-  dest_obj_name = s->object->get_name();
-
   if (s->system_request) {
     source_zone = s->info.args.get(RGW_SYS_PARAM_PREFIX "source-zone");
     s->info.args.get_bool(RGW_SYS_PARAM_PREFIX "copy-if-newer", &copy_if_newer, false);
@@ -3448,9 +3449,9 @@ int RGWCopyObj_ObjStore_S3::get_params(optional_yield y)
   }
 
   if (source_zone.empty() &&
-      (dest_tenant_name.compare(src_tenant_name) == 0) &&
-      (dest_bucket_name.compare(src_bucket_name) == 0) &&
-      (dest_obj_name.compare(s->src_object->get_name()) == 0) &&
+      (s->bucket->get_tenant() == s->src_tenant_name) &&
+      (s->bucket->get_name() == s->src_bucket_name) &&
+      (s->object->get_name() == s->src_object->get_name()) &&
       s->src_object->get_instance().empty() &&
       (attrs_mod != rgw::sal::ATTRSMOD_REPLACE)) {
     need_to_check_storage_class = true;
@@ -3887,10 +3888,18 @@ void RGWSetRequestPayment_ObjStore_S3::send_response()
 
 int RGWInitMultipart_ObjStore_S3::get_params(optional_yield y)
 {
+  int ret;
+
+  ret = get_encryption_defaults(s);
+  if (ret < 0) {
+    ldpp_dout(this, 5) << __func__ << "(): get_encryption_defaults() returned ret=" << ret << dendl;
+    return ret;
+  }
+
   RGWAccessControlPolicy_S3 s3policy(s->cct);
-  op_ret = create_s3_policy(s, driver, s3policy, s->owner);
-  if (op_ret < 0)
-    return op_ret;
+  ret = create_s3_policy(s, driver, s3policy, s->owner);
+  if (ret < 0)
+    return ret;
 
   policy = s3policy;
 

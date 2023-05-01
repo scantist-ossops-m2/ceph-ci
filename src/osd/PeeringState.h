@@ -279,15 +279,6 @@ public:
       bool need_write_epoch,
       ObjectStore::Transaction &t) = 0;
 
-    /// Notify that info/history changed (generally to update scrub registration)
-    virtual void on_info_history_change() = 0;
-
-    /// Notify PG that Primary/Replica status has changed (to update scrub registration)
-    virtual void on_primary_status_change(bool was_primary, bool now_primary) = 0;
-
-    /// Need to reschedule next scrub. Assuming no change in role
-    virtual void reschedule_scrub() = 0;
-
     /// Notify that a scrub has been requested
     virtual void scrub_requested(scrub_level_t scrub_level, scrub_type_t scrub_type) = 0;
 
@@ -1577,6 +1568,47 @@ public:
   /// get priority for pg deletion
   unsigned get_delete_priority();
 
+public:
+  /**
+   * recovery_msg_priority_t
+   *
+   * Defines priority values for use with recovery messages.  The values are
+   * chosen to be reasonable for wpq during an upgrade scenarios, but are
+   * actually translated into a class in PGRecoveryMsg::get_scheduler_class()
+   */
+  enum recovery_msg_priority_t : int {
+    FORCED = 20,
+    UNDERSIZED = 15,
+    DEGRADED = 10,
+    BEST_EFFORT = 5
+  };
+
+  /// get message priority for recovery messages
+  int get_recovery_op_priority() const {
+    if (cct->_conf->osd_op_queue == "mclock_scheduler") {
+      /* For mclock, we use special priority values which will be
+       * translated into op classes within PGRecoveryMsg::get_scheduler_class
+       */
+      if (is_forced_recovery_or_backfill()) {
+	return recovery_msg_priority_t::FORCED;
+      } else if (is_undersized()) {
+	return recovery_msg_priority_t::UNDERSIZED;
+      } else if (is_degraded()) {
+	return recovery_msg_priority_t::DEGRADED;
+      } else {
+	return recovery_msg_priority_t::BEST_EFFORT;
+      }
+    } else {
+      /* For WeightedPriorityQueue, we use pool or osd config settings to
+       * statically set the priority for recovery messages.  This special
+       * handling should probably be removed after Reef */
+      int64_t pri = 0;
+      pool.info.opts.get(pool_opts_t::RECOVERY_OP_PRIORITY, &pri);
+      return  pri > 0 ? pri : cct->_conf->osd_recovery_op_priority;
+    }
+  }
+
+private:
   bool check_prior_readable_down_osds(const OSDMapRef& map);
 
   bool adjust_need_up_thru(const OSDMapRef osdmap);

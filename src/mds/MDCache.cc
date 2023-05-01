@@ -2653,7 +2653,7 @@ void MDCache::dump_resolve_status(Formatter *f) const
 {
   f->open_object_section("resolve_status");
   f->dump_stream("resolve_gather") << resolve_gather;
-  f->dump_stream("resolve_ack_gather") << resolve_gather;
+  f->dump_stream("resolve_ack_gather") << resolve_ack_gather;
   f->close_section();
 }
 
@@ -8667,7 +8667,7 @@ int MDCache::path_traverse(MDRequestRef& mdr, MDSContextFactory& cf,
   // success.
   if (mds->logger) mds->logger->inc(l_mds_traverse_hit);
   dout(10) << "path_traverse finish on snapid " << snapid << dendl;
-  if (mdr) 
+  if (mdr)
     ceph_assert(mdr->snapid == snapid);
 
   if (flags & MDS_TRAVERSE_RDLOCK_SNAP)
@@ -12958,19 +12958,24 @@ class C_MDS_EnqueueScrub : public Context
   std::string tag;
   Formatter *formatter;
   Context *on_finish;
+  bool dump_values;
 public:
   ScrubHeaderRef header;
-  C_MDS_EnqueueScrub(std::string_view tag, Formatter *f, Context *fin) :
-    tag(tag), formatter(f), on_finish(fin), header(nullptr) {}
+  C_MDS_EnqueueScrub(std::string_view tag, Formatter *f, Context *fin,
+                     bool dump_values = true) :
+    tag(tag), formatter(f), on_finish(fin), dump_values(dump_values),
+    header(nullptr) {}
 
   void finish(int r) override {
-    formatter->open_object_section("results");
-    formatter->dump_int("return_code", r);
-    if (r == 0) {
-      formatter->dump_string("scrub_tag", tag);
-      formatter->dump_string("mode", "asynchronous");
+    if (dump_values) {
+      formatter->open_object_section("results");
+      formatter->dump_int("return_code", r);
+      if (r == 0) {
+        formatter->dump_string("scrub_tag", tag);
+        formatter->dump_string("mode", "asynchronous");
+      }
+      formatter->close_section();
     }
-    formatter->close_section();
 
     r = 0;
     if (on_finish)
@@ -12982,7 +12987,7 @@ void MDCache::enqueue_scrub(
     std::string_view path,
     std::string_view tag,
     bool force, bool recursive, bool repair,
-    Formatter *f, Context *fin)
+    bool scrub_mdsdir, Formatter *f, Context *fin)
 {
   dout(10) << __func__ << " " << path << dendl;
 
@@ -13008,15 +13013,21 @@ void MDCache::enqueue_scrub(
 
   bool is_internal = false;
   std::string tag_str(tag);
-  if (tag_str.empty()) {
-    uuid_d uuid_gen;
-    uuid_gen.generate_random();
-    tag_str = uuid_gen.to_string();
+  C_MDS_EnqueueScrub *cs;
+  if ((path == "~mdsdir" && scrub_mdsdir)) {
     is_internal = true;
+    cs = new C_MDS_EnqueueScrub(tag_str, f, fin, false);
+  } else {
+    if (tag_str.empty()) {
+      uuid_d uuid_gen;
+      uuid_gen.generate_random();
+      tag_str = uuid_gen.to_string();
+      is_internal = true;
+    }
+    cs = new C_MDS_EnqueueScrub(tag_str, f, fin);
   }
-
-  C_MDS_EnqueueScrub *cs = new C_MDS_EnqueueScrub(tag_str, f, fin);
-  cs->header = std::make_shared<ScrubHeader>(tag_str, is_internal, force, recursive, repair);
+  cs->header = std::make_shared<ScrubHeader>(tag_str, is_internal, force,
+                                             recursive, repair, scrub_mdsdir);
 
   mdr->internal_op_finish = cs;
   enqueue_scrub_work(mdr);

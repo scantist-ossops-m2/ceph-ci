@@ -514,6 +514,7 @@ MDSRank::MDSRank(
     messenger(msgr), monc(monc_), mgrc(mgrc),
     respawn_hook(respawn_hook_),
     suicide_hook(suicide_hook_),
+    inject_journal_corrupt_dentry_first(g_conf().get_val<double>("mds_inject_journal_corrupt_dentry_first")),
     starttime(mono_clock::now()),
     ioc(ioc)
 {
@@ -2972,6 +2973,7 @@ void MDSRank::command_scrub_start(Formatter *f,
   bool force = false;
   bool recursive = false;
   bool repair = false;
+  bool scrub_mdsdir = false;
   for (auto &op : scrubop_vec) {
     if (op == "force")
       force = true;
@@ -2979,10 +2981,20 @@ void MDSRank::command_scrub_start(Formatter *f,
       recursive = true;
     else if (op == "repair")
       repair = true;
+    else if (op == "scrub_mdsdir" && path == "/")
+      scrub_mdsdir = true;
   }
 
   std::lock_guard l(mds_lock);
-  mdcache->enqueue_scrub(path, tag, force, recursive, repair, f, on_finish);
+  if (scrub_mdsdir) {
+    MDSGatherBuilder gather(g_ceph_context);
+    mdcache->enqueue_scrub("~mdsdir", "", false, true, false, scrub_mdsdir,
+                           f, gather.new_sub());
+    gather.set_finisher(new C_MDSInternalNoop);
+    gather.activate();
+  }
+  mdcache->enqueue_scrub(path, tag, force, recursive, repair, scrub_mdsdir,
+                         f, on_finish);
   // scrub_dentry() finishers will dump the data for us; we're done!
 }
 
@@ -2992,7 +3004,7 @@ void MDSRank::command_tag_path(Formatter *f,
   C_SaferCond scond;
   {
     std::lock_guard l(mds_lock);
-    mdcache->enqueue_scrub(path, tag, true, true, false, f, &scond);
+    mdcache->enqueue_scrub(path, tag, true, true, false, false, f, &scond);
   }
   scond.wait();
 }
@@ -3812,6 +3824,8 @@ const char** MDSRankDispatcher::get_tracked_conf_keys() const
     "mds_dir_max_entries",
     "mds_symlink_recovery",
     "mds_extraordinary_events_dump_interval",
+    "mds_inject_rename_corrupt_dentry_first",
+    "mds_inject_journal_corrupt_dentry_first",
     NULL
   };
   return KEYS;
@@ -3875,6 +3889,9 @@ void MDSRankDispatcher::handle_conf_change(const ConfigProxy& conf, const std::s
       changed.count("host") ||
       changed.count("fsid")) {
     update_log_config();
+  }
+  if (changed.count("mds_inject_journal_corrupt_dentry_first")) {
+    inject_journal_corrupt_dentry_first = g_conf().get_val<double>("mds_inject_journal_corrupt_dentry_first");
   }
 
   finisher->queue(new LambdaContext([this, changed](int) {
