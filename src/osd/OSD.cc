@@ -1696,14 +1696,30 @@ void OSDService::enqueue_front(OpSchedulerItem&& qi)
 
 void OSDService::queue_recovery_context(
   PG *pg,
-  GenContext<ThreadPool::TPHandle&> *c)
+  GenContext<ThreadPool::TPHandle&> *c,
+  uint64_t cost,
+  int priority)
 {
   epoch_t e = get_osdmap_epoch();
+
+  uint64_t cost_for_queue = [this, cost] {
+    if (cct->_conf->osd_op_queue == "mclock_scheduler") {
+      return cost;
+    } else {
+      /* We retain this legacy behavior for WeightedPriorityQueue. It seems to
+       * require very large costs for several messages in order to do any
+       * meaningful amount of throttling.  This branch should be removed after
+       * Reef.
+       */
+      return cct->_conf->osd_recovery_cost;
+    }
+  }();
+
   enqueue_back(
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(
-	new PGRecoveryContext(pg->get_pgid(), c, e)),
-      cct->_conf->osd_recovery_cost,
+	new PGRecoveryContext(pg->get_pgid(), c, e, priority)),
+      cost_for_queue,
       cct->_conf->osd_recovery_priority,
       ceph_clock_now(),
       0,
@@ -2024,20 +2040,37 @@ void OSDService::prune_sent_ready_to_merge(const OSDMapRef& osdmap)
 // ---
 
 void OSDService::_queue_for_recovery(
-  std::pair<epoch_t, PGRef> p,
+  pg_awaiting_throttle_t p,
   uint64_t reserved_pushes)
 {
   ceph_assert(ceph_mutex_is_locked_by_me(recovery_lock));
+
+  uint64_t cost_for_queue = [this, &reserved_pushes, &p] {
+    if (cct->_conf->osd_op_queue == "mclock_scheduler") {
+      return p.cost_per_object * reserved_pushes;
+    } else {
+      /* We retain this legacy behavior for WeightedPriorityQueue. It seems to
+       * require very large costs for several messages in order to do any
+       * meaningful amount of throttling.  This branch should be removed after
+       * Reef.
+       */
+      return cct->_conf->osd_recovery_cost;
+    }
+  }();
+
   enqueue_back(
     OpSchedulerItem(
       unique_ptr<OpSchedulerItem::OpQueueable>(
 	new PGRecovery(
-	  p.second->get_pgid(), p.first, reserved_pushes)),
-      cct->_conf->osd_recovery_cost,
+	  p.pg->get_pgid(),
+	  p.epoch_queued,
+          reserved_pushes,
+	  p.priority)),
+      cost_for_queue,
       cct->_conf->osd_recovery_priority,
       ceph_clock_now(),
       0,
-      p.first));
+      p.epoch_queued));
 }
 
 // ====================================================================
@@ -7372,7 +7405,12 @@ void OSD::ms_fast_dispatch(Message *m)
     tracepoint(osd, ms_fast_dispatch, reqid.name._type,
         reqid.name._num, reqid.tid, reqid.inc);
   }
-  op->osd_parent_span = tracing::osd::tracer.start_trace("op-request-created");
+
+  if (m->otel_trace.IsValid()) {
+    op->osd_parent_span = tracing::osd::tracer.add_span("op-request-created", m->otel_trace);
+  } else {
+    op->osd_parent_span = tracing::osd::tracer.start_trace("op-request-created");
+  }
 
   if (m->trace)
     op->osd_trace.init("osd op", &trace_endpoint, &m->trace);
@@ -7621,10 +7659,9 @@ void OSD::resched_all_scrubs()
     if (!pg)
       continue;
 
-    if (!pg->get_planned_scrub().must_scrub && !pg->get_planned_scrub().need_auto) {
-      dout(15) << __func__ << ": reschedule " << job.pgid << dendl;
-      pg->reschedule_scrub();
-    }
+    dout(15) << __func__ << ": updating scrub schedule on " << job.pgid << dendl;
+    pg->on_scrub_schedule_input_change();
+
     pg->unlock();
   }
   dout(10) << __func__ << ": done" << dendl;
@@ -8761,13 +8798,6 @@ bool OSD::advance_pg(
       double old_max_interval = 0, new_max_interval = 0;
       oldpool->second.opts.get(pool_opts_t::SCRUB_MAX_INTERVAL, &old_max_interval);
       newpool->second.opts.get(pool_opts_t::SCRUB_MAX_INTERVAL, &new_max_interval);
-
-      // Assume if an interval is change from set to unset or vice versa the actual config
-      // is different.  Keep it simple even if it is possible to call resched_all_scrub()
-      // unnecessarily.
-      if (old_min_interval != new_min_interval || old_max_interval != new_max_interval) {
-	pg->on_info_history_change();
-      }
     }
 
     if (new_pg_num && old_pg_num != new_pg_num) {
@@ -9367,7 +9397,7 @@ unsigned OSDService::get_target_pg_log_entries() const
 }
 
 void OSD::do_recovery(
-  PG *pg, epoch_t queued, uint64_t reserved_pushes,
+  PG *pg, epoch_t queued, uint64_t reserved_pushes, int priority,
   ThreadPool::TPHandle &handle)
 {
   uint64_t started = 0;
@@ -9384,13 +9414,14 @@ void OSD::do_recovery(
     std::lock_guard l(service.sleep_lock);
     if (recovery_sleep > 0 && service.recovery_needs_sleep) {
       PGRef pgref(pg);
-      auto recovery_requeue_callback = new LambdaContext([this, pgref, queued, reserved_pushes](int r) {
+      auto recovery_requeue_callback = new LambdaContext(
+	[this, pgref, queued, reserved_pushes, priority](int r) {
         dout(20) << "do_recovery wake up at "
                  << ceph_clock_now()
 	         << ", re-queuing recovery" << dendl;
 	std::lock_guard l(service.sleep_lock);
         service.recovery_needs_sleep = false;
-        service.queue_recovery_after_sleep(pgref.get(), queued, reserved_pushes);
+        service.queue_recovery_after_sleep(pgref.get(), queued, reserved_pushes, priority);
       });
 
       // This is true for the first recovery op and when the previous recovery op
@@ -9542,8 +9573,7 @@ void OSD::enqueue_op(spg_t pg, OpRequestRef&& op, epoch_t epoch)
 
   op->mark_queued_for_pg();
   logger->tinc(l_osd_op_before_queue_op_lat, latency);
-  if (type == MSG_OSD_PG_PUSH ||
-      type == MSG_OSD_PG_PUSH_REPLY) {
+  if (PGRecoveryMsg::is_recovery_msg(op)) {
     op_shardedwq.queue(
       OpSchedulerItem(
         unique_ptr<OpSchedulerItem::OpQueueable>(new PGRecoveryMsg(pg, std::move(op))),
@@ -9964,9 +9994,9 @@ bool OSD::maybe_override_options_for_qos(const std::set<std::string> *changed)
       !unsupported_objstore_for_qos()) {
     static const std::map<std::string, uint64_t> recovery_qos_defaults {
       {"osd_recovery_max_active", 0},
-      {"osd_recovery_max_active_hdd", 10},
-      {"osd_recovery_max_active_ssd", 20},
-      {"osd_max_backfills", 10},
+      {"osd_recovery_max_active_hdd", 3},
+      {"osd_recovery_max_active_ssd", 10},
+      {"osd_max_backfills", 1},
     };
 
     // Check if we were called because of a configuration change
@@ -10029,17 +10059,28 @@ bool OSD::maybe_override_options_for_qos(const std::set<std::string> *changed)
         }
       }
     } else { // if (changed != nullptr) (osd boot-up)
-      // Override the default recovery max active and max backfills to
-      // higher values based on the type of backing device (hdd/ssd).
-      // This section is executed only during osd boot-up.
+      /**
+       * This section is executed only during osd boot-up.
+       * Override the default recovery max active (hdd & ssd) and max backfills
+       * config options to either the mClock defaults or retain their respective
+       * overridden values before the osd was restarted.
+       */
       for (auto opt : recovery_qos_defaults) {
+        /**
+         * Note: set_val_default doesn't overwrite an option if it was earlier
+         * set at a config level greater than CONF_DEFAULT. It doesn't return
+         * a status. With get_val(), the config subsystem is guaranteed to
+         * either return the overridden value (if any) or the default value.
+         */
         cct->_conf.set_val_default(opt.first, std::to_string(opt.second));
+        auto opt_val = cct->_conf.get_val<uint64_t>(opt.first);
+        dout(1) << __func__ << " "
+                << opt.first << " set to " << opt_val
+                << dendl;
         if (opt.first == "osd_max_backfills") {
-          service.local_reserver.set_max(opt.second);
-          service.remote_reserver.set_max(opt.second);
+          service.local_reserver.set_max(opt_val);
+          service.remote_reserver.set_max(opt_val);
         }
-        dout(1) << __func__ << " Set default value for " << opt.first
-                << " to " << opt.second << dendl;
       }
     }
     return true;
@@ -11064,9 +11105,6 @@ void OSD::ShardedOpWQ::_enqueue(OpSchedulerItem&& item) {
 
   OSDShard* sdata = osd->shards[shard_index];
   assert (NULL != sdata);
-  if (sdata->get_scheduler_type() == "mClockScheduler") {
-    item.maybe_set_is_qos_item();
-  }
 
   dout(20) << __func__ << " " << item << dendl;
 

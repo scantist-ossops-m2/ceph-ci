@@ -21,7 +21,7 @@ from ceph.deployment.service_spec import PlacementSpec, ServiceSpec, service_spe
 from ceph.deployment.hostspec import SpecValidationError
 from ceph.utils import datetime_now
 
-from mgr_util import to_pretty_timedelta, format_dimless, format_bytes
+from mgr_util import to_pretty_timedelta, format_bytes
 from mgr_module import MgrModule, HandleCommandResult, Option
 from object_format import Format
 
@@ -566,11 +566,11 @@ class OrchestratorCli(OrchestratorClientMixin, MgrModule,
         return HandleCommandResult(stdout=completion.result_str())
 
     @_cli_write_command('orch host maintenance enter')
-    def _host_maintenance_enter(self, hostname: str, force: bool = False) -> HandleCommandResult:
+    def _host_maintenance_enter(self, hostname: str, force: bool = False, yes_i_really_mean_it: bool = False) -> HandleCommandResult:
         """
         Prepare a host for maintenance by shutting down and disabling all Ceph daemons (cephadm only)
         """
-        completion = self.enter_host_maintenance(hostname, force=force)
+        completion = self.enter_host_maintenance(hostname, force=force, yes_i_really_mean_it=yes_i_really_mean_it)
         raise_if_exception(completion)
 
         return HandleCommandResult(stdout=completion.result_str())
@@ -665,7 +665,7 @@ class OrchestratorCli(OrchestratorClientMixin, MgrModule,
                                 d.lsm_data.get('transport', ''),
                                 d.lsm_data.get('rpm', ''),
                                 d.device_id,
-                                format_dimless(d.sys_api.get('size', 0), 5),
+                                format_bytes(d.sys_api.get('size', 0), 5),
                                 d.lsm_data.get('health', ''),
                                 display_map[led_ident],
                                 display_map[led_fail],
@@ -681,7 +681,7 @@ class OrchestratorCli(OrchestratorClientMixin, MgrModule,
                                 d.path,
                                 d.human_readable_type,
                                 d.device_id,
-                                format_dimless(d.sys_api.get('size', 0), 5),
+                                format_bytes(d.sys_api.get('size', 0), 5),
                                 display_map[d.available],
                                 nice_delta(now, d.created, ' ago'),
                                 ', '.join(d.rejected_reasons)
@@ -1000,9 +1000,11 @@ Usage:
                       osd_id: List[str],
                       replace: bool = False,
                       force: bool = False,
-                      zap: bool = False) -> HandleCommandResult:
+                      zap: bool = False,
+                      no_destroy: bool = False) -> HandleCommandResult:
         """Remove OSD daemons"""
-        completion = self.remove_osds(osd_id, replace=replace, force=force, zap=zap)
+        completion = self.remove_osds(osd_id, replace=replace, force=force,
+                                      zap=zap, no_destroy=no_destroy)
         raise_if_exception(completion)
         return HandleCommandResult(stdout=completion.result_str())
 

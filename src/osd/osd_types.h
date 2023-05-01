@@ -4080,7 +4080,6 @@ std::ostream& operator<<(std::ostream& out, const ObjectCleanRegions& ocr);
 
 struct OSDOp {
   ceph_osd_op op;
-  sobject_t soid;
 
   ceph::buffer::list indata, outdata;
   errorcode32_t rval;
@@ -6027,6 +6026,11 @@ struct ObjectRecoveryProgress {
       info.copy_subset.empty() ?
       0 : info.copy_subset.range_end())) &&
       omap_complete;
+  }
+
+  uint64_t estimate_remaining_data_to_recover(const ObjectRecoveryInfo& info) const {
+    // Overestimates in case of clones, but avoids traversing copy_subset
+    return info.size - data_recovered_to;
   }
 
   static void generate_test_instances(std::list<ObjectRecoveryProgress*>& o);

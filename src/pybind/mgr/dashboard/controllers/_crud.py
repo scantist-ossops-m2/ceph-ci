@@ -2,7 +2,7 @@ from enum import Enum
 from functools import wraps
 from inspect import isclass
 from typing import Any, Callable, Dict, Generator, Iterable, Iterator, List, \
-    NamedTuple, Optional, Union, get_type_hints
+    NamedTuple, Optional, Tuple, Union, get_type_hints
 
 from ._api_router import APIRouter
 from ._docs import APIDoc, EndpointDoc
@@ -64,7 +64,15 @@ class TableAction(NamedTuple):
     name: str
     permission: str
     icon: str
-    routerLink: str  # redirect to...
+    routerLink: str = ''  # redirect to...
+    click: str = ''
+    disable: bool = False  # disable without selection
+
+
+class SelectionType(Enum):
+    NONE = ''
+    SINGLE = 'single'
+    MULTI = 'multiClick'
 
 
 class TableComponent(SerializableClass):
@@ -72,10 +80,24 @@ class TableComponent(SerializableClass):
         self.columns: List[TableColumn] = []
         self.columnMode: str = 'flex'
         self.toolHeader: bool = True
+        self.selectionType: str = SelectionType.SINGLE.value
+
+    def set_selection_type(self, type_: SelectionType):
+        self.selectionType = type_.value
 
 
 class Icon(Enum):
-    add = 'fa fa-plus'
+    ADD = 'fa fa-plus'
+    DESTROY = 'fa fa-times'
+    IMPORT = 'fa fa-upload'
+    EXPORT = 'fa fa-download'
+
+
+class Validator(Enum):
+    JSON = 'json'
+    RGW_ROLE_NAME = 'rgwRoleName'
+    RGW_ROLE_PATH = 'rgwRolePath'
+    FILE = 'file'
 
 
 class FormField(NamedTuple):
@@ -89,6 +111,8 @@ class FormField(NamedTuple):
     field_type: Any = str
     default_value: Optional[Any] = None
     optional: bool = False
+    help: str = ''
+    validators: List[Validator] = []
 
     def get_type(self):
         _type = ''
@@ -98,6 +122,10 @@ class FormField(NamedTuple):
             _type = 'int'
         elif self.field_type == bool:
             _type = 'boolean'
+        elif self.field_type == 'textarea':
+            _type = 'textarea'
+        elif self.field_type == "file":
+            _type = 'file'
         else:
             raise NotImplementedError(f'Unimplemented type {self.field_type}')
         return _type
@@ -173,7 +201,7 @@ class Container:
 
         # include fields in this container's schema
         for field in self.fields:
-            field_ui_schema = {}
+            field_ui_schema: Dict[str, Any] = {}
             properties[field.key] = {}
             field_key = field.key
             if key:
@@ -187,6 +215,8 @@ class Container:
                 properties[field.key]['type'] = _type
                 properties[field.key]['title'] = field.name
                 field_ui_schema['key'] = field_key
+                field_ui_schema['help'] = f'{field.help}'
+                field_ui_schema['validators'] = [i.value for i in field.validators]
                 items.append(field_ui_schema)
             elif isinstance(field, Container):
                 container_schema = field.to_dict(key+'.'+field.key if key else field.key)
@@ -232,13 +262,27 @@ class ArrayHorizontalContainer(Container):
         return 'array'
 
 
-class Form:
-    def __init__(self, path, root_container):
-        self.path = path
-        self.root_container = root_container
+class FormTaskInfo:
+    def __init__(self, message: str, metadata_fields: List[str]) -> None:
+        self.message = message
+        self.metadata_fields = metadata_fields
 
     def to_dict(self):
-        return self.root_container.to_dict()
+        return {'message': self.message, 'metadataFields': self.metadata_fields}
+
+
+class Form:
+    def __init__(self, path, root_container,
+                 task_info: FormTaskInfo = FormTaskInfo("Unknown task", [])):
+        self.path = path
+        self.root_container: Container = root_container
+        self.task_info = task_info
+
+    def to_dict(self):
+        res = self.root_container.to_dict()
+        res['task_info'] = self.task_info.to_dict()
+        res['path'] = self.path
+        return res
 
 
 class CRUDMeta(SerializableClass):
@@ -247,6 +291,8 @@ class CRUDMeta(SerializableClass):
         self.permissions = []
         self.actions = []
         self.forms = []
+        self.columnKey = ''
+        self.detail_columns = []
 
 
 class CRUDCollectionMethod(NamedTuple):
@@ -259,37 +305,37 @@ class CRUDResourceMethod(NamedTuple):
     doc: EndpointDoc
 
 
+# pylint: disable=R0902
 class CRUDEndpoint:
     # for testing purposes
     CRUDClass: Optional[RESTController] = None
     CRUDClassMetadata: Optional[RESTController] = None
 
-    # pylint: disable=R0902
     def __init__(self, router: APIRouter, doc: APIDoc,
                  set_column: Optional[Dict[str, Dict[str, str]]] = None,
                  actions: Optional[List[TableAction]] = None,
                  permissions: Optional[List[str]] = None, forms: Optional[List[Form]] = None,
+                 column_key: Optional[str] = None,
                  meta: CRUDMeta = CRUDMeta(), get_all: Optional[CRUDCollectionMethod] = None,
-                 create: Optional[CRUDCollectionMethod] = None):
+                 create: Optional[CRUDCollectionMethod] = None,
+                 delete: Optional[CRUDCollectionMethod] = None,
+                 detail_columns: Optional[List[str]] = None,
+                 selection_type: SelectionType = SelectionType.SINGLE,
+                 extra_endpoints: Optional[List[Tuple[str, CRUDCollectionMethod]]] = None):
         self.router = router
         self.doc = doc
         self.set_column = set_column
-        if actions:
-            self.actions = actions
-        else:
-            self.actions = []
-
-        if forms:
-            self.forms = forms
-        else:
-            self.forms = []
+        self.actions = actions if actions is not None else []
+        self.forms = forms if forms is not None else []
         self.meta = meta
         self.get_all = get_all
         self.create = create
-        if permissions:
-            self.permissions = permissions
-        else:
-            self.permissions = []
+        self.delete = delete
+        self.permissions = permissions if permissions is not None else []
+        self.column_key = column_key if column_key is not None else ''
+        self.detail_columns = detail_columns if detail_columns is not None else []
+        self.extra_endpoints = extra_endpoints if extra_endpoints is not None else []
+        self.selection_type = selection_type
 
     def __call__(self, cls: Any):
         self.create_crud_class(cls)
@@ -301,26 +347,43 @@ class CRUDEndpoint:
     def create_crud_class(self, cls):
         outer_self: CRUDEndpoint = self
 
-        @self.router
-        @self.doc
-        class CRUDClass(RESTController):
+        funcs = {}
+        if self.get_all:
+            @self.get_all.doc
+            @wraps(self.get_all.func)
+            def _list(self, *args, **kwargs):
+                items = []
+                for item in outer_self.get_all.func(self, *args, **kwargs):  # type: ignore
+                    items.append(serialize(cls(**item)))
+                return items
+            funcs['list'] = _list
 
-            if self.get_all:
-                @self.get_all.doc
-                @wraps(self.get_all.func)
-                def list(self, *args, **kwargs):
-                    items = []
-                    for item in outer_self.get_all.func(self, *args, **kwargs):  # type: ignore
-                        items.append(serialize(cls(**item)))
-                    return items
+        if self.create:
+            @self.create.doc
+            @wraps(self.create.func)
+            def _create(self, *args, **kwargs):
+                return outer_self.create.func(self, *args, **kwargs)  # type: ignore
+            funcs['create'] = _create
 
-            if self.create:
-                @self.create.doc
-                @wraps(self.create.func)
-                def create(self, *args, **kwargs):
-                    return outer_self.create.func(self, *args, **kwargs)  # type: ignore
+        if self.delete:
+            @self.delete.doc
+            @wraps(self.delete.func)
+            def delete(self, *args, **kwargs):
+                return outer_self.delete.func(self, *args, **kwargs)  # type: ignore
+            funcs['delete'] = delete
 
-        cls.CRUDClass = CRUDClass
+        for extra_endpoint in self.extra_endpoints:
+            funcs[extra_endpoint[0]] = extra_endpoint[1].doc(extra_endpoint[1].func)
+
+        class_name = self.router.path.replace('/', '')
+        crud_class = type(f'{class_name}_CRUDClass',
+                          (RESTController,),
+                          {
+                              **funcs,
+                              'outer_self': self,
+                          })
+        self.router(self.doc(crud_class))
+        cls.CRUDClass = crud_class
 
     def create_meta_class(self, cls):
         def _list(self):
@@ -328,7 +391,15 @@ class CRUDEndpoint:
             self.generate_actions()
             self.generate_forms()
             self.set_permissions()
+            self.set_column_key()
+            self.get_detail_columns()
+            selection_type = self.__class__.outer_self.selection_type
+            self.__class__.outer_self.meta.table.set_selection_type(selection_type)
             return serialize(self.__class__.outer_self.meta)
+
+        def get_detail_columns(self):
+            columns = self.__class__.outer_self.detail_columns
+            self.__class__.outer_self.meta.detail_columns = columns
 
         def update_columns(self):
             if self.__class__.outer_self.set_column:
@@ -362,6 +433,11 @@ class CRUDEndpoint:
         def set_permissions(self):
             if self.__class__.outer_self.permissions:
                 self.outer_self.meta.permissions.extend(self.__class__.outer_self.permissions)
+
+        def set_column_key(self):
+            if self.__class__.outer_self.column_key:
+                self.outer_self.meta.columnKey = self.__class__.outer_self.column_key
+
         class_name = self.router.path.replace('/', '')
         meta_class = type(f'{class_name}_CRUDClassMetadata',
                           (RESTController,),
@@ -371,6 +447,8 @@ class CRUDEndpoint:
                               'generate_actions': generate_actions,
                               'generate_forms': generate_forms,
                               'set_permissions': set_permissions,
+                              'set_column_key': set_column_key,
+                              'get_detail_columns': get_detail_columns,
                               'outer_self': self,
                           })
         UIRouter(self.router.path, self.router.security_scope)(meta_class)
