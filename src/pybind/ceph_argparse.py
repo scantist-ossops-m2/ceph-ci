@@ -531,13 +531,13 @@ class CephName(CephArgtype):
         else:
             t, i = s.split('.', 1)
             if t not in ('osd', 'mon', 'client', 'mds', 'mgr'):
-                raise ArgumentValid('unknown type ' + t)
+                raise JsonFormat('unknown type ' + t)
             if t == 'osd':
                 if i != '*':
                     try:
                         int(i)
                     except ValueError:
-                        raise ArgumentFormat(f'osd id {i} not integer')
+                        raise JsonFormat(f'osd id {i} not integer')
             self.nametype = t
         self.val = s
         self.nameid = i
