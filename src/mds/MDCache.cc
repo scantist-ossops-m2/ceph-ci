@@ -10006,17 +10006,18 @@ void MDCache::send_snap_update(MDRequestRef& mdr, CInode *in, version_t stid,
     bufferlist snap_blob;
     in->encode_snap(snap_blob);
 
+    if (onfinish) {
+      in->snap_update_ref_set.clear();
+      in->snap_update_ref_set.insert(mds_set.begin(), mds_set.end());
+      mds->snap_update_inos.insert(in->ino());
+      in->get(CInode::PIN_SNAPUPDATE);
+      in->add_waiter(CInode::WAIT_SNAPUPDATE, onfinish);
+    }
+
     for (auto p : mds_set) {
       auto m = make_message<MMDSSnapUpdate>(in->ino(), stid, snap_op);
       m->snap_blob = snap_blob;
       mds->send_message_mds(m, p);
-    }
-
-    if (onfinish) {
-      in->snap_update_ref_set = mds_set;
-      mds->snap_update_inos.insert(in->ino());
-      in->get(CInode::PIN_SNAPUPDATE);
-      in->add_waiter(CInode::WAIT_SNAPUPDATE, onfinish);
     }
   } else if (onfinish) {
     onfinish->complete(0);
