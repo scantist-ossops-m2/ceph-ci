@@ -15,6 +15,7 @@
 #ifndef CEPH_OSD_BLUESTORE_H
 #define CEPH_OSD_BLUESTORE_H
 
+
 #include "acconfig.h"
 
 #include <unistd.h>
