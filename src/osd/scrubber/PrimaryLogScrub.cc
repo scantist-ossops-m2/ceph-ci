@@ -96,7 +96,7 @@ void PrimaryLogScrub::submit_digest_fixes(const digests_fixes_t& fixes)
       if ((num_digest_updates_pending >= 1) &&
 	  (--num_digest_updates_pending == 0)) {
 	m_osds->queue_scrub_digest_update(m_pl_pg,
-					  m_pl_pg->is_scrub_blocking_ops());
+					  Scrub::scrub_prio_t::low_priority);
       }
     });
 
