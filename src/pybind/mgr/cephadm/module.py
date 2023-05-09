@@ -2671,6 +2671,8 @@ Then run the following:
                 deps.append(f'{hash(self.alertmanager_web_user + self.alertmanager_web_password)}')
         elif daemon_type == 'promtail':
             deps += get_daemon_names(['loki'])
+        elif daemon_type == JaegerAgentService.TYPE:
+            deps += get_daemon_names([JaegerCollectorService.TYPE])
         else:
             # TODO(redo): some error message!
             pass
