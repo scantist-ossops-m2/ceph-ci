@@ -1516,8 +1516,34 @@ void ActivePyModules::register_client(std::string_view name, std::string addrs)
   entity_addrvec_t addrv;
   addrv.parse(addrs.data());
 
-  dout(7) << "registering msgr client handle " << addrv << dendl;
-  py_module_registry.register_client(name, std::move(addrv));
+  dout(7) << "registering msgr client handle [" << name << "] " << addrv << dendl;
+  epoch_t e;
+  if (cluster_state.is_client_in_mgrmap(name, addrv, &e)) {
+    // Client already registered in the MgrMap
+      return;
+  }
+  py_module_registry.register_client(name, addrv);
+  while (true) {
+    // Wait to receive MgrMap from the monitor
+    C_SaferCond c;
+    cluster_state.wait_for_mgrmap(&c, e+1);
+    c.wait();
+    if (cluster_state.is_client_in_mgrmap(name, addrv, &e)) {
+      // Client registered in the updated MgrMap
+      return;
+    }
+    // While waiting to receive new MgrMap from the monitor, the
+    // client may be deregistered from the py_module_registry. If this
+    // occurs, the client may never be registered in the MgrMap and the
+    // caller would be stuck trying to register a client.
+    if (!py_module_registry.is_client_in_registry(name, addrv)) {
+      derr << "msgr client handle [" << name << "] " << addrv
+           << " deregistered from py_module_registry "
+           << "when registering in MgrMap"
+           << dendl;
+      throw std::runtime_error("Failed to register client");
+    }
+  }
 }
 
 void ActivePyModules::unregister_client(std::string_view name, std::string addrs)
@@ -1525,7 +1551,7 @@ void ActivePyModules::unregister_client(std::string_view name, std::string addrs
   entity_addrvec_t addrv;
   addrv.parse(addrs.data());
 
-  dout(7) << "unregistering msgr client handle " << addrv << dendl;
+  dout(7) << "unregistering msgr client handle [" << name << "] " << addrv << dendl;
   py_module_registry.unregister_client(name, addrv);
 }
 
