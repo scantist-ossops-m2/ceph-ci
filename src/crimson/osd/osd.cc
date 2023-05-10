@@ -973,6 +973,12 @@ seastar::future<> OSD::committed_osd_maps(version_t first,
     }
     return check_osdmap_features().then([this] {
       // yay!
+      logger().info("osd.{}: committed_osd_maps: broadcasting osdmap.{}"
+                    "to pgs", whoami, osdmap->get_epoch());
+      // schedules a PGAdvanceMap operation in the following range:
+      // 'from':  initialized inside critical section
+      // 'to':    osdmap->get_epoch()
+      // https://tracker.ceph.com/issues/57542
       return pg_shard_manager.broadcast_map_to_pgs(osdmap->get_epoch());
     });
   }).then([m, this] {
