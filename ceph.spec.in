@@ -106,7 +106,7 @@
 %bcond_with cephfs_shell
 %endif
 
-%if 0%{?centos} && 0%{?centos} == 8
+%if 0%{?centos} && 0%{?centos} == 20
 %bcond_with embedded_pip_pkgs
 %else
 %bcond_without embedded_pip_pkgs
