@@ -7125,7 +7125,7 @@ int RGWRados::bucket_index_trim_olh_log(const DoutPrefixProvider *dpp, const RGW
   return 0;
 }
 
-int RGWRados::bucket_index_clear_olh(const DoutPrefixProvider *dpp, const RGWBucketInfo& bucket_info, RGWObjState& state, const rgw_obj& obj_instance)
+int RGWRados::bucket_index_clear_olh(const DoutPrefixProvider *dpp, const RGWBucketInfo& bucket_info, const string& olh_tag, const rgw_obj& obj_instance)
 {
   rgw_rados_ref ref;
   int r = get_obj_head_ref(dpp, bucket_info, obj_instance, &ref);
@@ -7134,8 +7134,6 @@ int RGWRados::bucket_index_clear_olh(const DoutPrefixProvider *dpp, const RGWBuc
   }
 
   BucketShard bs(this);
-
-  string olh_tag(state.olh_tag.c_str(), state.olh_tag.length());
 
   cls_rgw_obj_key key(obj_instance.key.get_index_key_name(), string());
 
@@ -7324,7 +7322,8 @@ int RGWRados::apply_olh_log(const DoutPrefixProvider *dpp,
       /* 
        * only clear if was successful, otherwise we might clobber pending operations on this object
        */
-      r = bucket_index_clear_olh(dpp, bucket_info, state, obj);
+      string olh_tag(state.olh_tag.c_str(), state.olh_tag.length());
+      r = bucket_index_clear_olh(dpp, bucket_info, olh_tag, obj);
       if (r < 0) {
         ldpp_dout(dpp, 0) << "ERROR: could not clear bucket index olh entries r=" << r << dendl;
         return r;
@@ -7332,6 +7331,68 @@ int RGWRados::apply_olh_log(const DoutPrefixProvider *dpp,
     }
   }
 
+  return 0;
+}
+
+int RGWRados::clear_olh(const DoutPrefixProvider *dpp,
+                        const rgw_obj& obj,
+			                  const RGWBucketInfo& bucket_info,
+                        const string& tag,
+                        const uint64_t ver) {
+  ObjectWriteOperation rm_op;
+  
+  RGWObjState s;
+  rgw_raw_obj raw_obj;
+  obj_to_raw(bucket_info.placement_rule, obj, &raw_obj);
+  int r = RGWRados::raw_obj_stat(dpp, raw_obj, &s.size, &s.mtime, &s.epoch, &s.attrset, (s.prefetch_data ? &s.data : NULL), NULL, null_yield);
+  if (r < 0) {
+    return r;
+  }
+  auto iter = s.attrset.find(RGW_ATTR_OLH_ID_TAG);
+  if (iter != s.attrset.end()) {
+    s.olh_tag = iter->second;
+  }
+
+  map<string, bufferlist> pending_entries;
+  rgw_filter_attrset(s.attrset, RGW_ATTR_OLH_PENDING_PREFIX, &pending_entries);
+
+  map<string, bufferlist> rm_pending_entries;
+  check_pending_olh_entries(pending_entries, &rm_pending_entries);
+
+  if (!rm_pending_entries.empty()) {
+    r = remove_olh_pending_entries(dpp, bucket_info, s, obj, rm_pending_entries);
+    if (r < 0) {
+      ldpp_dout(dpp, 0) << "ERROR: rm_pending_entries returned ret=" << r << dendl;
+      return r;
+    }
+  }
+
+  bufferlist tag_bl;
+  tag_bl.append(tag.c_str(), tag.length());
+  rm_op.cmpxattr(RGW_ATTR_OLH_ID_TAG, CEPH_OSD_CMPXATTR_OP_EQ, tag_bl);
+  rm_op.cmpxattr(RGW_ATTR_OLH_VER, CEPH_OSD_CMPXATTR_OP_EQ, ver);
+  cls_obj_check_prefix_exist(rm_op, RGW_ATTR_OLH_PENDING_PREFIX, true); /* fail if found one of these, pending modification */
+  rm_op.remove();
+
+  rgw_rados_ref ref;
+  r = get_obj_head_ref(dpp, bucket_info, obj, &ref);
+  if (r < 0) {
+    return r;
+  }
+
+  r = rgw_rados_operate(dpp, ref.pool.ioctx(), ref.obj.oid, &rm_op, null_yield);
+  if (r == -ECANCELED) {
+    return r; /* someone else made a modification in the meantime */
+  } else {
+    /* 
+     * only clear if was successful, otherwise we might clobber pending operations on this object
+     */
+    r = bucket_index_clear_olh(dpp, bucket_info, tag, obj);
+    if (r < 0) {
+      ldpp_dout(dpp, 0) << "ERROR: could not clear bucket index olh entries r=" << r << dendl;
+      return r;
+    }
+  }
   return 0;
 }
 
@@ -7545,6 +7606,7 @@ void RGWRados::check_pending_olh_entries(map<string, bufferlist>& pending_entrie
 
     map<string, bufferlist>::iterator cur_iter = iter;
     ++iter;
+
     if (now - pending_info.time >= make_timespan(cct->_conf->rgw_olh_pending_timeout_sec)) {
       (*rm_pending_entries)[cur_iter->first] = cur_iter->second;
       pending_entries.erase(cur_iter);

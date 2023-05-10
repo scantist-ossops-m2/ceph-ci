@@ -157,6 +157,7 @@ void usage()
   cout << "  bi put                     store bucket index object entries\n";
   cout << "  bi list                    list raw bucket index entries\n";
   cout << "  bi find zombies            list zombie objects\n";
+  cout << "  bi clean                   clean up bad index entries\n";
   cout << "  bi purge                   purge bucket index entries\n";
   cout << "  object rm                  remove object\n";
   cout << "  object put                 put object\n";
@@ -420,7 +421,7 @@ void usage()
   cout << "   --trim-delay-ms           time interval in msec to limit the frequency of sync error log entries trimming operations,\n";
   cout << "                             the trimming process will sleep the specified msec for every 1000 entries trimmed\n";
   cout << "   --max-concurrent-ios      maximum concurrent ios for bucket operations (default: 32)\n";
-  cout << "   --max-threads             maximum number of threads (default: 32) (applies to bi find zombies)\n";
+  cout << "   --max-threads             maximum number of threads (default: 32) (applies to bi find zombies, bi clean)\n";
   cout << "\n";
   cout << "<date> := \"YYYY-MM-DD[ hh:mm:ss]\"\n";
   cout << "\nQuota options:\n";
@@ -656,6 +657,7 @@ enum class OPT {
   BI_GET,
   BI_PUT,
   BI_FIND_ZOMBIES,
+  BI_CLEAN,
   BI_LIST,
   BI_PURGE,
   OLH_GET,
@@ -865,6 +867,7 @@ static SimpleCmd::Commands all_cmds = {
   { "bi get", OPT::BI_GET },
   { "bi put", OPT::BI_PUT },
   { "bi find zombies", OPT::BI_FIND_ZOMBIES },
+  { "bi clean", OPT::BI_CLEAN },
   { "bi list", OPT::BI_LIST },
   { "bi purge", OPT::BI_PURGE },
   { "olh get", OPT::OLH_GET },
@@ -3882,6 +3885,7 @@ int main(int argc, const char **argv)
 			 OPT::BI_GET,
 			 OPT::BI_LIST,
 			 OPT::BI_FIND_ZOMBIES,
+			 OPT::BI_CLEAN,
 			 OPT::OLH_GET,
 			 OPT::OLH_READLOG,
 			 OPT::GC_LIST,
@@ -6749,6 +6753,114 @@ next:
     } 
     cerr << "FINISHED totals [dark_data_size_bytes= " << total_size << ", dark_data_obj_cnt=" << total_count << "]" << std::endl;
   }
+  if (opt_cmd == OPT::BI_CLEAN) {
+    if (bucket_name.empty()) {
+      cerr << "ERROR: bucket name not specified" << std::endl;
+      return EINVAL;
+    }
+    RGWBucketInfo bucket_info;
+    int ret = init_bucket(tenant, bucket_name, bucket_id, bucket_info, bucket);
+    if (ret < 0) {
+      cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+    if (max_entries < 0) {
+      max_entries = 1000;
+    }
+
+    int max_shards = (bucket_info.layout.current_index.layout.normal.num_shards > 0 ? bucket_info.layout.current_index.layout.normal.num_shards : 1);
+    cerr << "num shards = " << max_shards << std::endl;
+    if (fix) {
+      cerr << "fix = true" << std::endl;
+    }
+
+    int num_threads = std::min(max_shards, max_threads);
+    std::mutex cerr_mutex;
+    std::mutex cout_mutex;
+    atomic_int next_shard = (specified_shard_id ? shard_id : 0);
+    atomic_ullong total_size = 0;
+    atomic_ullong total_count = 0;
+    std::vector<std::thread> ts;
+    for (int j=0; j<num_threads; j++) {
+      std::thread t([&]() {
+        string marker = "";
+        list<rgw_cls_bi_entry> entries;
+        bool is_truncated;
+        while (true) {
+          int shard = next_shard.fetch_add(1, std::memory_order_relaxed);
+          if (shard >= max_shards) {
+            return;
+          }
+          RGWRados::BucketShard bs(store->getRados());
+          int shard_id = (bucket_info.layout.current_index.layout.normal.num_shards > 0  ? shard : -1);
+
+          int ret = bs.init(bucket, shard_id, bucket_info.layout.current_index, nullptr /* no RGWBucketInfo */, dpp());
+          marker.clear();
+          marker.append("\x80" "1001_");
+
+
+          if (ret < 0) {
+            std::lock_guard<std::mutex> guard(cerr_mutex);
+            cerr << "ERROR shard " << shard << ": bs.init(bucket=" << bucket << ", shard=" << shard_id << "): " << cpp_strerror(-ret) << std::endl;
+            continue;
+          }
+
+          uint64_t shard_count = 0;
+
+          do {
+            entries.clear();
+            // if object is specified, we use that as a filter to only retrieve some entries
+            ret = store->getRados()->bi_list(bs, object, marker, max_entries, &entries, &is_truncated);
+            if (ret < 0) {
+              std::lock_guard<std::mutex> guard(cerr_mutex);
+              cerr << "ERROR shard " << shard << ": bi_list(): " << cpp_strerror(-ret) << std::endl;
+              break;
+            }
+
+            list<rgw_cls_bi_entry>::iterator iter;
+            for (iter = entries.begin(); iter != entries.end(); ++iter) {
+              rgw_cls_bi_entry& entry = *iter;
+              if (entry.type == BIIndexType::OLH) {
+                rgw_bucket_olh_entry olh_entry;
+                auto iiter = entry.data.cbegin();
+                try {
+                  decode(olh_entry, iiter);
+                } catch (buffer::error& err) {
+                  std::lock_guard<std::mutex> guard(cerr_mutex);
+                  cerr << "ERROR shard " << shard << ": failed to decode olh entry" << std::endl;
+                  break;
+                }
+                if (!olh_entry.exists && olh_entry.pending_removal && olh_entry.pending_log.empty()) {
+                  if (fix) {
+                    rgw_obj obj(bucket, olh_entry.key.name);
+                    ret = store->getRados()->clear_olh(dpp(), obj, bucket_info, olh_entry.tag, olh_entry.epoch);
+                    if (ret < 0) {
+                      std::lock_guard<std::mutex> guard(cerr_mutex);
+                      cerr << "ERROR clearing olh for shard: " << shard << ", obj: " << obj << " clear_olh(): " << cpp_strerror(-ret) << std::endl;
+                      continue;
+                    }
+                  }
+                  std::lock_guard<std::mutex> guard(cout_mutex);
+                  cout << olh_entry.key.name << std::endl;
+                  shard_count += 1;
+                }
+              }
+              marker = entry.idx;
+            }
+          } while (is_truncated);
+
+          total_count += shard_count;
+          std::lock_guard<std::mutex> guard(cerr_mutex);
+          cerr << "FINISHED shard " << shard << " [obj_cnt=" << shard_count << "]" << std::endl;
+        }
+      });
+      ts.push_back(std::move(t));
+    }
+    for (auto & t : ts) {
+      t.join(); 
+    } 
+    cerr << "FINISHED totals [dark_data_size_bytes= " << total_size << ", dark_data_obj_cnt=" << total_count << "]" << std::endl;
+  }
 
   if (opt_cmd == OPT::BI_LIST) {
     if (bucket_name.empty()) {
@@ -6850,7 +6962,7 @@ next:
 
       ret = store->getRados()->bi_remove(bs);
       if (ret < 0) {
-        cerr << "ERROR: failed to remove bucket index object: " << cpp_strerror(-ret) << std::endl;
+        // cerr << "ERROR: failed to remove bucket index object: " << cpp_strerror(-ret) << std::endl;
         return -ret;
       }
     }
