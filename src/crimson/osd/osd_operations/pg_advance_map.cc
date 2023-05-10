@@ -76,6 +76,14 @@ seastar::future<> PGAdvanceMap::start()
       });
     }
     return fut.then([this] {
+	// (remove me) The bug is originated here:
+	// The iteration begins from an unexisting map epoch.
+	// 'from' is later than 'to' and we try to get_map 'from' + 1.
+	if (std::cmp_greater(*from, to)) {
+	  logger().debug("{}: 'from' is later than 'to' epoch,"
+	                 "nowhere to advance - skipping", *this);
+	  return seastar::now();
+	}
       return seastar::do_for_each(
 	boost::make_counting_iterator(*from + 1),
 	boost::make_counting_iterator(to + 1),
