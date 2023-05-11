@@ -2259,27 +2259,31 @@ def require_image(func: FuncT) -> FuncT:
 def default_image(func: FuncT) -> FuncT:
     @wraps(func)
     def _default_image(ctx: CephadmContext) -> Any:
-        if not ctx.image:
-            if 'name' in ctx and ctx.name:
-                type_ = ctx.name.split('.', 1)[0]
-                if type_ in Monitoring.components:
-                    ctx.image = Monitoring.components[type_]['image']
-                if type_ == 'haproxy':
-                    ctx.image = HAproxy.default_image
-                if type_ == 'keepalived':
-                    ctx.image = Keepalived.default_image
-                if type_ == SNMPGateway.daemon_type:
-                    ctx.image = SNMPGateway.default_image
-                if type_ in Tracing.components:
-                    ctx.image = Tracing.components[type_]['image']
-            if not ctx.image:
-                ctx.image = os.environ.get('CEPHADM_IMAGE')
-            if not ctx.image:
-                ctx.image = _get_default_image(ctx)
-
+        update_default_image(ctx)
         return func(ctx)
 
     return cast(FuncT, _default_image)
+
+
+def update_default_image(ctx: CephadmContext) -> None:
+    if ctx.image:
+        return
+    if 'name' in ctx and ctx.name:
+        type_ = ctx.name.split('.', 1)[0]
+        if type_ in Monitoring.components:
+            ctx.image = Monitoring.components[type_]['image']
+        if type_ == 'haproxy':
+            ctx.image = HAproxy.default_image
+        if type_ == 'keepalived':
+            ctx.image = Keepalived.default_image
+        if type_ == SNMPGateway.daemon_type:
+            ctx.image = SNMPGateway.default_image
+        if type_ in Tracing.components:
+            ctx.image = Tracing.components[type_]['image']
+    if not ctx.image:
+        ctx.image = os.environ.get('CEPHADM_IMAGE')
+    if not ctx.image:
+        ctx.image = _get_default_image(ctx)
 
 
 def get_container_info(ctx: CephadmContext, daemon_filter: str, by_name: bool) -> Optional[ContainerInfo]:
