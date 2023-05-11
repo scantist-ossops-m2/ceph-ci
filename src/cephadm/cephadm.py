@@ -2998,6 +2998,18 @@ def fetch_meta(ctx: CephadmContext) -> Dict[str, Any]:
     return {}
 
 
+def fetch_configs(ctx: CephadmContext) -> Dict[str, str]:
+    cfg_blobs = getattr(ctx, 'config_blobs', None)
+    if cfg_blobs:
+        cfg_blobs = dict(cfg_blobs)
+        cfg_blobs.pop('custom_config_files', None)
+        return cfg_blobs
+    cfg_json = getattr(ctx, 'config_json', None)
+    if cfg_json:
+        return get_parm(cfg_json) or {}
+    return {}
+
+
 def get_config_and_keyring(ctx):
     # type: (CephadmContext) -> Tuple[Optional[str], Optional[str]]
     config = None
