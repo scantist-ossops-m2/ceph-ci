@@ -20,7 +20,6 @@
 
 #include "gtest/gtest.h"
 #include "test/librados/test_cxx.h"
-#include "test/librados/crimson_utils.h"
 
 #include <errno.h>
 #include <string>
@@ -1798,7 +1797,6 @@ TEST_F(TestClsRbd, mirror_image) {
 }
 
 TEST_F(TestClsRbd, mirror_image_status) {
-  SKIP_IF_CRIMSON();
   struct WatchCtx : public librados::WatchCtx2 {
     librados::IoCtx *m_ioctx;
 
@@ -2277,14 +2275,14 @@ TEST_F(TestClsRbd, mirror_snapshot) {
   ASSERT_EQ(1U, sn->mirror_peer_uuids.size());
   ASSERT_EQ(1U, sn->mirror_peer_uuids.count("peer2"));
 
-  ASSERT_EQ(-ERESTART,
-            mirror_image_snapshot_unlink_peer(&ioctx, oid, 1, "peer2"));
+  ASSERT_EQ(0, mirror_image_snapshot_unlink_peer(&ioctx, oid, 1, "peer2"));
+  ASSERT_EQ(-ENOENT, mirror_image_snapshot_unlink_peer(&ioctx, oid, 1,
+                                                       "peer2"));
   ASSERT_EQ(0, snapshot_get(&ioctx, oid, 1, &snap));
   sn = std::get_if<cls::rbd::MirrorSnapshotNamespace>(
     &snap.snapshot_namespace);
   ASSERT_NE(nullptr, sn);
-  ASSERT_EQ(1U, sn->mirror_peer_uuids.size());
-  ASSERT_EQ(1U, sn->mirror_peer_uuids.count("peer2"));
+  ASSERT_EQ(0U, sn->mirror_peer_uuids.size());
 
   ASSERT_EQ(0, snapshot_get(&ioctx, oid, 2, &snap));
   auto nsn = std::get_if<cls::rbd::MirrorSnapshotNamespace>(

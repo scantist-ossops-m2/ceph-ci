@@ -13,7 +13,6 @@
  */
 #include "test/librbd/test_fixture.h"
 #include "test/librbd/test_support.h"
-#include "test/librados/crimson_utils.h"
 #include "librbd/ExclusiveLock.h"
 #include "librbd/ImageState.h"
 #include "librbd/ImageWatcher.h"
@@ -1224,7 +1223,6 @@ TEST_F(TestMirroring, SnapshotRemoveOnDisable)
 
 TEST_F(TestMirroring, SnapshotUnlinkPeer)
 {
-  SKIP_IF_CRIMSON();
   REQUIRE_FORMAT_V2();
 
   ASSERT_EQ(0, m_rbd.mirror_mode_set(m_ioctx, RBD_MIRROR_MODE_IMAGE));
@@ -1271,7 +1269,7 @@ TEST_F(TestMirroring, SnapshotUnlinkPeer)
 
   C_SaferCond cond1;
   auto req = librbd::mirror::snapshot::UnlinkPeerRequest<>::create(
-    ictx, snap_id, peer1_uuid, &cond1);
+    ictx, snap_id, peer1_uuid, true, &cond1);
   req->send();
   ASSERT_EQ(0, cond1.wait());
 
@@ -1316,7 +1314,7 @@ TEST_F(TestMirroring, SnapshotUnlinkPeer)
 
   C_SaferCond cond2;
   req = librbd::mirror::snapshot::UnlinkPeerRequest<>::create(
-    ictx, snap_id, peer2_uuid, &cond2);
+    ictx, snap_id, peer2_uuid, true, &cond2);
   req->send();
   ASSERT_EQ(0, cond2.wait());
 
