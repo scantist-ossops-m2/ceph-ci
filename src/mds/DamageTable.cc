@@ -224,7 +224,9 @@ void DamageTable::remove_dirfrag_damage_entry(CDir *dir)
 void DamageTable::remove_backtrace_damage_entry(inodeno_t ino)
 {  
   if (is_remote_damaged(ino)){
+    derr << "CHECKK4" << remotes.find(ino)->second->id << dendl;
     erase(remotes.find(ino)->second->id);
+    derr << "CHECKK5" << remotes.find(ino)->second->id << dendl;
   }  
 }
 

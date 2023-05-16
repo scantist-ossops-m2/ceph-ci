@@ -489,6 +489,7 @@ class TestForwardScrub(CephFSTestCase):
             self.fs.mon_manager.raw_cluster_cmd(
                 'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
                 "damage", "ls", '--format=json-pretty'))
+        print(f"CHECKK1={damage}")
         self.assertEqual(len(damage), 1)
         self.assertEqual(damage[0]['damage_type'], "backtrace")
         self.assertIn("MDS_DAMAGE", self.mds_cluster.mon_manager.get_mon_health()['checks'])
@@ -501,5 +502,6 @@ class TestForwardScrub(CephFSTestCase):
             self.fs.mon_manager.raw_cluster_cmd(
                 'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
                 "damage", "ls", '--format=json-pretty'))
+        print(f"checkkk2={damage}")
         self.assertEqual(len(damage), 0)
         self.assertNotIn("MDS_DAMAGE", self.mds_cluster.mon_manager.get_mon_health()['checks'])
