@@ -10,6 +10,7 @@ how the functionality responds to damaged metadata.
 import logging
 import json
 import errno
+import time
 
 from collections import namedtuple
 from io import BytesIO
@@ -489,6 +490,7 @@ class TestForwardScrub(CephFSTestCase):
             self.fs.mon_manager.raw_cluster_cmd(
                 'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
                 "damage", "ls", '--format=json-pretty'))
+        print(f"CHECKK1={damage}")
         self.assertEqual(len(damage), 1)
         self.assertEqual(damage[0]['damage_type'], "backtrace")
         self.assertIn("MDS_DAMAGE", self.mds_cluster.mon_manager.get_mon_health()['checks'])
@@ -497,9 +499,11 @@ class TestForwardScrub(CephFSTestCase):
         self.assertEqual(self.fs.wait_until_scrub_complete(tag=out_json["scrub_tag"]), True)
 
         # Check that the entry is cleared from the damage table
+        time.sleep(10)
         damage = json.loads(
             self.fs.mon_manager.raw_cluster_cmd(
                 'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
                 "damage", "ls", '--format=json-pretty'))
+        print(f"checkkk2={damage}")
         self.assertEqual(len(damage), 0)
         self.assertNotIn("MDS_DAMAGE", self.mds_cluster.mon_manager.get_mon_health()['checks'])
