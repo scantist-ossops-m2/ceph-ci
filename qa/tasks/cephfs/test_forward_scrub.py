@@ -10,6 +10,7 @@ how the functionality responds to damaged metadata.
 import logging
 import json
 import errno
+import time
 
 from collections import namedtuple
 from io import BytesIO
@@ -46,6 +47,12 @@ class TestForwardScrub(CephFSTestCase):
             inos[path] = self.mount_a.path_to_ino(path)
 
         return inos
+    
+    def _get_damage_ls(self):
+        out_json = self.fs.rank_tell(["damage", "ls"])
+        self.assertNotEqual(out_json, None)
+
+        return out_json
 
     def test_apply_tag(self):
         self.mount_a.run_shell(["mkdir", "parentdir"])
@@ -352,10 +359,11 @@ class TestForwardScrub(CephFSTestCase):
         self.assertEqual(self.fs.wait_until_scrub_complete(tag=out_json["scrub_tag"]), True)
 
         # Check that an entry for dentry damage is created in the damage table
-        damage = json.loads(
-            self.fs.mon_manager.raw_cluster_cmd(
-                'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
-                "damage", "ls", '--format=json-pretty'))
+        # damage = json.loads(
+        #     self.fs.mon_manager.raw_cluster_cmd(
+        #         'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
+        #         "damage", "ls", '--format=json-pretty'))
+        damage = self._get_damage_ls()
         self.assertEqual(len(damage), 1)
         self.assertEqual(damage[0]['damage_type'], "dentry")
         self.assertIn("MDS_DAMAGE", self.mds_cluster.mon_manager.get_mon_health()['checks'])
@@ -364,10 +372,11 @@ class TestForwardScrub(CephFSTestCase):
         self.assertEqual(self.fs.wait_until_scrub_complete(tag=out_json["scrub_tag"]), True)
 
         # Check that the entry is cleared from the damage table
-        damage = json.loads(
-            self.fs.mon_manager.raw_cluster_cmd(
-                'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
-                "damage", "ls", '--format=json-pretty'))
+        # damage = json.loads(
+        #     self.fs.mon_manager.raw_cluster_cmd(
+        #         'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
+        #         "damage", "ls", '--format=json-pretty'))
+        damage = self._get_damage_ls()
         self.assertEqual(len(damage), 0)
         self.assertNotIn("MDS_DAMAGE", self.mds_cluster.mon_manager.get_mon_health()['checks'])
 
@@ -417,10 +426,11 @@ class TestForwardScrub(CephFSTestCase):
         self.assertEqual(self.fs.wait_until_scrub_complete(tag=out_json["scrub_tag"]), True)
 
         # Check that an entry is created in the damage table
-        damage = json.loads(
-            self.fs.mon_manager.raw_cluster_cmd(
-                'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
-                "damage", "ls", '--format=json-pretty'))
+        # damage = json.loads(
+        #     self.fs.mon_manager.raw_cluster_cmd(
+        #         'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
+        #         "damage", "ls", '--format=json-pretty'))
+        damage = self._get_damage_ls()
         self.assertEqual(len(damage), 3)
         damage_types = set()
         for i in range(0, 3):
@@ -432,10 +442,11 @@ class TestForwardScrub(CephFSTestCase):
         self.assertEqual(self.fs.wait_until_scrub_complete(tag=out_json["scrub_tag"]), True)
 
         # Check that the entry is cleared from the damage table
-        damage = json.loads(
-            self.fs.mon_manager.raw_cluster_cmd(
-                'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
-                "damage", "ls", '--format=json-pretty'))
+        # damage = json.loads(
+        #     self.fs.mon_manager.raw_cluster_cmd(
+        #         'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
+        #         "damage", "ls", '--format=json-pretty'))
+        damage = self._get_damage_ls()
         self.assertEqual(len(damage), 1)
         self.assertNotEqual(damage[0]['damage_type'], "dir_frag")
 
@@ -454,10 +465,11 @@ class TestForwardScrub(CephFSTestCase):
 
         out_json = self.fs.run_scrub(["start", "/dir", "recursive,repair"])
         self.assertEqual(self.fs.wait_until_scrub_complete(tag=out_json["scrub_tag"]), True)
-        damage = json.loads(
-            self.fs.mon_manager.raw_cluster_cmd(
-                'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
-                "damage", "ls", '--format=json-pretty'))
+        # damage = json.loads(
+        #     self.fs.mon_manager.raw_cluster_cmd(
+        #         'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
+        #         "damage", "ls", '--format=json-pretty'))
+        damage = self._get_damage_ls()
         self.assertEqual(len(damage), 0)
         self.assertNotIn("MDS_DAMAGE", self.mds_cluster.mon_manager.get_mon_health()['checks'])
 
@@ -485,21 +497,26 @@ class TestForwardScrub(CephFSTestCase):
         self.assertEqual(self.fs.wait_until_scrub_complete(tag=out_json["scrub_tag"]), True)
         
         # Check that an entry for backtrace damage is created in the damage table
-        damage = json.loads(
-            self.fs.mon_manager.raw_cluster_cmd(
-                'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
-                "damage", "ls", '--format=json-pretty'))
+        # damage = json.loads(
+        #     self.fs.mon_manager.raw_cluster_cmd(
+        #         'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
+        #         "damage", "ls", '--format=json-pretty'))
+        damage = self._get_damage_ls()
+        print(f"CHECKK1={damage}")
         self.assertEqual(len(damage), 1)
         self.assertEqual(damage[0]['damage_type'], "backtrace")
         self.assertIn("MDS_DAMAGE", self.mds_cluster.mon_manager.get_mon_health()['checks'])
 
-        out_json = self.fs.run_scrub(["start", "/", "repair,recursive"])
+        out_json = self.fs.run_scrub(["start", "/", "repair,recursive,force"])
         self.assertEqual(self.fs.wait_until_scrub_complete(tag=out_json["scrub_tag"]), True)
 
         # Check that the entry is cleared from the damage table
-        damage = json.loads(
-            self.fs.mon_manager.raw_cluster_cmd(
-                'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
-                "damage", "ls", '--format=json-pretty'))
+        time.sleep(10)
+        # damage = json.loads(
+        #     self.fs.mon_manager.raw_cluster_cmd(
+        #         'tell', 'mds.{0}'.format(self.fs.get_active_names()[0]),
+        #         "damage", "ls", '--format=json-pretty'))
+        damage = self._get_damage_ls()
+        print(f"checkkk2={damage}")
         self.assertEqual(len(damage), 0)
         self.assertNotIn("MDS_DAMAGE", self.mds_cluster.mon_manager.get_mon_health()['checks'])
