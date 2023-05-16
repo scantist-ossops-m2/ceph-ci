@@ -69,6 +69,7 @@
 
 	bdev debug aio = true
 	osd debug misdirected ops = true
+        osd mclock profile = high_recovery_ops
 
 [mgr]
 	debug ms = 1
