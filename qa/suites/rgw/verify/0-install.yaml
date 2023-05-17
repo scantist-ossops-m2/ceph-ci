@@ -1,4 +1,8 @@
 tasks:
+- pexec:
+    all:
+      - sudo dnf -y install 'dnf-command(copr)'
+      - sudo dnf -y copr enable ceph/el9
 - install:
       # extra packages added for the rgw-datacache task
       extra_system_packages:
