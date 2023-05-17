@@ -1,0 +1,9 @@
+meta:
+- desc: run the rbd_mirror_snapshot.sh workunit to test the rbd-mirror daemon
+tasks:
+- workunit:
+    clients:
+      cluster1.client.mirror: [rbd/rbd_mirror_latency.sh]
+    env:
+      LATENCY: '30ms'
+    timeout: 1h
