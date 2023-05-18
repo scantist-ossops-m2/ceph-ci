@@ -477,6 +477,38 @@ class TestSnapSchedules(TestSnapSchedulesHelper):
         # remove snapshot schedule
         self.fs_snap_schedule_cmd('remove', path="/bad-path")
 
+    def test_snap_schedule_for_number_of_snaps_retention(self):
+        """
+        Test that number of snaps retained are as per user spec.
+        """
+        self.mount_a.run_shell(['mkdir', '-p', TestSnapSchedules.TEST_DIRECTORY])
+
+        # set a schedule on the dir
+        self.fs_snap_schedule_cmd('add', path=TestSnapSchedules.TEST_DIRECTORY, snap_schedule='1M')
+        self.fs_snap_schedule_cmd('retention', 'add', path=TestSnapSchedulesSnapdir.TEST_DIRECTORY, retention_spec_or_period='55n')
+        exec_time = time.time()
+
+        timo_1, snap_sfx = self.calc_wait_time_and_snap_name(exec_time, '1M')
+
+        # verify snapshot schedule
+        self.verify_schedule(TestSnapSchedules.TEST_DIRECTORY, ['1M'])
+
+        # we wait for 55 snaps to be taken
+        wait_time = timo_1 + 55 * 60 + 15
+        time.sleep(wait_time)
+
+        snap_stats = self.get_snap_stats(TestSnapSchedules.TEST_DIRECTORY)
+        self.assertTrue(snap_stats['fs_count'] == 55)
+        self.assertTrue(snap_stats['db_count'] == 55)
+
+        # remove snapshot schedule
+        self.fs_snap_schedule_cmd('remove', path=TestSnapSchedules.TEST_DIRECTORY)
+
+        # remove all scheduled snapshots
+        self.remove_snapshots(TestSnapSchedules.TEST_DIRECTORY)
+
+        self.mount_a.run_shell(['rmdir', TestSnapSchedules.TEST_DIRECTORY])
+
 
 class TestSnapSchedulesSnapdir(TestSnapSchedulesHelper):
     def remove_snapshots(self, dir_path, sdn):
