@@ -255,7 +255,7 @@ int Service::issue_admin_token_request(const DoutPrefixProvider *dpp,
     return -EINVAL;
   }
 
-  const auto admin_ret = validate_admin_token(cct, t);
+  const auto admin_ret = validate_admin_token(t);
   if (admin_ret < 0) {
     lderr(cct) << "Received invalid admin token flags=" << (admin_ret & 0xffff)
              << " data=" << std::string_view(token_bl.c_str(), token_bl.length()) << dendl;
