@@ -6,6 +6,7 @@
 # of python to build with? Even with the intermediate cmake layer?
 
 import argparse
+import compileall
 import logging
 import os
 import pathlib
@@ -78,6 +79,14 @@ def _build(dest, src, versioning_vars=None):
 
 def _compile(dest, tempdir):
     """Compile the zipapp."""
+    log.info("Byte-compiling py to pyc")
+    compileall.compile_dir(
+        tempdir,
+        maxlevels=16,
+        legacy=True,
+        quiet=1,
+        workers=0,
+    )
     # TODO we could explicitly pass a python version here
     log.info("Constructing the zipapp file")
     try:
