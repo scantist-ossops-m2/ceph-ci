@@ -43,6 +43,13 @@ class ContainerInspectInfo(NamedTuple):
     repo_digests: Optional[List[str]]
 
 
+class SpecialHostLabels():
+    admin_label: str = '_admin'
+    no_autotune_memory_label: str = '_no_autotune_memory'
+    drain_daemons_label: str = '_no_schedule'
+    drain_conf_keyring_label: str = '_no_conf_keyring'
+
+
 def name_to_config_section(name: str) -> ConfEntity:
     """
     Map from daemon names to ceph entity names (as seen in config)
