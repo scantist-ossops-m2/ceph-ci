@@ -61,9 +61,10 @@ class Activate(object):
 
     help = 'Discover and prepare a data directory for a (BlueStore) OSD on a raw device'
 
-    def __init__(self, argv):
+    def __init__(self, argv, args=None):
+        self.objectstore = None
         self.argv = argv
-        self.args = None
+        self.args = args
 
     @decorators.needs_root
     def activate(self, devs, start_osd_id, start_osd_uuid,
