@@ -7284,36 +7284,36 @@ void OSDService::maybe_share_map(
 
   // assume the peer has the newer of the op's sent_epoch and what
   // we think we sent them.
-  session->sent_epoch_lock.lock();
-  if (peer_epoch_lb > session->last_sent_epoch) {
+  session->projected_epoch_lock.lock();
+  if (peer_epoch_lb > session->projected_epoch) {
     dout(10) << fmt::format(
-       "{}: con {} updating session's last_sent_epoch"
+       "{}: con {} updating session's projected_epoch"
        " from {} to ping map epoch of {}",
        __func__, con->get_peer_addr(),
-       session->last_sent_epoch, peer_epoch_lb)
+       session->projected_epoch, peer_epoch_lb)
        << dendl;
-    session->last_sent_epoch = peer_epoch_lb;
+    session->projected_epoch = peer_epoch_lb;
   }
 
-  if (osdmap->get_epoch() <= session->last_sent_epoch) {
+  if (osdmap->get_epoch() <= session->projected_epoch) {
     dout(10) << fmt::format(
       "{}: con {} our osdmap epoch of {} is not"
-      " newer than session's last_sent_epoch of {}",
+      " newer than session's projected_epoch of {}",
       __func__, con->get_peer_addr(),
-      osdmap->get_epoch(), session->last_sent_epoch)
+      osdmap->get_epoch(), session->projected_epoch)
       << dendl;
-    session->sent_epoch_lock.unlock();
+    session->projected_epoch_lock.unlock();
     return;
   }
 
-  const epoch_t send_from = session->last_sent_epoch;
+  const epoch_t send_from = session->projected_epoch;
   dout(10) << fmt::format(
     "{}: con {} map epoch {} -> {} (shared)",
     __func__, con->get_peer_addr(),
-    session->last_epoch_sent, osdmap->get_epoch())
+    session->projected_epoch, osdmap->get_epoch())
     << dendl;
-  session->last_sent_epoch = osdmap->get_epoch();
-  session->sent_epoch_lock.unlock();
+  session->projected_epoch = osdmap->get_epoch();
+  session->projected_epoch_lock.unlock();
   send_incremental_map(send_from, con, osdmap);
 }
 
