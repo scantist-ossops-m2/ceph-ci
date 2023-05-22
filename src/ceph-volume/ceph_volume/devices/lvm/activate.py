@@ -3,7 +3,7 @@ import argparse
 import logging
 import os
 from textwrap import dedent
-from ceph_volume import process, conf, decorators, terminal, configuration
+from ceph_volume import process, conf, decorators, terminal, configuration, objectstore
 from ceph_volume.util import system, disk
 from ceph_volume.util import prepare as prepare_utils
 from ceph_volume.util import encryption as encryption_utils
@@ -145,8 +145,10 @@ class Activate(object):
 
     help = 'Discover and mount the LVM device associated with an OSD ID and start the Ceph OSD'
 
-    def __init__(self, argv):
+    def __init__(self, argv, args=None):
+        self.objectstore = None
         self.argv = argv
+        self.args = args
 
     @decorators.needs_root
     def activate_all(self, args):
@@ -273,11 +275,15 @@ class Activate(object):
             action='store_true',
             help='Do not use a tmpfs mount for OSD data dir'
         )
-        if len(self.argv) == 0:
+        if len(self.argv) == 0 and self.args is None:
             print(sub_command_help)
             return
-        args = parser.parse_args(self.argv)
-        if args.activate_all:
-            self.activate_all(args)
+        if self.args is None:
+            self.args = parser.parse_args(self.argv)
+        if self.args.bluestore:
+            self.args.objectstore = 'bluestore'
+        self.objectstore = objectstore.mapping['LVM'][self.args.objectstore](args=self.args)
+        if self.args.activate_all:
+            self.objectstore.activate_all()
         else:
-            self.activate(args)
+            self.activate(self.args)
