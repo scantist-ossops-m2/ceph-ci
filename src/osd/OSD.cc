@@ -7294,6 +7294,12 @@ void OSDService::maybe_share_map(
   }
 
   if (osdmap->get_epoch() <= session->last_sent_epoch) {
+    dout(10) << fmt::format(
+      "{}: con {} our osdmap epoch of {} is not"
+      " newer than session's last_sent_epoch of {}",
+      __func__, con->get_peer_addr(),
+      osdmap->get_epoch(), session->last_sent_epoch)
+      << dendl;
     session->sent_epoch_lock.unlock();
     return;
   }
