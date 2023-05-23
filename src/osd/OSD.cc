@@ -7286,10 +7286,12 @@ void OSDService::maybe_share_map(
   // we think we sent them.
   session->sent_epoch_lock.lock();
   if (peer_epoch_lb > session->last_sent_epoch) {
-    dout(10) << __func__ << " con " << con
-	     << " " << con->get_peer_addr()
-	     << " map epoch " << session->last_sent_epoch
-	     << " -> " << peer_epoch_lb << " (as per caller)" << dendl;
+    dout(10) << fmt::format(
+       "{}: con {} updating session's last_sent_epoch"
+       " from {} to ping map epoch of {}",
+       __func__, con->get_peer_addr(),
+       session->last_sent_epoch, peer_epoch_lb)
+       << dendl;
     session->last_sent_epoch = peer_epoch_lb;
   }
 
@@ -7305,10 +7307,11 @@ void OSDService::maybe_share_map(
   }
 
   const epoch_t send_from = session->last_sent_epoch;
-    dout(10) << __func__ << " con " << con
-	     << " " << con->get_peer_addr()
-	     << " map epoch " << session->last_sent_epoch
-	     << " -> " << last_sent_epoch << " (shared)" << dendl;
+  dout(10) << fmt::format(
+    "{}: con {} map epoch {} -> {} (shared)",
+    __func__, con->get_peer_addr(),
+    session->last_epoch_sent, osdmap->get_epoch())
+    << dendl;
   session->last_sent_epoch = osdmap->get_epoch();
   session->sent_epoch_lock.unlock();
   send_incremental_map(send_from, con, osdmap);
