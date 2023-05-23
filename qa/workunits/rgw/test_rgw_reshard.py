@@ -264,8 +264,8 @@ def main():
     bucket.objects.all().delete()
     bucket.delete()
     log.debug("Deleting bucket {}".format(VER_BUCKET_NAME))
+    ver_bucket.object_versions.all().delete()
     ver_bucket.delete()
-
 
 main()
 log.info("Completed resharding tests")
