@@ -19,7 +19,7 @@ user-workload:
            - suites/blogbench.sh
 kclient-workload:
   sequential:
-  - kclient: [client.1]
+  - ceph-fuse: [client.1]
   - workunit:
       clients:
          client.1:
