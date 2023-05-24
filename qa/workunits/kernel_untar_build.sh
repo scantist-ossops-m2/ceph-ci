@@ -2,11 +2,12 @@
 
 set -ex
 
-wget -O linux.tar.gz http://download.ceph.com/qa/linux-5.4.tar.gz
+#wget -O linux.tar.gz http://download.ceph.com/qa/linux-5.4.tar.gz
+wget -O linux.tar.xz https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.4.243.tar.xz
 
 mkdir t
 cd t
-tar xzf ../linux.tar.gz
+tar xJf ../linux.tar.xz
 cd linux*
 make defconfig
 make -j`grep -c processor /proc/cpuinfo`
