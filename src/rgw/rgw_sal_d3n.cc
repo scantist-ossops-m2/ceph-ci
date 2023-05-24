@@ -228,10 +228,13 @@ int D3NFilterObject::D3NFilterReadOp::iterate(const DoutPrefixProvider* dpp, int
   ldpp_dout(dpp, 20) << "D3NFilterObject::iterate:: " << __func__ << "(): Fetching object from backend store" << dendl;
   Attrs obj_attrs;
   if (source->has_attrs()) {
+    ldpp_dout(dpp, 20) << "D3NFilterObject::iterate:: " << __func__ << "(): has attrs" << dendl;
     obj_attrs = source->get_attrs();
   }
-  if (source->is_compressed() || obj_attrs.find(RGW_ATTR_CRYPT_MODE) != obj_attrs.end()) {
-    ldpp_dout(dpp, 20) << "D3NFilterObject::iterate:: " << __func__ << "(): Skipping writing to cache" << dendl;
+  bool is_compressed = obj_attrs.find(RGW_ATTR_COMPRESSION) != obj_attrs.end();
+  bool is_encrypted = obj_attrs.find(RGW_ATTR_CRYPT_MODE) != obj_attrs.end();
+  if (is_compressed || is_encrypted) {
+    ldpp_dout(dpp, 20) << "D3NFilterObject::iterate:: " << __func__ << "(): Skipping writing to cache " << "is compressed: " << is_compressed << "is_encrypted: " << is_encrypted << dendl;
     this->cb->bypass_cache_write();
   }
   if (start_part_num == 0) {
@@ -258,13 +261,8 @@ int D3NFilterObject::D3NFilterReadOp::D3NFilterGetCB::flush_last_part()
 int D3NFilterObject::D3NFilterReadOp::D3NFilterGetCB::handle_data(bufferlist& bl, off_t bl_ofs, off_t bl_len)
 {
   auto rgw_get_obj_max_req_size = g_conf()->rgw_get_obj_max_req_size;
-  if (!last_part && bl.length() <= rgw_get_obj_max_req_size) {
-    auto r = client_cb->handle_data(bl, bl_ofs, bl_len);
-    if (r < 0) {
-      return r;
-    }
-  }
-
+  bufferlist bl_send_to_client = bl;
+  
   //Accumulating data from backend store into rgw_get_obj_max_req_size sized chunks and then writing to cache
   if (write_to_cache) {
     const std::lock_guard l(d3n_get_data.d3n_lock);
@@ -288,8 +286,15 @@ int D3NFilterObject::D3NFilterReadOp::D3NFilterGetCB::handle_data(bufferlist& bl
         bl_rem.clear();
         bl_rem = std::move(bl);
       }
+    }
   }
-}
+
+  if (!last_part && bl_send_to_client.length() <= rgw_get_obj_max_req_size) {
+    auto r = client_cb->handle_data(bl_send_to_client, bl_ofs, bl_len);
+    if (r < 0) {
+      return r;
+    }
+  }
   return 0;
 }
 

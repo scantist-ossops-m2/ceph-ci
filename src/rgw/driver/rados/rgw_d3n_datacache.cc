@@ -74,6 +74,7 @@ void D3nDataCache::init(CephContext *_cct) {
   if(cache_location.back() != '/') {
       cache_location += "/";
   }
+  lsubdout(g_ceph_context, rgw, 5) << "D3nDataCache: init: cache_location " << cache_location << dendl;
   try {
     if (efs::exists(cache_location)) {
       // d3n: evict the cache storage directory
@@ -203,11 +204,14 @@ int D3nDataCache::d3n_libaio_create_write_request(bufferlist& bl, unsigned int l
     ldout(cct, 0) << "ERROR: D3nDataCache: " << __func__ << "() aio_write r=" << r << dendl;
     goto error;
   }
+  ::close(wr->cb->aio_fildes);
   return 0;
 
 error:
+  ::close(wr->cb->aio_fildes);
   delete wr;
 done:
+  ::close(wr->cb->aio_fildes);
   return r;
 }
 
