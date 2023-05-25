@@ -16,6 +16,7 @@ tasks:
 - cephadm.shell:
     host.a:
       - ceph mgr module enable rgw
+      - for i in {1..5}; do TOKEN=$(./bin/ceph rgw realm tokens || true); if [ "$TOKEN" = "[]" ]; then break; fi; sleep 10; done
 - rgw_module.apply:
     specs:
       - rgw_realm: myrealm1
