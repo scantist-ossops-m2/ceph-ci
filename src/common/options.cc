@@ -7156,6 +7156,15 @@ std::vector<Option> get_rgw_options() {
     .add_tag("performance")
     .add_service("rgw"),
 
+    Option("rgw_debug_inject_set_olh_err", Option::TYPE_BOOL, Option::LEVEL_DEV)
+    .set_default(false)
+    .set_description(
+        "Whether to inject errors between rados olh modification initialization and "
+        "bucket index instance linking. This exists for development and testing purposes "
+        "to help simulate cases where bucket index entries aren't cleaned up "
+        "by the request thread after an error scenario.")
+    .add_service("rgw"),
+
     Option("rgw_reshard_batch_size", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
     .set_default(64)
     .set_min(8)

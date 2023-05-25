@@ -25,7 +25,9 @@
     bucket unlink              unlink bucket from specified user
     bucket stats               returns bucket statistics
     bucket rm                  remove bucket
-    bucket check               check bucket index
+    bucket check               check bucket index by verifying size and object count stats
+    bucket check olh           check for olh index entries and objects that are pending removal
+    bucket check unlinked      check for object versions that are not visible in a bucket listing 
     bucket chown               link bucket to specified user and update its object ACLs
     bucket reshard             reshard bucket
     bucket rewrite             rewrite all objects in the specified bucket
@@ -341,6 +343,10 @@
      --package                 name of the lua package that should be added/removed to/from the allowlist
      --allow-compilation       package is allowed to compile C code as part of its installation
   
+  Bucket check olh/unlinked options:
+     --max-threads             maximum number of threads (default: 8)
+     --min-age                 minimum age in hours of unlinked objects to consider for bucket check (default: 1)
+  
   radoslist options:
      --rgw-obj-fs              the field separator that will separate the rados
                                object name from the rgw object name;
@@ -355,5 +361,3 @@
     --setgroup GROUP  set gid to group or gid
     --version         show version and quit
   
-
-

@@ -132,7 +132,9 @@ void usage()
   cout << "  bucket unlink              unlink bucket from specified user\n";
   cout << "  bucket stats               returns bucket statistics\n";
   cout << "  bucket rm                  remove bucket\n";
-  cout << "  bucket check               check bucket index\n";
+  cout << "  bucket check               check bucket index by verifying size and object count stats\n";
+  cout << "  bucket check olh           check for olh index entries and objects that are pending removal\n";
+  cout << "  bucket check unlinked      check for object versions that are not visible in a bucket listing \n";
   cout << "  bucket chown               link bucket to specified user and update its object ACLs\n";
   cout << "  bucket reshard             reshard bucket\n";
   cout << "  bucket rewrite             rewrite all objects in the specified bucket\n";
@@ -440,6 +442,9 @@ void usage()
   cout << "   --context                 context in which the script runs. one of: preRequest, postRequest\n";
   cout << "   --package                 name of the lua package that should be added/removed to/from the allowlist\n";
   cout << "   --allow-compilation       package is allowed to compile C code as part of its installation\n";
+  cout << "\nBucket check olh/unlinked options:\n";
+  cout << "   --max-threads             maximum number of threads (default: 8)\n";
+  cout << "   --min-age                 minimum age in hours of unlinked objects to consider for bucket check (default: 1)\n";
   cout << "\nradoslist options:\n";
   cout << "   --rgw-obj-fs              the field separator that will separate the rados\n";
   cout << "                             object name from the rgw object name;\n";
@@ -607,6 +612,8 @@ enum class OPT {
   BUCKET_UNLINK,
   BUCKET_STATS,
   BUCKET_CHECK,
+  BUCKET_CHECK_OLH,
+  BUCKET_CHECK_UNLINKED,
   BUCKET_SYNC_CHECKPOINT,
   BUCKET_SYNC_INFO,
   BUCKET_SYNC_STATUS,
@@ -813,6 +820,8 @@ static SimpleCmd::Commands all_cmds = {
   { "bucket unlink", OPT::BUCKET_UNLINK },
   { "bucket stats", OPT::BUCKET_STATS },
   { "bucket check", OPT::BUCKET_CHECK },
+  { "bucket check olh", OPT::BUCKET_CHECK_OLH },
+  { "bucket check unlinked", OPT::BUCKET_CHECK_UNLINKED },
   { "bucket sync checkpoint", OPT::BUCKET_SYNC_CHECKPOINT },
   { "bucket sync info", OPT::BUCKET_SYNC_INFO },
   { "bucket sync status", OPT::BUCKET_SYNC_STATUS },
@@ -1326,11 +1335,47 @@ int set_bucket_quota(rgw::sal::RGWRadosStore *store, OPT opt_cmd,
 
   set_quota_info(bucket_info.quota, opt_cmd, max_size, max_objects, have_max_size, have_max_objects);
 
-   r = store->getRados()->put_bucket_instance_info(bucket_info, false, real_time(), &attrs, dpp());
+  r = store->getRados()->put_bucket_instance_info(bucket_info, false, real_time(), &attrs, dpp());
   if (r < 0) {
     cerr << "ERROR: failed writing bucket instance info: " << cpp_strerror(-r) << std::endl;
     return -r;
   }
+  return 0;
+}
+
+int is_versioned_instance_listable(RGWRados* store,
+                                   RGWRados::BucketShard& bs,
+                                   const cls_rgw_obj_key& key,
+                                   bool& listable) {
+  string marker = "";
+  list<rgw_cls_bi_entry> entries;
+  bool is_truncated;
+  listable = false;
+  int ret;
+  do {
+    ret = store->bi_list(bs, key.name, marker, 1000, &entries, &is_truncated);
+    if (ret < 0) {
+      return ret;
+    }
+    list<rgw_cls_bi_entry>::iterator iter;
+    for (iter = entries.begin(); iter != entries.end(); ++iter) {
+      rgw_cls_bi_entry& entry = *iter;
+      marker = entry.idx;
+      if (entry.type == BIIndexType::Plain) {
+        rgw_bucket_dir_entry dir_entry;
+        auto iiter = entry.data.cbegin();
+        try {
+          decode(dir_entry, iiter);
+        } catch (buffer::error& err) {
+          return -EINVAL;
+        }
+        if (dir_entry.key == key) {
+          listable = true;
+          return 0;
+        }
+      }
+    }
+  } while(is_truncated);
   return 0;
 }
 
@@ -3169,6 +3214,8 @@ int main(int argc, const char **argv)
   bool num_shards_specified = false;
   std::optional<int> bucket_index_max_shards;
   int max_concurrent_ios = 32;
+  int max_threads = 8;
+  int min_age = 1;
   uint64_t orphan_stale_secs = (24 * 3600);
   int detail = false;
 
@@ -3392,6 +3439,18 @@ int main(int argc, const char **argv)
       max_concurrent_ios = (int)strict_strtol(val.c_str(), 10, &err);
       if (!err.empty()) {
         cerr << "ERROR: failed to parse max concurrent ios: " << err << std::endl;
+        return EINVAL;
+      }
+    } else if (ceph_argparse_witharg(args, i, &val, "--max-threads", (char*)NULL)) {
+      max_threads = (int)strict_strtol(val.c_str(), 10, &err);
+      if (!err.empty()) {
+        cerr << "ERROR: failed to parse max threads: " << err << std::endl;
+        return EINVAL;
+      }
+    } else if (ceph_argparse_witharg(args, i, &val, "--min-age", (char*)NULL)) {
+      min_age = (int)strict_strtol(val.c_str(), 10, &err);
+      if (!err.empty()) {
+        cerr << "ERROR: failed to parse min age: " << err << std::endl;
         return EINVAL;
       }
     } else if (ceph_argparse_witharg(args, i, &val, "--orphan-stale-secs", (char*)NULL)) {
@@ -7277,6 +7336,181 @@ next:
     } else {
       RGWBucketAdminOp::check_index(store, bucket_op, f, null_yield, dpp());
     }
+  }
+
+  if (opt_cmd == OPT::BUCKET_CHECK_OLH || opt_cmd == OPT::BUCKET_CHECK_UNLINKED) {
+    if (bucket_name.empty()) {
+      cerr << "ERROR: bucket name not specified" << std::endl;
+      return EINVAL;
+    }
+    RGWBucketInfo bucket_info;
+    ret = init_bucket(tenant, bucket_name, bucket_id, bucket_info, bucket);
+    if (ret < 0) {
+      cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+    if ((bucket_info.versioning_status() & BUCKET_VERSIONED) == 0) {
+      cerr << "WARNING: this command is not applicable to unversioned buckets" << std::endl;
+      return 0;
+    }
+
+    if (max_entries < 0) {
+      max_entries = 1000;
+    }
+
+    RGWObjectCtx obj_ctx(store);
+
+    const auto& index = bucket_info.layout.current_index;
+    const int max_shards = (bucket_info.layout.current_index.layout.normal.num_shards > 0 ? bucket_info.layout.current_index.layout.normal.num_shards : 1);
+
+    if (fix) {
+      cerr << "NOTICE: fix=true" << std::endl;
+    }
+
+    ceph::real_clock::time_point now = ceph::real_clock::now();
+    ceph::real_clock::time_point not_after = now - std::chrono::hours(min_age);
+
+    std::string verb = fix ? "removed" : "found";
+    int num_threads = std::min(max_shards, max_threads);
+    std::mutex cerr_mutex;
+    atomic_int next_shard = (specified_shard_id ? shard_id : 0);
+    atomic_ullong total_count = 0;
+    std::vector<std::thread> ts;
+    for (int j=0; j<num_threads; j++) {
+      std::thread t([&]() {
+        list<rgw_cls_bi_entry> entries;
+        bool is_truncated;
+        while (true) {
+          int shard = next_shard.fetch_add(1, std::memory_order_relaxed);
+          if (shard >= max_shards) {
+            return;
+          }
+          RGWRados::BucketShard bs(store->getRados());
+          string marker = opt_cmd == OPT::BUCKET_CHECK_OLH ? "\x80" "1001_" : "\x80" "1000_";
+
+          int ret = bs.init(dpp(), bucket_info, index, shard);
+          if (ret < 0) {
+            std::lock_guard<std::mutex> guard(cerr_mutex);
+            cerr << "ERROR bs.init(bucket=" << bucket << ", shard=" << shard << "): " << cpp_strerror(-ret) << std::endl;
+            continue;
+          }
+          uint64_t shard_count = 0;
+
+          do {
+            entries.clear();
+            ret = store->getRados()->bi_list(bs, object, marker, max_entries, &entries, &is_truncated);
+            if (ret < 0) {
+              std::lock_guard<std::mutex> guard(cerr_mutex);
+              cerr << "ERROR shard " << shard << ": bi_list(): " << cpp_strerror(-ret) << std::endl;
+              break;
+            }
+
+            list<rgw_cls_bi_entry>::iterator iter;
+            for (iter = entries.begin(); iter != entries.end(); ++iter) {
+              rgw_cls_bi_entry& entry = *iter;
+              marker = entry.idx;
+              if (opt_cmd == OPT::BUCKET_CHECK_OLH) {
+                if (entry.type != BIIndexType::OLH) {
+                  is_truncated = false;
+                  break;
+                }
+                rgw_bucket_olh_entry olh_entry;
+                auto iiter = entry.data.cbegin();
+                try {
+                  decode(olh_entry, iiter);
+                } catch (buffer::error& err) {
+                  std::lock_guard<std::mutex> guard(cerr_mutex);
+                  cerr << "ERROR failed to decode olh entry for key: " << entry.idx << " in shard: " << shard << std::endl;
+                  continue;
+                }
+                if (!olh_entry.exists && olh_entry.pending_removal) {
+                  if (fix) {
+                    rgw_obj obj(bucket, olh_entry.key.name);
+                    if (olh_entry.pending_log.empty()) {
+                      ret = store->getRados()->clear_olh(dpp(), obj_ctx, obj, bucket_info, olh_entry.tag, olh_entry.epoch);
+                      if (ret < 0) {
+                        std::lock_guard<std::mutex> guard(cerr_mutex);
+                        cerr << "ERROR failed to clear olh for: " << olh_entry.key.name << " in shard: " << shard << " clear_olh(): " << cpp_strerror(-ret) << std::endl;
+                        continue;
+                      }
+                    } else {
+                      RGWObjState *state;
+
+                      ret = store->getRados()->get_obj_state(dpp(), &obj_ctx, bucket_info, obj, &state, false, null_yield);
+                      if (ret < 0) {
+                        std::lock_guard<std::mutex> guard(cerr_mutex);
+                        cerr << "ERROR failed to get state for: " << olh_entry.key.name << " in shard: " << shard << " get_obj_state(): " << cpp_strerror(-ret) << std::endl;
+                        continue;
+                      }
+                      ret = store->getRados()->update_olh(dpp(), obj_ctx, state, bucket_info, obj);
+                      if (ret < 0) {
+                        std::lock_guard<std::mutex> guard(cerr_mutex);
+                        cerr << "ERROR failed to update olh for: " << olh_entry.key.name << " in shard: " << shard << " update_olh(): " << cpp_strerror(-ret) << std::endl;
+                        continue;
+                      }
+                    }
+                  }
+                  shard_count += 1;
+                }
+              } else if (opt_cmd == OPT::BUCKET_CHECK_UNLINKED) {
+                if (entry.type != BIIndexType::Instance) {
+                  is_truncated = false;
+                  break;
+                }
+                rgw_bucket_dir_entry dir_entry;
+                auto iiter = entry.data.cbegin();
+                try {
+                  decode(dir_entry, iiter);
+                } catch (buffer::error& err) {
+                  std::lock_guard<std::mutex> guard(cerr_mutex);
+                  cerr << "ERROR failed to decode instance entry for key: " << entry.idx << " in shard: " << shard << std::endl;
+                  continue;
+                }
+                if (dir_entry.versioned_epoch == 0 &&
+                    dir_entry.meta.mtime < not_after) {
+                  bool listable;
+                  ret = is_versioned_instance_listable(store->getRados(), bs, dir_entry.key, listable);
+                  if (ret < 0) {
+                    std::lock_guard<std::mutex> guard(cerr_mutex);
+                    cerr << "ERROR failed to determine whether instance was listable: " <<
+                      dir_entry.key << " in shard: " << shard <<
+                      " is_versioned_instance_listable(): " << cpp_strerror(-ret) << std::endl;
+                    continue;
+                  }
+                  if (!listable) {
+                    if (fix) {
+                      rgw_obj_key key(dir_entry.key.name, dir_entry.key.instance);
+                      ret = rgw_remove_object(dpp(), store, bucket_info, bucket, key);
+                      if (ret < 0) {
+                        std::lock_guard<std::mutex> guard(cerr_mutex);
+                        cerr << "ERROR failed to remove object " << key << " in shard " << shard << ". delete_obj(): " << cpp_strerror(-ret) << std::endl;
+                        continue;
+                      }
+                    }
+                    shard_count += 1;
+                  }
+                }
+              }
+            }
+          } while (is_truncated);
+
+          total_count += shard_count;
+          std::lock_guard<std::mutex> guard(cerr_mutex);
+          cerr << "NOTICE: finished shard " << shard << " (" << shard_count <<
+            " entries " << verb << ")" << std::endl;
+        }
+      });
+      ts.push_back(std::move(t));
+    }
+    for (auto & t : ts) {
+      t.join(); 
+    }
+    cerr << "NOTICE: finished all shards (" << total_count <<
+      " entries " << verb << ")" << std::endl;
+    formatter->open_object_section("check_result");
+    formatter->dump_int("count", total_count);
+    formatter->close_section();
+    formatter->flush(cout);
   }
 
   if (opt_cmd == OPT::BUCKET_RM) {
