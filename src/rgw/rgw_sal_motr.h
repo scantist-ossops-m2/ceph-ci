@@ -730,7 +730,7 @@ class MotrAtomicWriter : public StoreWriter {
   public:
   MotrAtomicWriter(const DoutPrefixProvider *dpp,
           optional_yield y,
-          std::unique_ptr<rgw::sal::Object> _head_obj,
+          rgw::sal::Object* obj,
           MotrStore* _store,
           const rgw_user& _owner,
           const rgw_placement_rule *_ptail_placement_rule,
@@ -765,7 +765,7 @@ protected:
   rgw::sal::MotrStore* store;
 
   // Head object.
-  std::unique_ptr<rgw::sal::Object> head_obj;
+  rgw::sal::Object* obj;
 
   // Part parameters.
   const uint64_t part_num;
@@ -776,12 +776,12 @@ protected:
 public:
   MotrMultipartWriter(const DoutPrefixProvider *dpp,
 		       optional_yield y, MultipartUpload* upload,
-		       std::unique_ptr<rgw::sal::Object> _head_obj,
+		       rgw::sal::Object* obj,
 		       MotrStore* _store,
 		       const rgw_user& owner,
 		       const rgw_placement_rule *ptail_placement_rule,
 		       uint64_t _part_num, const std::string& part_num_str) :
-				  StoreWriter(dpp, y), store(_store), head_obj(std::move(_head_obj)),
+				  StoreWriter(dpp, y), store(_store), head_obj(obj),
 				  part_num(_part_num), part_num_str(part_num_str)
   {
   }
@@ -889,7 +889,7 @@ public:
   virtual int get_info(const DoutPrefixProvider *dpp, optional_yield y, rgw_placement_rule** rule, rgw::sal::Attrs* attrs = nullptr) override;
   virtual std::unique_ptr<Writer> get_writer(const DoutPrefixProvider *dpp,
 			  optional_yield y,
-			  std::unique_ptr<rgw::sal::Object> _head_obj,
+			  rgw::sal::Object* obj,
 			  const rgw_user& owner,
 			  const rgw_placement_rule *ptail_placement_rule,
 			  uint64_t part_num,
@@ -1011,7 +1011,7 @@ class MotrStore : public StoreStore {
         std::vector<std::unique_ptr<RGWOIDCProvider>>& providers) override;
     virtual std::unique_ptr<Writer> get_append_writer(const DoutPrefixProvider *dpp,
         optional_yield y,
-        std::unique_ptr<rgw::sal::Object> _head_obj,
+        rgw::sal::Object* obj,
         const rgw_user& owner,
         const rgw_placement_rule *ptail_placement_rule,
         const std::string& unique_tag,
@@ -1019,7 +1019,7 @@ class MotrStore : public StoreStore {
         uint64_t *cur_accounted_size) override;
     virtual std::unique_ptr<Writer> get_atomic_writer(const DoutPrefixProvider *dpp,
         optional_yield y,
-        std::unique_ptr<rgw::sal::Object> _head_obj,
+        rgw::sal::Object* obj,
         const rgw_user& owner,
         const rgw_placement_rule *ptail_placement_rule,
         uint64_t olh_epoch,
