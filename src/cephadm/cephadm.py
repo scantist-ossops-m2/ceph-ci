@@ -3013,6 +3013,15 @@ def fetch_configs(ctx: CephadmContext) -> Dict[str, str]:
     return {}
 
 
+def fetch_tcp_ports(ctx: CephadmContext) -> List[int]:
+    ports = getattr(ctx, 'tcp_ports', None)
+    if ports is None:
+        return []
+    if isinstance(ports, str):
+        return list(map(int, ports.split()))
+    return ports
+
+
 def get_config_and_keyring(ctx):
     # type: (CephadmContext) -> Tuple[Optional[str], Optional[str]]
     config = None
