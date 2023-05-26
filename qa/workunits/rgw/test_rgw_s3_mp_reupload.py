@@ -5,12 +5,19 @@ import subprocess
 
 #boto3.set_stream_logger(name='botocore')
 
+# handles two optional system arguments:
+#   <bucket-name> : default is "bkt134"
+#   <0 or 1>      : 0 -> upload aborted, 1 -> completed; default is completed
+
 rgw_host = os.environ['RGW_HOST']
 rgw_port = int(os.environ['RGW_PORT'])
 access_key = os.environ['RGW_ACCESS_KEY']
 secret_key = os.environ['RGW_SECRET_KEY']
 
-endpoint='http://%s:%d' % (rgw_host, rgw_port)
+if rgw_port in { 443, 7102, 7105 }:
+    endpoint='https://%s:%d' % (rgw_host, rgw_port)
+else:
+    endpoint='http://%s:%d' % (rgw_host, rgw_port)
 
 client = boto3.client('s3',
                       endpoint_url=endpoint,
@@ -22,10 +29,13 @@ if len(sys.argv) >= 2:
 else:
     bucket_name = "bkt314"
 
+complete_mpu = True
+if len(sys.argv) >= 3:
+    complete_mpu = int(sys.argv[2]) > 0
+
 key = "mpu_test4"
 nparts = 2
 ndups = 31
-complete_mpu = True
 do_reupload = True
 
 part_path = "/tmp/mp_part_5m"
@@ -81,6 +91,10 @@ if complete_mpu:
     res = client.complete_multipart_upload(
         Bucket=bucket_name, Key=key, UploadId=mpu_id,
         MultipartUpload={'Parts': parts})
+else:
+    print("aborting multipart upload, parts=%s" % parts)
+    res = client.abort_multipart_upload(
+        Bucket=bucket_name, Key=key, UploadId=mpu_id)
 
 # clean up
 subprocess.run(["rm", "-f", part_path], check=True)

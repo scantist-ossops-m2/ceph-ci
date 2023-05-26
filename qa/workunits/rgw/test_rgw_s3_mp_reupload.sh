@@ -8,6 +8,9 @@ set -e
 mydir=$(dirname $0)
 data_pool=default.rgw.buckets.data
 orphan_list_out=/tmp/olo.$$
+radoslist_out=/tmp/rlo1.$$
+rados_ls_out=/tmp/rlo2.$$
+diff_out=/tmp/diff.$$
 
 # install boto3
 python3 -m venv $mydir
@@ -36,7 +39,8 @@ fi
 # create a randomized bucket name
 bucket="bkt$(expr $(date +%s) % 999800 + 111)"
 
-$mydir/bin/python3 ${mydir}/test_rgw_s3_mp_reupload.py $bucket
+# random argument determines if multipart is aborted or completed 50/50
+$mydir/bin/python3 ${mydir}/test_rgw_s3_mp_reupload.py $bucket $((RANDOM % 2))
 
 marker=$(radosgw-admin metadata get bucket:$bucket | grep bucket_id | sed 's/.*: "\(.*\)".*/\1/')
 
@@ -46,12 +50,13 @@ radosgw-admin bucket radoslist --bucket=$bucket | sort
 echo "rados ls:"
 rados ls -p $data_pool | sort
 
-used=$(radosgw-admin bucket radoslist --bucket=$bucket | wc -l)
-present=$(rados ls -p $data_pool | grep "^$marker" | wc -l)
-
-if [ "$used" -ne "$present" ] ;then
-   echo "ERROR: expecting $used rados objects in data pool but found $present"
-   error=1
+radosgw-admin bucket radoslist --bucket=$bucket 2>/dev/null | sort >$radoslist_out
+rados ls -p $data_pool | grep "^$marker" | sort >$rados_ls_out
+diff $radoslist_out $rados_ls_out >$diff_out
+if [ $(wc -l $diff_out) -ne 0 ] ;then
+    error=1
+    echo "Found differences between expected rados objects and those found:"
+    cat $diff_out
 fi
 
 # for now let's not do rgw-orphan-list since the output is very noisy
