@@ -467,13 +467,10 @@ class SNMPGateway:
 
     @property
     def port(self) -> int:
-        if not self.ctx.tcp_ports:
+        ports = fetch_tcp_ports(self.ctx)
+        if not ports:
             return self.DEFAULT_PORT
-        else:
-            if len(self.ctx.tcp_ports) > 0:
-                return int(self.ctx.tcp_ports.split()[0])
-            else:
-                return self.DEFAULT_PORT
+        return ports[0]
 
     def get_daemon_args(self) -> List[str]:
         v3_args = []
@@ -6199,8 +6196,7 @@ def command_deploy(ctx):
     # only check port in use if not reconfig or redeploy since service
     # we are redeploying/reconfiguring will already be using the port
     if not ctx.reconfig and not redeploy:
-        if ctx.tcp_ports:
-            daemon_ports = list(map(int, ctx.tcp_ports.split()))
+        daemon_ports = fetch_tcp_ports(ctx)
     _common_deploy(ctx, daemon_type, daemon_id, daemon_ports, redeploy)
 
 
@@ -6278,8 +6274,7 @@ def command_deploy_from(ctx: CephadmContext) -> None:
     # only check port in use if not reconfig or redeploy since service
     # we are redeploying/reconfiguring will already be using the port
     if not ctx.reconfig and not redeploy:
-        if ctx.tcp_ports:
-            daemon_ports = list(map(int, ctx.tcp_ports.split()))
+        daemon_ports = fetch_tcp_ports(ctx)
     _common_deploy(ctx, daemon_type, daemon_id, daemon_ports, redeploy)
 
 
@@ -7516,8 +7511,8 @@ def command_rm_daemon(ctx):
     else:
         call_throws(ctx, ['rm', '-rf', data_dir])
 
-    if 'tcp_ports' in ctx and ctx.tcp_ports is not None:
-        ports: List[int] = [int(p) for p in ctx.tcp_ports.split()]
+    ports: List[int] = fetch_tcp_ports(ctx)
+    if ports:
         try:
             fw = Firewalld(ctx)
             fw.close_ports(ports)
