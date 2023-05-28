@@ -3372,23 +3372,26 @@ def extract_uid_gid(ctx, img='', file_path='/var/lib/ceph'):
     raise RuntimeError('uid/gid not found')
 
 
-def deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid,
-                  config=None, keyring=None,
-                  osd_fsid=None,
-                  reconfig=False,
-                  ports=None):
-    # type: (CephadmContext, str, str, Union[int, str], Optional[CephContainer], int, int, Optional[str], Optional[str], Optional[str], Optional[bool], Optional[List[int]]) -> None
+def deploy_daemon(ctx: CephadmContext, fsid: str, daemon_type: str,
+                  daemon_id: Union[int, str], c: Optional['CephContainer'],
+                  uid: int, gid: int, config: Optional[str] = None,
+                  keyring: Optional[str] = None, osd_fsid: Optional[str] = None,
+                  reconfig: Optional[bool] = False, redeploy: Optional[bool] = False,
+                  ports: Optional[List[int]] = None) -> None:
 
     ports = ports or []
-    if any([port_in_use(ctx, port) for port in ports]):
-        if daemon_type == 'mgr':
-            # non-fatal for mgr when we are in mgr_standby_modules=false, but we can't
-            # tell whether that is the case here.
-            logger.warning(
-                f"ceph-mgr TCP port(s) {','.join(map(str, ports))} already in use"
-            )
-        else:
-            raise Error("TCP Port(s) '{}' required for {} already in use".format(','.join(map(str, ports)), daemon_type))
+    # only check port in use if not reconfig or redeploy since service
+    # we are redeploying/reconfiguring will already be using the port
+    if not reconfig and not redeploy:
+        if any([port_in_use(ctx, port) for port in ports]):
+            if daemon_type == 'mgr':
+                # non-fatal for mgr when we are in mgr_standby_modules=false, but we can't
+                # tell whether that is the case here.
+                logger.warning(
+                    f"ceph-mgr TCP port(s) {','.join(map(str, ports))} already in use"
+                )
+            else:
+                raise Error("TCP Port(s) '{}' required for {} already in use".format(','.join(map(str, ports)), daemon_type))
 
     data_dir = get_data_dir(fsid, ctx.data_dir, daemon_type, daemon_id)
     if reconfig and not os.path.exists(data_dir):
@@ -6139,13 +6142,14 @@ def command_deploy(ctx):
     if daemon_type not in get_supported_daemons():
         raise Error('daemon type %s not recognized' % daemon_type)
 
+    reconfig = ctx.reconfig
     redeploy = False
     unit_name = get_unit_name(ctx.fsid, daemon_type, daemon_id)
     (_, state, _) = check_unit(ctx, unit_name)
     if state == 'running' or is_container_running(ctx, CephContainer.for_daemon(ctx, ctx.fsid, daemon_type, daemon_id, 'bash')):
         redeploy = True
 
-    if ctx.reconfig:
+    if reconfig:
         logger.info('%s daemon %s ...' % ('Reconfig', ctx.name))
     elif redeploy:
         logger.info('%s daemon %s ...' % ('Redeploy', ctx.name))
@@ -6158,11 +6162,8 @@ def command_deploy(ctx):
     # Get and check ports explicitly required to be opened
     daemon_ports = []  # type: List[int]
 
-    # only check port in use if not reconfig or redeploy since service
-    # we are redeploying/reconfiguring will already be using the port
-    if not ctx.reconfig and not redeploy:
-        if ctx.tcp_ports:
-            daemon_ports = list(map(int, ctx.tcp_ports.split()))
+    if ctx.tcp_ports:
+        daemon_ports = list(map(int, ctx.tcp_ports.split()))
 
     if daemon_type in Ceph.daemons:
         config, keyring = get_config_and_keyring(ctx)
@@ -6187,7 +6188,8 @@ def command_deploy(ctx):
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
                       config=config, keyring=keyring,
                       osd_fsid=ctx.osd_fsid,
-                      reconfig=ctx.reconfig,
+                      reconfig=reconfig,
+                      redeploy=redeploy,
                       ports=daemon_ports)
 
     elif daemon_type in Monitoring.components:
@@ -6209,11 +6211,12 @@ def command_deploy(ctx):
         uid, gid = extract_uid_gid_monitoring(ctx, daemon_type)
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
-                      reconfig=ctx.reconfig,
+                      reconfig=reconfig,
+                      redeploy=redeploy,
                       ports=daemon_ports)
 
     elif daemon_type == NFSGanesha.daemon_type:
-        if not ctx.reconfig and not redeploy and not daemon_ports:
+        if not reconfig and not redeploy and not daemon_ports:
             daemon_ports = list(NFSGanesha.port_map.values())
 
         config, keyring = get_config_and_keyring(ctx)
@@ -6222,7 +6225,8 @@ def command_deploy(ctx):
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
                       config=config, keyring=keyring,
-                      reconfig=ctx.reconfig,
+                      reconfig=reconfig,
+                      redeploy=redeploy,
                       ports=daemon_ports)
 
     elif daemon_type == CephIscsi.daemon_type:
@@ -6231,20 +6235,23 @@ def command_deploy(ctx):
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
                       config=config, keyring=keyring,
-                      reconfig=ctx.reconfig,
+                      reconfig=reconfig,
+                      redeploy=redeploy,
                       ports=daemon_ports)
     elif daemon_type in Tracing.components:
         uid, gid = 65534, 65534
         c = get_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
-                      reconfig=ctx.reconfig,
+                      reconfig=reconfig,
+                      redeploy=redeploy,
                       ports=daemon_ports)
     elif daemon_type == HAproxy.daemon_type:
         haproxy = HAproxy.init(ctx, ctx.fsid, daemon_id)
         uid, gid = haproxy.extract_uid_gid_haproxy()
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
-                      reconfig=ctx.reconfig,
+                      reconfig=reconfig,
+                      redeploy=redeploy,
                       ports=daemon_ports)
 
     elif daemon_type == Keepalived.daemon_type:
@@ -6252,33 +6259,39 @@ def command_deploy(ctx):
         uid, gid = keepalived.extract_uid_gid_keepalived()
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
-                      reconfig=ctx.reconfig,
+                      reconfig=reconfig,
+                      redeploy=redeploy,
                       ports=daemon_ports)
 
     elif daemon_type == CustomContainer.daemon_type:
         cc = CustomContainer.init(ctx, ctx.fsid, daemon_id)
-        if not ctx.reconfig and not redeploy:
+        if not reconfig and not redeploy:
             daemon_ports.extend(cc.ports)
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id,
                                      privileged=cc.privileged,
                                      ptrace=ctx.allow_ptrace)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c,
                       uid=cc.uid, gid=cc.gid, config=None,
-                      keyring=None, reconfig=ctx.reconfig,
-                      ports=daemon_ports)
+                      keyring=None, reconfig=reconfig,
+                      redeploy=redeploy, ports=daemon_ports)
 
     elif daemon_type == CephadmAgent.daemon_type:
         # get current user gid and uid
         uid = os.getuid()
         gid = os.getgid()
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, None,
-                      uid, gid, ports=daemon_ports)
+                      uid, gid,
+                      reconfig=reconfig,
+                      redeploy=redeploy,
+                      ports=daemon_ports)
 
     elif daemon_type == SNMPGateway.daemon_type:
         sc = SNMPGateway.init(ctx, ctx.fsid, daemon_id)
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c,
                       sc.uid, sc.gid,
+                      reconfig=reconfig,
+                      redeploy=redeploy,
                       ports=daemon_ports)
 
     else:
@@ -7204,6 +7217,9 @@ def command_adopt_prometheus(ctx, daemon_id, fsid):
     # type: (CephadmContext, str, str) -> None
     daemon_type = 'prometheus'
     (uid, gid) = extract_uid_gid_monitoring(ctx, daemon_type)
+    # should try to set the ports we know cephadm defaults
+    # to for these services in the firewall.
+    ports = Monitoring.port_map['prometheus']
 
     _stop_and_disable(ctx, 'prometheus')
 
@@ -7225,7 +7241,7 @@ def command_adopt_prometheus(ctx, daemon_id, fsid):
 
     make_var_run(ctx, fsid, uid, gid)
     c = get_container(ctx, fsid, daemon_type, daemon_id)
-    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid)
+    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid, redeploy=True, ports=ports)
     update_firewalld(ctx, daemon_type)
 
 
@@ -7234,6 +7250,9 @@ def command_adopt_grafana(ctx, daemon_id, fsid):
 
     daemon_type = 'grafana'
     (uid, gid) = extract_uid_gid_monitoring(ctx, daemon_type)
+    # should try to set the ports we know cephadm defaults
+    # to for these services in the firewall.
+    ports = Monitoring.port_map['grafana']
 
     _stop_and_disable(ctx, 'grafana-server')
 
@@ -7279,7 +7298,7 @@ def command_adopt_grafana(ctx, daemon_id, fsid):
 
     make_var_run(ctx, fsid, uid, gid)
     c = get_container(ctx, fsid, daemon_type, daemon_id)
-    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid)
+    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid, redeploy=True, ports=ports)
     update_firewalld(ctx, daemon_type)
 
 
@@ -7288,6 +7307,9 @@ def command_adopt_alertmanager(ctx, daemon_id, fsid):
 
     daemon_type = 'alertmanager'
     (uid, gid) = extract_uid_gid_monitoring(ctx, daemon_type)
+    # should try to set the ports we know cephadm defaults
+    # to for these services in the firewall.
+    ports = Monitoring.port_map['alertmanager']
 
     _stop_and_disable(ctx, 'prometheus-alertmanager')
 
@@ -7309,7 +7331,7 @@ def command_adopt_alertmanager(ctx, daemon_id, fsid):
 
     make_var_run(ctx, fsid, uid, gid)
     c = get_container(ctx, fsid, daemon_type, daemon_id)
-    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid)
+    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid, redeploy=True, ports=ports)
     update_firewalld(ctx, daemon_type)
 
 
