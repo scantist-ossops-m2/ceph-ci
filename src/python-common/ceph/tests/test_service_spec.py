@@ -1267,3 +1267,31 @@ def test_extra_args_handling(y, ec_args, ee_args, ec_final_args, ee_final_args):
         for args in spec_obj.extra_entrypoint_args:
             ee_res.extend(args.to_args())
         assert ee_res == ee_final_args
+
+
+Q = """
+service_type: container
+service_id: foo
+placement:
+  count: 1
+spec:
+  image: quay.io/phlogistonjohn/asdf:silly
+  entrypoint: /usr/local/bin/silly.py
+#  extra_entrypoint_args:
+#    - "--url=http://asynchrono.us/files/derp.txt"
+#    - "--title=I-cant-have-spaces-yet"
+  extra_entrypoint_args:
+    - argument: "--url=http://asynchrono.us/files/derp.txt"
+    - argument: "--title=I-cant-have-spaces-yet"
+  envs:
+    - FOOBAR=very-yes
+"""
+
+def test_it():
+    data = yaml.safe_load(Q)
+    spec_obj = ServiceSpec.from_json(data)
+
+    jdata = spec_obj.to_json()
+    print(jdata)
+    json.dumps(jdata)
+    spec_obj.extra_entrypoint_args = [ArgumentSpec('lazy')]
