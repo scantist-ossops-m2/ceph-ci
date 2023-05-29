@@ -10534,6 +10534,12 @@ next:
       return EINVAL;
     }
 
+    ret = rgw::notify::remove_persistent_topic(dpp(), static_cast<rgw::sal::RadosStore*>(store)->getRados()->get_notif_pool_ctx(), topic_name, null_yield);
+    if (ret < 0) {
+      cerr << "ERROR: could not remove persistent topic: " << cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+
     RGWPubSub ps(store, tenant);
 
     ret = ps.remove_topic(dpp(), topic_name, null_yield);
