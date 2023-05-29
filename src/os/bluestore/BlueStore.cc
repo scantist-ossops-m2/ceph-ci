@@ -1249,7 +1249,10 @@ struct LruBufferCacheShard : public BlueStore::BufferCacheShard {
   list_t lru;
 
   explicit LruBufferCacheShard(CephContext *cct) : BlueStore::BufferCacheShard(cct) {}
-
+  ~LruBufferCacheShard() {
+    ceph_assert(num_blobs == 0);
+    ceph_assert(num_extents == 0);
+  }
   void _add(BlueStore::Buffer *b, int level, BlueStore::Buffer *near) override {
     if (near) {
       auto q = lru.iterator_to(*near);
@@ -1369,6 +1372,10 @@ struct TwoQBufferCacheShard : public BlueStore::BufferCacheShard {
 
 public:
   explicit TwoQBufferCacheShard(CephContext *cct) : BufferCacheShard(cct) {}
+  ~TwoQBufferCacheShard() {
+    ceph_assert(num_blobs == 0);
+    ceph_assert(num_extents == 0);
+  }
 
   void _add(BlueStore::Buffer *b, int level, BlueStore::Buffer *near) override
   {
