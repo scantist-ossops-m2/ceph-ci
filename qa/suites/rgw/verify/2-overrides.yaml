@@ -10,5 +10,5 @@ overrides:
         rgw crypt require ssl: false
         rgw torrent flag: true
   rgw:
-    compression type: random
+    compression type: none
     storage classes: LUKEWARM, FROZEN
