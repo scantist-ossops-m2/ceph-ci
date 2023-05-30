@@ -7284,36 +7284,38 @@ void OSDService::maybe_share_map(
 
   // assume the peer has the newer of the op's sent_epoch and what
   // we think we sent them.
-  session->projected_epoch_lock.lock();
-  if (peer_epoch_lb > session->projected_epoch) {
-    dout(10) << fmt::format(
-       "{}: con {} updating session's projected_epoch"
-       " from {} to ping map epoch of {}",
-       __func__, con->get_peer_addr(),
-       session->projected_epoch, peer_epoch_lb)
-       << dendl;
-    session->projected_epoch = peer_epoch_lb;
-  }
+  epoch_t send_from = 0;
+  {
+    std::lock_guard l(session->projected_epoch_lock);
 
-  if (osdmap->get_epoch() <= session->projected_epoch) {
+    if (peer_epoch_lb > session->projected_epoch) {
+      dout(10) << fmt::format(
+         "{}: con {} updating session's projected_epoch"
+         " from {} to ping map epoch of {}",
+         __func__, con->get_peer_addr(),
+         session->projected_epoch, peer_epoch_lb)
+         << dendl;
+      session->projected_epoch = peer_epoch_lb;
+    }
+
+    if (osdmap->get_epoch() <= session->projected_epoch) {
+      dout(10) << fmt::format(
+        "{}: con {} our osdmap epoch of {} is not"
+        " newer than session's projected_epoch of {}",
+        __func__, con->get_peer_addr(),
+        osdmap->get_epoch(), session->projected_epoch)
+        << dendl;
+      return;
+    }
+
+    send_from = session->projected_epoch;
     dout(10) << fmt::format(
-      "{}: con {} our osdmap epoch of {} is not"
-      " newer than session's projected_epoch of {}",
+      "{}: con {} map epoch {} -> {} (shared)",
       __func__, con->get_peer_addr(),
-      osdmap->get_epoch(), session->projected_epoch)
+      session->projected_epoch, osdmap->get_epoch())
       << dendl;
-    session->projected_epoch_lock.unlock();
-    return;
+    session->projected_epoch = osdmap->get_epoch();
   }
-
-  const epoch_t send_from = session->projected_epoch;
-  dout(10) << fmt::format(
-    "{}: con {} map epoch {} -> {} (shared)",
-    __func__, con->get_peer_addr(),
-    session->projected_epoch, osdmap->get_epoch())
-    << dendl;
-  session->projected_epoch = osdmap->get_epoch();
-  session->projected_epoch_lock.unlock();
   send_incremental_map(send_from, con, osdmap);
 }
 
