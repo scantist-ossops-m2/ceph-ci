@@ -6179,38 +6179,7 @@ def get_deployment_container(ctx: CephadmContext,
 @deprecated_command
 def command_deploy(ctx):
     # type: (CephadmContext) -> None
-    daemon_type, daemon_id = ctx.name.split('.', 1)
-
-    lock = FileLock(ctx, ctx.fsid)
-    lock.acquire()
-
-    if daemon_type not in get_supported_daemons():
-        raise Error('daemon type %s not recognized' % daemon_type)
-
-    redeploy = False
-    unit_name = get_unit_name(ctx.fsid, daemon_type, daemon_id)
-    (_, state, _) = check_unit(ctx, unit_name)
-    if state == 'running' or is_container_running(ctx, CephContainer.for_daemon(ctx, ctx.fsid, daemon_type, daemon_id, 'bash')):
-        redeploy = True
-
-    if ctx.reconfig:
-        logger.info('%s daemon %s ...' % ('Reconfig', ctx.name))
-    elif redeploy:
-        logger.info('%s daemon %s ...' % ('Redeploy', ctx.name))
-    else:
-        logger.info('%s daemon %s ...' % ('Deploy', ctx.name))
-
-    # Migrate sysctl conf files from /usr/lib to /etc
-    migrate_sysctl_dir(ctx, ctx.fsid)
-
-    # Get and check ports explicitly required to be opened
-    daemon_ports = []  # type: List[int]
-
-    # only check port in use if not reconfig or redeploy since service
-    # we are redeploying/reconfiguring will already be using the port
-    if not ctx.reconfig and not redeploy:
-        daemon_ports = fetch_tcp_ports(ctx)
-    _common_deploy(ctx, daemon_type, daemon_id, daemon_ports, redeploy)
+    _common_deploy(ctx)
 
 
 def read_configuration_source(ctx: CephadmContext) -> Dict[str, Any]:
@@ -6265,13 +6234,16 @@ def command_deploy_from(ctx: CephadmContext) -> None:
     """
     config_data = read_configuration_source(ctx)
     apply_deploy_config_to_ctx(config_data, ctx)
+    _common_deploy(ctx)
 
-    lock = FileLock(ctx, ctx.fsid)
-    lock.acquire()
 
+def _common_deploy(ctx: CephadmContext) -> None:
     daemon_type, daemon_id = ctx.name.split('.', 1)
     if daemon_type not in get_supported_daemons():
         raise Error('daemon type %s not recognized' % daemon_type)
+
+    lock = FileLock(ctx, ctx.fsid)
+    lock.acquire()
 
     redeploy = False
     stage = 'Deploy'
@@ -6294,10 +6266,10 @@ def command_deploy_from(ctx: CephadmContext) -> None:
     # we are redeploying/reconfiguring will already be using the port
     if not ctx.reconfig and not redeploy:
         daemon_ports = fetch_tcp_ports(ctx)
-    _common_deploy(ctx, daemon_type, daemon_id, daemon_ports, redeploy)
+    _dispatch_deploy(ctx, daemon_type, daemon_id, daemon_ports, redeploy)
 
 
-def _common_deploy(
+def _dispatch_deploy(
     ctx: CephadmContext,
     daemon_type: str,
     daemon_id: str,
