@@ -21,10 +21,13 @@ namespace {
 namespace crimson::osd {
 
 PGAdvanceMap::PGAdvanceMap(
-  ShardServices &shard_services, Ref<PG> pg, epoch_t to,
+  ShardServices &shard_services, Ref<PG> pg, epoch_t from, epoch_t to,
   PeeringCtx &&rctx, bool do_init)
-  : shard_services(shard_services), pg(pg), to(to),
-    rctx(std::move(rctx)), do_init(do_init) {}
+  : shard_services(shard_services), pg(pg), from(from), to(to),
+    rctx(std::move(rctx)), do_init(do_init)
+  {
+    logger().debug("{}: created", *this);
+  }
 
 PGAdvanceMap::~PGAdvanceMap() {}
 
@@ -32,7 +35,7 @@ void PGAdvanceMap::print(std::ostream &lhs) const
 {
   lhs << "PGAdvanceMap("
       << "pg=" << pg->get_pgid()
-      << " from=" << (from ? *from : -1)
+      << " from=" << from
       << " to=" << to;
   if (do_init) {
     lhs << " do_init";
@@ -44,9 +47,7 @@ void PGAdvanceMap::dump_detail(Formatter *f) const
 {
   f->open_object_section("PGAdvanceMap");
   f->dump_stream("pgid") << pg->get_pgid();
-  if (from) {
-    f->dump_int("from", *from);
-  }
+  f->dump_int("from", from);
   f->dump_int("to", to);
   f->dump_bool("do_init", do_init);
   f->close_section();
@@ -62,7 +63,7 @@ seastar::future<> PGAdvanceMap::start()
   return enter_stage<>(
     pg->peering_request_pg_pipeline.process
   ).then([this] {
-    from = pg->get_osdmap_epoch();
+    ceph_assert(from == pg->get_osdmap_epoch());
     auto fut = seastar::now();
     if (do_init) {
       fut = pg->handle_initialize(rctx
@@ -71,10 +72,13 @@ seastar::future<> PGAdvanceMap::start()
       });
     }
     return fut.then([this] {
+      ceph_assert(std::cmp_less_equal(from, to));
       return seastar::do_for_each(
-	boost::make_counting_iterator(*from + 1),
+	boost::make_counting_iterator(from + 1),
 	boost::make_counting_iterator(to + 1),
 	[this](epoch_t next_epoch) {
+	  logger().debug("{}: start: getting map {}",
+	                 *this, next_epoch);
 	  return shard_services.get_map(next_epoch).then(
 	    [this] (cached_map_t&& next_map) {
 	      logger().debug("{}: advancing map to {}",

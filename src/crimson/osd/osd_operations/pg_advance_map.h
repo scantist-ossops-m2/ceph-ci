@@ -29,15 +29,14 @@ protected:
   Ref<PG> pg;
   PipelineHandle handle;
 
-  std::optional<epoch_t> from;
-  epoch_t to;
+  const epoch_t from, to;
 
   PeeringCtx rctx;
   const bool do_init;
 
 public:
   PGAdvanceMap(
-    ShardServices &shard_services, Ref<PG> pg, epoch_t to,
+    ShardServices &shard_services, Ref<PG> pg, epoch_t from, epoch_t to,
     PeeringCtx &&rctx, bool do_init);
   ~PGAdvanceMap();
 

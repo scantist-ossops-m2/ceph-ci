@@ -972,7 +972,7 @@ seastar::future<> OSD::committed_osd_maps(version_t first,
 	return seastar::now();
       }
     });
-  }).then([m, this] {
+  }).then([m, this, first, last] {
     if (osdmap->is_up(whoami)) {
       const auto up_from = osdmap->get_up_from(whoami);
       logger().info("osd.{}: map e {} marked me up: up_from {}, bind_epoch {}, state {}",
@@ -995,9 +995,11 @@ seastar::future<> OSD::committed_osd_maps(version_t first,
 	return seastar::now();
       }
     }
-    return check_osdmap_features().then([this] {
+    return check_osdmap_features().then([this, first, last] {
       // yay!
-      return pg_shard_manager.broadcast_map_to_pgs(osdmap->get_epoch());
+      logger().info("osd.{}: committed_osd_maps: broadcasting osdmaps of {}"
+                    " through {} to pgs", whoami, first, last);
+      return pg_shard_manager.broadcast_map_to_pgs(first - 1, last);
     });
   }).then([m, this] {
     if (pg_shard_manager.is_active()) {
