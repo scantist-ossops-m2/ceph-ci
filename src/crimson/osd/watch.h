@@ -81,9 +81,8 @@ public:
 
   seastar::future<> remove();
 
-  /// Call when notify_ack received on notify_id
+  /// Call when notify_ack received
   seastar::future<> notify_ack(
-    uint64_t notify_id, ///< [in] id of acked notify
     const ceph::bufferlist& reply_bl); ///< [in] notify reply buffer
 
   template <class... Args>

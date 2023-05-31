@@ -448,7 +448,7 @@ OpsExecuter::watch_ierrorator::future<> OpsExecuter::do_op_notify_ack(
             return seastar::now();
           }
           logger().info("acking notify on watch {}", key);
-          return watchp->notify_ack(ctx.notify_id, ctx.reply_bl);
+          return watchp->notify_ack(ctx.reply_bl);
         });
   });
 }

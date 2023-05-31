@@ -119,7 +119,6 @@ seastar::future<> Watch::start_notify(NotifyRef notify)
 }
 
 seastar::future<> Watch::notify_ack(
-  const uint64_t notify_id,
   const ceph::bufferlist& reply_bl)
 {
   logger().info("{}", __func__);
