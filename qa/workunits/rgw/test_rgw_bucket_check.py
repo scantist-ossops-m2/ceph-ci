@@ -37,7 +37,8 @@ def create_unlinked_objects(conn, bucket, key_list):
     
     object_versions = []
     try:
-        exec_cmd('ceph config set client.rgw rgw_debug_inject_set_olh_err true')
+        exec_cmd('ceph config set client.rgw rgw_debug_inject_set_olh_err 2')
+        exec_cmd('ceph config set client.rgw rgw_debug_inject_olh_cancel_modification_err true')
         sleep(1)
         for key in key_list:
             tag = str(random.randint(0, 1_000_000))
@@ -47,7 +48,6 @@ def create_unlinked_objects(conn, bucket, key_list):
                 })
             except Exception as e:
                 log.debug(e)
-                pass
             out = exec_cmd(f'radosgw-admin bi list --bucket {bucket.name} --object {key}')
             instance_entries = filter(
                 lambda x: x['type'] == 'instance',
@@ -64,6 +64,7 @@ def create_unlinked_objects(conn, bucket, key_list):
                 raise Exception(f'failed to create unlinked object for key={key}')
     finally:
         exec_cmd('ceph config rm client.rgw rgw_debug_inject_set_olh_err')
+        exec_cmd('ceph config rm client.rgw rgw_debug_inject_olh_cancel_modification_err')
     return object_versions
 
 def main():

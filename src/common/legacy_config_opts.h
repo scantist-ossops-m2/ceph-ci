@@ -1581,4 +1581,5 @@ OPTION(rgw_gc_max_deferred_entries_size, OPT_U64) // GC deferred entries size in
 OPTION(rgw_gc_max_queue_size, OPT_U64) // GC max queue size
 OPTION(rgw_gc_max_deferred, OPT_U64) // GC max number of deferred entries
 
-OPTION(rgw_debug_inject_set_olh_err, OPT_BOOL) // dev debug option for injecting errors
+OPTION(rgw_debug_inject_set_olh_err, OPT_U64) // dev debug option for injecting errors
+OPTION(rgw_debug_inject_olh_cancel_modification_err, OPT_BOOL) // dev debug option for injecting errors
