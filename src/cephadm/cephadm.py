@@ -169,6 +169,32 @@ class ContainerInfo:
                 and self.version == other.version)
 
 
+class DeploymentType(Enum):
+    # fresh deployment of a daemon. Should check ports,
+    # write out all configuration and unit files and then
+    # start the daemon using systemd
+    DEFAULT = 'default'
+    # redeploying a daemon. This should be handled almost
+    # exactly the same as a fresh deployment, with the exception
+    # that we should not check ports as the daemon we are
+    # are going to redeploy could be using them
+    REDEPLOY = 'redeploy'
+    # reconfiguraing a daemon. Like redeploy, we do not
+    # want to check for port conflicts here. Additionally,
+    # a reconfig does not rewrite the unit files for the
+    # daemon or attempt to start it using systemd. Only configuration
+    # files are rewritten. In the caese of Ceph daemons, we don't even
+    # do a systemctl restart of the daemon as Ceph daemons are expected
+    # to be able to pick up conf changes without needing a restart.
+    # Although for other daemon,s we do restart under the expectation
+    # they will need to be restarted to pick up conf file
+    # changes. Since we don't write new unit files in
+    # this case, it's expected that the daemon's daemon dir
+    # is already populated and all necessary unit files are
+    # present before starting this operation. Otherwise, it will fail.
+    RECONFIG = 'reconfig'
+
+
 class BaseConfig:
 
     def __init__(self) -> None:
@@ -3376,13 +3402,13 @@ def deploy_daemon(ctx: CephadmContext, fsid: str, daemon_type: str,
                   daemon_id: Union[int, str], c: Optional['CephContainer'],
                   uid: int, gid: int, config: Optional[str] = None,
                   keyring: Optional[str] = None, osd_fsid: Optional[str] = None,
-                  reconfig: Optional[bool] = False, redeploy: Optional[bool] = False,
+                  deployment_type: DeploymentType = DeploymentType.DEFAULT,
                   ports: Optional[List[int]] = None) -> None:
 
     ports = ports or []
-    # only check port in use if not reconfig or redeploy since service
+    # only check port in use if fresh deployment since service
     # we are redeploying/reconfiguring will already be using the port
-    if not reconfig and not redeploy:
+    if deployment_type == DeploymentType.DEFAULT:
         if any([port_in_use(ctx, port) for port in ports]):
             if daemon_type == 'mgr':
                 # non-fatal for mgr when we are in mgr_standby_modules=false, but we can't
@@ -3394,7 +3420,7 @@ def deploy_daemon(ctx: CephadmContext, fsid: str, daemon_type: str,
                 raise Error("TCP Port(s) '{}' required for {} already in use".format(','.join(map(str, ports)), daemon_type))
 
     data_dir = get_data_dir(fsid, ctx.data_dir, daemon_type, daemon_id)
-    if reconfig and not os.path.exists(data_dir):
+    if deployment_type == DeploymentType.RECONFIG and not os.path.exists(data_dir):
         raise Error('cannot reconfig, data path %s does not exist' % data_dir)
     if daemon_type == 'mon' and not os.path.exists(data_dir):
         assert config
@@ -3441,7 +3467,9 @@ def deploy_daemon(ctx: CephadmContext, fsid: str, daemon_type: str,
             uid, gid,
             config, keyring)
 
-    if not reconfig:
+    # only write out unit files and start daemon
+    # with systemd if this is not a reconfig
+    if deployment_type != DeploymentType.RECONFIG:
         if daemon_type == CephadmAgent.daemon_type:
             if ctx.config_json == '-':
                 config_js = get_parm('-')
@@ -3477,7 +3505,9 @@ def deploy_daemon(ctx: CephadmContext, fsid: str, daemon_type: str,
         fw.open_ports(ports + fw.external_ports.get(daemon_type, []))
         fw.apply_rules()
 
-    if reconfig and daemon_type not in Ceph.daemons:
+    # If this was a reconfig and the daemon is not a Ceph daemon, restart it
+    # so it can pick up potential changes to its configuration files
+    if deployment_type == DeploymentType.RECONFIG and daemon_type not in Ceph.daemons:
         # ceph daemons do not need a restart; others (presumably) do to pick
         # up the new config
         call_throws(ctx, ['systemctl', 'reset-failed',
@@ -6144,16 +6174,21 @@ def command_deploy(ctx):
     if daemon_type not in get_supported_daemons():
         raise Error('daemon type %s not recognized' % daemon_type)
 
-    reconfig = ctx.reconfig
-    redeploy = False
+    deployment_type: DeploymentType = DeploymentType.DEFAULT
+    if ctx.reconfig:
+        deployment_type = DeploymentType.RECONFIG
     unit_name = get_unit_name(ctx.fsid, daemon_type, daemon_id)
     (_, state, _) = check_unit(ctx, unit_name)
     if state == 'running' or is_container_running(ctx, CephContainer.for_daemon(ctx, ctx.fsid, daemon_type, daemon_id, 'bash')):
-        redeploy = True
+        # if reconfig was set, that takes priority over redeploy. If
+        # this is considered a fresh deployment at this stage,
+        # mark it as a redeploy to avoid port checking
+        if deployment_type == DeploymentType.DEFAULT:
+            deployment_type = DeploymentType.REDEPLOY
 
-    if reconfig:
+    if deployment_type == DeploymentType.RECONFIG:
         logger.info('%s daemon %s ...' % ('Reconfig', ctx.name))
-    elif redeploy:
+    elif deployment_type == DeploymentType.REDEPLOY:
         logger.info('%s daemon %s ...' % ('Redeploy', ctx.name))
     else:
         logger.info('%s daemon %s ...' % ('Deploy', ctx.name))
@@ -6190,8 +6225,7 @@ def command_deploy(ctx):
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
                       config=config, keyring=keyring,
                       osd_fsid=ctx.osd_fsid,
-                      reconfig=reconfig,
-                      redeploy=redeploy,
+                      deployment_type=deployment_type,
                       ports=daemon_ports)
 
     elif daemon_type in Monitoring.components:
@@ -6213,12 +6247,12 @@ def command_deploy(ctx):
         uid, gid = extract_uid_gid_monitoring(ctx, daemon_type)
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
-                      reconfig=reconfig,
-                      redeploy=redeploy,
+                      deployment_type=deployment_type,
                       ports=daemon_ports)
 
     elif daemon_type == NFSGanesha.daemon_type:
-        if not reconfig and not redeploy and not daemon_ports:
+        # only check ports if this is a fresh deployment
+        if deployment_type == DeploymentType.DEFAULT and not daemon_ports:
             daemon_ports = list(NFSGanesha.port_map.values())
 
         config, keyring = get_config_and_keyring(ctx)
@@ -6227,8 +6261,7 @@ def command_deploy(ctx):
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
                       config=config, keyring=keyring,
-                      reconfig=reconfig,
-                      redeploy=redeploy,
+                      deployment_type=deployment_type,
                       ports=daemon_ports)
 
     elif daemon_type == CephIscsi.daemon_type:
@@ -6237,23 +6270,20 @@ def command_deploy(ctx):
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
                       config=config, keyring=keyring,
-                      reconfig=reconfig,
-                      redeploy=redeploy,
+                      deployment_type=deployment_type,
                       ports=daemon_ports)
     elif daemon_type in Tracing.components:
         uid, gid = 65534, 65534
         c = get_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
-                      reconfig=reconfig,
-                      redeploy=redeploy,
+                      deployment_type=deployment_type,
                       ports=daemon_ports)
     elif daemon_type == HAproxy.daemon_type:
         haproxy = HAproxy.init(ctx, ctx.fsid, daemon_id)
         uid, gid = haproxy.extract_uid_gid_haproxy()
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
-                      reconfig=reconfig,
-                      redeploy=redeploy,
+                      deployment_type=deployment_type,
                       ports=daemon_ports)
 
     elif daemon_type == Keepalived.daemon_type:
@@ -6261,21 +6291,21 @@ def command_deploy(ctx):
         uid, gid = keepalived.extract_uid_gid_keepalived()
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
-                      reconfig=reconfig,
-                      redeploy=redeploy,
+                      deployment_type=deployment_type,
                       ports=daemon_ports)
 
     elif daemon_type == CustomContainer.daemon_type:
         cc = CustomContainer.init(ctx, ctx.fsid, daemon_id)
-        if not reconfig and not redeploy:
+        # only check ports if this is a fresh deployment
+        if deployment_type == DeploymentType.DEFAULT:
             daemon_ports.extend(cc.ports)
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id,
                                      privileged=cc.privileged,
                                      ptrace=ctx.allow_ptrace)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c,
                       uid=cc.uid, gid=cc.gid, config=None,
-                      keyring=None, reconfig=reconfig,
-                      redeploy=redeploy, ports=daemon_ports)
+                      keyring=None, deployment_type=deployment_type,
+                      ports=daemon_ports)
 
     elif daemon_type == CephadmAgent.daemon_type:
         # get current user gid and uid
@@ -6283,8 +6313,7 @@ def command_deploy(ctx):
         gid = os.getgid()
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, None,
                       uid, gid,
-                      reconfig=reconfig,
-                      redeploy=redeploy,
+                      deployment_type=deployment_type,
                       ports=daemon_ports)
 
     elif daemon_type == SNMPGateway.daemon_type:
@@ -6292,8 +6321,7 @@ def command_deploy(ctx):
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c,
                       sc.uid, sc.gid,
-                      reconfig=reconfig,
-                      redeploy=redeploy,
+                      deployment_type=deployment_type,
                       ports=daemon_ports)
 
     else:
@@ -7243,7 +7271,8 @@ def command_adopt_prometheus(ctx, daemon_id, fsid):
 
     make_var_run(ctx, fsid, uid, gid)
     c = get_container(ctx, fsid, daemon_type, daemon_id)
-    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid, redeploy=True, ports=ports)
+    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid,
+                  deployment_type=DeploymentType.REDEPLOY, ports=ports)
     update_firewalld(ctx, daemon_type)
 
 
@@ -7300,7 +7329,8 @@ def command_adopt_grafana(ctx, daemon_id, fsid):
 
     make_var_run(ctx, fsid, uid, gid)
     c = get_container(ctx, fsid, daemon_type, daemon_id)
-    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid, redeploy=True, ports=ports)
+    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid,
+                  deployment_type=DeploymentType.REDEPLOY, ports=ports)
     update_firewalld(ctx, daemon_type)
 
 
@@ -7333,7 +7363,8 @@ def command_adopt_alertmanager(ctx, daemon_id, fsid):
 
     make_var_run(ctx, fsid, uid, gid)
     c = get_container(ctx, fsid, daemon_type, daemon_id)
-    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid, redeploy=True, ports=ports)
+    deploy_daemon(ctx, fsid, daemon_type, daemon_id, c, uid, gid,
+                  deployment_type=DeploymentType.REDEPLOY, ports=ports)
     update_firewalld(ctx, daemon_type)
 
 
