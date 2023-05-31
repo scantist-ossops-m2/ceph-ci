@@ -504,6 +504,11 @@ class TestMisc(CephFSTestCase):
                 return
         self.assertTrue(False, "Failed to dump in-memory logs during missed internal heartbeat")
 
+    def test_session_ls_with_filters(self):
+        mount_a_client_id = self.mount_a.get_global_id()
+        info = self.fs.mds_asok(['session', 'ls', "id=", "%s" % mount_a_client_id])
+        self.assertEqual(info['id'], "%s" % mount_a_client_id)
+
 class TestCacheDrop(CephFSTestCase):
     CLIENTS_REQUIRED = 1
 
