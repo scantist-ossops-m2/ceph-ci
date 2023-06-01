@@ -228,8 +228,12 @@ int D3NFilterObject::D3NFilterReadOp::iterate(const DoutPrefixProvider* dpp, int
   ldpp_dout(dpp, 20) << "D3NFilterObject::iterate:: " << __func__ << "(): Fetching object from backend store" << dendl;
   Attrs obj_attrs;
   if (source->has_attrs()) {
+    ldpp_dout(dpp, 20) << "D3NFilterObject::iterate:: " << __func__ << "(): Fetching attrs for source object" << dendl;
     obj_attrs = source->get_attrs();
   }
+  bool is_compressed = source->is_compressed();
+  bool is_encrypted = obj_attrs.find(RGW_ATTR_CRYPT_MODE) != obj_attrs.end();
+  ldpp_dout(dpp, 20) << "D3NFilterObject::iterate:: " << __func__ << "(): is_compressed: " << is_compressed << ", is_encrypted: " << is_encrypted << dendl;
   if (source->is_compressed() || obj_attrs.find(RGW_ATTR_CRYPT_MODE) != obj_attrs.end()) {
     ldpp_dout(dpp, 20) << "D3NFilterObject::iterate:: " << __func__ << "(): Skipping writing to cache" << dendl;
     this->cb->bypass_cache_write();
