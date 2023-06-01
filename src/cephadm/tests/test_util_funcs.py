@@ -663,3 +663,83 @@ def test_call(caplog, monkeypatch, pyline, expected, call_kwargs, log_check):
         assert result == expected
     if callable(log_check):
         log_check(caplog)
+
+
+class CompareContext1:
+    cfg_data = {
+        "name": "mane",
+        "fsid": "foobar",
+        "image": "fake.io/noway/nohow:gndn",
+        "meta": {
+            "fruit": "banana",
+            "vegetable": "carrot",
+        },
+        "params": {
+            "osd_fsid": "robble",
+            "tcp_ports": [404, 9999],
+        },
+        "config_blobs": {
+            "alpha": {"sloop": "John B"},
+            "beta": {"forest": "birch"},
+            "gamma": {"forest": "pine"},
+        },
+    }
+
+    def check(self, ctx):
+        assert ctx.name == 'mane'
+        assert ctx.fsid == 'foobar'
+        assert ctx.image == 'fake.io/noway/nohow:gndn'
+        assert ctx.meta_properties == {"fruit": "banana", "vegetable": "carrot"}
+        assert ctx.config_blobs == {
+            "alpha": {"sloop": "John B"},
+            "beta": {"forest": "birch"},
+            "gamma": {"forest": "pine"},
+        }
+        assert ctx.osd_fsid == "robble"
+        assert ctx.tcp_ports == [404, 9999]
+
+
+class CompareContext2:
+    cfg_data = {
+        "name": "cc2",
+        "fsid": "foobar",
+        "meta": {
+            "fruit": "banana",
+            "vegetable": "carrot",
+        },
+        "params": {},
+        "config_blobs": {
+            "alpha": {"sloop": "John B"},
+            "beta": {"forest": "birch"},
+            "gamma": {"forest": "pine"},
+        },
+    }
+
+    def check(self, ctx):
+        assert ctx.name == 'cc2'
+        assert ctx.fsid == 'foobar'
+        assert ctx.image == 'quay.ceph.io/ceph-ci/ceph:main'
+        assert ctx.meta_properties == {"fruit": "banana", "vegetable": "carrot"}
+        assert ctx.config_blobs == {
+            "alpha": {"sloop": "John B"},
+            "beta": {"forest": "birch"},
+            "gamma": {"forest": "pine"},
+        }
+        assert ctx.osd_fsid is None
+        assert ctx.tcp_ports is None
+
+
+@pytest.mark.parametrize(
+    "cc",
+    [
+        CompareContext1(),
+        CompareContext2(),
+    ],
+)
+def test_apply_deploy_config_to_ctx(cc, monkeypatch):
+    import logging
+
+    monkeypatch.setattr("cephadm.logger", logging.getLogger())
+    ctx = FakeContext()
+    _cephadm.apply_deploy_config_to_ctx(cc.cfg_data, ctx)
+    cc.check(ctx)
