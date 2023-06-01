@@ -166,6 +166,11 @@ def main():
     exec_cmd('s3cmd --access_key=%s --secret_key=%s --config=%s --no-check-hostname --host=%s get s3://%s/%s %s --force'
             % (ACCESS_KEY, SECRET_KEY, s3cmd_config_path, endpoint, BUCKET_NAME, FILE_NAME, get_file_path))
 
+    # get object from bucket - must read from the cache
+    get_file_path = pwd + '/' + GET_FILE_NAME
+    exec_cmd('s3cmd --access_key=%s --secret_key=%s --config=%s --no-check-hostname --host=%s get s3://%s/%s %s --force'
+            % (ACCESS_KEY, SECRET_KEY, s3cmd_config_path, endpoint, BUCKET_NAME, FILE_NAME, get_file_path))
+
     # get info of object
     out = exec_cmd('radosgw-admin object stat --bucket=%s --object=%s' % (BUCKET_NAME, FILE_NAME))
 

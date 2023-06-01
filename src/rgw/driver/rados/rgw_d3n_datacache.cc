@@ -255,6 +255,9 @@ void D3nDataCache::put(bufferlist& bl, unsigned int len, std::string& oid)
     ldout(cct, 20) << "D3nDataCache: completed eviction of " << sr << " bytes" << dendl;
     freed_size += sr;
   }
+  {
+    d3n_io_write(bl, len, "testfile");
+  }
   int r = 0;
   r = d3n_libaio_create_write_request(bl, len, oid);
   if (r < 0) {
