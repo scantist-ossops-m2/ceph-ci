@@ -3991,6 +3991,8 @@ def install_base_units(ctx, fsid):
 
     # logrotate for the cluster
     with open(ctx.logrotate_dir + '/ceph-%s' % fsid, 'w') as f:
+        targets: List[str] = ['ceph-mon', 'ceph-mgr', 'ceph-mds', 'ceph-osd', 'ceph-fuse',
+                              'radosgw', 'rbd-mirror', 'cephfs-mirror', 'tcmu-runner']
         """
         This is a bit sloppy in that the killall/pkill will touch all ceph daemons
         in all containers, but I don't see an elegant way to send SIGHUP *just* to
@@ -4006,13 +4008,13 @@ def install_base_units(ctx, fsid):
     compress
     sharedscripts
     postrotate
-        killall -q -1 ceph-mon ceph-mgr ceph-mds ceph-osd ceph-fuse radosgw rbd-mirror cephfs-mirror || pkill -1 -x 'ceph-mon|ceph-mgr|ceph-mds|ceph-osd|ceph-fuse|radosgw|rbd-mirror|cephfs-mirror' || true
+        killall -q -1 %s || pkill -1 -x '%s' || true
     endscript
     missingok
     notifempty
     su root root
 }
-""" % fsid)
+""" % (fsid, ' '.join(targets), '|'.join(targets)))
 
 
 def get_unit_file(ctx, fsid):
