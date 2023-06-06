@@ -265,15 +265,18 @@ int D3NFilterObject::D3NFilterReadOp::D3NFilterGetCB::handle_data(bufferlist& bl
     }
   }
 
+  dout(20) << "D3NFilterObject::handle_data:: " << "oid: " << oid << ", ofs: " << ofs << ", len: " << len << dendl;
   //Accumulating data from backend store into rgw_get_obj_max_req_size sized chunks and then writing to cache
   if (write_to_cache) {
     const std::lock_guard l(d3n_get_data.d3n_lock);
     if (bl.length() > 0 && last_part) { // if bl = bl_rem has data and this is the last part, write it to cache
       std::string oid = this->oid + "_" + std::to_string(ofs) + "_" + std::to_string(bl_len);
+      dout(20) << "D3NFilterObject::handle_data:: " << __func__ << "(): WRITE TO CACHE: oid=" << oid << ", bl.length=" << bl.length() << dendl;
       filter->get_d3n_cache()->put(bl, bl.length(), oid);
     } else if (bl.length() == rgw_get_obj_max_req_size && bl_rem.length() == 0) { // if bl is the same size as rgw_get_obj_max_req_size, write it to cache
         std::string oid = this->oid + "_" + std::to_string(ofs) + "_" + std::to_string(bl_len);
         ofs += bl_len;
+        dout(20) << "D3NFilterObject::handle_data:: " << __func__ << "(): WRITE TO CACHE: oid=" << oid << ", ofs=" << ofs << ", bl.length=" << bl.length() << dendl;
         filter->get_d3n_cache()->put(bl, bl.length(), oid);
     } else { //copy data from incoming bl to bl_rem till it is rgw_get_obj_max_req_size, and then write it to cache
       uint64_t rem_space = rgw_get_obj_max_req_size - bl_rem.length();
@@ -284,6 +287,7 @@ int D3NFilterObject::D3NFilterReadOp::D3NFilterGetCB::handle_data(bufferlist& bl
       if (bl_rem.length() == g_conf()->rgw_get_obj_max_req_size) {
         std::string oid = this->oid + "_" + std::to_string(ofs) + "_" + std::to_string(bl_rem.length());
         ofs += bl_rem.length();
+        dout(20) << "D3NFilterObject::handle_data:: " << __func__ << "(): WRITE TO CACHE: oid=" << oid << ", ofs=" << ofs << ", bl_rem.length=" << bl_rem.length() << dendl;
         filter->get_d3n_cache()->put(bl_rem, bl_rem.length(), oid);
         bl_rem.clear();
         bl_rem = std::move(bl);
