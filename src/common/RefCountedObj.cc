@@ -30,7 +30,7 @@ void RefCountedObject::put() const {
     ANNOTATE_HAPPENS_BEFORE(&nref);
   }
 }
-
+// to verify this assert for classic ceph
 void RefCountedObject::_get() const {
   auto v = ++nref;
   ceph_assert(v > 1); /* it should never happen that _get() sees nref == 0 */
