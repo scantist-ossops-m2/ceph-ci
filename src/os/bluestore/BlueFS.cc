@@ -220,7 +220,6 @@ void BlueFS::_init_logger()
 {
   PerfCountersBuilder b(cct, "bluefs",
                         l_bluefs_first, l_bluefs_last);
-  // TODO sdfsd fds
   b.add_u64(l_bluefs_db_total_bytes, "db_total_bytes",
 	    "Total bytes (main db device)",
 	    "b", PerfCountersBuilder::PRIO_USEFUL, unit_t(UNIT_BYTES));
@@ -2812,7 +2811,7 @@ void BlueFS::_compact_log_async_LD_LNF_D() //also locks FW for new_writer
   // TODO - think - if _flush_and_sync_log_jump will not add dirty files nor release pending allocations
   // then flush_bdev() will not be necessary
   _flush_bdev();
-  _flush_and_sync_log_jump_D(old_log_jump_to, true);
+  _flush_and_sync_log_jump_D(old_log_jump_to);
 
   //
   // Part 2.
@@ -3064,7 +3063,7 @@ int64_t BlueFS::_maybe_extend_log() {
   // a log can get.
   // inject new allocation in case log is too big
   if (log.t.expected_size() > runway) {
-    _extend_log(log.t.expected_size());
+    _extend_log(log.t.expected_size() + cct->_conf->bluefs_min_log_runway);
   } else if (runway < cct->_conf->bluefs_min_log_runway) {
     _extend_log(cct->_conf->bluefs_max_log_runway);
   }
@@ -3072,7 +3071,6 @@ int64_t BlueFS::_maybe_extend_log() {
   return runway;
 }
 
-// TODO: dfsdaf
 int64_t BlueFS::_extend_log(uint64_t amount) {
   ceph_assert(ceph_mutex_is_locked(log.lock));
   std::unique_lock<ceph::mutex> ll(log.lock, std::adopt_lock);
