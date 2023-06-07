@@ -157,7 +157,8 @@ daemon_pid_file()
     local instance
 
     set_cluster_instance "${cluster}" cluster instance
-
+    echo ${PWD}
+    ls ${PWD}
     echo $(ceph-conf --cluster $cluster --name "client.${MIRROR_USER_ID_PREFIX}${instance}" 'pid file')
 }
 
