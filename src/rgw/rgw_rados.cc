@@ -839,14 +839,7 @@ int RGWIndexCompletionThread::process(const DoutPrefixProvider *dpp)
     RGWRados::BucketShard bs(store);
     RGWBucketInfo bucket_info;
 
-    int r = bs.init(c->obj.bucket, c->obj, &bucket_info, this);
-    if (r < 0) {
-      ldpp_dout(this, 0) << "ERROR: " << __func__ << "(): failed to initialize BucketShard, obj=" << c->obj << " r=" << r << dendl;
-      /* not much to do */
-      continue;
-    }
-
-    r = store->guard_reshard(this, &bs, c->obj, bucket_info,
+    int r = store->guard_reshard(this, &bs, c->obj, bucket_info,
 			     [&](RGWRados::BucketShard *bs) -> int {
 			       librados::ObjectWriteOperation o;
 			       o.assert_exists(); // bucket index shard must exist
@@ -6062,15 +6055,17 @@ int RGWRados::Bucket::UpdateIndex::guard_reshard(const DoutPrefixProvider *dpp, 
 
 #define NUM_RESHARD_RETRIES 10
   for (int i = 0; i < NUM_RESHARD_RETRIES; ++i) {
-    int ret = get_bucket_shard(&bs, dpp);
-    if (ret < 0) {
-      ldpp_dout(dpp, 5) << "failed to get BucketShard object: ret=" << ret << dendl;
-      return ret;
-    }
+    r = get_bucket_shard(&bs, dpp);
+    if (r != -ENOENT) {
+      if (r < 0) {
+        ldpp_dout(dpp, 5) << "failed to get BucketShard object: r=" << r << dendl;
+        return r;
+      }
 
-    r = call(bs);
-    if (r != -ERR_BUSY_RESHARDING && r != -ENOENT) {
-      break;
+      r = call(bs);
+      if (r != -ERR_BUSY_RESHARDING && r != -ENOENT) {
+        break;
+      }
     }
 
     std::string new_bucket_id;
@@ -6733,13 +6728,15 @@ int RGWRados::guard_reshard(const DoutPrefixProvider *dpp,
 
   for (int i = 0; i < NUM_RESHARD_RETRIES; ++i) {
     r = bs->init(pobj->bucket, *pobj, nullptr /* no RGWBucketInfo */, dpp);
-    if (r < 0) {
-      ldpp_dout(dpp, 5) << "bs.init() returned ret=" << r << dendl;
-      return r;
-    }
-    r = call(bs);
-    if (r != -ERR_BUSY_RESHARDING) {
-      break;
+    if (r != -ENOENT) {
+      if (r < 0) {
+        ldpp_dout(dpp, 5) << "bs.init() returned ret=" << r << dendl;
+        return r;
+      }
+      r = call(bs);
+      if (r != -ERR_BUSY_RESHARDING) {
+        break;
+      }
     }
     ldpp_dout(dpp, 0) << "NOTICE: resharding operation on bucket index detected, blocking" << dendl;
     string new_bucket_id;
@@ -6798,15 +6795,19 @@ int RGWRados::block_while_resharding(RGWRados::BucketShard *bs,
   constexpr int num_retries = 10;
   for (int i = 1; i <= num_retries; i++) { // nb: 1-based for loop
     auto& ref = bs->bucket_obj.get_ref();
-    ret = cls_rgw_get_bucket_resharding(ref.pool.ioctx(), ref.obj.oid, &entry);
+    if (ref.obj.empty()) {
+      ret = -ENOENT;
+    } else {
+      ret = cls_rgw_get_bucket_resharding(ref.pool.ioctx(), ref.obj.oid, &entry);
+    }
     if (ret == -ENOENT) {
       ret = fetch_new_bucket_id(bucket_info, nullptr, *new_bucket_id, dpp);
       if (ret < 0) {
 	ldpp_dout(dpp, 0) << "ERROR: " << __func__ <<
 	  " failed to refresh bucket info after reshard when get bucket "
 	  "resharding failed, error: " << cpp_strerror(-ret) << dendl;
-	return ret;
       }
+      return ret;
     } else if (ret < 0) {
       ldpp_dout(dpp, 0) << __func__ <<
 	" ERROR: failed to get bucket resharding : " << cpp_strerror(-ret) <<
@@ -6993,18 +6994,12 @@ int RGWRados::bucket_index_read_olh_log(const DoutPrefixProvider *dpp,
   }
 
   BucketShard bs(this);
-  int ret =
-    bs.init(obj_instance.bucket, obj_instance, nullptr /* no RGWBucketInfo */, dpp);
-  if (ret < 0) {
-    ldpp_dout(dpp, 5) << "bs.init() returned ret=" << ret << dendl;
-    return ret;
-  }
 
   string olh_tag(state.olh_tag.c_str(), state.olh_tag.length());
 
   cls_rgw_obj_key key(obj_instance.key.get_index_key_name(), string());
 
-  ret = guard_reshard(dpp, &bs, obj_instance, bucket_info,
+  int ret = guard_reshard(dpp, &bs, obj_instance, bucket_info,
 		      [&](BucketShard *bs) -> int {
 	                auto& ref = bs->bucket_obj.get_ref();
 			ObjectReadOperation op;
@@ -7098,18 +7093,12 @@ int RGWRados::bucket_index_trim_olh_log(const DoutPrefixProvider *dpp, const RGW
   }
 
   BucketShard bs(this);
-  int ret =
-    bs.init(obj_instance.bucket, obj_instance, nullptr /* no RGWBucketInfo */, dpp);
-  if (ret < 0) {
-    ldpp_dout(dpp, 5) << "bs.init() returned ret=" << ret << dendl;
-    return ret;
-  }
 
   string olh_tag(state.olh_tag.c_str(), state.olh_tag.length());
 
   cls_rgw_obj_key key(obj_instance.key.get_index_key_name(), string());
 
-  ret = guard_reshard(dpp, &bs, obj_instance, bucket_info,
+  int ret = guard_reshard(dpp, &bs, obj_instance, bucket_info,
 		      [&](BucketShard *pbs) -> int {
 			ObjectWriteOperation op;
 			op.assert_exists(); // bucket index shard must exist

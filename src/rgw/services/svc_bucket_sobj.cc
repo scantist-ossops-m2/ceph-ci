@@ -285,7 +285,7 @@ int RGWSI_Bucket_SObj::read_bucket_instance_info(RGWSI_Bucket_BI_Ctx& ctx,
       ldpp_dout(dpp, -1) << "WARNING: The bucket info cache is inconsistent. This is "
         << "a failure that should be debugged. I am a nice machine, "
         << "so I will try to recover." << dendl;
-      binfo_cache->invalidate(key);
+      binfo_cache->invalidate(cache_key);
     } else {
       *info = e->info;
       if (pattrs)
