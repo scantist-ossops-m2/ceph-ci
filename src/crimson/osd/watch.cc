@@ -126,7 +126,10 @@ seastar::future<> Watch::notify_ack(
 {
   logger().info("{} notify_id={}", __func__, notify_id);
   const auto it = in_progress_notifies.find(notify_id);
-  assert(it != std::end(in_progress_notifies));
+  if (it == std::end(in_progress_notifies)) {
+    logger().debug("notify_ack nothing to do");
+    return seastar::now();
+  }
   auto notify = *it;
   logger().debug("Watch::notify_ack gid={} cookie={} found notify(id={})",
     get_watcher_gid(),
