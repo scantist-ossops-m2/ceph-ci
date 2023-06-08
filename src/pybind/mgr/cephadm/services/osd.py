@@ -614,6 +614,7 @@ class OSD:
                  replace: bool = False,
                  force: bool = False,
                  hostname: Optional[str] = None,
+                 host_offline: bool = False,
                  zap: bool = False,
                  no_destroy: bool = False):
         # the ID of the OSD
@@ -646,6 +647,9 @@ class OSD:
         self.force = force
         # The name of the node
         self.hostname = hostname
+
+        # is node OSD is deployed on offline
+        self.host_offline = host_offline
 
         # mgr obj to make mgr/mon calls
         self.rm_util: RemoveUtil = remove_util
@@ -697,6 +701,12 @@ class OSD:
         self.stopped = True
         self.stop_draining()
 
+    def mark_host_offline(self) -> None:
+        self.host_offline = True
+
+    def mark_host_online(self) -> None:
+        self.host_offline = False
+
     @property
     def is_draining(self) -> bool:
         """
@@ -741,6 +751,8 @@ class OSD:
         return str(self.osd_id) in self.rm_util.get_osds_in_cluster()
 
     def drain_status_human(self) -> str:
+        if self.host_offline:
+            return 'host is offline'
         default_status = 'not started'
         status = 'started' if self.started and not self.draining else default_status
         status = 'draining' if self.draining else status
@@ -760,6 +772,7 @@ class OSD:
         out['force'] = self.force
         out['zap'] = self.zap
         out['hostname'] = self.hostname  # type: ignore
+        out['host_offline'] = self.host_offline
 
         for k in ['drain_started_at', 'drain_stopped_at', 'drain_done_at', 'process_started_at']:
             if getattr(self, k):
@@ -963,6 +976,18 @@ class OSDRemovalQueue(object):
             except KeyError:
                 logger.debug(f"Could not find {osd} in queue.")
                 raise KeyError
+
+    def mark_osd_host_offline(self, hostname: str) -> None:
+        with self.lock:
+            host_osds = [osd for osd in self.osds if osd.hostname == hostname]
+            for osd in host_osds:
+                osd.mark_host_offline()
+
+    def mark_osd_host_online(self, hostname: str) -> None:
+        with self.lock:
+            host_osds = [osd for osd in self.osds if osd.hostname == hostname]
+            for osd in host_osds:
+                osd.mark_host_online()
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, OSDRemovalQueue):
