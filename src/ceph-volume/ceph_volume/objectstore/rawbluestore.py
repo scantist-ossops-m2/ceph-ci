@@ -2,11 +2,12 @@ import logging
 import json
 import os
 from .bluestore import BlueStore
-from ceph_volume import terminal, decorators
+from ceph_volume import terminal, decorators, conf, process
 from ceph_volume.util import system, disk
 from ceph_volume.util import prepare as prepare_utils
 from ceph_volume.util import encryption as encryption_utils
 from ceph_volume.devices.lvm.common import rollback_osd
+from ceph_volume.devices.raw.list import direct_report
 
 logger = logging.getLogger(__name__)
 
@@ -92,3 +93,73 @@ class RawBlueStore(BlueStore):
 
         # prepare the osd filesystem
         self.osd_mkfs()
+
+    def _activate(self, meta, tmpfs):
+        # find the osd
+        osd_id = meta['osd_id']
+        osd_uuid = meta['osd_uuid']
+
+        # mount on tmpfs the osd directory
+        osd_path = '/var/lib/ceph/osd/%s-%s' % (conf.cluster, osd_id)
+        if not system.path_is_mounted(osd_path):
+            # mkdir -p and mount as tmpfs
+            prepare_utils.create_osd_path(osd_id, tmpfs=tmpfs)
+
+        # XXX This needs to be removed once ceph-bluestore-tool can deal with
+        # symlinks that exist in the osd dir
+        for link_name in ['block', 'block.db', 'block.wal']:
+            link_path = os.path.join(osd_path, link_name)
+            if os.path.exists(link_path):
+                os.unlink(os.path.join(osd_path, link_name))
+
+        # Once symlinks are removed, the osd dir can be 'primed again. chown first,
+        # regardless of what currently exists so that ``prime-osd-dir`` can succeed
+        # even if permissions are somehow messed up
+        system.chown(osd_path)
+        prime_command = [
+            'ceph-bluestore-tool',
+            'prime-osd-dir',
+            '--path', osd_path,
+            '--no-mon-config',
+            '--dev', meta['device'],
+        ]
+        process.run(prime_command)
+
+        # always re-do the symlink regardless if it exists, so that the block,
+        # block.wal, and block.db devices that may have changed can be mapped
+        # correctly every time
+        prepare_utils.link_block(meta['device'], osd_id)
+
+        if 'device_db' in meta:
+            prepare_utils.link_db(meta['device_db'], osd_id, osd_uuid)
+
+        if 'device_wal' in meta:
+            prepare_utils.link_wal(meta['device_wal'], osd_id, osd_uuid)
+
+        system.chown(osd_path)
+        terminal.success("ceph-volume raw activate successful for osd ID: %s" % osd_id)
+
+    @decorators.needs_root
+    def activate(self, devs, start_osd_id, start_osd_uuid,
+                 tmpfs):
+        """
+        :param args: The parsed arguments coming from the CLI
+        """
+        assert devs or start_osd_id or start_osd_uuid
+        found = direct_report(devs)
+
+        activated_any = False
+        for osd_uuid, meta in found.items():
+            osd_id = meta['osd_id']
+            if start_osd_id is not None and str(osd_id) != str(start_osd_id):
+                continue
+            if start_osd_uuid is not None and osd_uuid != start_osd_uuid:
+                continue
+            logger.info('Activating osd.%s uuid %s cluster %s' % (
+                osd_id, osd_uuid, meta['ceph_fsid']))
+            self._activate( meta,
+                           tmpfs=tmpfs)
+            activated_any = True
+
+        if not activated_any:
+            raise RuntimeError('did not find any matching OSD to activate')
