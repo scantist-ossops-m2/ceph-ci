@@ -41,6 +41,7 @@ std::unique_ptr<ObjectStore> ObjectStore::create(
   }
 #if defined(WITH_BLUESTORE)
   if (type == "bluestore") {
+    return std::make_unique<ceph::experimental::BlueStore>(cct, data);
     return std::make_unique<BlueStore>(cct, data);
 #ifndef WITH_SEASTAR
   } else if (type == "bluestore-rdr") {
