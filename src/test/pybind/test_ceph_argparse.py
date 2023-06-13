@@ -17,7 +17,7 @@
 
 from ceph_argparse import validate_command, parse_json_funcsigs, validate, \
     parse_funcsig, ArgumentError, ArgumentTooFew, ArgumentMissing, \
-    ArgumentNumber, ArgumentValid
+    ArgumentNumber, ArgumentValid, JsonFormat
 
 import os
 import random
@@ -343,6 +343,14 @@ class TestMonitor(TestArgparse):
             self._assert_valid_command(['tell', name + ".42",
                                         'something',
                                         'something else'])
+            
+    def test_unknown_cephname_type(self):
+        # test the unknown types passed in CephName()
+        try:
+            validate_command(sigdict, ['tell', 'cephfs.c', 'something'])
+        except JsonFormat as er:
+            pass
+        self._assert_valid_command(['tell', 'mon.a', 'something'])
 
 
 class TestMDS(TestArgparse):
