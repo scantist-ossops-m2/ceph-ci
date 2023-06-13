@@ -343,6 +343,11 @@ class TestMonitor(TestArgparse):
             self._assert_valid_command(['tell', name + ".42",
                                         'something',
                                         'something else'])
+            
+    def test_unknown_cephname_type(self):
+        # test the unknown types passed in CephName()
+        self.assertEqual({}, validate_command(sigdict, ['tell', 'cephfs.c', 'something']))
+        self._assert_valid_command(['tell', 'mon.a', 'something'])
 
 
 class TestMDS(TestArgparse):
