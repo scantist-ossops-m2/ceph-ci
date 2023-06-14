@@ -598,10 +598,19 @@ seastar::future<Ref<PG>> ShardServices::handle_pg_create_info(
 	    info->past_intervals,
 	    rctx.transaction);
 
-	  return start_operation<PGAdvanceMap>(
-	    *this, pg, pg->get_osdmap_epoch(), get_map()->get_epoch(), std::move(rctx), true
-	  ).second.then([pg=pg] {
-	    return seastar::make_ready_future<Ref<PG>>(pg);
+	  return seastar::do_with(std::move(rctx), [this, pg](auto& rctx) {
+	    return pg->handle_initialize(rctx
+	    ).then([this, pg, &rctx] {
+	      return pg->handle_activate_map(rctx);
+	    }).then([this, pg, &rctx] {
+	      return start_operation<PGAdvanceMap>(
+	        *this, pg, pg->get_osdmap_epoch(), get_map()->get_epoch(), std::move(rctx), true
+	      ).second;
+	    }).then([this, pg] {
+	      pg_created(pg->get_pgid(), pg);
+	      logger().info("handle_pg_create_info new pg {}", *pg);
+	      return seastar::make_ready_future<Ref<PG>>(pg);
+	    });
 	  });
 	});
     });
