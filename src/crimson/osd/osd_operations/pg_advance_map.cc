@@ -63,6 +63,36 @@ seastar::future<> PGAdvanceMap::start()
   return enter_stage<>(
     pg->peering_request_pg_pipeline.process
   ).then([this] {
+    if (!do_init && to == pg->get_osdmap_epoch()) {
+      /*
+       * PGAdvanceMap is scheduled at pg creation
+       * and when broadcasting new osdmaps to pgs.
+       * The former's future is not chained and therfore
+       * we are not able to serialize between the different
+       * PGAdvanceMap callers. As a result the pg may already
+       * get advanced (at it's creation) to the latest osdmap
+       * epcoh. Therfore, we can safely ignore this event.
+       */
+      logger().debug("{}: pg was already advanced to {} at creation,"
+                     " skipping", *this, pg->get_osdmap_epoch());
+      return seastar::now();
+    }
+    if (from != pg->get_osdmap_epoch()) {
+      /*
+       * We are not scheduling PGAdvanceMap to pgs in 'creating' state.
+       * Therfore, we may skip few osdmaps epochs until the pg
+       * 'creating' state is erased. We need to pull back the
+       * 'from' epoch to the latest pg osdmap epoch to avoid these gaps.
+       * This case is only true for newly created pgs.
+       * It is safe to pull back the 'from' epoch because:
+       * 1) We handle each MOSDMap exclusive epoch once.
+       * 2) The pg was not yet advanced on the range [from, osdmap_epoch].
+       */
+      logger().debug("{}: start pulling back from epoch to pg osdmap"
+                     " {}->{}", *this, from, pg->get_osdmap_epoch());
+      ceph_assert(std::cmp_greater(from, pg->get_osdmap_epoch()));
+      from = pg->get_osdmap_epoch();
+    }
     ceph_assert(std::cmp_less_equal(from, to));
     return seastar::do_for_each(
     boost::make_counting_iterator(from + 1),

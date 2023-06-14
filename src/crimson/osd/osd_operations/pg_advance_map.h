@@ -29,11 +29,11 @@ protected:
   Ref<PG> pg;
   PipelineHandle handle;
 
-  const epoch_t from, to;
+  epoch_t from;
+  const epoch_t to;
 
   PeeringCtx rctx;
 
-  // used solely for logging
   const bool do_init;
 
 public:
