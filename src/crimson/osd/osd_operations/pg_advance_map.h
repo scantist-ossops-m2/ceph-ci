@@ -29,11 +29,13 @@ protected:
   Ref<PG> pg;
   PipelineHandle handle;
 
-  const epoch_t from, to;
+  epoch_t from;
+  const epoch_t to;
 
   PeeringCtx rctx;
 
   const bool do_init;
+  bool skip = false;
 
 public:
   PGAdvanceMap(
@@ -44,6 +46,7 @@ public:
   void print(std::ostream &) const final;
   void dump_detail(ceph::Formatter *f) const final;
   seastar::future<> start();
+  void handle_first_advance();
   PipelineHandle &get_handle() { return handle; }
 
   std::tuple<

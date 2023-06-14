@@ -39,6 +39,8 @@ void PGAdvanceMap::print(std::ostream &lhs) const
       << " to=" << to;
   if (do_init) {
     lhs << " do_init";
+  } else if (pg->is_first_advance) {
+    lhs << " is_first_advance";
   }
   lhs << ")";
 }
@@ -63,6 +65,16 @@ seastar::future<> PGAdvanceMap::start()
   return enter_stage<>(
     pg->peering_request_pg_pipeline.process
   ).then([this] {
+    if (!do_init) {
+      if (pg->is_first_advance) {
+        handle_first_advance();
+        pg->is_first_advance = false;
+        if (skip) {
+          return seastar::now();
+        }
+      }
+    }
+    ceph_assert(from == pg->get_osdmap_epoch());
     ceph_assert(std::cmp_less_equal(from, to));
     return seastar::do_for_each(
     boost::make_counting_iterator(from + 1),
@@ -95,6 +107,37 @@ seastar::future<> PGAdvanceMap::start()
   }).then([this, ref=std::move(ref)] {
     logger().debug("{}: complete", *this);
   });
+}
+
+/*
+* PGAdvanceMap is scheduled at pg creation and when
+* broadcasting new osdmaps to pgs. The former's future
+* is not chained and therfore we are not able to serialize
+* between the two different PGAdvanceMap callers.
+* A new pg will get advanced to the latest osdmap (at it's creation).
+* As a result, we may need to adjust the pg's "first_advance"
+* operation being executed according to the following scenarios:
+* 1) The pg is already advanced to the current osdmap.
+* 2) The pg is advanced to *some* osdmap which is newer
+     or older than this operation 'from' epoch.
+*/
+void PGAdvanceMap::handle_first_advance()
+{
+  logger().debug("{}: handle_first_advance", *this);
+
+  if (to == pg->get_osdmap_epoch()) {
+    logger().debug("{}: handle_first_advance pg was "
+                   "already advanced to {} at creation,"
+                   " skipping", *this, pg->get_osdmap_epoch());
+    skip = true;
+  }
+
+  if (from != pg->get_osdmap_epoch()) {
+    logger().debug("{}: handle_first_advance adjusting"
+                   " from epoch to pg osdmap {}->{}",
+                   *this, from, pg->get_osdmap_epoch());
+    from = pg->get_osdmap_epoch();
+  }
 }
 
 }

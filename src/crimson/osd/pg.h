@@ -613,6 +613,12 @@ public:
   ObjectContextRegistry obc_registry;
   ObjectContextLoader obc_loader;
 
+
+  // The first PGAdvanceMap operation executed
+  // which was not scheduled at the pg's creation.
+  // See PGAdvanceMap::handle_first_advance().
+  bool is_first_advance = true;
+
 private:
   OSDriver osdriver;
   SnapMapper snap_mapper;

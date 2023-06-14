@@ -603,6 +603,10 @@ seastar::future<Ref<PG>> ShardServices::handle_pg_create_info(
 	    ).then([this, pg, &rctx] {
 	      return pg->handle_activate_map(rctx);
 	    }).then([this, pg, &rctx] {
+	      // we ignore the future returned here (See get_or_create_pg),
+	      // PGAdvanceMap is responsible to adjust any inconsistencies
+	      // caused due to not being able to synchronize between other
+	      // PGAdvanceMap ops.
 	      return start_operation<PGAdvanceMap>(
 	        *this, pg, pg->get_osdmap_epoch(), get_map()->get_epoch(), std::move(rctx), true
 	      ).second;
