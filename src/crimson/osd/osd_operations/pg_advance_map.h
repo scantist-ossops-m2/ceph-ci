@@ -32,6 +32,8 @@ protected:
   const epoch_t from, to;
 
   PeeringCtx rctx;
+
+  // used solely for logging
   const bool do_init;
 
 public:
