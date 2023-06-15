@@ -1008,6 +1008,8 @@ class CephExporter(object):
         ipv4_addrs, ipv6_addrs = get_ip_addresses(get_hostname())
         # use the first ipv4 (if any) otherwise use the first ipv6
         addrs = next(iter(ipv4_addrs or ipv6_addrs), None)
+        logger = logging.getLogger("waah")
+        logger.info("waahhh: %s", addrs)
         self.addrs = config_json.get('addrs', addrs)
         self.port = config_json.get('port', self.DEFAULT_PORT)
         self.prio_limit = config_json.get('prio-limit', 5)

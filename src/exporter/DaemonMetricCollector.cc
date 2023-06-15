@@ -152,7 +152,12 @@ void DaemonMetricCollector::dump_asok_metrics() {
           labels.insert(multisite_labels_and_name.first.begin(), multisite_labels_and_name.first.end());
           counter_name = multisite_labels_and_name.second;
         }
-        labels.insert({"ceph_daemon", quote(daemon_name)});
+        std::string prefix = "ceph_";
+        std::string daemon_name_label = daemon_name;
+        if (daemon_name.rfind(prefix, 0) == 0) {
+          daemon_name_label = daemon_name.substr(prefix.size());
+        }
+        labels.insert({"ceph_daemon", quote(daemon_name_label)});
         auto perf_values = counters_values.at(counter_name_init);
         dump_asok_metric(counter_group, perf_values, counter_name, labels);
       }
