@@ -5,7 +5,7 @@ set -x
 export PATH=/root/bin:$PATH
 mkdir /root/bin
 
-export CEPHADM_IMAGE='quay.ceph.io/ceph-ci/ceph:main'
+export CEPHADM_IMAGE='quay.io/athakkar/ceph-exporter:latest'
 
 CEPHADM="/root/bin/cephadm"
 
