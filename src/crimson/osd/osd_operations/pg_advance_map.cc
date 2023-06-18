@@ -78,19 +78,8 @@ seastar::future<> PGAdvanceMap::start()
       return seastar::now();
     }
     if (from != pg->get_osdmap_epoch()) {
-      /*
-       * We are not scheduling PGAdvanceMap to pgs in 'creating' state.
-       * Therfore, we may skip few osdmaps epochs until the pg
-       * 'creating' state is erased. We need to pull back the
-       * 'from' epoch to the latest pg osdmap epoch to avoid these gaps.
-       * This case is only true for newly created pgs.
-       * It is safe to pull back the 'from' epoch because:
-       * 1) We handle each MOSDMap exclusive epoch once.
-       * 2) The pg was not yet advanced on the range [from, osdmap_epoch].
-       */
-      logger().debug("{}: start pulling back from epoch to pg osdmap"
+      logger().debug("{}: start adjusting from epoch to pg osdmap"
                      " {}->{}", *this, from, pg->get_osdmap_epoch());
-      ceph_assert(std::cmp_greater(from, pg->get_osdmap_epoch()));
       from = pg->get_osdmap_epoch();
     }
     ceph_assert(std::cmp_less_equal(from, to));
