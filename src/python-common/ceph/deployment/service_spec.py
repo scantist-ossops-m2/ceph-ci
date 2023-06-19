@@ -1599,6 +1599,7 @@ class MONSpec(ServiceSpec):
                  preview_only: bool = False,
                  networks: Optional[List[str]] = None,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  custom_configs: Optional[List[CustomConfig]] = None,
                  crush_locations: Optional[Dict[str, List[str]]] = None,
                  ):
@@ -1611,6 +1612,7 @@ class MONSpec(ServiceSpec):
                                       preview_only=preview_only,
                                       networks=networks,
                                       extra_container_args=extra_container_args,
+                                      extra_entrypoint_args=extra_entrypoint_args,
                                       custom_configs=custom_configs)
 
         self.crush_locations = crush_locations
