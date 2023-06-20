@@ -1267,6 +1267,7 @@ void OSDService::send_pg_created(pg_t pgid)
   auto o = get_osdmap();
   if (o->require_osd_release >= ceph_release_t::luminous) {
     pg_created.insert(pgid);
+    dout(20) << __func__ << " reply to mon " << pgid << " created." << dendl;
     monc->send_mon_message(new MOSDPGCreated(pgid));
   }
 }
@@ -1278,6 +1279,7 @@ void OSDService::send_pg_created()
   auto o = get_osdmap();
   if (o->require_osd_release >= ceph_release_t::luminous) {
     for (auto pgid : pg_created) {
+      dout(20) << __func__ << " reply to mon " << pgid << " created!" << dendl;
       monc->send_mon_message(new MOSDPGCreated(pgid));
     }
   }
@@ -7564,7 +7566,12 @@ void OSD::ms_fast_dispatch(Message *m)
     tracepoint(osd, ms_fast_dispatch, reqid.name._type,
         reqid.name._num, reqid.tid, reqid.inc);
   }
-  op->osd_parent_span = tracing::osd::tracer.start_trace("op-request-created");
+
+  if (m->otel_trace.IsValid()) {
+    op->osd_parent_span = tracing::osd::tracer.add_span("op-request-created", m->otel_trace);
+  } else {
+    op->osd_parent_span = tracing::osd::tracer.start_trace("op-request-created");
+  }
 
   if (m->trace)
     op->osd_trace.init("osd op", &trace_endpoint, &m->trace);
@@ -9222,7 +9229,7 @@ void OSD::handle_fast_pg_create(MOSDPGCreate2 *m)
 	    std::make_shared<PGPeeringEvent>(
 	      m->epoch,
 	      m->epoch,
-	      NullEvt(),
+	      PgCreateEvt(),
 	      true,
 	      new PGCreateInfo(
 		pgid,

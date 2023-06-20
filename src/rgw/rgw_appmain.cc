@@ -246,7 +246,7 @@ int rgw::AppMain::init_storage()
       ((!nfs) || (nfs && g_conf()->rgw_nfs_run_sync_thread)));
 
   need_context_pool();
-  DriverManager::Config cfg = DriverManager::get_config(false, g_ceph_context);
+  DriverManager::PluginConfig cfg = DriverManager::get_config(false, g_ceph_context);
   env.driver = DriverManager::get_storage(dpp, dpp->get_cct(),
           cfg,
 	  *context_pool,
