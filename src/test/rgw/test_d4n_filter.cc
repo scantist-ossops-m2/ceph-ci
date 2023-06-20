@@ -59,7 +59,7 @@ class Environment : public ::testing::Environment {
 			CINIT_FLAG_NO_MON_CONFIG);
 
       dpp = new DoutPrefix(cct->get(), dout_subsys, "d4n test: ");
-      DriverManager::Config cfg;
+      DriverManager::PluginConfig cfg;
 
       cfg.store_name = "dbstore";
       cfg.filter_name = "d4n";
