@@ -119,7 +119,7 @@ def check_sanity():
         compiler.link_executable(
             objects=link_objects,
             output_progname=os.path.join(tmp_dir, 'rgw_dummy'),
-            libraries=['rgw', 'rados'],
+            libraries=['rgw', 'rados_sal', 'rados'],
             output_dir=tmp_dir,
         )
 
