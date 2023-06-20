@@ -16,11 +16,14 @@
 #pragma once
 
 #include "rgw_sal_fwd.h"
+#include "rgw_common.h"
 #include "rgw_lua.h"
-#include "rgw_user.h"
 #include "rgw_notify_event_type.h"
+#include "rgw_bucket_types.h"
+#include "driver/rados/rgw_datalog.h"
 #include "common/tracer.h"
-#include "rgw_datalog_notify.h"
+#include "common/RefCountedObj.h"
+#include "common/PluginRegistry.h"
 #include "include/random.h"
 
 class RGWRESTMgr;
@@ -38,6 +41,7 @@ class RGWCompressionInfo;
 struct rgw_pubsub_topics;
 struct rgw_pubsub_bucket_topics;
 
+#define RGW_NO_SHARD -1
 
 using RGWBucketListNameFilter = std::function<bool (const std::string&)>;
 
@@ -451,6 +455,12 @@ class Driver {
     /** Register admin APIs unique to this driver */
     virtual void register_admin_apis(RGWRESTMgr* mgr) = 0;
 };
+
+// typedef class Driver *(*New_Driver_fn)(const DoutPrefixProvider *,
+//                                        CephContext *,
+//                                        bool, bool, bool, bool, bool,
+//                                        bool, bool, bool, bool);
+using rgw_sal_new_driver_fn = rgw::sal::Driver* (*)(const DoutPrefixProvider *, CephContext *, bool, bool, bool, bool, bool, bool, bool, bool, bool, optional_yield);
 
 /**
  * @brief User abstraction
@@ -1577,11 +1587,13 @@ public:
     std::string store_name;
     /** Name of filter to create or "none" */
     std::string filter_name;
+    /** PluginRegistry */
+    PluginRegistry *plugin_reg;
   };
 
   DriverManager() {}
   /** Get a full driver by service name */
-  static rgw::sal::Driver* get_storage(const DoutPrefixProvider* dpp,
+  static rgw::sal::Driver *get_storage(const DoutPrefixProvider* dpp,
 				      CephContext* cct,
 				      const Config& cfg,
 				      bool use_gc_thread,
@@ -1592,7 +1604,7 @@ public:
 				      bool run_notification_thread, optional_yield y,
 				      bool use_cache = true,
 				      bool use_gc = true) {
-    rgw::sal::Driver* driver = init_storage_provider(dpp, cct, cfg, use_gc_thread,
+    rgw::sal::Driver *driver = init_storage_provider(dpp, cct, cfg, use_gc_thread,
 						   use_lc_thread,
 						   quota_threads,
 						   run_sync_thread,
@@ -1602,13 +1614,13 @@ public:
     return driver;
   }
   /** Get a stripped down driver by service name */
-  static rgw::sal::Driver* get_raw_storage(const DoutPrefixProvider* dpp,
+  static rgw::sal::Driver *get_raw_storage(const DoutPrefixProvider* dpp,
 					  CephContext* cct, const Config& cfg) {
-    rgw::sal::Driver* driver = init_raw_storage_provider(dpp, cct, cfg);
+    rgw::sal::Driver *driver = init_raw_storage_provider(dpp, cct, cfg);
     return driver;
   }
   /** Initialize a new full Driver */
-  static rgw::sal::Driver* init_storage_provider(const DoutPrefixProvider* dpp,
+  static rgw::sal::Driver *init_storage_provider(const DoutPrefixProvider* dpp,
 						CephContext* cct,
 						const Config& cfg,
 						bool use_gc_thread,
@@ -1618,13 +1630,14 @@ public:
 						bool run_reshard_thread,
                                                 bool run_notification_thread,
 						bool use_metadata_cache,
-						bool use_gc, optional_yield y);
+						bool use_gc,
+                                                optional_yield y);
   /** Initialize a new raw Driver */
-  static rgw::sal::Driver* init_raw_storage_provider(const DoutPrefixProvider* dpp,
+  static rgw::sal::Driver *init_raw_storage_provider(const DoutPrefixProvider* dpp,
 						    CephContext* cct,
 						    const Config& cfg);
   /** Close a Driver when it's no longer needed */
-  static void close_storage(rgw::sal::Driver* driver);
+  static void close_storage(rgw::sal::Driver *driver);
 
   /** Get the config for Drivers */
   static Config get_config(bool admin, CephContext* cct);
