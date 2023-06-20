@@ -4,6 +4,9 @@ def assert_equal(a, b):
 def assert_not_equal(a, b):
     assert a != b
 
+def assert_greater(a, b):
+    assert a > b
+
 def assert_raises(excClass, callableObj, *args, **kwargs):
     """
     Like unittest.TestCase.assertRaises, but returns the exception.
