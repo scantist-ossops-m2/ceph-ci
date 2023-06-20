@@ -25,7 +25,7 @@ struct D3nGetObjData {
 
 struct D3nL1CacheRequest {
   ~D3nL1CacheRequest() {
-    lsubdout(g_ceph_context, rgw_datacache, 30) << "D3nDataCache: " << __func__ << "(): Read From Cache, complete" << dendl;
+    // lsubdout(g_ceph_context, rgw_datacache, 30) << "D3nDataCache: " << __func__ << "(): Read From Cache, complete" << dendl;
   }
 
   // unique_ptr with custom deleter for struct aiocb
@@ -33,7 +33,7 @@ struct D3nL1CacheRequest {
     void operator()(struct aiocb* c) {
       if(c->aio_fildes > 0) {
         if( ::close(c->aio_fildes) != 0) {
-          lsubdout(g_ceph_context, rgw_datacache, 2) << "D3nDataCache: " << __func__ << "(): Error - can't close file, errno=" << -errno << dendl;
+          // lsubdout(g_ceph_context, rgw_datacache, 2) << "D3nDataCache: " << __func__ << "(): Error - can't close file, errno=" << -errno << dendl;
         }
       }
       delete c;
@@ -76,7 +76,6 @@ struct D3nL1CacheRequest {
     }
 
     static void libaio_cb_aio_dispatch(sigval sigval) {
-      lsubdout(g_ceph_context, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "()" << dendl;
       auto p = std::unique_ptr<Completion>{static_cast<Completion*>(sigval.sival_ptr)};
       auto op = std::move(p->user_data);
       const int ret = -aio_error(op.aio_cb.get());
