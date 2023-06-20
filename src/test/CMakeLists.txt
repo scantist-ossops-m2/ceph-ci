@@ -267,8 +267,7 @@ if(${WITH_RADOSGW})
     ${CMAKE_DL_LIBS}
     ${UNITTEST_LIBS}
     ${EXTRALIBS}
-    ${CRYPTO_LIBS}
-    )
+    ${CRYPTO_LIBS})
 
 # ceph_test_librgw_file (nfs-like RGW interface)
 add_executable(ceph_test_librgw_file

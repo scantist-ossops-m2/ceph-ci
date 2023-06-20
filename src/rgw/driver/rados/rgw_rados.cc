@@ -6933,7 +6933,7 @@ int RGWRados::Object::Read::read(int64_t ofs, int64_t end,
   return bl.length();
 }
 
-int get_obj_data::flush(rgw::AioResultList&& results) {
+int get_obj_data::flush(rgw::AioResultList&& results, const DoutPrefixProvider *dpp) {
   int r = rgw::check_for_errors(results);
   if (r < 0) {
     return r;
@@ -6958,10 +6958,10 @@ int get_obj_data::flush(rgw::AioResultList&& results) {
       const std::lock_guard l(d3n_get_data.d3n_lock);
       auto oid = completed.front().obj.oid;
       if (bl.length() <= g_conf()->rgw_get_obj_max_req_size && !d3n_bypass_cache_write) {
-        lsubdout(g_ceph_context, rgw_datacache, 10) << "D3nDataCache: " << __func__ << "(): bl.length <= rgw_get_obj_max_req_size (default 4MB) - write to datacache, bl.length=" << bl.length() << dendl;
+        ldpp_dout(dpp, 10) << "D3nDataCache: " << __func__ << "(): bl.length <= rgw_get_obj_max_req_size (default 4MB) - write to datacache, bl.length=" << bl.length() << dendl;
         rgwrados->d3n_data_cache->put(bl, bl.length(), oid);
       } else {
-        lsubdout(g_ceph_context, rgw_datacache, 10) << "D3nDataCache: " << __func__ << "(): not writing to datacache - bl.length > rgw_get_obj_max_req_size (default 4MB), bl.length=" << bl.length() << " or d3n_bypass_cache_write=" << d3n_bypass_cache_write << dendl;
+        ldpp_dout(dpp, 10) << "D3nDataCache: " << __func__ << "(): not writing to datacache - bl.length > rgw_get_obj_max_req_size (default 4MB), bl.length=" << bl.length() << " or d3n_bypass_cache_write=" << d3n_bypass_cache_write << dendl;
       }
     }
     completed.pop_front_and_dispose(std::default_delete<rgw::AioResultEntry>{});
@@ -6984,6 +6984,7 @@ int RGWRados::get_obj_iterate_cb(const DoutPrefixProvider *dpp,
                                  off_t read_ofs, off_t len, bool is_head_obj,
                                  RGWObjState *astate, void *arg)
 {
+  // ldpp_dout(dpp, 0) << "in RGWRados::get_obj_iterate_cb" << dendl;
   ObjectReadOperation op;
   struct get_obj_data* d = static_cast<struct get_obj_data*>(arg);
   string oid, key;
@@ -7029,7 +7030,7 @@ int RGWRados::get_obj_iterate_cb(const DoutPrefixProvider *dpp,
   auto& ref = obj.get_ref();
   auto completed = d->aio->get(ref.obj, rgw::Aio::librados_op(ref.pool.ioctx(), std::move(op), d->yield), cost, id);
 
-  return d->flush(std::move(completed));
+  return d->flush(std::move(completed), dpp);
 }
 
 int RGWRados::Object::Read::iterate(const DoutPrefixProvider *dpp, int64_t ofs, int64_t end, RGWGetDataCB *cb,
@@ -7051,7 +7052,7 @@ int RGWRados::Object::Read::iterate(const DoutPrefixProvider *dpp, int64_t ofs, 
     return r;
   }
 
-  return data.drain();
+  return data.drain(dpp);
 }
 
 int RGWRados::iterate_obj(const DoutPrefixProvider *dpp, RGWObjectCtx& obj_ctx,
