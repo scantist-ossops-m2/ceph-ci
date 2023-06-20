@@ -20,6 +20,7 @@
 #include "common/ceph_context.h"
 #include "rgw_obj_manifest.h"
 #include "rgw_multi.h"
+#include "rgw_user.h" // FIXME
 
 namespace rgw { namespace store {
 
