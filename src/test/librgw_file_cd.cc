@@ -138,7 +138,12 @@ TEST(LibRGW, SHUTDOWN) {
 
 int main(int argc, char *argv[])
 {
-  auto args = argv_to_vec(argc, argv);
+  // auto args = argv_to_vec(argc, argv);
+  std::vector<const char*> args;
+  for (auto ix = 1; ix < argc; ++ix){
+    args.push_back(argv[ix]);
+  }
+
   env_to_vec(args);
 
   char* v = getenv("AWS_ACCESS_KEY_ID");
