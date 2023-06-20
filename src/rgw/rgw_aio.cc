@@ -107,7 +107,7 @@ Aio::OpFunc d3n_cache_aio_abstract(const DoutPrefixProvider *dpp, optional_yield
     // d3n data cache requires yield context (rgw_beast_enable_async=true)
     ceph_assert(y);
     auto c = std::make_unique<D3nL1CacheRequest>();
-    lsubdout(g_ceph_context, rgw_datacache, 20) << "D3nDataCache: d3n_cache_aio_abstract(): libaio Read From Cache, oid=" << r.obj.oid << dendl;
+    ldpp_dout(dpp, 20) << "D3nDataCache: d3n_cache_aio_abstract(): libaio Read From Cache, oid=" << r.obj.oid << dendl;
     c->file_aio_read_abstract(dpp, y.get_io_context(), y.get_yield_context(), cache_location, read_ofs, read_len, aio, r);
   };
 }

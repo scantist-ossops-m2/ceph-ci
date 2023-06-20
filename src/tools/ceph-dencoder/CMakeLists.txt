@@ -63,6 +63,10 @@ if(WITH_RADOSGW)
     rgw_a
     cls_rgw_client
     cls_journal_client)
+  if(WITH_JAEGER)
+    add_dependencies(denc-mod-rgw jaeger_base)
+    target_link_libraries(denc-mod-rgw jaeger_base)
+  endif()
   if(WITH_RADOSGW_AMQP_ENDPOINT)
     target_link_libraries(denc-mod-rgw
       rabbitmq ssl)
