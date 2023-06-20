@@ -267,8 +267,7 @@ if(${WITH_RADOSGW})
     ${CMAKE_DL_LIBS}
     ${UNITTEST_LIBS}
     ${EXTRALIBS}
-    ${CRYPTO_LIBS}
-    )
+    ${CRYPTO_LIBS})
 
 # ceph_test_librgw_file (nfs-like RGW interface)
 add_executable(ceph_test_librgw_file
@@ -302,6 +301,8 @@ target_link_libraries(ceph_test_librgw_file_cd
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   ${ALLOC_LIBS}
+  rgw_common
+  rados_sal
   )
 install(TARGETS ceph_test_librgw_file_cd DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -316,6 +317,8 @@ target_link_libraries(ceph_test_librgw_file_gp
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   ${ALLOC_LIBS}
+  rgw_common
+  rados_sal
   )
 install(TARGETS ceph_test_librgw_file_gp DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -335,6 +338,8 @@ target_link_libraries(ceph_test_librgw_file_nfsns
   ${EXTRALIBS}
   ${LUA_LIBRARIES}
   ${ALLOC_LIBS}
+  rgw_common
+  rados_sal
   )
   target_link_libraries(ceph_test_librgw_file_nfsns spawn)
 install(TARGETS ceph_test_librgw_file_nfsns DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -350,6 +355,8 @@ target_link_libraries(ceph_test_librgw_file_aw
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   ${ALLOC_LIBS}
+  rgw_common
+  rados_sal
   )
 install(TARGETS ceph_test_librgw_file_aw DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -369,6 +376,8 @@ target_link_libraries(ceph_test_librgw_file_marker
   ${EXTRALIBS}
   ${LUA_LIBRARIES}
   ${ALLOC_LIBS}
+  rgw_common
+  rados_sal
   )
   target_link_libraries(ceph_test_librgw_file_marker spawn)
 install(TARGETS ceph_test_librgw_file_marker DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -388,6 +397,8 @@ target_link_libraries(ceph_test_librgw_file_xattr
   ${EXTRALIBS}
   ${LUA_LIBRARIES}
   ${ALLOC_LIBS}
+  rgw_common
+  rados_sal
   )
 target_link_libraries(ceph_test_librgw_file_xattr spawn)
 
@@ -400,6 +411,8 @@ target_link_libraries(ceph_test_rgw_token
   ceph-common
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
+  rgw_common
+  rados_sal
   )
 
 # librgw_file_gp (just the rgw_file get-put bucket ops)
@@ -413,7 +426,10 @@ target_include_directories(test_rgw_ldap
 target_link_libraries(test_rgw_ldap
   librados
   ceph-common
-  ${UNITTEST_LIBS})
+  ${UNITTEST_LIBS}
+  rgw_common
+  rados_sal
+  )
 if(WITH_OPENLDAP)
   target_link_libraries(test_rgw_ldap
     OpenLDAP::OpenLDAP)
