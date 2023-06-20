@@ -4340,6 +4340,8 @@ int main(int argc, const char **argv)
     }
   }
 
+  StoreDestructor store_destructor(driver);
+
   // default to pretty json
   if (format.empty()) {
     format = "json";
@@ -4402,8 +4404,6 @@ int main(int argc, const char **argv)
   } curl_cleanup;
 
   oath_init();
-
-  StoreDestructor store_destructor(driver);
 
   if (raw_storage_op) {
     switch (opt_cmd) {
