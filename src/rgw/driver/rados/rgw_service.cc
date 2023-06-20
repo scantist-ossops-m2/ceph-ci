@@ -35,7 +35,7 @@
 #include "rgw_metadata.h"
 #include "rgw_otp.h"
 #include "rgw_user.h"
-#include "rgw_role.h"
+#include "rgw_role_metadata.h"
 
 #define dout_subsys ceph_subsys_rgw
 
