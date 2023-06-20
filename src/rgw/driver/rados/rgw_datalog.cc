@@ -737,7 +737,7 @@ int RGWDataChangesLog::add_entry(const DoutPrefixProvider *dpp,
     ldpp_dout(dpp, 20) << "RGWDataChangesLog::add_entry() sending update with now=" << now << " cur_expiration=" << expiration << dendl;
 
     auto be = bes->head();
-    ret = be->push(dpp, index, now, change.key, std::move(bl), y);
+    ret = be->push(dpp, index, now, change.key, std::move(bl), null_yield);
 
     now = real_clock::now();
 

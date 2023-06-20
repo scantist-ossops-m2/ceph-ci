@@ -88,7 +88,7 @@ int main(const int argc, const char **argv)
   ceph::async::io_context_pool context_pool{cct->_conf->rgw_thread_pool_size};
 
   const DoutPrefix dp(cct.get(), dout_subsys, "rgw object expirer: ");
-  DriverManager::Config cfg;
+  DriverManager::PluginConfig cfg;
   cfg.store_name = "rados";
   cfg.filter_name = "none";
   std::unique_ptr<rgw::sal::ConfigStore> cfgstore;
