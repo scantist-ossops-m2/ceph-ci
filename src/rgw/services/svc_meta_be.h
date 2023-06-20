@@ -105,7 +105,7 @@ public:
   struct GetParams {
     GetParams() {}
     GetParams(ceph::real_time *_pmtime) : pmtime(_pmtime) {}
-    virtual ~GetParams();
+    virtual ~GetParams() = 0;
 
     ceph::real_time *pmtime{nullptr};
   };

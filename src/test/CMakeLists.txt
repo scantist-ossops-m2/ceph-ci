@@ -267,8 +267,7 @@ if(${WITH_RADOSGW})
     ${CMAKE_DL_LIBS}
     ${UNITTEST_LIBS}
     ${EXTRALIBS}
-    ${CRYPTO_LIBS}
-    )
+    ${CRYPTO_LIBS})
 
 # ceph_test_librgw_file (nfs-like RGW interface)
 add_executable(ceph_test_librgw_file
@@ -296,12 +295,13 @@ add_executable(ceph_test_librgw_file_cd
   librgw_file_cd.cc
   )
 target_link_libraries(ceph_test_librgw_file_cd
-  rgw
+  rgw_common
   librados
   ceph-common
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   ${ALLOC_LIBS}
+  rados_sal
   )
 install(TARGETS ceph_test_librgw_file_cd DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -310,12 +310,13 @@ add_executable(ceph_test_librgw_file_gp
   librgw_file_gp.cc
   )
 target_link_libraries(ceph_test_librgw_file_gp
-  rgw
+  rgw_common
   librados
   ceph-common
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   ${ALLOC_LIBS}
+  rados_sal
   )
 install(TARGETS ceph_test_librgw_file_gp DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -328,13 +329,14 @@ target_include_directories(ceph_test_librgw_file_nfsns
   SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw"
   SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw/driver/rados")
 target_link_libraries(ceph_test_librgw_file_nfsns
-  rgw
+  rgw_common
   librados
   ceph-common
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   ${LUA_LIBRARIES}
   ${ALLOC_LIBS}
+  rados_sal
   )
   target_link_libraries(ceph_test_librgw_file_nfsns spawn)
 install(TARGETS ceph_test_librgw_file_nfsns DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -344,12 +346,13 @@ add_executable(ceph_test_librgw_file_aw
   librgw_file_aw.cc
   )
 target_link_libraries(ceph_test_librgw_file_aw
-  rgw
+  rgw_common
   librados
   ceph-common
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   ${ALLOC_LIBS}
+  rados_sal
   )
 install(TARGETS ceph_test_librgw_file_aw DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -362,13 +365,14 @@ target_include_directories(ceph_test_librgw_file_marker
   SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw"
   SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw/driver/rados")
 target_link_libraries(ceph_test_librgw_file_marker
-  rgw
+  rgw_common
   librados
   ceph-common
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   ${LUA_LIBRARIES}
   ${ALLOC_LIBS}
+  rados_sal
   )
   target_link_libraries(ceph_test_librgw_file_marker spawn)
 install(TARGETS ceph_test_librgw_file_marker DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -381,13 +385,14 @@ target_include_directories(ceph_test_librgw_file_xattr
   SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw"
   SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw/driver/rados")
 target_link_libraries(ceph_test_librgw_file_xattr
-  rgw
+  rgw_common
   librados
   ceph-common
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
   ${LUA_LIBRARIES}
   ${ALLOC_LIBS}
+  rados_sal
   )
 target_link_libraries(ceph_test_librgw_file_xattr spawn)
 
@@ -396,10 +401,11 @@ add_executable(ceph_test_rgw_token
   test_rgw_token.cc
   )
 target_link_libraries(ceph_test_rgw_token
-  rgw
+  rgw_common
   ceph-common
   ${UNITTEST_LIBS}
   ${EXTRALIBS}
+  rados_sal
   )
 
 # librgw_file_gp (just the rgw_file get-put bucket ops)
@@ -411,9 +417,12 @@ target_include_directories(test_rgw_ldap
   SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw"
   SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/src/rgw/driver/rados")
 target_link_libraries(test_rgw_ldap
+  rgw_common
   librados
   ceph-common
-  ${UNITTEST_LIBS})
+  ${UNITTEST_LIBS}
+  rados_sal
+  )
 if(WITH_OPENLDAP)
   target_link_libraries(test_rgw_ldap
     OpenLDAP::OpenLDAP)
