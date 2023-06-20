@@ -1859,27 +1859,3 @@ namespace rgw::sal {
   }
   
 } // namespace rgw::sal
-
-extern "C" {
-
-  void *newDBStore(CephContext *cct)
-  {
-    rgw::sal::DBStore *driver = new rgw::sal::DBStore();
-    DBStoreManager *dbsm = new DBStoreManager(cct);
-
-    DB *db = dbsm->getDB();
-    if (!db) {
-      delete dbsm;
-      delete driver;
-      return nullptr;
-    }
-
-    driver->setDBStoreManager(dbsm);
-    driver->setDB(db);
-    db->set_driver((rgw::sal::Driver*)driver);
-    db->set_context(cct);
-
-    return driver;
-  }
-
-}

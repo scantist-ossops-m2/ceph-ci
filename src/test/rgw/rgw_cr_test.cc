@@ -324,7 +324,7 @@ int main(int argc, const char **argv)
 
 
   ceph::async::io_context_pool context_pool{cct->_conf->rgw_thread_pool_size};
-  DriverManager::Config cfg = DriverManager::get_config(true, g_ceph_context);
+  DriverManager::PluginConfig cfg = DriverManager::get_config(true, g_ceph_context);
   auto config_store_type = g_conf().get_val<std::string>("rgw_config_store");
   std::unique_ptr<rgw::sal::ConfigStore> cfgstore
     = DriverManager::create_config_store(dpp(), config_store_type);
