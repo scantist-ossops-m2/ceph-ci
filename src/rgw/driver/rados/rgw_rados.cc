@@ -7134,6 +7134,7 @@ int RGWRados::get_obj_iterate_cb(const DoutPrefixProvider *dpp,
                                  off_t read_ofs, off_t len, bool is_head_obj,
                                  RGWObjState *astate, void *arg)
 {
+  // ldpp_dout(dpp, 0) << "in RGWRados::get_obj_iterate_cb" << dendl;
   ObjectReadOperation op;
   struct get_obj_data* d = static_cast<struct get_obj_data*>(arg);
   string oid, key;
@@ -7201,7 +7202,7 @@ int RGWRados::Object::Read::iterate(const DoutPrefixProvider *dpp, int64_t ofs, 
     return r;
   }
 
-  return data.drain();
+  return data.drain(dpp);
 }
 
 int RGWRados::iterate_obj(const DoutPrefixProvider *dpp, RGWObjectCtx& obj_ctx,
