@@ -19,6 +19,7 @@
 #include "global/global_init.h"
 #include "common/ceph_context.h"
 #include "rgw_multi.h"
+#include "rgw_user.h" // FIXME
 
 #include "driver/rados/rgw_obj_manifest.h" // FIXME: subclass dependency
 
