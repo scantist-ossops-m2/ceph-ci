@@ -7867,7 +7867,8 @@ next:
       }
     }
     if (need_rewrite) {
-      ret = static_cast<rgw::sal::RadosStore*>(store)->getRados()->rewrite_obj(obj.get(), dpp(), null_yield);
+      RGWRados* radosStore = static_cast<rgw::sal::RadosStore*>(store)->getRados();
+      ret = radosStore->rewrite_obj(bucket->get_info(), obj->get_obj(), dpp(), null_yield);
       if (ret < 0) {
         cerr << "ERROR: object rewrite returned: " << cpp_strerror(-ret) << std::endl;
         return -ret;
@@ -7997,7 +7998,8 @@ next:
           if (!need_rewrite) {
             formatter->dump_string("status", "Skipped");
           } else {
-            r = static_cast<rgw::sal::RadosStore*>(store)->getRados()->rewrite_obj(obj.get(), dpp(), null_yield);
+            RGWRados* radosStore = static_cast<rgw::sal::RadosStore*>(store)->getRados();
+            r = radosStore->rewrite_obj(bucket->get_info(), obj->get_obj(), dpp(), null_yield);
             if (r == 0) {
               formatter->dump_string("status", "Success");
             } else {

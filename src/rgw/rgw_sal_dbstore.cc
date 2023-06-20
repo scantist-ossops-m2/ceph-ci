@@ -632,7 +632,7 @@ namespace rgw::sal {
 
   int DBObject::read_attrs(const DoutPrefixProvider* dpp, DB::Object::Read &read_op, optional_yield y, rgw_obj* target_obj)
   {
-    read_op.params.attrs = &attrs;
+    read_op.params.attrs = &state.attrset;
     read_op.params.target_obj = target_obj;
     read_op.params.obj_size = &state.size;
     read_op.params.lastmod = &state.mtime;
@@ -664,8 +664,8 @@ namespace rgw::sal {
       return r;
     }
     set_atomic();
-    attrs[attr_name] = attr_val;
-    return set_obj_attrs(dpp, &attrs, nullptr, y);
+    state.attrset[attr_name] = attr_val;
+    return set_obj_attrs(dpp, &state.attrset, nullptr, y);
   }
 
   int DBObject::delete_obj_attrs(const DoutPrefixProvider* dpp, const char* attr_name, optional_yield y)
@@ -1224,21 +1224,20 @@ namespace rgw::sal {
   std::unique_ptr<Writer> DBMultipartUpload::get_writer(
 				  const DoutPrefixProvider *dpp,
 				  optional_yield y,
-				  std::unique_ptr<rgw::sal::Object> _head_obj,
+				  rgw::sal::Object* obj,
 				  const rgw_user& owner,
 				  const rgw_placement_rule *ptail_placement_rule,
 				  uint64_t part_num,
 				  const std::string& part_num_str)
   {
-    return std::make_unique<DBMultipartWriter>(dpp, y, this,
-				 std::move(_head_obj), store, owner,
+    return std::make_unique<DBMultipartWriter>(dpp, y, this, obj, store, owner,
 				 ptail_placement_rule, part_num, part_num_str);
   }
 
   DBMultipartWriter::DBMultipartWriter(const DoutPrefixProvider *dpp,
 	    	    optional_yield y,
                 MultipartUpload* upload,
-		        std::unique_ptr<rgw::sal::Object> _head_obj,
+			rgw::sal::Object* obj,
 		        DBStore* _store,
     		    const rgw_user& _owner,
 	    	    const rgw_placement_rule *_ptail_placement_rule,
@@ -1247,7 +1246,7 @@ namespace rgw::sal {
 	    		store(_store),
                 owner(_owner),
                 ptail_placement_rule(_ptail_placement_rule),
-                head_obj(std::move(_head_obj)),
+                head_obj(obj),
                 upload_id(upload->get_upload_id()),
                 part_num(_part_num),
                 oid(head_obj->get_name() + "." + upload_id +
@@ -1387,7 +1386,7 @@ namespace rgw::sal {
 
   DBAtomicWriter::DBAtomicWriter(const DoutPrefixProvider *dpp,
 	    	    optional_yield y,
-		        std::unique_ptr<rgw::sal::Object> _head_obj,
+			rgw::sal::Object* _obj,
 		        DBStore* _store,
     		    const rgw_user& _owner,
 	    	    const rgw_placement_rule *_ptail_placement_rule,
@@ -1399,7 +1398,7 @@ namespace rgw::sal {
                 ptail_placement_rule(_ptail_placement_rule),
                 olh_epoch(_olh_epoch),
                 unique_tag(_unique_tag),
-                obj(_store, _head_obj->get_key(), _head_obj->get_bucket()),
+                obj(_store, _obj->get_key(), _obj->get_bucket()),
                 op_target(_store->getDB(), obj.get_bucket()->get_info(), obj.get_obj()),
                 parent_op(&op_target) {}
 
@@ -1576,7 +1575,7 @@ namespace rgw::sal {
 
   std::unique_ptr<Writer> DBStore::get_append_writer(const DoutPrefixProvider *dpp,
 				  optional_yield y,
-				  std::unique_ptr<rgw::sal::Object> _head_obj,
+				  rgw::sal::Object* obj,
 				  const rgw_user& owner,
 				  const rgw_placement_rule *ptail_placement_rule,
 				  const std::string& unique_tag,
@@ -1587,13 +1586,12 @@ namespace rgw::sal {
 
   std::unique_ptr<Writer> DBStore::get_atomic_writer(const DoutPrefixProvider *dpp,
 				  optional_yield y,
-				  std::unique_ptr<rgw::sal::Object> _head_obj,
+				  rgw::sal::Object* obj,
 				  const rgw_user& owner,
 				  const rgw_placement_rule *ptail_placement_rule,
 				  uint64_t olh_epoch,
 				  const std::string& unique_tag) {
-    return std::make_unique<DBAtomicWriter>(dpp, y,
-                    std::move(_head_obj), this, owner,
+    return std::make_unique<DBAtomicWriter>(dpp, y, obj, this, owner,
                     ptail_placement_rule, olh_epoch, unique_tag);
   }
 
