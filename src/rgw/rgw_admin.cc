@@ -336,6 +336,7 @@ void usage()
   cout << "   --gen-access-key                  generate random access key (for S3)\n";
   cout << "   --gen-secret                      generate random secret key\n";
   cout << "   --key-type=<type>                 key type, options are: swift, s3\n";
+  cout << "   --key-active=<bool>               activate or deactivate a key\n";
   cout << "   --temp-url-key[-2]=<key>          temp url key\n";
   cout << "   --access=<access>                 Set access permissions for sub-user, should be one\n";
   cout << "                                     of read, write, readwrite, full\n";
@@ -682,6 +683,7 @@ enum class OPT {
   OBJECT_RM,
   OBJECT_UNLINK,
   OBJECT_STAT,
+  OBJECT_MANIFEST,
   OBJECT_REWRITE,
   OBJECT_REINDEX,
   OBJECTS_EXPIRE,
@@ -903,6 +905,7 @@ static SimpleCmd::Commands all_cmds = {
   { "object rm", OPT::OBJECT_RM },
   { "object unlink", OPT::OBJECT_UNLINK },
   { "object stat", OPT::OBJECT_STAT },
+  { "object manifest", OPT::OBJECT_MANIFEST },
   { "object rewrite", OPT::OBJECT_REWRITE },
   { "object reindex", OPT::OBJECT_REINDEX },
   { "objects expire", OPT::OBJECTS_EXPIRE },
@@ -3357,6 +3360,8 @@ int main(int argc, const char **argv)
   int commit = false;
   int staging = false;
   int key_type = KEY_TYPE_UNDEFINED;
+  int key_active = true;
+  bool key_active_specified = false;
   std::unique_ptr<rgw::sal::Bucket> bucket;
   uint32_t perm_mask = 0;
   RGWUserInfo info;
@@ -3610,6 +3615,8 @@ int main(int argc, const char **argv)
         cerr << "bad key type: " << key_type_str << std::endl;
         exit(1);
       }
+    } else if (ceph_argparse_binary_flag(args, i, &key_active, NULL, "--key-active", (char*)NULL)) {
+      key_active_specified = true;
     } else if (ceph_argparse_witharg(args, i, &val, "--job-id", (char*)NULL)) {
       job_id = val;
     } else if (ceph_argparse_binary_flag(args, i, &gen_access_key, NULL, "--gen-access-key", (char*)NULL)) {
@@ -4180,6 +4187,7 @@ int main(int argc, const char **argv)
 			 OPT::LOG_SHOW,
 			 OPT::USAGE_SHOW,
 			 OPT::OBJECT_STAT,
+			 OPT::OBJECT_MANIFEST,
 			 OPT::BI_GET,
 			 OPT::BI_LIST,
 			 OPT::OLH_GET,
@@ -4253,7 +4261,7 @@ int main(int argc, const char **argv)
     bool need_cache = readonly_ops_list.find(opt_cmd) == readonly_ops_list.end();
     bool need_gc = (gc_ops_list.find(opt_cmd) != gc_ops_list.end()) && !bypass_gc;
 
-    DriverManager::Config cfg = DriverManager::get_config(true, g_ceph_context);
+    DriverManager::PluginConfig cfg = DriverManager::get_config(true, g_ceph_context);
 
     auto config_store_type = g_conf().get_val<std::string>("rgw_config_store");
     cfgstore = DriverManager::create_config_store(dpp(), config_store_type);
@@ -6443,6 +6451,10 @@ int main(int argc, const char **argv)
   if (key_type != KEY_TYPE_UNDEFINED)
     user_op.set_key_type(key_type);
 
+  if (key_active_specified) {
+    user_op.access_key_active = key_active;
+  }
+
   // set suspension operation parameters
   if (opt_cmd == OPT::USER_ENABLE)
     user_op.set_suspension(false);
@@ -8360,7 +8372,96 @@ next:
     formatter->close_section();
     formatter->close_section();
     formatter->flush(cout);
-  }
+  } // OPT::OBJECT_STAT
+
+  if (opt_cmd == OPT::OBJECT_MANIFEST) {
+    int ret = init_bucket(tenant, bucket_name, bucket_id, &bucket);
+    if (ret < 0) {
+      cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) <<
+       std::endl;
+      return -ret;
+    }
+
+    std::unique_ptr<rgw::sal::Object> obj = bucket->get_object(object);
+    obj->set_instance(object_version);
+
+    ret = obj->get_obj_attrs(null_yield, dpp());
+    if (ret < 0) {
+      cerr << "ERROR: failed to retrieve object metadata, returned error: " <<
+       cpp_strerror(-ret) << std::endl;
+      return -ret;
+    }
+
+    formatter->open_object_section("outer");  // name not displayed since top level
+    formatter->dump_unsigned("size", obj->get_obj_size());
+
+    auto attr_iter = obj->get_attrs().find(RGW_ATTR_MANIFEST);
+    if (attr_iter == obj->get_attrs().end()) {
+      cerr << "ERROR: unable to find object manifest" << std::endl;
+      return ENOENT;
+    }
+
+    RGWObjManifest m;
+    try {
+      auto part_iter = attr_iter->second.cbegin();
+      decode(m, part_iter);
+    } catch (buffer::error& err) {
+      cerr << "ERROR: unable to decode manifest" << std::endl;
+      return EIO;
+    }
+
+    rgw::sal::RadosStore* store =
+      dynamic_cast<rgw::sal::RadosStore*>(driver);
+    if (!store) {
+      cerr << "ERROR: this command (currently) only works with "
+       "RADOS back-ends" << std::endl;
+      return EINVAL;
+    }
+
+    RGWRados* rados = store->getRados();
+
+    rgw_obj head_obj = obj->get_obj();
+    rgw_raw_obj raw_head_obj;
+    store->get_raw_obj(m.get_head_placement_rule(), head_obj, &raw_head_obj);
+
+    formatter->open_array_section("objects");
+    unsigned index = 0;
+    for (auto p = m.obj_begin(dpp()); p != m.obj_end(dpp()); ++p, ++index) {
+      rgw_raw_obj raw_obj =  p.get_location().get_raw_obj(rados);
+
+      if (index == 0 && raw_obj != raw_head_obj) {
+       // we have a head object without data, so let's include it
+       formatter->open_object_section("object"); // name not displayed since in array
+
+       formatter->dump_int("index", -1);
+       formatter->dump_unsigned("offset", 0);
+       formatter->dump_unsigned("size", 0);
+
+       formatter->open_object_section("raw_obj");
+       raw_head_obj.dump(formatter.get());
+       formatter->close_section(); // raw_obj
+
+       formatter->close_section(); // object
+      }
+
+      formatter->open_object_section("object"); // name not displayed since in array
+      formatter->dump_unsigned("index", index);
+      formatter->dump_unsigned("part_id", p.get_cur_part_id());
+      formatter->dump_unsigned("stripe_id", p.get_cur_stripe());
+      formatter->dump_unsigned("offset", p.get_ofs());
+      formatter->dump_unsigned("size", p.get_stripe_size());
+
+      formatter->open_object_section("raw_obj");
+      raw_obj.dump(formatter.get());
+      formatter->close_section(); // raw_obj
+
+      formatter->close_section(); // object
+    }
+    formatter->close_section(); // objects array
+
+    formatter->close_section(); // outer
+    formatter->flush(cout);
+  } // OPT::OBJECT_MANIFEST
 
   if (opt_cmd == OPT::BUCKET_CHECK) {
     if (check_head_obj_locator) {

@@ -20,6 +20,7 @@
 
 #include "common/tracer.h"
 #include "rgw_sal_fwd.h"
+#include "rgw_common.h"
 #include "rgw_lua.h"
 #include "rgw_notify_event_type.h"
 #include "rgw_req_context.h"
@@ -45,6 +46,7 @@ struct rgw_pubsub_topics;
 struct rgw_pubsub_bucket_topics;
 class RGWZonePlacementInfo;
 
+#define RGW_NO_SHARD -1
 
 using RGWBucketListNameFilter = std::function<bool (const std::string&)>;
 
@@ -251,8 +253,10 @@ class ObjectProcessor : public DataProcessor {
  */
 class Driver {
   public:
-    Driver() {}
+    Driver() : dl(nullptr) {}
     virtual ~Driver() = default;
+
+    void *dl;
 
     /** Post-creation initialization of driver */
     virtual int initialize(CephContext *cct, const DoutPrefixProvider *dpp) = 0;
@@ -436,6 +440,7 @@ class ReadStatsCB : public boost::intrusive_ref_counter<ReadStatsCB> {
   virtual ~ReadStatsCB() {}
   virtual void handle_response(int r, const RGWStorageStats& stats) = 0;
 };
+
 
 /**
  * @brief A list of buckets
@@ -969,7 +974,7 @@ class Object {
 			   uint64_t olh_epoch,
 			   const DoutPrefixProvider* dpp,
 			   optional_yield y,
-                           uint32_t flags) = 0;
+			   uint32_t flags) = 0;
     /** Move an object to the cloud */
     virtual int transition_to_cloud(Bucket* bucket,
 			   rgw::sal::PlacementTier* tier,
@@ -1056,6 +1061,9 @@ class Object {
     /** Get a unique copy of this object */
     virtual std::unique_ptr<Object> clone() = 0;
 
+    virtual jspan_context& get_trace() = 0;
+    virtual void set_trace (jspan_context&& _trace_ctx) = 0;
+
     /* dang - This is temporary, until the API is completed */
     /** Get the key for this object */
     virtual rgw_obj_key& get_key() = 0;
@@ -1135,7 +1143,7 @@ public:
   virtual std::map<uint32_t, std::unique_ptr<MultipartPart>>& get_parts() = 0;
 
   /** Get the trace context of this upload */
-  virtual const jspan_context& get_trace() = 0;
+  virtual jspan_context& get_trace() = 0;
 
   /** Get the Object that represents this upload */
   virtual std::unique_ptr<rgw::sal::Object> get_meta_obj() = 0;
@@ -1524,18 +1532,20 @@ public:
  */
 class DriverManager {
 public:
-  struct Config {
+  struct PluginConfig {
     /** Name of store to create */
     std::string store_name;
     /** Name of filter to create or "none" */
     std::string filter_name;
+    /** PluginRegistry */
+    PluginRegistry *plugin_reg;
   };
 
   DriverManager() {}
   /** Get a full driver by service name */
   static rgw::sal::Driver* get_storage(const DoutPrefixProvider* dpp,
 				      CephContext* cct,
-				      const Config& cfg,
+				      const PluginConfig& cfg,
 				      boost::asio::io_context& io_context,
 				      const rgw::SiteConfig& site_config,
 				      bool use_gc_thread,
@@ -1559,18 +1569,19 @@ public:
   }
   /** Get a stripped down driver by service name */
   static rgw::sal::Driver* get_raw_storage(const DoutPrefixProvider* dpp,
-					  CephContext* cct, const Config& cfg,
+					  CephContext* cct,
+                                          const PluginConfig& cfg,
 					  boost::asio::io_context& io_context,
 					  const rgw::SiteConfig& site_config) {
     rgw::sal::Driver* driver = init_raw_storage_provider(dpp, cct, cfg,
-							 io_context,
-							 site_config);
+						   io_context,
+						   site_config);
     return driver;
   }
   /** Initialize a new full Driver */
   static rgw::sal::Driver* init_storage_provider(const DoutPrefixProvider* dpp,
 						CephContext* cct,
-						const Config& cfg,
+						const PluginConfig& cfg,
 						boost::asio::io_context& io_context,
 						const rgw::SiteConfig& site_config,
 						bool use_gc_thread,
@@ -1584,14 +1595,14 @@ public:
   /** Initialize a new raw Driver */
   static rgw::sal::Driver* init_raw_storage_provider(const DoutPrefixProvider* dpp,
 						    CephContext* cct,
-						    const Config& cfg,
+						    const PluginConfig& cfg,
 						    boost::asio::io_context& io_context,
 						    const rgw::SiteConfig& site_config);
   /** Close a Driver when it's no longer needed */
   static void close_storage(rgw::sal::Driver* driver);
 
   /** Get the config for Drivers */
-  static Config get_config(bool admin, CephContext* cct);
+  static DriverManager::PluginConfig get_config(bool admin, CephContext* cct);
 
   /** Create a ConfigStore */
   static auto create_config_store(const DoutPrefixProvider* dpp,
@@ -1599,5 +1610,17 @@ public:
       -> std::unique_ptr<rgw::sal::ConfigStore>;
 
 };
+
+namespace rgw { namespace sal {
+
+// typedef class Driver *(*New_Driver_fn)(const DoutPrefixProvider *,
+//                                        CephContext *,
+//                                        boost::asio::io_context&,
+//                                        const rgw::SiteConfig&,
+//                                        bool, bool, bool, bool, bool,
+//                                        bool, bool, bool, bool, optional_yield);
+using rgw_sal_new_driver_fn = rgw::sal::Driver* (*)(const DoutPrefixProvider *, CephContext *, boost::asio::io_context&, const rgw::SiteConfig&, bool, bool, bool, bool, bool, bool, bool, bool, bool, optional_yield);
+
+} } // namespace rgw::sal
 
 /** @} */
