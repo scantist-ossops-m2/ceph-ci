@@ -1,5 +1,9 @@
 overrides:
   install:
+    ceph:
+      debuginfo: true
+    rgw:
+      debuginfo: true
   ceph:
     conf:
       global:
