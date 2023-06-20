@@ -4288,8 +4288,11 @@ void PrimaryLogPG::execute_ctx(OpContext *ctx)
     }
     reply->add_flags(CEPH_OSD_FLAG_ACK | CEPH_OSD_FLAG_ONDISK);
     // append to pg log for dup detection - don't save buffers for now
-    record_write_error(op, soid, reply, result,
-		       ctx->op->allows_returnvec() ? ctx : nullptr);
+    // store op's returnvec unconditionally-on-errors to ensure coherency
+    // with the original request handling (see `ignore_out_data` above).
+    record_write_error(
+      op, soid, reply, result,
+      (ctx->op->allows_returnvec() || result < 0) ? ctx : nullptr);
     close_op_ctx(ctx);
     return;
   }
@@ -10503,7 +10506,7 @@ int PrimaryLogPG::start_dedup(OpRequestRef op, ObjectContextRef obc)
     obc_g ? &(obc_g->obs.oi.manifest) : nullptr,
     refs);
 
-  for (auto p : chunks) {
+  for (const auto& p : chunks) {
     hobject_t target = mop->new_manifest.chunk_map[p.first].oid;
     if (refs.find(target) == refs.end()) {
       continue;
@@ -11531,7 +11534,7 @@ void PrimaryLogPG::submit_log_entries(
   }
 
   pgbackend->call_write_ordered(
-    [this, entries, repop, on_complete]() {
+    [this, entries, repop, on_complete]() mutable {
       ObjectStore::Transaction t;
       eversion_t old_last_update = info.last_update;
       recovery_state.merge_new_log_entries(
@@ -12109,7 +12112,6 @@ int PrimaryLogPG::find_object_context(const hobject_t& oid,
   dout(20) << __func__ << " " << soid
 	   << " snapset " << obc->ssc->snapset
 	   << dendl;
-  snapid_t first, last;
   auto p = obc->ssc->snapset.clone_snaps.find(soid.snap);
   ceph_assert(p != obc->ssc->snapset.clone_snaps.end());
   if (p->second.empty()) {
@@ -15796,6 +15798,11 @@ bool PrimaryLogPG::check_failsafe_full() {
 bool PrimaryLogPG::maybe_preempt_replica_scrub(const hobject_t& oid)
 {
   return m_scrubber->write_blocked_by_scrub(oid);
+}
+
+struct ECListener *PrimaryLogPG::get_eclistener()
+{
+  return this;
 }
 
 void intrusive_ptr_add_ref(PrimaryLogPG *pg) { pg->get("intptr"); }

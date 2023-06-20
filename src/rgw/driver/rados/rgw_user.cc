@@ -102,6 +102,7 @@ static void dump_access_keys_info(Formatter *f, RGWUserInfo &info)
     f->dump_format("user", "%s%s%s", s.c_str(), sep, subuser);
     f->dump_string("access_key", k.id);
     f->dump_string("secret_key", k.key);
+    f->dump_bool("active", k.active);
     f->close_section();
   }
   f->close_section();
@@ -120,6 +121,7 @@ static void dump_swift_keys_info(Formatter *f, RGWUserInfo &info)
     info.user_id.to_str(s);
     f->dump_format("user", "%s%s%s", s.c_str(), sep, subuser);
     f->dump_string("secret_key", k.key);
+    f->dump_bool("active", k.active);
     f->close_section();
   }
   f->close_section();
@@ -129,7 +131,11 @@ static void dump_user_info(Formatter *f, RGWUserInfo &info,
                            bool dump_keys, RGWStorageStats *stats = NULL)
 {
   f->open_object_section("user_info");
+  encode_json("full_user_id", info.user_id, f);
   encode_json("tenant", info.user_id.tenant, f);
+  if (!info.user_id.ns.empty()) {
+    encode_json("namespace", info.user_id.ns, f);
+  }
   encode_json("user_id", info.user_id.id, f);
   encode_json("display_name", info.display_name, f);
   encode_json("email", info.user_email, f);
@@ -603,11 +609,6 @@ int RGWAccessKeyPool::modify_key(RGWUserAdminOpState& op_state, std::string *err
   std::string key = op_state.get_secret_key();
   int key_type = op_state.get_key_type();
 
-  RGWAccessKey modify_key;
-
-  pair<string, RGWAccessKey> key_pair;
-  map<std::string, RGWAccessKey>::iterator kiter;
-
   switch (key_type) {
   case KEY_TYPE_S3:
     id = op_state.get_access_key();
@@ -633,8 +634,8 @@ int RGWAccessKeyPool::modify_key(RGWUserAdminOpState& op_state, std::string *err
     return -ERR_INVALID_ACCESS_KEY;
   }
 
-  key_pair.first = id;
-
+  RGWAccessKey modify_key;
+  map<std::string, RGWAccessKey>::iterator kiter;
   if (key_type == KEY_TYPE_SWIFT) {
     modify_key.id = id;
     modify_key.subuser = op_state.get_subuser();
@@ -652,16 +653,10 @@ int RGWAccessKeyPool::modify_key(RGWUserAdminOpState& op_state, std::string *err
     key = secret_key_buf;
   }
 
-  if (key.empty()) {
-      set_err_msg(err_msg, "empty secret key");
-      return -ERR_INVALID_SECRET_KEY;
+  if (!key.empty()) {
+    // update the access key with the new secret key
+    modify_key.key = key;
   }
-
-  // update the access key with the new secret key
-  modify_key.key = key;
-
-  key_pair.second = modify_key;
-
 
   if (key_type == KEY_TYPE_S3) {
     (*access_keys)[id] = modify_key;
