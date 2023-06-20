@@ -30,7 +30,7 @@ int D3nCacheAioWriteRequest::d3n_libaio_prepare_write_op(bufferlist& bl, unsigne
   std::string location = cache_location + url_encode(oid, true);
   int r = 0;
 
-  lsubdout(g_ceph_context, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "(): Write To Cache, location=" << location << dendl;
+  lsubdout(cct, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "(): Write To Cache, location=" << location << dendl;
   cb = new struct aiocb;
   mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
   memset(cb, 0, sizeof(struct aiocb));
@@ -60,7 +60,7 @@ int D3nCacheAioWriteRequest::d3n_libaio_prepare_write_op(bufferlist& bl, unsigne
 D3nDataCache::D3nDataCache()
   : cct(nullptr), io_type(_io_type::ASYNC_IO), free_data_cache_size(0), outstanding_write_size(0)
 {
-  lsubdout(g_ceph_context, rgw_datacache, 5) << "D3nDataCache: " << __func__ << "()" << dendl;
+  // lsubdout(cct, rgw_datacache, 5) << "D3nDataCache: " << __func__ << "()" << dendl;
 }
 
 void D3nDataCache::init(CephContext *_cct) {
@@ -77,14 +77,14 @@ void D3nDataCache::init(CephContext *_cct) {
     if (efs::exists(cache_location)) {
       // d3n: evict the cache storage directory
       if (g_conf()->rgw_d3n_l1_evict_cache_on_start) {
-        lsubdout(g_ceph_context, rgw, 5) << "D3nDataCache: init: evicting the persistent storage directory on start" << dendl;
+        lsubdout(cct, rgw, 5) << "D3nDataCache: init: evicting the persistent storage directory on start" << dendl;
         for (auto& p : efs::directory_iterator(cache_location)) {
           efs::remove_all(p.path());
         }
       }
     } else {
       // create the cache storage directory
-      lsubdout(g_ceph_context, rgw, 5) << "D3nDataCache: init: creating the persistent storage directory on start" << dendl;
+      lsubdout(cct, rgw, 5) << "D3nDataCache: init: creating the persistent storage directory on start" << dendl;
       efs::create_directories(cache_location);
     }
   } catch (const efs::filesystem_error& e) {
@@ -115,7 +115,7 @@ int D3nDataCache::d3n_io_write(bufferlist& bl, unsigned int len, std::string oid
   std::string location = cache_location + url_encode(oid, true);
   int r = 0;
 
-  lsubdout(g_ceph_context, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "(): location=" << location << dendl;
+  lsubdout(cct, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "(): location=" << location << dendl;
 
   {
     size_t nbytes = 0;
@@ -196,7 +196,7 @@ void D3nDataCache::d3n_libaio_write_completion_cb(D3nCacheAioWriteRequest* c)
 
 int D3nDataCache::d3n_libaio_create_write_request(bufferlist& bl, unsigned int len, std::string oid)
 {
-  lsubdout(g_ceph_context, rgw_datacache, 30) << "D3nDataCache: " << __func__ << "(): Write To Cache, oid=" << oid << ", len=" << len << dendl;
+  lsubdout(cct, rgw_datacache, 30) << "D3nDataCache: " << __func__ << "(): Write To Cache, oid=" << oid << ", len=" << len << dendl;
   auto wr = std::make_unique<struct D3nCacheAioWriteRequest>(cct);
   int r = 0;
 
@@ -287,7 +287,7 @@ bool D3nDataCache::get(const string& oid, const off_t len)
   bool exist = false;
   string location = cache_location + url_encode(oid, true);
 
-  lsubdout(g_ceph_context, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "(): location=" << location << dendl;
+  lsubdout(cct, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "(): location=" << location << dendl;
   std::unordered_map<string, D3nChunkDataInfo*>::iterator iter = d3n_cache_map.find(oid);
   if (!(iter == d3n_cache_map.end())) {
     // check inside cache whether file exists or not!!!! then make exist true;
@@ -314,7 +314,7 @@ bool D3nDataCache::get(const string& oid, const off_t len)
 
 size_t D3nDataCache::random_eviction()
 {
-  lsubdout(g_ceph_context, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "()" << dendl;
+  lsubdout(cct, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "()" << dendl;
   int n_entries = 0;
   int random_index = 0;
   size_t freed_size = 0;
@@ -346,7 +346,7 @@ size_t D3nDataCache::random_eviction()
 
 size_t D3nDataCache::lru_eviction()
 {
-  lsubdout(g_ceph_context, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "()" << dendl;
+  lsubdout(cct, rgw_datacache, 20) << "D3nDataCache: " << __func__ << "()" << dendl;
   int n_entries = 0;
   size_t freed_size = 0;
   D3nChunkDataInfo* del_entry;
