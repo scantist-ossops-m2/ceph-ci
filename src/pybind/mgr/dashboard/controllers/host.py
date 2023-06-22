@@ -205,8 +205,6 @@ def get_hosts(sources=None):
         orch = OrchClient.instance()
         if orch.available():
             return merge_hosts_by_hostname(ceph_hosts, orch.hosts.list())
-    for host in ceph_hosts:
-        host['service_instances'] = populate_service_instances(host['hostname'], host['services'])
     return ceph_hosts
 
 
@@ -317,6 +315,8 @@ class Host(RESTController):
         hosts = [host for host in paginator.list()]
         orch = OrchClient.instance()
         cherrypy.response.headers['X-Total-Count'] = paginator.get_count()
+        for host in hosts:
+            host['service_instances'] = populate_service_instances(host['hostname'], host['services'])
         if str_to_bool(facts):
             if orch.available():
                 if not orch.get_missing_features(['get_facts']):
