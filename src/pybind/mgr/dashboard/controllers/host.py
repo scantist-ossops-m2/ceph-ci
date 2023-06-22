@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 import cherrypy
 from mgr_util import merge_dicts
 from orchestrator import HostSpec
+from ..plugins.ttl_cache import ttl_cache
 
 from .. import mgr
 from ..exceptions import DashboardException
@@ -174,6 +175,7 @@ def populate_service_instances(hostname, services):
     return [{'type': k, 'count': v} for k, v in Counter(services).items()]
 
 
+@ttl_cache(30)
 def get_hosts(sources=None):
     """
     Get hosts from various sources.
