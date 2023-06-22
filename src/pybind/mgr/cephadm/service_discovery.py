@@ -12,13 +12,12 @@ import socket
 import orchestrator  # noqa
 from mgr_module import ServiceInfoT
 from mgr_util import build_url
-from typing import Dict, List, TYPE_CHECKING, cast, Collection, Callable, NamedTuple, Optional
+from typing import Dict, List, TYPE_CHECKING, cast, Collection, Optional, Any
 from cephadm.services.monitoring import AlertmanagerService, NodeExporterService, PrometheusService
-import secrets
 
 from cephadm.services.ingress import IngressSpec
-from cephadm.ssl_cert_utils import SSLCerts
 from cephadm.services.cephadmservice import CephExporterService
+from cephadm.baseendpoint import BaseEndpoint, Route
 
 if TYPE_CHECKING:
     from cephadm.module import CephadmOrchestrator
@@ -36,80 +35,41 @@ logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
 cherrypy.log.access_log.propagate = False
 
 
-class Route(NamedTuple):
-    name: str
-    route: str
-    controller: Callable
+class ServiceDiscovery(BaseEndpoint):
 
-
-class ServiceDiscovery:
-
-    KV_STORE_SD_ROOT_CERT = 'service_discovery/root/cert'
-    KV_STORE_SD_ROOT_KEY = 'service_discovery/root/key'
-
-    def __init__(self, mgr: "CephadmOrchestrator") -> None:
-        self.mgr = mgr
-        self.ssl_certs = SSLCerts()
+    def __init__(self,
+                 mgr: "CephadmOrchestrator") -> None:
+        super().__init__(mgr)
+        self.root: Server = Root
+        self.server_port: int = self.mgr.service_discovery_port
         self.username: Optional[str] = None
         self.password: Optional[str] = None
-
-    def validate_password(self, realm: str, username: str, password: str) -> bool:
-        return (password == self.password and username == self.username)
-
-    def configure_routes(self, server: Server, enable_auth: bool) -> None:
-        ROUTES = [
-            Route('index', '/', server.index),
-            Route('sd-config', '/prometheus/sd-config', server.get_sd_config),
-            Route('rules', '/prometheus/rules', server.get_prometheus_rules),
+        self.ssl_cn: str = socket.getfqdn(self.server_addr)
+        self.KV_STORE_CERT: str = 'service_discovery/root/cert'
+        self.KV_STORE_KEY: str = 'service_discovery/root/key'
+        self.auth_user_kv_store: str = 'service_discovery/root/username'
+        self.auth_pass_kv_store: str = 'service_discovery/root/password'
+        self.script_name: str = '/sd'
+        self.routes: List[Route] = [
+            Route('index', '/', self.root.index),
+            Route('sd-config', '/prometheus/sd-config', self.root.get_sd_config),
+            Route('rules', '/prometheus/rules', self.root.get_prometheus_rules),
         ]
-        d = cherrypy.dispatch.RoutesDispatcher()
-        for route in ROUTES:
-            d.connect(**route._asdict())
-        if enable_auth:
-            conf = {
+        if self.auth:
+            self.cp_config: Dict[str, Dict[str, Any]] = {
                 '/': {
-                    'request.dispatch': d,
+                    'request.dispatch': self.cp_dispatcher,
                     'tools.auth_basic.on': True,
                     'tools.auth_basic.realm': 'localhost',
                     'tools.auth_basic.checkpassword': self.validate_password
                 }
             }
         else:
-            conf = {'/': {'request.dispatch': d}}
-        cherrypy.tree.mount(None, '/sd', config=conf)
-
-    def enable_auth(self) -> None:
-        self.username = self.mgr.get_store('service_discovery/root/username')
-        self.password = self.mgr.get_store('service_discovery/root/password')
-        if not self.password or not self.username:
-            self.username = 'admin'  # TODO(redo): what should be the default username
-            self.password = secrets.token_urlsafe(20)
-            self.mgr.set_store('service_discovery/root/password', self.password)
-            self.mgr.set_store('service_discovery/root/username', self.username)
-
-    def configure_tls(self, server: Server) -> None:
-        old_cert = self.mgr.get_store(self.KV_STORE_SD_ROOT_CERT)
-        old_key = self.mgr.get_store(self.KV_STORE_SD_ROOT_KEY)
-        if old_key and old_cert:
-            self.ssl_certs.load_root_credentials(old_cert, old_key)
-        else:
-            self.ssl_certs.generate_root_cert(self.mgr.get_mgr_ip())
-            self.mgr.set_store(self.KV_STORE_SD_ROOT_CERT, self.ssl_certs.get_root_cert())
-            self.mgr.set_store(self.KV_STORE_SD_ROOT_KEY, self.ssl_certs.get_root_key())
-        addr = self.mgr.get_mgr_ip()
-        host_fqdn = socket.getfqdn(addr)
-        server.ssl_certificate, server.ssl_private_key = self.ssl_certs.generate_cert_files(
-            host_fqdn, addr)
-
-    def configure(self, port: int, addr: str, enable_security: bool) -> None:
-        # we create a new server to enforce TLS/SSL config refresh
-        self.root_server = Root(self.mgr, port, addr)
-        self.root_server.ssl_certificate = None
-        self.root_server.ssl_private_key = None
-        if enable_security:
-            self.enable_auth()
-            self.configure_tls(self.root_server)
-        self.configure_routes(self.root_server, enable_security)
+            self.cp_config = {
+                '/': {
+                    'request.dispatch': self.cp_dispatcher,
+                }
+            }
 
 
 class Root(Server):

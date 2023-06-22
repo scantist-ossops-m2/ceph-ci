@@ -20,8 +20,7 @@ from ceph.utils import datetime_now
 from ceph.deployment.inventory import Devices
 from ceph.deployment.service_spec import ServiceSpec, PlacementSpec
 from cephadm.services.cephadmservice import CephadmDaemonDeploySpec
-from cephadm.ssl_cert_utils import SSLCerts
-from mgr_util import test_port_allocation, PortAlreadyInUse
+from cephadm.baseendpoint import BaseEndpoint, Route
 
 from typing import Any, Dict, List, Set, TYPE_CHECKING, Optional
 
@@ -41,55 +40,20 @@ logging.getLogger('cherrypy.error').addFilter(cherrypy_filter)
 cherrypy.log.access_log.propagate = False
 
 
-class AgentEndpoint:
+class AgentEndpoint(BaseEndpoint):
 
-    KV_STORE_AGENT_ROOT_CERT = 'cephadm_agent/root/cert'
-    KV_STORE_AGENT_ROOT_KEY = 'cephadm_agent/root/key'
-
-    def __init__(self, mgr: "CephadmOrchestrator") -> None:
-        self.mgr = mgr
-        self.ssl_certs = SSLCerts()
-        self.server_port = 7150
-        self.server_addr = self.mgr.get_mgr_ip()
-
-    def configure_routes(self) -> None:
-        d = cherrypy.dispatch.RoutesDispatcher()
-        d.connect(name='host-data', route='/data/',
-                  controller=self.host_data.POST,
-                  conditions=dict(method=['POST']))
-        cherrypy.tree.mount(None, '/', config={'/': {'request.dispatch': d}})
-
-    def configure_tls(self, server: Server) -> None:
-        old_cert = self.mgr.get_store(self.KV_STORE_AGENT_ROOT_CERT)
-        old_key = self.mgr.get_store(self.KV_STORE_AGENT_ROOT_KEY)
-        if old_cert and old_key:
-            self.ssl_certs.load_root_credentials(old_cert, old_key)
-        else:
-            self.ssl_certs.generate_root_cert(self.mgr.get_mgr_ip())
-            self.mgr.set_store(self.KV_STORE_AGENT_ROOT_CERT, self.ssl_certs.get_root_cert())
-            self.mgr.set_store(self.KV_STORE_AGENT_ROOT_KEY, self.ssl_certs.get_root_key())
-
-        host = self.mgr.get_hostname()
-        addr = self.mgr.get_mgr_ip()
-        server.ssl_certificate, server.ssl_private_key = self.ssl_certs.generate_cert_files(host, addr)
-
-    def find_free_port(self) -> None:
-        max_port = self.server_port + 150
-        while self.server_port <= max_port:
-            try:
-                test_port_allocation(self.server_addr, self.server_port)
-                self.host_data.socket_port = self.server_port
-                self.mgr.log.debug(f'Cephadm agent endpoint using {self.server_port}')
-                return
-            except PortAlreadyInUse:
-                self.server_port += 1
-        self.mgr.log.error(f'Cephadm agent could not find free port in range {max_port - 150}-{max_port} and failed to start')
-
-    def configure(self) -> None:
-        self.host_data = HostData(self.mgr, self.server_port, self.server_addr)
-        self.configure_tls(self.host_data)
-        self.configure_routes()
-        self.find_free_port()
+    def __init__(self,
+                 mgr: "CephadmOrchestrator",
+                 ) -> None:
+        super().__init__(mgr)
+        self.root: Server = HostData
+        self.server_port: int = 7150
+        self.KV_STORE_CERT: str = 'cephadm_agent/root/cert'
+        self.KV_STORE_KEY: str = 'cephadm_agent/root/key'
+        self.validate_port: bool = True
+        self.routes: List[Route] = [
+            Route('host-data', '/', self.root.POST, ['POST'])
+        ]
 
 
 class HostData(Server):

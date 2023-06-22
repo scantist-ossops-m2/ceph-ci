@@ -43,9 +43,10 @@ class CephadmHttpServer(threading.Thread):
     def configure(self) -> None:
         self.configure_cherrypy()
         self.agent.configure()
-        self.service_discovery.configure(self.mgr.service_discovery_port,
-                                         self.mgr.get_mgr_ip(),
-                                         self.secure_monitoring_stack)
+        self.service_discovery.configure()
+        # self.service_discovery.configure(self.mgr.service_discovery_port,
+        #                                  self.mgr.get_mgr_ip(),
+        #                                  self.secure_monitoring_stack)
 
     def config_update(self) -> None:
         self.service_discovery_port = self.mgr.service_discovery_port
