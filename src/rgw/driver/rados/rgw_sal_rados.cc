@@ -2367,6 +2367,7 @@ int RadosObject::copy_object(User* user,
 
 int RadosObject::RadosReadOp::iterate(const DoutPrefixProvider* dpp, int64_t ofs, int64_t end, RGWGetDataCB* cb, optional_yield y)
 {
+  lderr(dpp->get_cct()) << "RadosObject::RadosReadOp::iterate:: " << "ofs: " << ofs << "end: " << end << dendl;
   return parent_op.iterate(dpp, ofs, end, cb, y);
 }
 
