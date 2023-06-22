@@ -2,6 +2,7 @@ import { HttpClientTestingModule, HttpTestingController } from '@angular/common/
 import { fakeAsync, TestBed, tick } from '@angular/core/testing';
 
 import { configureTestBed } from '~/testing/unit-test-helper';
+import { CdTableFetchDataContext } from '../models/cd-table-fetch-data-context';
 import { HostService } from './host.service';
 
 describe('HostService', () => {
@@ -28,7 +29,8 @@ describe('HostService', () => {
 
   it('should call list', fakeAsync(() => {
     let result;
-    service.list('true').subscribe((resp) => (result = resp));
+    const hostContext = new CdTableFetchDataContext(() => undefined);
+    service.list(hostContext.toParams(), 'true').subscribe((resp) => (result = resp));
     const req = httpTesting.expectOne('api/host?facts=true');
     expect(req.request.method).toBe('GET');
     req.flush(['foo', 'bar']);

@@ -21,6 +21,7 @@ from . import APIDoc, APIRouter, BaseController, Endpoint, EndpointDoc, \
     ReadPermission, RESTController, Task, UIRouter, UpdatePermission, \
     allow_empty_body
 from ._version import APIVersion
+from ..services._paginate import ListPaginator
 from .orchestrator import raise_if_no_orchestrator
 
 LIST_HOST_SCHEMA = {
@@ -304,13 +305,22 @@ class Host(RESTController):
                  },
                  responses={200: LIST_HOST_SCHEMA})
     @RESTController.MethodMap(version=APIVersion(1, 2))
-    def list(self, sources=None, facts=False):
+    def list(self, sources=None, facts=False, offset: int = 0, 
+             limit: int = 5, search: str = '', sort: str = ''):
         hosts = get_hosts(sources)
+        params = ['hostname']
+        paginator = ListPaginator(int(offset), int(limit), sort, search, hosts,
+                                  searchable_params=params, sortable_params=params,
+                                  default_sort='+hostname')
+        hosts = [host for host in paginator.list()]
         orch = OrchClient.instance()
+        cherrypy.response.headers['X-Total-Count'] = paginator.get_count()
         if str_to_bool(facts):
             if orch.available():
                 if not orch.get_missing_features(['get_facts']):
-                    hosts_facts = orch.hosts.get_facts()
+                    hosts_facts = []
+                    for host in hosts:
+                        hosts_facts.append(orch.hosts.get_facts(host['hostname'])[0])
                     return merge_list_of_dicts_by_key(hosts, hosts_facts, 'hostname')
 
                 raise DashboardException(

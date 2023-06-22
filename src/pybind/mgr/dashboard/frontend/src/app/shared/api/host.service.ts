@@ -27,11 +27,21 @@ export class HostService extends ApiClient {
     super();
   }
 
-  list(facts: string): Observable<object[]> {
+  list(params: any, facts: string): Observable<object[]> {
+    params.facts = facts;
     return this.http.get<object[]>(this.baseURL, {
       headers: { Accept: this.getVersionHeaderValue(1, 2) },
-      params: { facts: facts }
-    });
+      params: params,
+      observe: 'response'
+    })
+    .pipe(
+      map((response: any) => {
+        return response['body'].map((host: any) => {
+          host['headers'] = response.headers;
+          return host;
+        });
+      })
+    );
   }
 
   create(hostname: string, addr: string, labels: string[], status: string) {
