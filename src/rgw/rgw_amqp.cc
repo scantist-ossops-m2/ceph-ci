@@ -75,7 +75,8 @@ struct connection_id_hasher {
 };
 
 std::string to_string(const connection_id_t& id) {
-    return std::string("amqp")+(id.ssl ? "s" : "")+"://"+id.host+":"+std::to_string(id.port)+id.vhost+"?exchange="+id.exchange;
+  return std::string("amqp")+(id.ssl ? "s" :
+      "")+"://"+id.host+":"+std::to_string(id.port)+id.vhost+"?exchange="+id.exchange;
 }
 
 // automatically cleans amqp state when gets out of scope
