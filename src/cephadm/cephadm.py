@@ -1000,12 +1000,12 @@ class CephNvmeof(object):
     @staticmethod
     def get_version(ctx, container_id):
         # type: (CephadmContext, str) -> Optional[str]
+        out, err, ret = call_throws(ctx, [
+            ctx.container_engine.path, 'inspect',
+            '--format', '{{index .Config.Labels "io.ceph.version"}}',
+            ctx.image])
         version = None
-        out, err, code = call(ctx,
-                              [ctx.container_engine.path, 'exec', container_id,
-                               '/usr/bin/python3', '-c', "import pkg_resources; print(pkg_resources.require('ceph_nvmeof')[0].version)"],
-                              verbosity=CallVerbosity.QUIET)
-        if code == 0:
+        if ret == 0:
             version = out.strip()
         return version
 
