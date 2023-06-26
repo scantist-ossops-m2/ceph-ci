@@ -7,6 +7,7 @@
 #include "crimson/osd/osdmap_gate.h"
 #include "crimson/osd/osd_operation.h"
 #include "crimson/osd/osd_operations/client_request.h"
+#include "crimson/osd/osd_operations/peering_event.h"
 #include "crimson/osd/pg_map.h"
 #include "crimson/common/type_helpers.h"
 #include "messages/MOSDPGUpdateLogMissing.h"
@@ -60,11 +61,13 @@ public:
     ConnectionPipeline::AwaitMap::BlockingEvent,
     ConnectionPipeline::GetPG::BlockingEvent,
     PGMap::PGCreationBlockingEvent,
-    OSD_OSDMapGate::OSDMapBlocker::BlockingEvent
+    OSD_OSDMapGate::OSDMapBlocker::BlockingEvent,
+    PGPeeringPipeline::Process::BlockingEvent
   > tracking_events;
 
 private:
   ClientRequest::PGPipeline &pp(PG &pg);
+  static PGPeeringPipeline &bp(PG &pg);
 
   crimson::net::ConnectionRef conn;
   // must be after `conn` to ensure the ConnectionPipeline's is alive

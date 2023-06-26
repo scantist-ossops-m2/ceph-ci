@@ -36,6 +36,7 @@ class BackfillRecovery;
     friend class RemotePeeringEvent;
     friend class PGAdvanceMap;
     friend class BackfillRecovery;
+    friend class LogMissingRequest;
   };
 
 template <class T>

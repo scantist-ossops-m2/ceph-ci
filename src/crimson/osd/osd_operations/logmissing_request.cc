@@ -54,6 +54,11 @@ ClientRequest::PGPipeline &LogMissingRequest::pp(PG &pg)
   return pg.request_pg_pipeline;
 }
 
+PGPeeringPipeline &LogMissingRequest::bp(PG &pg)
+{
+  return pg.peering_request_pg_pipeline;
+}
+
 seastar::future<> LogMissingRequest::with_pg(
   ShardServices &shard_services, Ref<PG> pg)
 {
@@ -61,7 +66,12 @@ seastar::future<> LogMissingRequest::with_pg(
 
   IRef ref = this;
   return interruptor::with_interruption([this, pg] {
-    return pg->do_update_log_missing(req, conn);
+    logger().debug("{}: pg present", *this);
+    return enter_stage<interruptor>(
+      bp(*pg).process
+    ).then_interruptible([this, pg] {
+      return pg->do_update_log_missing(req, conn);
+    });
   }, [ref](std::exception_ptr) { return seastar::now(); }, pg);
 }
 
