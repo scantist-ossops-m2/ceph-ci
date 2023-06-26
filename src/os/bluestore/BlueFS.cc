@@ -3062,8 +3062,8 @@ int64_t BlueFS::_maybe_extend_log() {
   // increase with respect the number of extents. bluefs_min_log_runway should cover the max size 
   // a log can get.
   // inject new allocation in case log is too big
-  if (log.t.expected_size() > runway) {
-    _extend_log(log.t.expected_size() + cct->_conf->bluefs_min_log_runway);
+  if (log.t.expected_size() + super.block_size > runway) {
+    _extend_log(log.t.expected_size() + cct->_conf->bluefs_max_log_runway);
   } else if (runway < cct->_conf->bluefs_min_log_runway) {
     _extend_log(cct->_conf->bluefs_max_log_runway);
   }
@@ -3078,7 +3078,9 @@ int64_t BlueFS::_extend_log(uint64_t amount) {
     log_cond.wait(ll);
   }
   ll.release();
+  uint64_t allocated_before_extension = log.writer->file->fnode.get_allocated();
   vselector->sub_usage(log.writer->file->vselector_hint, log.writer->file->fnode);
+  amount += super.block_size - (amount % super.block_size);
   int r = _allocate(
       vselector->select_prefer_bdev(log.writer->file->vselector_hint),
       amount,
@@ -3099,6 +3101,7 @@ int64_t BlueFS::_extend_log(uint64_t amount) {
   if (realign && realign != super.block_size)
     bl.append_zero(realign);
   log.writer->append(bl);
+  ceph_assert(allocated_before_extension >= log.writer->get_effective_write_pos());
   log.t.seq = log.seq_live;
 
   // before sync_core we advance the seq
