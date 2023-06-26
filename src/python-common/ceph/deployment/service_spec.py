@@ -1761,6 +1761,7 @@ class CephExporterSpec(ServiceSpec):
                  unmanaged: bool = False,
                  preview_only: bool = False,
                  extra_container_args: Optional[List[str]] = None,
+                 extra_entrypoint_args: Optional[List[str]] = None,
                  ):
         assert service_type == 'ceph-exporter'
 
