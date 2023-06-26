@@ -152,7 +152,9 @@ void DaemonMetricCollector::dump_asok_metrics() {
           labels.insert(multisite_labels_and_name.first.begin(), multisite_labels_and_name.first.end());
           counter_name = multisite_labels_and_name.second;
         }
-        labels.insert({"ceph_daemon", quote(daemon_name)});
+        for (auto label1: labels) {
+            std::cout << "label: " << label1.first << " " << label1.second << std::endl;
+        }
         auto perf_values = counters_values.at(counter_name_init);
         dump_asok_metric(counter_group, perf_values, counter_name, labels);
       }
@@ -295,8 +297,19 @@ DaemonMetricCollector::get_labels_and_metric_name(std::string daemon_name,
     std::string tmp = daemon_name.substr(16, std::string::npos);
     std::string::size_type pos = tmp.find('.');
     labels["instance_id"] = quote("rgw." + tmp.substr(0, pos));
+  } else {
+    std::string ceph_daemon_prefix = "ceph-";
+    std::string ceph_client_prefix = "client.";
+    std::string daemon_name_label = daemon_name;
+    if (daemon_name.rfind(ceph_daemon_prefix, 0) == 0) {
+      daemon_name_label = daemon_name.substr(ceph_daemon_prefix.size());
+    }
+    if (daemon_name_label.rfind(ceph_client_prefix, 0) == 0) {
+      daemon_name_label = daemon_name_label.substr(ceph_client_prefix.size());
+    }
+    labels.insert({"ceph_daemon", quote(daemon_name_label)});
   }
-  else if (daemon_name.find("rbd-mirror") != std::string::npos) {
+  if (daemon_name.find("rbd-mirror") != std::string::npos) {
     std::regex re(
         "^rbd_mirror_image_([^/]+)/(?:(?:([^/]+)/"
         ")?)(.*)\\.(replay(?:_bytes|_latency)?)$");
