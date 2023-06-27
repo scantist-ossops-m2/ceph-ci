@@ -692,7 +692,7 @@ void OSD::print(std::ostream& out) const
       << " pgs:" << pg_shard_manager.get_num_pgs()
       << "}";
 }
-
+//test for multicore
 std::optional<seastar::future<>>
 OSD::ms_dispatch(crimson::net::ConnectionRef conn, MessageRef m)
 {
