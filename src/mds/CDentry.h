@@ -79,15 +79,16 @@ public:
 
 
   // -- state --
-  static const int STATE_NEW =          (1<<0);
-  static const int STATE_FRAGMENTING =  (1<<1);
-  static const int STATE_PURGING =      (1<<2);
-  static const int STATE_BADREMOTEINO = (1<<3);
-  static const int STATE_EVALUATINGSTRAY = (1<<4);
-  static const int STATE_PURGINGPINNED =  (1<<5);
-  static const int STATE_BOTTOMLRU =    (1<<6);
-  static const int STATE_UNLINKING =    (1<<7);
-  static const int STATE_REINTEGRATING = (1<<8);
+  static const int STATE_NEW =                  (1<<0);
+  static const int STATE_FRAGMENTING =          (1<<1);
+  static const int STATE_PURGING =              (1<<2);
+  static const int STATE_BADREMOTEINO =         (1<<3);
+  static const int STATE_EVALUATINGSTRAY =      (1<<4);
+  static const int STATE_PURGINGPINNED =        (1<<5);
+  static const int STATE_BOTTOMLRU =            (1<<6);
+  static const int STATE_UNLINKING =            (1<<7);
+  static const int STATE_REINTEGRATING =        (1<<8);
+  static const int STATE_UNLINK_REINTEGRATING = (1<<9);
   // stray dentry needs notification of releasing reference
   static const int STATE_STRAY =	STATE_NOTIFYREF;
   static const int MASK_STATE_IMPORT_KEPT = STATE_BOTTOMLRU;
