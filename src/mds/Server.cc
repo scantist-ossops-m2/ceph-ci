@@ -2556,6 +2556,12 @@ void Server::handle_client_reply(const cref_t<MClientReply> &reply)
     if (dn) {
       dn->state_clear(CDentry::STATE_REINTEGRATING);
 
+      // move the state back to STATE_UNLINKING
+      if (dn->state_test(CDentry::STATE_UNLINK_REINTEGRATING)) {
+        dn->state_set(CDentry::STATE_UNLINKING);
+        dn->state_clear(CDentry::STATE_UNLINK_REINTEGRATING);
+      }
+
       MDSContext::vec finished;
       dn->take_waiting(CDentry::WAIT_REINTEGRATE_FINISH, finished);
       mds->queue_waiters(finished);
@@ -6874,12 +6880,21 @@ public:
   }
 };
 
-bool Server::is_unlink_pending(CDentry *dn)
+bool Server::is_unlink_pending(CDentry *dn, bool ignore_reintegrating)
 {
   CDentry::linkage_t *dnl = dn->get_projected_linkage();
-  if (!dnl->is_null() && dn->state_test(CDentry::STATE_UNLINKING)) {
+  if (dnl->is_null()) {
+    return false;
+  }
+
+  if (dn->state_test(CDentry::STATE_UNLINKING)) {
+    return true;
+  }
+
+  if (!ignore_reintegrating && dn->state_test(CDentry::STATE_UNLINK_REINTEGRATING)) {
       return true;
   }
+
   return false;
 }
 
@@ -6925,6 +6940,13 @@ bool Server::is_reintegrate_pending(CDentry *dn)
 void Server::wait_for_pending_reintegrate(CDentry *dn, MDRequestRef& mdr)
 {
   dout(20) << __func__ << " dn " << *dn << dendl;
+
+  // move the state to intermediate state STATE_UNLINK_REINTEGRATING
+  if (dn->state_test(CDentry::STATE_UNLINKING)) {
+    dn->state_clear(CDentry::STATE_UNLINKING);
+    dn->state_set(CDentry::STATE_UNLINK_REINTEGRATING);
+  }
+
   mds->locker->drop_locks(mdr.get());
   auto fin = new C_MDS_RetryRequest(mdcache, mdr);
   dn->get(CDentry::PIN_PURGING);
@@ -8776,12 +8798,18 @@ void Server::handle_client_rename(MDRequestRef& mdr)
   if (!destdn)
     return;
 
-  if (is_unlink_pending(destdn)) {
+  CDentry::linkage_t *srcdnl = srcdn->get_projected_linkage();
+  CDentry::linkage_t *destdnl = destdn->get_projected_linkage();
+  bool linkmerge = srcdnl->get_inode() == destdnl->get_inode();
+  if (linkmerge)
+    dout(10) << " this is a link merge" << dendl;
+
+  if (is_unlink_pending(destdn, linkmerge)) {
     wait_for_pending_unlink(destdn, mdr);
     return;
   }
 
-  if (is_unlink_pending(srcdn)) {
+  if (is_unlink_pending(srcdn, linkmerge)) {
     wait_for_pending_unlink(srcdn, mdr);
     return;
   }
@@ -8789,11 +8817,9 @@ void Server::handle_client_rename(MDRequestRef& mdr)
   dout(10) << " destdn " << *destdn << dendl;
   CDir *destdir = destdn->get_dir();
   ceph_assert(destdir->is_auth());
-  CDentry::linkage_t *destdnl = destdn->get_projected_linkage();
 
   dout(10) << " srcdn " << *srcdn << dendl;
   CDir *srcdir = srcdn->get_dir();
-  CDentry::linkage_t *srcdnl = srcdn->get_projected_linkage();
   CInode *srci = srcdnl->get_inode();
   dout(10) << " srci " << *srci << dendl;
 
@@ -8883,10 +8909,6 @@ void Server::handle_client_rename(MDRequestRef& mdr)
     dout(10) << "rename src and dest traces now share common ancestor " << *destbase << dendl;
   }
 
-
-  bool linkmerge = srcdnl->get_inode() == destdnl->get_inode();
-  if (linkmerge)
-    dout(10) << " this is a link merge" << dendl;
 
   // -- create stray dentry? --
   CDentry *straydn = NULL;

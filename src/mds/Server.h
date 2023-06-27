@@ -237,7 +237,7 @@ public:
 
   void handle_client_fsync(MDRequestRef& mdr);
 
-  bool is_unlink_pending(CDentry *dn);
+  bool is_unlink_pending(CDentry *dn, bool ignore_reintegrating=true);
   void wait_for_pending_unlink(CDentry *dn, MDRequestRef& mdr);
 
   bool is_reintegrate_pending(CDentry *dn);
