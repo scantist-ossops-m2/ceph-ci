@@ -8,11 +8,16 @@ from ceph_volume.util import prepare as prepare_utils
 from ceph_volume.util import encryption as encryption_utils
 from ceph_volume.devices.lvm.common import rollback_osd
 from ceph_volume.devices.raw.list import direct_report
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import argparse
 
 logger = logging.getLogger(__name__)
 
+
 class RawBlueStore(BlueStore):
-    def __init__(self, args):
+    def __init__(self, args: "argparse.Namespace") -> None:
         super().__init__(args)
         if hasattr(self.args, 'data'):
             self.block_device_path = self.args.data
@@ -21,7 +26,7 @@ class RawBlueStore(BlueStore):
         if hasattr(self.args, 'block_wal'):
             self.wal_device_path = self.args.block_wal
 
-    def prepare_dmcrypt(self):
+    def prepare_dmcrypt(self) -> None:
         """
         Helper for devices that are encrypted. The operations needed for
         block, db, wal, devices are all the same
@@ -34,7 +39,9 @@ class RawBlueStore(BlueStore):
 
             if device:
                 kname = disk.lsblk(device)['KNAME']
-                mapping = 'ceph-{}-{}-{}-dmcrypt'.format(self.osd_fsid, kname, device_type)
+                mapping = 'ceph-{}-{}-{}-dmcrypt'.format(self.osd_fsid,
+                                                         kname,
+                                                         device_type)
                 # format data device
                 encryption_utils.luks_format(
                     key,
@@ -45,9 +52,11 @@ class RawBlueStore(BlueStore):
                     device,
                     mapping
                 )
-                self.__dict__[f'{device_type}_device_path'] = '/dev/mapper/{}'.format(mapping)
+                self.__dict__[f'{device_type}_device_path'] = \
+                    '/dev/mapper/{}'.format(mapping)
 
-    def safe_prepare(self, args=None):
+    def safe_prepare(self,
+                     args: Optional["argparse.Namespace"] = None) -> None:
         """
         An intermediate step between `main()` and `prepare()` so that we can
         capture the `self.osd_id` in case we need to rollback
@@ -56,7 +65,7 @@ class RawBlueStore(BlueStore):
                      both `prepare` and `create`
         """
         if args is not None:
-            self.args = args # This should be moved (to __init__ ?)
+            self.args = args  # This should be moved (to __init__ ?)
         try:
             self.prepare()
         except Exception:
@@ -64,13 +73,16 @@ class RawBlueStore(BlueStore):
             logger.info('will rollback OSD ID creation')
             rollback_osd(self.args, self.osd_id)
             raise
-        dmcrypt_log = 'dmcrypt' if args.dmcrypt else 'clear'
-        terminal.success("ceph-volume raw {} prepare successful for: {}".format(dmcrypt_log, self.args.data))
+        dmcrypt_log = 'dmcrypt' if hasattr(args, 'dmcrypt') else 'clear'
+        terminal.success("ceph-volume raw {} prepare "
+                         "successful for: {}".format(dmcrypt_log,
+                                                     self.args.data))
 
     @decorators.needs_root
-    def prepare(self):
+    def prepare(self) -> None:
         if self.encrypted:
-            self.secrets['dmcrypt_key'] = os.getenv('CEPH_VOLUME_DMCRYPT_SECRET')
+            self.secrets['dmcrypt_key'] = \
+                os.getenv('CEPH_VOLUME_DMCRYPT_SECRET')
         self.osd_fsid = system.generate_uuid()
         crush_device_class = self.args.crush_device_class
         if crush_device_class:
@@ -94,7 +106,9 @@ class RawBlueStore(BlueStore):
         # prepare the osd filesystem
         self.osd_mkfs()
 
-    def _activate(self, meta, tmpfs):
+    def _activate(self,
+                  meta: Dict[str, Any],
+                  tmpfs: bool) -> None:
         # find the osd
         osd_id = meta['osd_id']
         osd_uuid = meta['osd_uuid']
@@ -112,9 +126,9 @@ class RawBlueStore(BlueStore):
             if os.path.exists(link_path):
                 os.unlink(os.path.join(osd_path, link_name))
 
-        # Once symlinks are removed, the osd dir can be 'primed again. chown first,
-        # regardless of what currently exists so that ``prime-osd-dir`` can succeed
-        # even if permissions are somehow messed up
+        # Once symlinks are removed, the osd dir can be 'primed again. chown
+        # first, regardless of what currently exists so that ``prime-osd-dir``
+        # can succeed even if permissions are somehow messed up
         system.chown(osd_path)
         prime_command = [
             'ceph-bluestore-tool',
@@ -137,11 +151,15 @@ class RawBlueStore(BlueStore):
             prepare_utils.link_wal(meta['device_wal'], osd_id, osd_uuid)
 
         system.chown(osd_path)
-        terminal.success("ceph-volume raw activate successful for osd ID: %s" % osd_id)
+        terminal.success("ceph-volume raw activate "
+                         "successful for osd ID: %s" % osd_id)
 
     @decorators.needs_root
-    def activate(self, devs, start_osd_id, start_osd_uuid,
-                 tmpfs):
+    def activate(self,
+                 devs: List[str],
+                 start_osd_id: str,
+                 start_osd_uuid: str,
+                 tmpfs: bool) -> None:
         """
         :param args: The parsed arguments coming from the CLI
         """
@@ -157,7 +175,7 @@ class RawBlueStore(BlueStore):
                 continue
             logger.info('Activating osd.%s uuid %s cluster %s' % (
                 osd_id, osd_uuid, meta['ceph_fsid']))
-            self._activate( meta,
+            self._activate(meta,
                            tmpfs=tmpfs)
             activated_any = True
 
