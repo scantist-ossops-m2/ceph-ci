@@ -5368,7 +5368,8 @@ void Client::handle_caps(const MConstRef<MClientCaps>& m)
       case CEPH_CAP_OP_TRUNC: return handle_cap_trunc(session.get(), in, m);
       case CEPH_CAP_OP_IMPORT:
       case CEPH_CAP_OP_REVOKE:
-      case CEPH_CAP_OP_GRANT: return handle_cap_grant(session.get(), in, &cap, m);
+      case CEPH_CAP_OP_GRANT: return handle_cap_grant(session.get(), in, &cap, m,
+                                                      m->get_op() == CEPH_CAP_OP_REVOKE);
       case CEPH_CAP_OP_FLUSH_ACK: return handle_cap_flush_ack(session.get(), in, &cap, m);
     }
   } else {
@@ -5680,7 +5681,8 @@ void Client::_try_to_trim_inode(Inode *in, bool sched_inval)
   }
 }
 
-void Client::handle_cap_grant(MetaSession *session, Inode *in, Cap *cap, const MConstRef<MClientCaps>& m)
+void Client::handle_cap_grant(MetaSession *session, Inode *in, Cap *cap,
+                              const MConstRef<MClientCaps>& m, bool force_revoke)
 {
   mds_rank_t mds = session->mds_num;
   int used = get_caps_used(in);
@@ -5825,6 +5827,13 @@ void Client::handle_cap_grant(MetaSession *session, Inode *in, Cap *cap, const M
 	}
       }
     }
+  }
+
+  // just in case the caps was released just before we get the revoke msg
+  if (!check && force_revoke) {
+    cap->wanted = 0; // don't let check_caps skip sending a response to MDS
+    check = true;
+    flags = CHECK_CAPS_NODELAY;
   }
 
   if (check)
