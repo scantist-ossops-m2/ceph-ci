@@ -109,6 +109,7 @@ ostream& operator<<(ostream& out, const CDentry& dn)
   if (dn.is_new()) out << "|new";
   if (dn.state_test(CDentry::STATE_BOTTOMLRU)) out << "|bottomlru";
   if (dn.state_test(CDentry::STATE_UNLINKING)) out << "|unlinking";
+  if (dn.state_test(CDentry::STATE_UNLINK_REINTEGRATING)) out << "|unlink_reintegrating";
   if (dn.state_test(CDentry::STATE_REINTEGRATING)) out << "|reintegrating";
 
   if (dn.get_num_ref()) {
