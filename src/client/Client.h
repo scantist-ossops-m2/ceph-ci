@@ -741,7 +741,8 @@ public:
   void handle_cap_trunc(MetaSession *session, Inode *in, const MConstRef<MClientCaps>& m);
   void handle_cap_flush_ack(MetaSession *session, Inode *in, Cap *cap, const MConstRef<MClientCaps>& m);
   void handle_cap_flushsnap_ack(MetaSession *session, Inode *in, const MConstRef<MClientCaps>& m);
-  void handle_cap_grant(MetaSession *session, Inode *in, Cap *cap, const MConstRef<MClientCaps>& m);
+  void handle_cap_grant(MetaSession *session, Inode *in, Cap *cap, const MConstRef<MClientCaps>& m,
+                        bool force_revoke=false);
   void cap_delay_requeue(Inode *in);
 
   void send_cap(Inode *in, MetaSession *session, Cap *cap, int flags,
