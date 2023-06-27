@@ -37,6 +37,7 @@ class BackfillRecovery;
     friend class PGAdvanceMap;
     friend class BackfillRecovery;
     friend class LogMissingRequest;
+    friend class RepRequest;
   };
 
 template <class T>

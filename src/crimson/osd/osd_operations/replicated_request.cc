@@ -54,6 +54,11 @@ ClientRequest::PGPipeline &RepRequest::pp(PG &pg)
   return pg.request_pg_pipeline;
 }
 
+PGPeeringPipeline &RepRequest::bp(PG &pg)
+{
+  return pg.peering_request_pg_pipeline;
+}
+
 seastar::future<> RepRequest::with_pg(
   ShardServices &shard_services, Ref<PG> pg)
 {
@@ -70,7 +75,7 @@ seastar::future<> RepRequest::with_pg(
           std::move(trigger), req->min_epoch);
       });
     }).then_interruptible([this, pg] (auto) {
-      return this->template enter_stage<interruptor>(pp(*pg).process);
+      return this->template enter_stage<interruptor>(bp(*pg).process);
     }).then_interruptible([this, pg] {
       return pg->handle_rep_op(req);
     });

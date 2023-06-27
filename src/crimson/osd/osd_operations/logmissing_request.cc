@@ -70,9 +70,6 @@ seastar::future<> LogMissingRequest::with_pg(
     return enter_stage<interruptor>(
       bp(*pg).process
     ).then_interruptible([this, pg] {
-      return enter_stage<interruptor>(
-        pp(*pg).process);
-    }).then_interruptible([this, pg] {
       return pg->do_update_log_missing(req, conn);
     });
   }, [ref](std::exception_ptr) { return seastar::now(); }, pg);
