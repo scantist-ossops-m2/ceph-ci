@@ -60,6 +60,7 @@ public:
     ConnectionPipeline::AwaitMap::BlockingEvent,
     ConnectionPipeline::GetPG::BlockingEvent,
     ClientRequest::PGPipeline::AwaitMap::BlockingEvent,
+    ClientRequest::PGPipeline::Process::BlockingEvent,
     PG_OSDMapGate::OSDMapBlocker::BlockingEvent,
     PGMap::PGCreationBlockingEvent,
     OSD_OSDMapGate::OSDMapBlocker::BlockingEvent

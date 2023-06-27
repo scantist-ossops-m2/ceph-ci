@@ -62,7 +62,8 @@ public:
     ConnectionPipeline::GetPG::BlockingEvent,
     PGMap::PGCreationBlockingEvent,
     OSD_OSDMapGate::OSDMapBlocker::BlockingEvent,
-    PGPeeringPipeline::Process::BlockingEvent
+    PGPeeringPipeline::Process::BlockingEvent,
+    ClientRequest::PGPipeline::Process::BlockingEvent
   > tracking_events;
 
 private:

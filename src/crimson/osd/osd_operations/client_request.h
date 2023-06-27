@@ -57,6 +57,7 @@ public:
     friend class ReqRequest;
     friend class LogMissingRequest;
     friend class LogMissingRequestReply;
+    friend class RepRequest;
   };
 
   /**

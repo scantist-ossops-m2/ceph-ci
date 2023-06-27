@@ -70,6 +70,8 @@ seastar::future<> RepRequest::with_pg(
           std::move(trigger), req->min_epoch);
       });
     }).then_interruptible([this, pg] (auto) {
+      return this->template enter_stage<interruptor>(pp(*pg).process);
+    }).then_interruptible([this, pg] {
       return pg->handle_rep_op(req);
     });
   }, [ref](std::exception_ptr) {
