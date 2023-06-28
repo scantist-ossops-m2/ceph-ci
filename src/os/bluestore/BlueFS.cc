@@ -3062,7 +3062,7 @@ int64_t BlueFS::_maybe_extend_log() {
   // increase with respect the number of extents. bluefs_min_log_runway should cover the max size 
   // a log can get.
   // inject new allocation in case log is too big
-  if (log.t.expected_size() + super.block_size > runway) {
+  if (log.t.expected_size() + cct->_conf->bluefs_min_log_runway > runway) {
     _extend_log(log.t.expected_size() + cct->_conf->bluefs_max_log_runway);
   } else if (runway < cct->_conf->bluefs_min_log_runway) {
     _extend_log(cct->_conf->bluefs_max_log_runway);
