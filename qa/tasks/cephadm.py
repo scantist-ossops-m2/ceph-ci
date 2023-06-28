@@ -847,6 +847,9 @@ def ceph_osds(ctx, config):
                 _, _, id_ = teuthology.split_role(osd)
                 id_to_remote[int(id_)] = (osd, remote)
 
+        log.info(f"devs_by_remote={devs_by_remote}")
+        log.info(f"id_to_remote={id_to_remote}")
+
         cur = 0
         for osd_id in sorted(id_to_remote.keys()):
             osd, remote = id_to_remote[osd_id]
