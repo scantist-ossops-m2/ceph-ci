@@ -841,6 +841,7 @@ def ceph_osds(ctx, config):
         devs_by_remote = {}
         for remote, roles in ctx.cluster.remotes.items():
             devs_by_remote[remote] = teuthology.get_scratch_devices(remote)
+            log.info(f"get_scratch_devices({remote}) => {devs_by_remote[remote]}")
             for osd in [r for r in roles
                         if teuthology.is_type('osd', cluster_name)(r)]:
                 _, _, id_ = teuthology.split_role(osd)
@@ -852,7 +853,7 @@ def ceph_osds(ctx, config):
             _, _, id_ = teuthology.split_role(osd)
             assert int(id_) == cur
             devs = devs_by_remote[remote]
-            assert devs   ## FIXME ##
+            assert devs, f"{remote} is missing devices as reported by get_scratch_devices()"
             dev = devs.pop()
             if all(_ in dev for _ in ('lv', 'vg')):
                 short_dev = dev.replace('/dev/', '')
