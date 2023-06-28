@@ -4035,6 +4035,9 @@ bool PeeringState::append_log_entries_update_missing(
   std::optional<eversion_t> roll_forward_to)
 {
   ceph_assert(!entries.empty());
+  psdout(20) << "entries version: " << entries.begin()->version
+             << " last update " << info.last_update
+             << dendl;
   ceph_assert(entries.begin()->version > info.last_update);
 
   PGLog::LogEntryHandlerRef rollbacker{pl->get_log_handler(t)};
