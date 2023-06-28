@@ -4035,7 +4035,12 @@ bool PeeringState::append_log_entries_update_missing(
   std::optional<eversion_t> roll_forward_to)
 {
   ceph_assert(!entries.empty());
-  ceph_assert(entries.begin()->version > info.last_update);
+  psdout(20) << "VERSION: " << entries.begin()->version
+             << " last update " << entries.begin()->version
+             << dendl;
+  if (entries.begin()->version <= info.last_update) {
+    ceph_abort_msg("TSTA");
+  }
 
   PGLog::LogEntryHandlerRef rollbacker{pl->get_log_handler(t)};
   bool invalidate_stats =
@@ -4066,6 +4071,7 @@ bool PeeringState::append_log_entries_update_missing(
     pg_log.trim(*trim_to, info);
   dirty_info = true;
   write_if_dirty(t);
+  psdout(20) << "OUT" << dendl;
   return invalidate_stats;
 }
 
