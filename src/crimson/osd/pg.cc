@@ -1315,6 +1315,8 @@ PG::interruptible_future<> PG::do_update_log_missing(
       crimson::common::system_shutdown_exception());
   }
 
+  logger().debug("{} {}" , __func__, *m);
+
   ceph_assert(m->get_type() == MSG_OSD_PG_UPDATE_LOG_MISSING);
   ObjectStore::Transaction t;
   std::optional<eversion_t> op_trim_to, op_roll_forward_to;
@@ -1325,8 +1327,10 @@ PG::interruptible_future<> PG::do_update_log_missing(
   logger().debug("op_trim_to = {}, op_roll_forward_to = {}",
     op_trim_to, op_roll_forward_to);
 
+  logger().debug("{} {} IN", __func__, *m);
   peering_state.append_log_entries_update_missing(
     m->entries, t, op_trim_to, op_roll_forward_to);
+  logger().debug("{} {} OUT", __func__, *m);
 
   return interruptor::make_interruptible(shard_services.get_store().do_transaction(
     coll_ref, std::move(t))).then_interruptible(
