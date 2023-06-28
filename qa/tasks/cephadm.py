@@ -856,7 +856,7 @@ def ceph_osds(ctx, config):
             _, _, id_ = teuthology.split_role(osd)
             assert int(id_) == cur
             devs = devs_by_remote[remote]
-            assert devs, f"{remote} is missing devices as reported by get_scratch_devices()"
+            assert devs, f"{remote} is missing devices as reported by get_scratch_devices() (devs={devs})"
             dev = devs.pop()
             if all(_ in dev for _ in ('lv', 'vg')):
                 short_dev = dev.replace('/dev/', '')
