@@ -4872,9 +4872,9 @@ options:
   level: advanced
   desc: Let bluestore to reuse existing shared blobs if possible
   long_desc: Overwrites on snapped objects cause shared blob count to grow.
-    It has a very negative performance effect. When enabled shared blob count
-    is significantly reduced.
-  default: false
+    It has a very negative performance effect.
+    When enabled shared blob count is significantly reduced.
+  default: true
   flags:
   - create
   with_legacy: false
