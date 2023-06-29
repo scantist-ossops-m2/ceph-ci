@@ -1137,7 +1137,6 @@ seastar::future<> OSD::handle_update_log_missing(
   crimson::net::ConnectionRef conn,
   Ref<MOSDPGUpdateLogMissing> m)
 {
-  m->decode_payload();
   return pg_shard_manager.start_pg_operation<LogMissingRequest>(
     std::move(conn),
     std::move(m)).second;
@@ -1147,7 +1146,6 @@ seastar::future<> OSD::handle_update_log_missing_reply(
   crimson::net::ConnectionRef conn,
   Ref<MOSDPGUpdateLogMissingReply> m)
 {
-  m->decode_payload();
   return pg_shard_manager.start_pg_operation<LogMissingRequestReply>(
     std::move(conn),
     std::move(m)).second;
