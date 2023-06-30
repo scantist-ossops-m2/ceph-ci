@@ -471,7 +471,7 @@ public:
   }
 
   /// initialize created PG
-  void init(
+  seastar::future<> init(
     int role,
     const std::vector<int>& up,
     int up_primary,
@@ -648,6 +648,16 @@ private:
   OSDriver osdriver;
   SnapMapper snap_mapper;
 
+  ghobject_t make_snapmapper_oid() {
+    return ghobject_t(hobject_t(
+      sobject_t(
+       object_t("snapmapper"),
+       0),
+      std::string(),
+      pgid.ps(),
+      pgid.pool(),
+      std::string()));
+  }
 public:
   // PeeringListener
   void publish_stats_to_osd() final;
