@@ -73,10 +73,15 @@ function TEST_recover_unexpected() {
     dd if=/dev/urandom of=datafile bs=4k count=2
     for i in $(seq 1 $POOLS)
     do
+       # turn off '-x' (but remember previous state)
+       # to avoid printing a thousand rados commands (45% of log lines count)
+       local saved_echo_flag=${-//[^x]/}
+       set +x
        for j in $(seq 1 $OBJS)
        do
 	       rados -p test$i put obj$j datafile
        done
+       if [[ -n "$saved_echo_flag" ]]; then set -x; fi
     done
     rm datafile
 
@@ -85,7 +90,6 @@ function TEST_recover_unexpected() {
 
     for qpg in $(ceph pg dump pgs --format=json-pretty | jq '.pg_stats[].pgid')
     do
-	primary=$(ceph pg dump pgs --format=json | jq ".pg_stats[] | select(.pgid == $qpg) | .acting_primary")
 	eval pg=$qpg   # strip quotes around qpg
 	ceph tell $pg scrub
     done
