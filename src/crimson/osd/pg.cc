@@ -968,7 +968,8 @@ seastar::future<> PG::submit_error_log(
         " to osd {}", rep_tid, log_entries, peer.osd);
       return shard_services.send_to_osd(peer.osd,
                                         std::move(log_m),
-                                        get_osdmap_epoch());
+                                        get_osdmap_epoch(),
+                                        rep_tid);
     }).then([this, waiting_on, t=std::move(t), rep_tid] () mutable {
       waiting_on.insert(pg_whoami);
       log_entry_update_waiting_on.insert(

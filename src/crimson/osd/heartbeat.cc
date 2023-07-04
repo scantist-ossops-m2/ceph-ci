@@ -494,6 +494,7 @@ void Heartbeat::Connection::reset(bool is_replace)
 seastar::future<> Heartbeat::Connection::send(MessageURef msg)
 {
   assert(is_connected);
+  logger().info("Heartbeat::Connection::send {}", *this);
   return conn->send(std::move(msg));
 }
 
