@@ -5,7 +5,7 @@ from ceph_volume.api import lvm
 from ceph_volume.util import disk
 from ceph_volume.util import device
 from ceph_volume.util.constants import ceph_disk_guids
-from ceph_volume import conf, configuration
+from ceph_volume import conf, configuration, objectstore
 
 
 class Capture(object):
@@ -36,6 +36,16 @@ class Factory(object):
 def factory():
     return Factory
 
+def objectstore_bluestore_factory(**kw):
+    o = objectstore.bluestore.BlueStore([])
+    for k, v in kw.items():
+        setattr(o, k, v)
+    return o
+
+@pytest.fixture
+def objectstore_bluestore():
+    return objectstore_bluestore_factory
+
 
 @pytest.fixture
 def capture():
@@ -58,29 +68,41 @@ def mock_lv_device_generator():
         return dev
     return mock_lv
 
-def mock_device():
+def mock_device(name='foo',
+                suffix='0',
+                vg_name='vg_foo',
+                lv_name='lv_foo'):
     dev = create_autospec(device.Device)
-    dev.path = '/dev/foo'
-    dev.vg_name = 'vg_foo'
-    dev.lv_name = 'lv_foo'
+    dev.path = f'/dev/{name}{suffix}'
+    dev.vg_name = f'{vg_name}'
+    dev.lv_name = f'{lv_name}'
     dev.symlink = None
     dev.vgs = [lvm.VolumeGroup(vg_name=dev.vg_name, lv_name=dev.lv_name)]
     dev.available_lvm = True
     dev.vg_size = [21474836480]
     dev.vg_free = dev.vg_size
     dev.lvs = []
+    dev.is_device = True
     return dev
 
 @pytest.fixture(params=range(1,4))
 def mock_devices_available(request):
     ret = []
-    for n in range(request.param):
-        dev = mock_device()
-        # after v15.2.8, a single VG is created for each PV
-        dev.vg_name = f'vg_foo_{n}'
+    for n in range(1, request.param+1):
+        dev = mock_device(suffix=str(n), vg_name=f'vg_foo_{n}', lv_name='')
         dev.vgs = [lvm.VolumeGroup(vg_name=dev.vg_name, lv_name=dev.lv_name)]
         ret.append(dev)
     return ret
+
+#@pytest.fixture(params=range(1,4))
+#def mock_devices_available_multi_pvs_per_vg(request):
+#    ret = []
+#    for n in range(1, request.param+1):
+#        dev = mock_device(suffix=str(n), vg_name=f'vg_foo', lv_name='')
+#        # after v15.2.8, a single VG is created for each PV
+#        dev.vgs = [lvm.VolumeGroup(vg_name=dev.vg_name, lv_name=dev.lv_name)]
+#        ret.append(dev)
+#    return ret
 
 @pytest.fixture
 def mock_device_generator():
