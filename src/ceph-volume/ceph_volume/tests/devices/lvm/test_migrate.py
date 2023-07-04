@@ -520,7 +520,8 @@ class TestNew(object):
     def mock_get_lvs(self, *args, **kwargs):
         return self.mock_volumes.pop(0)
 
-    def test_newdb_non_root(self):
+    @patch('os.getuid', return_value=1)
+    def test_newdb_non_root(self, m_getuid):
         with pytest.raises(Exception) as error:
             migrate.NewDB(argv=[
                 '--osd-id', '1',
