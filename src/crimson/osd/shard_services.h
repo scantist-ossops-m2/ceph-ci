@@ -234,7 +234,8 @@ private:
   crimson::net::Messenger &cluster_msgr;
   crimson::net::Messenger &public_msgr;
 
-  seastar::future<> send_to_osd(int peer, MessageURef m, epoch_t from_epoch);
+  seastar::future<> send_to_osd(
+    int peer, MessageURef m, epoch_t from_epoch, uint64_t msg_id = 0);
 
   crimson::mon::Client &monc;
   seastar::future<> osdmap_subscribe(version_t epoch, bool force_request);

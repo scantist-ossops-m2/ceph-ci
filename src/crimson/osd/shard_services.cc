@@ -156,7 +156,10 @@ OSDSingletonState::OSDSingletonState(
 }
 
 seastar::future<> OSDSingletonState::send_to_osd(
-  int peer, MessageURef m, epoch_t from_epoch)
+  int peer,
+  MessageURef m,
+  epoch_t from_epoch,
+  uint64_t msg_id)
 {
   if (osdmap->is_down(peer)) {
     logger().info("{}: osd.{} is_down", __func__, peer);
@@ -168,6 +171,10 @@ seastar::future<> OSDSingletonState::send_to_osd(
   } else {
     auto conn = cluster_msgr.connect(
         osdmap->get_cluster_addrs(peer).front(), CEPH_ENTITY_TYPE_OSD);
+    logger().info("{}: sending message (id:{}): {} to osd.{}",
+                  __func__,
+                  msg_id ? std::to_string(msg_id) : "N/A",
+                  peer);
     return conn->send(std::move(m));
   }
 }
