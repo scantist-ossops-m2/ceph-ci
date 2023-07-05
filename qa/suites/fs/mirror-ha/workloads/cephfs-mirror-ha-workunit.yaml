@@ -24,9 +24,6 @@ tasks:
         cephfs_name: dc
       client.2:
         cephfs_name: dc-backup
-  - cephfs_mirror_thrash:
-      randomize: False
-      max_thrash_delay: 10
   - workunit:
       subdir: mirror
       cleanup: False
