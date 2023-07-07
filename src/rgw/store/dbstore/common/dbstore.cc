@@ -1054,7 +1054,10 @@ int DB::Object::set_attrs(const DoutPrefixProvider *dpp,
   }
 
   params.op.query_str = "attrs";
-  params.op.obj.state.mtime = real_clock::now();
+  /* As per https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html, 
+   * the only way for users to modify object metadata is to make a copy of the object and
+   * set the metadata.
+   * Hence do not update mtime for any other attr changes */
 
   ret = store->ProcessOp(dpp, "UpdateObject", &params);
 
