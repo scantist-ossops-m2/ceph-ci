@@ -12,7 +12,9 @@ from orchestrator import HostSpec
 
 from .. import mgr
 from ..exceptions import DashboardException
+from ..plugins.ttl_cache import ttl_cache
 from ..security import Scope
+from ..services._paginate import ListPaginator
 from ..services.ceph_service import CephService
 from ..services.exception import handle_orchestrator_error
 from ..services.orchestrator import OrchClient, OrchFeature
@@ -173,6 +175,7 @@ def populate_service_instances(hostname, services):
     return [{'type': k, 'count': v} for k, v in Counter(services).items()]
 
 
+@ttl_cache(30)
 def get_hosts(sources=None):
     """
     Get hosts from various sources.
@@ -202,8 +205,6 @@ def get_hosts(sources=None):
         orch = OrchClient.instance()
         if orch.available():
             return merge_hosts_by_hostname(ceph_hosts, orch.hosts.list())
-    for host in ceph_hosts:
-        host['service_instances'] = populate_service_instances(host['hostname'], host['services'])
     return ceph_hosts
 
 
@@ -303,14 +304,29 @@ class Host(RESTController):
                      'facts': (bool, 'Host Facts')
                  },
                  responses={200: LIST_HOST_SCHEMA})
-    @RESTController.MethodMap(version=APIVersion(1, 2))
-    def list(self, sources=None, facts=False):
+    @RESTController.MethodMap(version=APIVersion(1, 3))
+    def list(self, sources=None, facts=False, offset: int = 0,
+             limit: int = 5, search: str = '', sort: str = ''):
         hosts = get_hosts(sources)
+        params = ['hostname']
+        paginator = ListPaginator(int(offset), int(limit), sort, search, hosts,
+                                  searchable_params=params, sortable_params=params,
+                                  default_sort='+hostname')
+        # pylint: disable=unnecessary-comprehension
+        hosts = [host for host in paginator.list()]
         orch = OrchClient.instance()
+        cherrypy.response.headers['X-Total-Count'] = paginator.get_count()
+        for host in hosts:
+            if 'services' not in host:
+                host['services'] = []
+            host['service_instances'] = populate_service_instances(
+                host['hostname'], host['services'])
         if str_to_bool(facts):
             if orch.available():
                 if not orch.get_missing_features(['get_facts']):
-                    hosts_facts = orch.hosts.get_facts()
+                    hosts_facts = []
+                    for host in hosts:
+                        hosts_facts.append(orch.hosts.get_facts(host['hostname'])[0])
                     return merge_list_of_dicts_by_key(hosts, hosts_facts, 'hostname')
 
                 raise DashboardException(
@@ -430,12 +446,16 @@ class Host(RESTController):
         return [d.to_dict() for d in daemons]
 
     @handle_orchestrator_error('host')
+    @RESTController.MethodMap(version=APIVersion(1, 2))
     def get(self, hostname: str) -> Dict:
         """
         Get the specified host.
         :raises: cherrypy.HTTPError: If host not found.
         """
-        return get_host(hostname)
+        host = get_host(hostname)
+        host['service_instances'] = populate_service_instances(
+            host['hostname'], host['services'])
+        return host
 
     @raise_if_no_orchestrator([OrchFeature.HOST_LABEL_ADD,
                                OrchFeature.HOST_LABEL_REMOVE,
