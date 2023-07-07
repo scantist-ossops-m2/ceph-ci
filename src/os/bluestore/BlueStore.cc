@@ -1369,6 +1369,11 @@ struct TwoQBufferCacheShard : public BlueStore::BufferCacheShard {
 
 public:
   explicit TwoQBufferCacheShard(CephContext *cct) : BufferCacheShard(cct) {}
+  ~TwoQBufferCacheShard() {
+    if (num_blobs != 0) {
+      derr << __func__ << " num_blobs=" << std::hex << num_blobs << std::dec << dendl;
+    }
+  }
 
   void _add(BlueStore::Buffer *b, int level, BlueStore::Buffer *near) override
   {
@@ -17546,6 +17551,7 @@ int BlueStore::_do_remove(
 
 	// Here we skip set_shared_blob() because e.blob is already in BufferCacheShard
 	// and cannot do add_blob() twice
+	derr << __func__ <<  " num_blobs recreated" << dendl;
 	e.blob->shared_blob = new SharedBlob(c.get());
       }
       h->extent_map.dirty_range(e.logical_offset, 1);
