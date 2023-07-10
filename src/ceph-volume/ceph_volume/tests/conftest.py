@@ -381,3 +381,117 @@ def fake_filesystem(fs):
     fs.create_dir('/sys/block/sda/queue')
     fs.create_dir('/sys/block/rbd0')
     yield fs
+
+@pytest.fixture
+def key_size(monkeypatch):
+    monkeypatch.setattr("ceph_volume.util.encryption.get_key_size_from_conf", lambda: 512)
+
+lvm_direct_report_data = {
+        '1': [{
+            'lv_tags': 'ceph.block_device=/dev/ceph-40bc7bd7-4aee-483e-ba95-89a64bc8a4fd/osd-block-824f7edf-371f-4b75-9231-4ab62a32d5c0,ceph.block_uuid=kS7zXI-bpmu-3ciB-0rVY-d08b-gWDf-Y9oums,ceph.cephx_lockbox_secret=,ceph.cluster_fsid=7dccab18-14cf-11ee-837b-5254008f8ca5,ceph.cluster_name=ceph,ceph.crush_device_class=,ceph.db_device=/dev/ceph-73d6d4db-6528-48f2-a4e2-1c82bc87a9ac/osd-db-b82d920d-be3c-4e4d-ba64-18f7e8445892,ceph.db_uuid=Kuvi0U-05vW-sETB-QiNW-lpaK-XBfD-82eQWw,ceph.encrypted=0,ceph.osd_fsid=824f7edf-371f-4b75-9231-4ab62a32d5c0,ceph.osd_id=1,ceph.osdspec_affinity=,ceph.type=block,ceph.vdo=0',
+            'lv_path': '/dev/ceph-40bc7bd7-4aee-483e-ba95-89a64bc8a4fd/osd-block-824f7edf-371f-4b75-9231-4ab62a32d5c0',
+            'lv_name': 'osd-block-824f7edf-371f-4b75-9231-4ab62a32d5c0',
+            'vg_name': 'ceph-40bc7bd7-4aee-483e-ba95-89a64bc8a4fd',
+            'lv_uuid': 'kS7zXI-bpmu-3ciB-0rVY-d08b-gWDf-Y9oums',
+            'lv_size': '214744170496',
+            'tags': {
+                'ceph.block_device': '/dev/ceph-40bc7bd7-4aee-483e-ba95-89a64bc8a4fd/osd-block-824f7edf-371f-4b75-9231-4ab62a32d5c0',
+                'ceph.block_uuid': 'kS7zXI-bpmu-3ciB-0rVY-d08b-gWDf-Y9oums',
+                'ceph.cephx_lockbox_secret': '',
+                'ceph.cluster_fsid': '7dccab18-14cf-11ee-837b-5254008f8ca5',
+                'ceph.cluster_name': 'ceph',
+                'ceph.crush_device_class': '',
+                'ceph.db_device': '/dev/ceph-73d6d4db-6528-48f2-a4e2-1c82bc87a9ac/osd-db-b82d920d-be3c-4e4d-ba64-18f7e8445892',
+                'ceph.db_uuid': 'Kuvi0U-05vW-sETB-QiNW-lpaK-XBfD-82eQWw',
+                'ceph.encrypted': '0',
+                'ceph.osd_fsid': '824f7edf-371f-4b75-9231-4ab62a32d5c0',
+                'ceph.osd_id': '1',
+                'ceph.osdspec_affinity': '',
+                'ceph.type': 'block',
+                'ceph.vdo': '0'
+            },
+            'name': 'osd-block-824f7edf-371f-4b75-9231-4ab62a32d5c0',
+            'type': 'block',
+            'path': '/dev/ceph-40bc7bd7-4aee-483e-ba95-89a64bc8a4fd/osd-block-824f7edf-371f-4b75-9231-4ab62a32d5c0',
+            'devices': ['/dev/vdc']
+        }, {
+            'lv_tags': 'ceph.block_device=/dev/ceph-40bc7bd7-4aee-483e-ba95-89a64bc8a4fd/osd-block-824f7edf-371f-4b75-9231-4ab62a32d5c0,ceph.block_uuid=kS7zXI-bpmu-3ciB-0rVY-d08b-gWDf-Y9oums,ceph.cephx_lockbox_secret=,ceph.cluster_fsid=7dccab18-14cf-11ee-837b-5254008f8ca5,ceph.cluster_name=ceph,ceph.crush_device_class=,ceph.db_device=/dev/ceph-73d6d4db-6528-48f2-a4e2-1c82bc87a9ac/osd-db-b82d920d-be3c-4e4d-ba64-18f7e8445892,ceph.db_uuid=Kuvi0U-05vW-sETB-QiNW-lpaK-XBfD-82eQWw,ceph.encrypted=0,ceph.osd_fsid=824f7edf-371f-4b75-9231-4ab62a32d5c0,ceph.osd_id=1,ceph.osdspec_affinity=,ceph.type=db,ceph.vdo=0',
+            'lv_path': '/dev/ceph-73d6d4db-6528-48f2-a4e2-1c82bc87a9ac/osd-db-b82d920d-be3c-4e4d-ba64-18f7e8445892',
+            'lv_name': 'osd-db-b82d920d-be3c-4e4d-ba64-18f7e8445892',
+            'vg_name': 'ceph-73d6d4db-6528-48f2-a4e2-1c82bc87a9ac',
+            'lv_uuid': 'Kuvi0U-05vW-sETB-QiNW-lpaK-XBfD-82eQWw',
+            'lv_size': '214744170496',
+            'tags': {
+                'ceph.block_device': '/dev/ceph-40bc7bd7-4aee-483e-ba95-89a64bc8a4fd/osd-block-824f7edf-371f-4b75-9231-4ab62a32d5c0',
+                'ceph.block_uuid': 'kS7zXI-bpmu-3ciB-0rVY-d08b-gWDf-Y9oums',
+                'ceph.cephx_lockbox_secret': '',
+                'ceph.cluster_fsid': '7dccab18-14cf-11ee-837b-5254008f8ca5',
+                'ceph.cluster_name': 'ceph',
+                'ceph.crush_device_class': '',
+                'ceph.db_device': '/dev/ceph-73d6d4db-6528-48f2-a4e2-1c82bc87a9ac/osd-db-b82d920d-be3c-4e4d-ba64-18f7e8445892',
+                'ceph.db_uuid': 'Kuvi0U-05vW-sETB-QiNW-lpaK-XBfD-82eQWw',
+                'ceph.encrypted': '0',
+                'ceph.osd_fsid': '824f7edf-371f-4b75-9231-4ab62a32d5c0',
+                'ceph.osd_id': '1',
+                'ceph.osdspec_affinity': '',
+                'ceph.type': 'db',
+                'ceph.vdo': '0'
+            },
+            'name': 'osd-db-b82d920d-be3c-4e4d-ba64-18f7e8445892',
+            'type': 'db',
+            'path': '/dev/ceph-73d6d4db-6528-48f2-a4e2-1c82bc87a9ac/osd-db-b82d920d-be3c-4e4d-ba64-18f7e8445892',
+            'devices': ['/dev/vdd']
+        }],
+        '0': [{
+            'lv_tags': 'ceph.block_device=/dev/ceph-e34cc3f5-a70d-49df-82b3-46bcbd63d4b0/osd-block-a0e07c5b-bee1-4ea2-ae07-cb89deda9b27,ceph.block_uuid=cYBGv9-s2cn-FfEy-dGQh-VHci-5jj9-9l5kvH,ceph.cephx_lockbox_secret=,ceph.cluster_fsid=7dccab18-14cf-11ee-837b-5254008f8ca5,ceph.cluster_name=ceph,ceph.crush_device_class=,ceph.encrypted=0,ceph.osd_fsid=a0e07c5b-bee1-4ea2-ae07-cb89deda9b27,ceph.osd_id=0,ceph.osdspec_affinity=,ceph.type=block,ceph.vdo=0',
+            'lv_path': '/dev/ceph-e34cc3f5-a70d-49df-82b3-46bcbd63d4b0/osd-block-a0e07c5b-bee1-4ea2-ae07-cb89deda9b27',
+            'lv_name': 'osd-block-a0e07c5b-bee1-4ea2-ae07-cb89deda9b27',
+            'vg_name': 'ceph-e34cc3f5-a70d-49df-82b3-46bcbd63d4b0',
+            'lv_uuid': 'cYBGv9-s2cn-FfEy-dGQh-VHci-5jj9-9l5kvH',
+            'lv_size': '214744170496',
+            'tags': {
+                'ceph.block_device': '/dev/ceph-e34cc3f5-a70d-49df-82b3-46bcbd63d4b0/osd-block-a0e07c5b-bee1-4ea2-ae07-cb89deda9b27',
+                'ceph.block_uuid': 'cYBGv9-s2cn-FfEy-dGQh-VHci-5jj9-9l5kvH',
+                'ceph.cephx_lockbox_secret': '',
+                'ceph.cluster_fsid': '7dccab18-14cf-11ee-837b-5254008f8ca5',
+                'ceph.cluster_name': 'ceph',
+                'ceph.crush_device_class': '',
+                'ceph.encrypted': '0',
+                'ceph.osd_fsid': 'a0e07c5b-bee1-4ea2-ae07-cb89deda9b27',
+                'ceph.osd_id': '0',
+                'ceph.osdspec_affinity': '',
+                'ceph.type': 'block',
+                'ceph.vdo': '0'
+            },
+            'name': 'osd-block-a0e07c5b-bee1-4ea2-ae07-cb89deda9b27',
+            'type': 'block',
+            'path': '/dev/ceph-e34cc3f5-a70d-49df-82b3-46bcbd63d4b0/osd-block-a0e07c5b-bee1-4ea2-ae07-cb89deda9b27',
+            'devices': ['/dev/vdb1']
+        }]
+    }
+
+raw_direct_report_data = {
+    "824f7edf-371f-4b75-9231-4ab62a32d5c0": {
+        "ceph_fsid": "7dccab18-14cf-11ee-837b-5254008f8ca5",
+        "device": "/dev/mapper/ceph--40bc7bd7--4aee--483e--ba95--89a64bc8a4fd-osd--block--824f7edf--371f--4b75--9231--4ab62a32d5c0",
+        "device_db": "/dev/mapper/ceph--73d6d4db--6528--48f2--a4e2--1c82bc87a9ac-osd--db--b82d920d--be3c--4e4d--ba64--18f7e8445892",
+        "osd_id": 8,
+        "osd_uuid": "824f7edf-371f-4b75-9231-4ab62a32d5c0",
+        "type": "bluestore"
+    },
+    "a0e07c5b-bee1-4ea2-ae07-cb89deda9b27": {
+        "ceph_fsid": "7dccab18-14cf-11ee-837b-5254008f8ca5",
+        "device": "/dev/mapper/ceph--e34cc3f5--a70d--49df--82b3--46bcbd63d4b0-osd--block--a0e07c5b--bee1--4ea2--ae07--cb89deda9b27",
+        "osd_id": 9,
+        "osd_uuid": "a0e07c5b-bee1-4ea2-ae07-cb89deda9b27",
+        "type": "bluestore"
+    }
+}
+
+@pytest.fixture
+def mock_lvm_direct_report(monkeypatch):
+    monkeypatch.setattr('ceph_volume.objectstore.lvmbluestore.direct_report', lambda: lvm_direct_report_data)
+
+@pytest.fixture
+def mock_raw_direct_report(monkeypatch):
+    monkeypatch.setattr('ceph_volume.objectstore.rawbluestore.direct_report', lambda x: raw_direct_report_data)
