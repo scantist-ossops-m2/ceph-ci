@@ -217,16 +217,6 @@ class LvmBlueStore(BlueStore):
 
         return '/dev/mapper/%s' % uuid
 
-    def get_cluster_fsid(self) -> str:
-        """
-        Allows using --cluster-fsid as an argument, but can fallback to reading
-        from ceph.conf if that is unset (the default behavior).
-        """
-        if self.args.cluster_fsid:
-            return self.args.cluster_fsid
-        else:
-            return conf.ceph.get('global', 'fsid')
-
     def setup_device(self,
                      device_type: str,
                      device_name: str,
