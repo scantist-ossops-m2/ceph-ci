@@ -101,9 +101,6 @@ class LvmBlueStore(BlueStore):
                 'A vg/lv path or an existing device is needed']
             raise RuntimeError(' '.join(error))
 
-        raise RuntimeError('no data logical volume found with: {}'.format(
-            device))
-
     def safe_prepare(self,
                      args: Optional["argparse.Namespace"] = None) -> None:
         """
