@@ -917,10 +917,11 @@ seastar::future<> PG::submit_error_log(
   ObjectContextRef obc,
   const std::error_code e,
   ceph_tid_t rep_tid,
-  eversion_t &version)
+  eversion_t &version,
+  id_t req_id)
 {
-  logger().debug("{}: {} rep_tid: {} error: {}",
-                 __func__, *m, rep_tid, e);
+  logger().debug("{}: {} rep_tid: {} error: {} req_id {}",
+                 __func__, *m, rep_tid, e, req_id);
   const osd_reqid_t &reqid = m->get_reqid();
   mempool::osd_pglog::list<pg_log_entry_t> log_entries;
   log_entries.push_back(pg_log_entry_t(pg_log_entry_t::ERROR,
@@ -943,9 +944,9 @@ seastar::future<> PG::submit_error_log(
     peering_state.get_min_last_complete_ondisk());
 
   return seastar::do_with(log_entries, t, set<pg_shard_t>{},
-    [this, rep_tid](auto& log_entries, auto& t,auto& waiting_on) mutable {
+    [this, rep_tid, req_id](auto& log_entries, auto& t,auto& waiting_on) mutable {
     return seastar::do_for_each(get_acting_recovery_backfill(),
-      [this, log_entries, t=std::move(t), waiting_on, rep_tid]
+      [this, log_entries, t=std::move(t), waiting_on, rep_tid, req_id]
       (auto& i) mutable {
       pg_shard_t peer(i);
       if (peer == pg_whoami) {
@@ -963,16 +964,16 @@ seastar::future<> PG::submit_error_log(
         peering_state.get_pg_trim_to(),
         peering_state.get_min_last_complete_ondisk());
       waiting_on.insert(peer);
-      logger().debug("submit_error_log: start-send log"
+      logger().debug("submit_error_log: req_id {} start-send log"
         " missing request (rep_tid: {} entries: {})"
-        " to osd {}", rep_tid, log_entries, peer.osd);
+        " to osd {}", req_id, rep_tid, log_entries, peer.osd);
       return shard_services.send_to_osd(peer.osd,
                                         std::move(log_m),
                                         get_osdmap_epoch()
-      ).then([this, log_entries, rep_tid] {
-        logger().debug("submit_error_log: finish-send log"
+      ).then([this, log_entries, rep_tid, req_id] {
+        logger().debug("submit_error_log: req_id {} finish-send log"
           " missing request (rep_tid: {} entries: {})",
-          rep_tid, log_entries);
+          req_id, rep_tid, log_entries);
       });
     }).then([this, waiting_on, t=std::move(t), rep_tid] () mutable {
       waiting_on.insert(pg_whoami);
@@ -995,7 +996,8 @@ PG::do_osd_ops(
   crimson::net::ConnectionRef conn,
   ObjectContextRef obc,
   const OpInfo &op_info,
-  const SnapContext& snapc)
+  const SnapContext& snapc,
+  id_t req_id)
 {
   if (__builtin_expect(stopping, false)) {
     throw crimson::common::system_shutdown_exception();
@@ -1042,15 +1044,16 @@ PG::do_osd_ops(
       return do_osd_ops_iertr::make_ready_future<MURef<MOSDOpReply>>(
         std::move(reply));
     },
-    [m, &op_info, obc, this] (const std::error_code& e) {
-    logger().error("do_osd_ops_execute {} got error: {}", *m, e);
-    return seastar::do_with(eversion_t(), [m, &op_info, obc, e, this](auto &version) {
+    //failure_func
+    [m, &op_info, obc, this, req_id] (const std::error_code& e) {
+    logger().error("do_osd_ops_execute {} req_id {} got error: {}", *m, e);
+    return seastar::do_with(eversion_t(), [m, &op_info, obc, e, this, req_id](auto &version) {
       auto fut = seastar::now();
       epoch_t epoch = get_osdmap_epoch();
       ceph_tid_t rep_tid = shard_services.get_tid();
       auto last_complete = peering_state.get_info().last_complete;
       if (op_info.may_write()) {
-        fut = submit_error_log(m, op_info, obc, e, rep_tid, version);
+        fut = submit_error_log(m, op_info, obc, e, rep_tid, version, req_id);
       }
       return fut.then([m, e, epoch, &op_info, rep_tid, &version, last_complete,  this] {
         auto log_reply = [m, e, this] {
