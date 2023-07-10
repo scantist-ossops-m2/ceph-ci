@@ -537,7 +537,8 @@ public:
     ObjectContextRef obc,
     const std::error_code e,
     ceph_tid_t rep_tid,
-    eversion_t &version);
+    eversion_t &version,
+    id_t req_id);
 
 private:
   using do_osd_ops_ertr = crimson::errorator<
@@ -555,7 +556,8 @@ private:
     crimson::net::ConnectionRef conn,
     ObjectContextRef obc,
     const OpInfo &op_info,
-    const SnapContext& snapc);
+    const SnapContext& snapc,
+    id_t req_id);
   using do_osd_ops_success_func_t =
     std::function<do_osd_ops_iertr::future<>()>;
   using do_osd_ops_failure_func_t =
