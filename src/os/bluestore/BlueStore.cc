@@ -2230,6 +2230,7 @@ BlueStore::Blob::~Blob()
     if (coll_cache != sb->get_cache()) {
       goto again;
     }
+    ceph_assert((shared_blob != nullptr) == shared_blob_is_set);
     bc._clear(coll_cache);
     coll_cache->rm_blob();
   }
@@ -2923,6 +2924,7 @@ void BlueStore::Blob::finish_write(uint64_t seq)
       continue;
     }
     bc._finish_write(cache, seq);
+    ceph_assert((shared_blob != nullptr) == shared_blob_is_set);
     break;
   }
 }

@@ -597,11 +597,12 @@ public:
     int16_t id = -1;                ///< id, for spanning blobs only, >= 0
     int16_t last_encoded_id = -1;   ///< (ephemeral) used during encoding only
     SharedBlobRef shared_blob;      ///< shared blob state (if any)
-
+    bool shared_blob_is_set = false;
     void set_shared_blob(SharedBlobRef sb) {
       ceph_assert((bool)sb);
       ceph_assert(!shared_blob);
       shared_blob = sb;
+      shared_blob_is_set = true;
       ceph_assert(shared_blob->get_cache());
       shared_blob->get_cache()->add_blob();
     }
