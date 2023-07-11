@@ -1024,8 +1024,8 @@ class CephNvmeof(object):
         mounts['/etc/ceph/ceph.client.admin.keyring'] = '/etc/ceph/keyring:z'  # TODO: FIXME
         mounts[os.path.join(data_dir, 'ceph-nvmeof.conf')] = '/src/ceph-nvmeof.conf:z'
         mounts[os.path.join(data_dir, 'configfs')] = '/sys/kernel/config'
-        # mounts[log_dir] = '/var/log:z' # TODO: would we need a logdir?
-        mounts['/dev'] = '/dev'
+        mounts['/dev/hugepages'] = '/dev/hugepages'
+        mounts['/dev/vfio/vfio'] = '/dev/vfio/vfio'
         return mounts
 
     @staticmethod
