@@ -8829,6 +8829,9 @@ int BlueStore::_mount()
       _set_per_pool_omap();
     }
   }
+  for (auto i : buffer_cache_shards) {
+    ceph_assert(i->num_blobs == 0);
+  }
 
   mounted = true;
   return 0;
