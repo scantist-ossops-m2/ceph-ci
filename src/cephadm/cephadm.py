@@ -6552,7 +6552,7 @@ def _dispatch_deploy(
                       ports=daemon_ports)
     elif daemon_type == CephNvmeof.daemon_type:
         config, keyring = get_config_and_keyring(ctx)
-        uid, gid = 65534, 65534  # TODO: check this
+        uid, gid = 167,167 #  TODO: need to get properly the uid/gid
         c = get_deployment_container(ctx, ctx.fsid, daemon_type, daemon_id)
         deploy_daemon(ctx, ctx.fsid, daemon_type, daemon_id, c, uid, gid,
                       config=config, keyring=keyring,
