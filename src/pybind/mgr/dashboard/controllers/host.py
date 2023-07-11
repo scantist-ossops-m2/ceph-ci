@@ -158,9 +158,6 @@ def merge_hosts_by_hostname(ceph_hosts, orch_hosts):
             }, orch_hosts_map[hostname]) for hostname in orch_hosts_map
     ]
     hosts.extend(orch_hosts_only)
-    for host in hosts:
-        host['service_instances'] = populate_service_instances(
-            host['hostname'], host['services'])
     return hosts
 
 
