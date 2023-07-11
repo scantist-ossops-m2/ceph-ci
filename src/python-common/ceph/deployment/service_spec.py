@@ -1126,7 +1126,8 @@ class NvmeofServiceSpec(ServiceSpec):
                  tgt_path: Optional[str] = None,
                  timeout: Optional[int] = 60,
                  conn_retries: Optional[int] = 10,
-                 transports: Optional[str] = "tcp",
+                 transports: Optional[str] = 'tcp',
+                 transport_tcp_options: Optional[Dict[str, str]] = {"in_capsule_data_size" : 8192, "max_io_qpairs_per_ctrlr" : 7},
                  tgt_cmd_extra_args: Optional[str] = None,
                  placement: Optional[PlacementSpec] = None,
                  unmanaged: bool = False,
@@ -1174,6 +1175,8 @@ class NvmeofServiceSpec(ServiceSpec):
         self.conn_retries = conn_retries
         #: ``transports`` tcp
         self.transports = transports
+        #: List of extra arguments for transports in the form opt=value
+        self.transport_tcp_options: Optional[Dict[str, str]] = transport_tcp_options
         #: ``tgt_cmd_extra_args`` extra arguments for the nvmf_tgt process
         self.tgt_cmd_extra_args = tgt_cmd_extra_args
 

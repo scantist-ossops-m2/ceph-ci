@@ -1104,7 +1104,7 @@ class CephNvmeof(object):
     @staticmethod
     def get_sysctl_settings() -> List[str]:
         return [
-            'vm.nr_hugepages = 2048',
+            'vm.nr_hugepages = 4096',
         ]
 
 

@@ -1,5 +1,6 @@
 import errno
 import logging
+import json
 from typing import List, cast, Optional
 
 from mgr_module import HandleCommandResult
@@ -32,6 +33,9 @@ class NvmeofService(CephService):
                                               'mds', 'allow *',
                                               'mgr', 'allow *',
                                               'osd', 'allow *'])
+
+        # TODO: check if we can force jinja2 to generate dicts with double quotes instead of using json.dumps
+        transport_tcp_options = json.dumps(spec.transport_tcp_options) if spec.transport_tcp_options else None
         context = {
             'spec': spec,
             'name': '{}.{}'.format(utils.name_to_config_section('nvmeof'), igw_id),
@@ -39,6 +43,7 @@ class NvmeofService(CephService):
             'port': spec.port,
             'log_level': 'WARN',
             'rpc_socket': '/var/tmp/spdk.sock',
+            'transport_tcp_options': transport_tcp_options
         }
         gw_conf = self.mgr.template.render('services/nvmeof/ceph-nvmeof.conf.j2', context)
 
