@@ -1127,6 +1127,7 @@ class NvmeofServiceSpec(ServiceSpec):
                  timeout: Optional[int] = 60,
                  conn_retries: Optional[int] = 10,
                  transports: Optional[str] = "tcp",
+                 tgt_cmd_extra_args: Optional[str] = None,
                  placement: Optional[PlacementSpec] = None,
                  unmanaged: bool = False,
                  preview_only: bool = False,
@@ -1171,8 +1172,10 @@ class NvmeofServiceSpec(ServiceSpec):
         self.timeout = timeout
         #: ``conn_retries`` ceph connection retries number
         self.conn_retries = conn_retries
-        #: ``transports`` TODO
+        #: ``transports`` tcp
         self.transports = transports
+        #: ``tgt_cmd_extra_args`` extra arguments for the nvmf_tgt process
+        self.tgt_cmd_extra_args = tgt_cmd_extra_args
 
     def get_port_start(self) -> List[int]:
         return [5500, 4420, 8009]

@@ -37,7 +37,6 @@ class NvmeofService(CephService):
             'name': '{}.{}'.format(utils.name_to_config_section('nvmeof'), igw_id),
             'addr': self.mgr.get_mgr_ip(),
             'port': spec.port,
-            'tgt_cmd_extra_args': None,
             'log_level': 'WARN',
             'rpc_socket': '/var/tmp/spdk.sock',
         }
