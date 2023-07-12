@@ -4,6 +4,7 @@ import logging as log
 import json
 import uuid
 import botocore
+import time
 from common import exec_cmd, create_user, boto_connect
 from botocore.config import Config
 
@@ -72,6 +73,7 @@ def main():
     key = str(uuid.uuid4())
     try:
         exec_cmd('ceph config set client.rgw rgw_debug_inject_set_olh_err 2')
+        time.sleep(1)
         bucket.Object(key).delete()
     finally:
         exec_cmd('ceph config rm client.rgw rgw_debug_inject_set_olh_err')
@@ -89,6 +91,7 @@ def main():
     connection.BucketVersioning(BUCKET_NAME).enable()
     try:
         exec_cmd('ceph config set client.rgw rgw_debug_inject_set_olh_err 2')
+        time.sleep(1)
         # expected to fail due to the above error injection
         bucket.put_object(Key=key, Body=b"new data")
     except Exception as e:
