@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import copy
 import os
 import time
 from collections import Counter
@@ -8,7 +7,6 @@ from typing import Dict, List, Optional
 
 import cherrypy
 from mgr_util import merge_dicts
-from orchestrator import HostSpec
 
 from .. import mgr
 from ..exceptions import DashboardException
@@ -119,48 +117,6 @@ def host_task(name, metadata, wait_for=10.0):
     return Task("host/{}".format(name), metadata, wait_for)
 
 
-def merge_hosts_by_hostname(ceph_hosts, orch_hosts):
-    # type: (List[dict], List[HostSpec]) -> List[dict]
-    """
-    Merge Ceph hosts with orchestrator hosts by hostnames.
-
-    :param ceph_hosts: hosts returned from mgr
-    :type ceph_hosts: list of dict
-    :param orch_hosts: hosts returned from ochestrator
-    :type orch_hosts: list of HostSpec
-    :return list of dict
-    """
-    hosts = copy.deepcopy(ceph_hosts)
-    orch_hosts_map = {host.hostname: host.to_json() for host in orch_hosts}
-
-    # Sort labels.
-    for hostname in orch_hosts_map:
-        orch_hosts_map[hostname]['labels'].sort()
-
-    # Hosts in both Ceph and Orchestrator.
-    for host in hosts:
-        hostname = host['hostname']
-        if hostname in orch_hosts_map:
-            host.update(orch_hosts_map[hostname])
-            host['sources']['orchestrator'] = True
-            orch_hosts_map.pop(hostname)
-
-    # Hosts only in Orchestrator.
-    orch_hosts_only = [
-        merge_dicts(
-            {
-                'ceph_version': '',
-                'services': [],
-                'sources': {
-                    'ceph': False,
-                    'orchestrator': True
-                }
-            }, orch_hosts_map[hostname]) for hostname in orch_hosts_map
-    ]
-    hosts.extend(orch_hosts_only)
-    return hosts
-
-
 def populate_service_instances(hostname, services):
     orch = OrchClient.instance()
     if orch.available():
@@ -184,6 +140,22 @@ def get_hosts(sources=None):
         from_ceph = 'ceph' in _sources
         from_orchestrator = 'orchestrator' in _sources
 
+    if from_orchestrator:
+        orch = OrchClient.instance()
+        if orch.available():
+            hosts = [
+                merge_dicts(
+                    {
+                        'ceph_version': '',
+                        'services': [],
+                        'sources': {
+                            'ceph': False,
+                            'orchestrator': True
+                        }
+                    }, host.to_json()) for host in orch.hosts.list()
+            ]
+            return hosts
+
     ceph_hosts = []
     if from_ceph:
         ceph_hosts = [
@@ -198,10 +170,6 @@ def get_hosts(sources=None):
                     'status': ''
                 }) for server in mgr.list_servers()
         ]
-    if from_orchestrator:
-        orch = OrchClient.instance()
-        if orch.available():
-            return merge_hosts_by_hostname(ceph_hosts, orch.hosts.list())
     return ceph_hosts
 
 
@@ -211,9 +179,12 @@ def get_host(hostname: str) -> Dict:
     :param hostname: The name of the host to fetch.
     :raises: cherrypy.HTTPError: If host not found.
     """
+    print('before')
     for host in get_hosts():
+        print(host, hostname)
         if host['hostname'] == hostname:
             return host
+    print('not found')
     raise cherrypy.HTTPError(404)
 
 
