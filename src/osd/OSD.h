@@ -1168,26 +1168,6 @@ public:
 	0)));
   }
 
-  static ghobject_t make_pg_log_oid(spg_t pg) {
-    std::stringstream ss;
-    ss << "pglog_" << pg;
-    std::string s;
-    getline(ss, s);
-    return ghobject_t(hobject_t(sobject_t(object_t(s.c_str()), 0)));
-  }
-
-  static ghobject_t make_pg_biginfo_oid(spg_t pg) {
-    std::stringstream ss;
-    ss << "pginfo_" << pg;
-    std::string s;
-    getline(ss, s);
-    return ghobject_t(hobject_t(sobject_t(object_t(s.c_str()), 0)));
-  }
-  static ghobject_t make_infos_oid() {
-    hobject_t oid(sobject_t("infos", CEPH_NOSNAP));
-    return ghobject_t(oid);
-  }
-
   static ghobject_t make_final_pool_info_oid(int64_t pool) {
     return ghobject_t(
       hobject_t(
@@ -1235,8 +1215,9 @@ private:
   // -- superblock --
   OSDSuperblock superblock;
 
-  void write_superblock();
-  void write_superblock(ObjectStore::Transaction& t);
+  static void write_superblock(CephContext* cct,
+                               OSDSuperblock& sb,
+                               ObjectStore::Transaction& t);
   int read_superblock();
 
   void clear_temp_objects();
