@@ -2220,6 +2220,7 @@ BlueStore::Blob::~Blob()
 {
   SharedBlob* sb = shared_blob.get();
   if (!sb) {
+    ceph_assert((shared_blob != nullptr) == shared_blob_is_set);
     ceph_assert(bc.buffer_map.empty());
     return;
   }

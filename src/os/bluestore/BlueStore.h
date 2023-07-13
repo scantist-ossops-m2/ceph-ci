@@ -709,8 +709,10 @@ public:
 
     void get() {
       ++nref;
+      ceph_assert((shared_blob != nullptr) == shared_blob_is_set);
     }
     void put() {
+      ceph_assert((shared_blob != nullptr) == shared_blob_is_set);
       if (--nref == 0)
 	delete this;
     }
