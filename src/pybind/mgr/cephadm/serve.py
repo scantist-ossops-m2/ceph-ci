@@ -10,7 +10,14 @@ from typing import TYPE_CHECKING, Optional, List, cast, Dict, Any, Union, Tuple,
 
 from ceph.deployment import inventory
 from ceph.deployment.drive_group import DriveGroupSpec
-from ceph.deployment.service_spec import ServiceSpec, CustomContainerSpec, PlacementSpec, RGWSpec
+from ceph.deployment.service_spec import (
+    ArgumentList,
+    ArgumentSpec,
+    CustomContainerSpec,
+    PlacementSpec,
+    RGWSpec,
+    ServiceSpec,
+)
 from ceph.utils import datetime_now
 
 import orchestrator
@@ -25,6 +32,7 @@ from mgr_module import MonCommandFailed
 from mgr_util import format_bytes, verify_tls, get_cert_issuer_info, ServerConfigException
 
 from . import utils
+from . import exchange
 
 if TYPE_CHECKING:
     from cephadm.module import CephadmOrchestrator
@@ -244,7 +252,7 @@ class CephadmServe:
 
             if (
                 not self.mgr.use_agent
-                or host not in [h.hostname for h in self.mgr.cache.get_non_draining_hosts()]
+                or self.mgr.cache.is_host_draining(host)
                 or host in agents_down
             ):
                 if self.mgr.cache.host_needs_daemon_refresh(host):
@@ -933,8 +941,7 @@ class CephadmServe:
                 self.mgr.spec_store.mark_configured(spec.service_name())
             if self.mgr.use_agent:
                 # can only send ack to agents if we know for sure port they bound to
-                hosts_altered = set([h for h in hosts_altered if (h in self.mgr.agent_cache.agent_ports and h in [
-                                    h2.hostname for h2 in self.mgr.cache.get_non_draining_hosts()])])
+                hosts_altered = set([h for h in hosts_altered if (h in self.mgr.agent_cache.agent_ports and not self.mgr.cache.is_host_draining(h))])
                 self.mgr.agent_helpers._request_agent_acks(hosts_altered, increment=True)
 
         if r is None:
@@ -1183,7 +1190,7 @@ class CephadmServe:
                             client_files: Dict[str, Dict[str, Tuple[int, int, int, bytes, str]]],
                             host: str) -> None:
         updated_files = False
-        if host in [h.hostname for h in self.mgr.cache.get_unreachable_hosts()]:
+        if self.mgr.cache.is_host_unreachable(host):
             return
         old_files = self.mgr.cache.get_host_client_files(host).copy()
         for path, m in client_files.get(host, {}).items():
@@ -1214,6 +1221,7 @@ class CephadmServe:
                              osd_uuid_map: Optional[Dict[str, Any]] = None,
                              ) -> str:
 
+        daemon_params: Dict[str, Any] = {}
         with set_exception_subject('service', orchestrator.DaemonDescription(
                 daemon_type=daemon_spec.daemon_type,
                 daemon_id=daemon_spec.daemon_id,
@@ -1234,9 +1242,7 @@ class CephadmServe:
 
                 # TCP port to open in the host firewall
                 if len(ports) > 0:
-                    daemon_spec.extra_args.extend([
-                        '--tcp-ports', ' '.join(map(str, ports))
-                    ])
+                    daemon_params['tcp_ports'] = list(ports)
 
                 # osd deployments needs an --osd-uuid arg
                 if daemon_spec.daemon_type == 'osd':
@@ -1245,14 +1251,14 @@ class CephadmServe:
                     osd_uuid = osd_uuid_map.get(daemon_spec.daemon_id)
                     if not osd_uuid:
                         raise OrchestratorError('osd.%s not in osdmap' % daemon_spec.daemon_id)
-                    daemon_spec.extra_args.extend(['--osd-fsid', osd_uuid])
+                    daemon_params['osd_fsid'] = osd_uuid
 
                 if reconfig:
-                    daemon_spec.extra_args.append('--reconfig')
+                    daemon_params['reconfig'] = True
                 if self.mgr.allow_ptrace:
-                    daemon_spec.extra_args.append('--allow-ptrace')
+                    daemon_params['allow_ptrace'] = True
 
-                daemon_spec, extra_container_args, extra_entrypoint_args = self._setup_extra_deployment_args(daemon_spec)
+                daemon_spec, extra_container_args, extra_entrypoint_args = self._setup_extra_deployment_args(daemon_spec, daemon_params)
 
                 if daemon_spec.service_name in self.mgr.spec_store:
                     configs = self.mgr.spec_store[daemon_spec.service_name].spec.custom_configs
@@ -1268,23 +1274,31 @@ class CephadmServe:
                     daemon_spec.name(), daemon_spec.host))
 
                 out, err, code = await self._run_cephadm(
-                    daemon_spec.host, daemon_spec.name(), 'deploy',
-                    [
-                        '--name', daemon_spec.name(),
-                        '--meta-json', json.dumps({
-                            'service_name': daemon_spec.service_name,
-                            'ports': daemon_spec.ports,
-                            'ip': daemon_spec.ip,
-                            'deployed_by': self.mgr.get_active_mgr_digests(),
-                            'rank': daemon_spec.rank,
-                            'rank_generation': daemon_spec.rank_generation,
-                            'extra_container_args': extra_container_args,
-                            'extra_entrypoint_args': extra_entrypoint_args
-                        }),
-                        '--config-json', '-',
-                    ] + daemon_spec.extra_args,
-                    stdin=json.dumps(daemon_spec.final_config),
-                    image=image,
+                    daemon_spec.host,
+                    daemon_spec.name(),
+                    ['_orch', 'deploy'],
+                    [],
+                    stdin=exchange.Deploy(
+                        fsid=self.mgr._cluster_fsid,
+                        name=daemon_spec.name(),
+                        image=image,
+                        params=daemon_params,
+                        meta=exchange.DeployMeta(
+                            service_name=daemon_spec.service_name,
+                            ports=daemon_spec.ports,
+                            ip=daemon_spec.ip,
+                            deployed_by=self.mgr.get_active_mgr_digests(),
+                            rank=daemon_spec.rank,
+                            rank_generation=daemon_spec.rank_generation,
+                            extra_container_args=ArgumentSpec.map_json(
+                                extra_container_args,
+                            ),
+                            extra_entrypoint_args=ArgumentSpec.map_json(
+                                extra_entrypoint_args,
+                            ),
+                        ),
+                        config_blobs=daemon_spec.final_config,
+                    ).dump_json_str(),
                 )
 
                 if daemon_spec.daemon_type == 'agent':
@@ -1329,35 +1343,33 @@ class CephadmServe:
                     self.mgr.cephadm_services[servict_type].post_remove(dd, is_failed_deploy=True)
                 raise
 
-    def _setup_extra_deployment_args(self, daemon_spec: CephadmDaemonDeploySpec) -> Tuple[CephadmDaemonDeploySpec, Optional[List[str]], Optional[List[str]]]:
+    def _setup_extra_deployment_args(
+        self,
+        daemon_spec: CephadmDaemonDeploySpec,
+        params: Dict[str, Any],
+    ) -> Tuple[CephadmDaemonDeploySpec, Optional[ArgumentList], Optional[ArgumentList]]:
         # this function is for handling any potential user specified
         # (in the service spec) extra runtime or entrypoint args for a daemon
         # we are going to deploy. Effectively just adds a set of extra args to
         # pass to the cephadm binary to indicate the daemon being deployed
         # needs extra runtime/entrypoint args. Returns the modified daemon spec
         # as well as what args were added (as those are included in unit.meta file)
+        def _to_args(lst: ArgumentList) -> List[str]:
+            out: List[str] = []
+            for argspec in lst:
+                out.extend(argspec.to_args())
+            return out
+
         try:
             eca = daemon_spec.extra_container_args
             if eca:
-                for a in eca:
-                    # args with spaces need to be split into multiple args
-                    # in order to work properly
-                    args = a.split(' ')
-                    for arg in args:
-                        if arg:
-                            daemon_spec.extra_args.append(f'--extra-container-args={arg}')
+                params['extra_container_args'] = _to_args(eca)
         except AttributeError:
             eca = None
         try:
             eea = daemon_spec.extra_entrypoint_args
             if eea:
-                for a in eea:
-                    # args with spaces need to be split into multiple args
-                    # in order to work properly
-                    args = a.split(' ')
-                    for arg in args:
-                        if arg:
-                            daemon_spec.extra_args.append(f'--extra-entrypoint-args={arg}')
+                params['extra_entrypoint_args'] = _to_args(eea)
         except AttributeError:
             eea = None
         return daemon_spec, eca, eea
@@ -1431,7 +1443,7 @@ class CephadmServe:
     async def _run_cephadm(self,
                            host: str,
                            entity: Union[CephadmNoImage, str],
-                           command: str,
+                           command: Union[str, List[str]],
                            args: List[str],
                            addr: Optional[str] = "",
                            stdin: Optional[str] = "",
@@ -1496,7 +1508,10 @@ class CephadmServe:
         final_args += ['--timeout', str(timeout)]
 
         # subcommand
-        final_args.append(command)
+        if isinstance(command, list):
+            final_args.extend([str(v) for v in command])
+        else:
+            final_args.append(command)
 
         # subcommand args
         if not no_fsid:
