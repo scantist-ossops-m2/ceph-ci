@@ -72,11 +72,11 @@ def main():
     log.debug('TEST: verify that index entries and OLH objects are cleaned up after index linking error\n')
     key = str(uuid.uuid4())
     try:
-        exec_cmd('ceph config set client.rgw rgw_debug_inject_set_olh_err 2')
+        exec_cmd('ceph config set client.0 rgw_debug_inject_set_olh_err 2')
         time.sleep(1)
         bucket.Object(key).delete()
     finally:
-        exec_cmd('ceph config rm client.rgw rgw_debug_inject_set_olh_err')
+        exec_cmd('ceph config rm client.0 rgw_debug_inject_set_olh_err')
     out = exec_cmd(f'radosgw-admin bi list --bucket {BUCKET_NAME}')
     json_out = json.loads(out)
     assert len(json_out) == 0, 'bucket index was not empty after op failed'
@@ -90,14 +90,14 @@ def main():
     put_resp = bucket.put_object(Key=key, Body=b"data")
     connection.BucketVersioning(BUCKET_NAME).enable()
     try:
-        exec_cmd('ceph config set client.rgw rgw_debug_inject_set_olh_err 2')
+        exec_cmd('ceph config set client.0 rgw_debug_inject_set_olh_err 2')
         time.sleep(1)
         # expected to fail due to the above error injection
         bucket.put_object(Key=key, Body=b"new data")
     except Exception as e:
         log.debug(e)
     finally:
-        exec_cmd('ceph config rm client.rgw rgw_debug_inject_set_olh_err')
+        exec_cmd('ceph config rm client.0 rgw_debug_inject_set_olh_err')
     get_resp = bucket.Object(key).get()
     assert put_resp.e_tag == get_resp['ETag'], 'get did not return null version with correct etag'
         
