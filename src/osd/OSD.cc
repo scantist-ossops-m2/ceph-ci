@@ -10201,7 +10201,7 @@ void OSD::mon_cmd_set_config(const std::string &key, const std::string &val)
 
 bool OSD::unsupported_objstore_for_qos()
 {
-  static const std::vector<std::string> unsupported_objstores = { "filestore" };
+  static const std::vector<std::string> unsupported_objstores = { "filestore", "memstore" };
   return std::find(unsupported_objstores.begin(),
                    unsupported_objstores.end(),
                    store->get_type()) != unsupported_objstores.end();
