@@ -5148,6 +5148,8 @@ void BlueStore::Collection::split_cache(
 				 << dendl;
 	  }
 	}
+	cache->rm_blob();
+	dest->cache->add_blob();
 	SharedBlob* sb = b->shared_blob.get();
 	if (sb->coll == dest) {
 	  ldout(store->cct, 20) << __func__ << "  already moved " << *sb
@@ -5155,8 +5157,6 @@ void BlueStore::Collection::split_cache(
 	  return;
 	}
 	ldout(store->cct, 20) << __func__ << "  moving " << *sb << dendl;
-	cache->rm_blob();
-	dest->cache->add_blob();
 	if (sb->get_sbid()) {
 	  ldout(store->cct, 20) << __func__
 				<< "   moving registration " << *sb << dendl;
