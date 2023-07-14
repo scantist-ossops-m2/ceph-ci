@@ -5155,6 +5155,8 @@ void BlueStore::Collection::split_cache(
 	  return;
 	}
 	ldout(store->cct, 20) << __func__ << "  moving " << *sb << dendl;
+	cache->rm_blob();
+	dest->cache->add_blob();
 	if (sb->get_sbid()) {
 	  ldout(store->cct, 20) << __func__
 				<< "   moving registration " << *sb << dendl;
@@ -8875,6 +8877,9 @@ int BlueStore::umount()
       derr << __func__ << " fsck found " << rc << " errors" << dendl;
       return -EIO;
     }
+  }
+  for (auto i : buffer_cache_shards) {
+    derr << __func__ << "bcs=" << (void*)i << " num_blobs=" << std::hex << (i->num_blobs) << std::dec << dendl;
   }
   return 0;
 }

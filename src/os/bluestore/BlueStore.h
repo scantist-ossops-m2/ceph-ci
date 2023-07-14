@@ -598,11 +598,13 @@ public:
     int16_t last_encoded_id = -1;   ///< (ephemeral) used during encoding only
     SharedBlobRef shared_blob;      ///< shared blob state (if any)
     bool shared_blob_is_set = false;
+    SharedBlobRef shared_blob_at_set;
     void set_shared_blob(SharedBlobRef sb) {
       ceph_assert((bool)sb);
       ceph_assert(!shared_blob);
       shared_blob = sb;
       shared_blob_is_set = true;
+      shared_blob_at_set = shared_blob;
       ceph_assert(shared_blob->get_cache());
       shared_blob->get_cache()->add_blob();
     }
@@ -710,9 +712,11 @@ public:
     void get() {
       ++nref;
       ceph_assert((shared_blob != nullptr) == shared_blob_is_set);
+      ceph_assert(shared_blob == shared_blob_at_set);
     }
     void put() {
       ceph_assert((shared_blob != nullptr) == shared_blob_is_set);
+      ceph_assert(shared_blob == shared_blob_at_set);
       if (--nref == 0)
 	delete this;
     }
