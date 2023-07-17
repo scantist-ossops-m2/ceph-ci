@@ -709,7 +709,7 @@ class MonitorDBStore
   }
 
   void close() {
-    // there should be no work queued!
+    io_work.wait_for_empty();
     io_work.stop();
     is_open = false;
     db.reset(NULL);
