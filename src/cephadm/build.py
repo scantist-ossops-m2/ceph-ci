@@ -27,6 +27,7 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 
+_ZIPAPP_REQS = "zipapp-reqs.txt"
 _VALID_VERS_VARS = [
     "CEPH_GIT_VER",
     "CEPH_GIT_NICE_VER",
@@ -60,7 +61,7 @@ def _build(dest, src, versioning_vars=None):
     tempdir = pathlib.Path(tempfile.mkdtemp(suffix=".cephadm.build"))
     log.debug("working in %s", tempdir)
     try:
-        if os.path.isfile("requirements.txt"):
+        if os.path.isfile(_ZIPAPP_REQS):
             _install_deps(tempdir)
         log.info("Copying contents")
         # cephadmlib is cephadm's private library of modules
@@ -135,7 +136,7 @@ def _install_deps(tempdir):
             "--no-binary",
             ":all:",
             "--requirement",
-            "requirements.txt",
+            _ZIPAPP_REQS,
             "--target",
             tempdir,
         ],
