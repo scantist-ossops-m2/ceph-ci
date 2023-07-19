@@ -367,7 +367,7 @@ int main(int argc, const char **argv)
     exit(1);
   }
 
-  MonitorDBStore *store = new MonitorDBStore(g_conf()->mon_data);
+  auto store = std::make_shared<MonitorDBStore>(g_conf()->mon_data);
 
   // -- mkfs --
   if (mkfs) {
@@ -535,7 +535,8 @@ int main(int argc, const char **argv)
     }
     ceph_assert(r == 0);
 
-    Monitor mon(g_ceph_context, g_conf()->name.get_id(), store, 0, 0, &monmap);
+    Monitor mon(g_ceph_context, g_conf()->name.get_id(), store.get(),
+                0, 0, &monmap);
     r = mon.mkfs(osdmapbl);
     if (r < 0) {
       derr << argv[0] << ": error creating monfs: " << cpp_strerror(r) << dendl;
@@ -657,7 +658,7 @@ int main(int argc, const char **argv)
     prefork.exit(1);
   }
 
-  err = Monitor::check_features(store);
+  err = Monitor::check_features(store.get());
   if (err < 0) {
     derr << "error checking features: " << cpp_strerror(err) << dendl;
     prefork.exit(1);
@@ -856,7 +857,7 @@ int main(int argc, const char **argv)
     prefork.exit(1);
   }
 
-  mon = new Monitor(g_ceph_context, g_conf()->name.get_id(), store,
+  mon = new Monitor(g_ceph_context, g_conf()->name.get_id(), store.get(),
 		    msgr, mgr_msgr, &monmap);
 
   mon->orig_argc = argc;
@@ -920,7 +921,6 @@ int main(int argc, const char **argv)
   shutdown_async_signal_handler();
 
   delete mon;
-  delete store;
   delete msgr;
   delete mgr_msgr;
   delete client_throttler;
