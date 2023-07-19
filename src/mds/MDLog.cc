@@ -168,6 +168,22 @@ uint64_t MDLog::get_safe_pos() const
   return journaler->get_write_safe_pos(); 
 }
 
+estimated_reply_time_t MDLog::get_replay_estimated_complete_time(){
+  auto current_pos = journaler->get_read_pos();
+  auto total_bytes = end_pos - start_pos;
+  estimated_reply_time_t estimated_time;
+  double percent_complete = (double)  (current_pos - start_pos) / total_bytes;
+  auto time = percent_complete * \
+    std::chrono::duration_cast<std::chrono::seconds>(ceph::coarse_mono_clock::now() - start_time);
+  estimated_time.percent_complete = percent_complete * 100;
+  mds->clog->warn() <<  "_replay status " << percent_complete * 100 << "\% complete" 
+    << " Estimated time remaining: " << time.count() << " seconds";
+  estimated_time.percent_complete = 100 * percent_complete;
+  estimated_time.estimated_time = time.count();
+  return estimated_time;
+}
+
+
 
 
 void MDLog::create(MDSContext *c)
@@ -1316,6 +1332,9 @@ void MDLog::_replay_thread()
 
   // loop
   int r = 0;
+  start_time = ceph::coarse_mono_clock::now();
+  start_pos = journaler->get_read_pos();
+  end_pos = journaler->get_write_pos();
   while (1) {
     // wait for read?
     journaler->check_isreadable(); 
@@ -1472,7 +1491,6 @@ void MDLog::_replay_thread()
       logger->inc(l_mdl_replayed);
       le->replay(mds);
     }
-
     logger->set(l_mdl_rdpos, pos);
     logger->set(l_mdl_expos, journaler->get_expire_pos());
     logger->set(l_mdl_wrpos, journaler->get_write_pos());

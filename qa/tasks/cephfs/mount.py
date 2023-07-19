@@ -696,11 +696,13 @@ class CephFSMount(object):
 
         return self.client_remote.run(args=args, check_status=check_status)
 
-    def create_files(self):
+    def create_files(self, silent=False):
         assert(self.is_mounted())
-
+        if silent:
+            log.info("Creating {0} files".format(len(self.test_files)))
         for suffix in self.test_files:
-            log.info("Creating file {0}".format(suffix))
+            if not silent:
+                log.info("Creating file {0}".format(suffix))
             self.client_remote.run(args=[
                 'touch', os.path.join(self.hostfs_mntpt, suffix)
             ])
