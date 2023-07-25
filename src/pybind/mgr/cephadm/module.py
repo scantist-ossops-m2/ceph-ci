@@ -2428,17 +2428,7 @@ Then run the following:
             raise OrchestratorError(
                 f"Host '{host} hasn't been scanned yet to determine it's inventory. Please try again later.")
 
-        host_devices = self.cache.devices[host]
-        path_found = False
         osd_id_list: List[str] = []
-
-        for dev in host_devices:
-            if dev.path == path:
-                path_found = True
-                break
-        if not path_found:
-            raise OrchestratorError(
-                f"Device path '{path}' not found on host '{host}'")
 
         if osd_id_list:
             dev_name = os.path.basename(path)
@@ -2454,10 +2444,21 @@ Then run the following:
                     f"OSD{'s' if len(active_osds) > 1 else ''}"
                     f" ({', '.join(active_osds)}). Use 'ceph orch osd rm' first.")
 
-        cv_args = ['--', 'lvm', 'zap', '--destroy', path]
+        cv_args = ['--config-json', '-', '--', 'lvm', 'zap', '--destroy', path]
+        ret, keyring, err = self.check_mon_command({
+            'prefix': 'auth get',
+            'entity': 'client.bootstrap-osd',
+        })
+        config = {'keyring': keyring}
         with self.async_timeout_handler(host, f'cephadm ceph-volume {" ".join(cv_args)}'):
             out, err, code = self.wait_async(CephadmServe(self)._run_cephadm(
-                host, 'osd', 'ceph-volume', cv_args, error_ok=True))
+                host, 'osd', 'ceph-volume', cv_args, error_ok=True,
+                stdin=json.dumps(config)))
+        if code:
+            msg = ""
+            for line in err:
+                msg += f"\n\n{line}"
+            raise OrchestratorError(f"Can't zap {path}.\n{msg}")
 
         self.cache.invalidate_host_devices(host)
         self.cache.invalidate_host_networks(host)
@@ -2465,6 +2466,8 @@ Then run the following:
             raise OrchestratorError('Zap failed: %s' % '\n'.join(out + err))
         msg = f'zap successful for {path} on {host}'
         self.log.info(msg)
+        self.log.info(out)
+        self.log.info(err)
 
         return msg + '\n'
 
