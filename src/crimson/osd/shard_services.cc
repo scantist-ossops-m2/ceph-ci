@@ -163,13 +163,24 @@ seastar::future<> OSDSingletonState::send_to_osd(
     return seastar::now();
   } else if (osdmap->get_info(peer).up_from > from_epoch) {
     logger().info("{}: osd.{} {} > {}", __func__, peer,
-		    osdmap->get_info(peer).up_from, from_epoch);
+                  osdmap->get_info(peer).up_from, from_epoch);
     return seastar::now();
   } else {
     auto conn = cluster_msgr.connect(
-        osdmap->get_cluster_addrs(peer).front(), CEPH_ENTITY_TYPE_OSD);
+      osdmap->get_cluster_addrs(peer).front(), CEPH_ENTITY_TYPE_OSD);
     return conn->send(std::move(m));
   }
+}
+
+seastar::future<> OSDSingletonState::lock_send_to_osd(
+  int peer, MessageURef m, epoch_t from_epoch)
+{
+  return sender_lock.lock().then(
+    [this, m=std::move(m), peer, from_epoch]() mutable {
+      return send_to_osd(peer, std::move(m), from_epoch);
+  }).finally([this] {
+    return sender_lock.unlock();
+  });
 }
 
 seastar::future<> OSDSingletonState::osdmap_subscribe(

@@ -967,9 +967,10 @@ seastar::future<> PG::submit_error_log(
       logger().debug("submit_error_log: req_id {} start-send log"
         " missing request (rep_tid: {} entries: {})"
         " to osd {}", req_id, rep_tid, log_entries, peer.osd);
-      return shard_services.send_to_osd(peer.osd,
-                                        std::move(log_m),
-                                        get_osdmap_epoch()
+      return shard_services.lock_send_to_osd(
+        peer.osd,
+        std::move(log_m),
+        get_osdmap_epoch()
       ).then([this, log_entries, rep_tid, req_id] {
         logger().debug("submit_error_log: req_id {} finish-send log"
           " missing request (rep_tid: {} entries: {})",

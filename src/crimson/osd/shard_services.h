@@ -225,6 +225,8 @@ private:
   SharedLRU<epoch_t, OSDMap> osdmaps;
   SimpleLRU<epoch_t, bufferlist, false> map_bl_cache;
 
+  seastar::shared_mutex sender_lock;
+
   cached_map_t osdmap;
   cached_map_t &get_osdmap() { return osdmap; }
   void update_map(cached_map_t new_osdmap) {
@@ -235,6 +237,7 @@ private:
   crimson::net::Messenger &public_msgr;
 
   seastar::future<> send_to_osd(int peer, MessageURef m, epoch_t from_epoch);
+  seastar::future<> lock_send_to_osd(int peer, MessageURef m, epoch_t from_epoch);
 
   crimson::mon::Client &monc;
   seastar::future<> osdmap_subscribe(version_t epoch, bool force_request);
@@ -375,6 +378,7 @@ public:
       pg_to_shard_mapping(pg_to_shard_mapping) {}
 
   FORWARD_TO_OSD_SINGLETON(send_to_osd)
+  FORWARD_TO_OSD_SINGLETON(lock_send_to_osd)
 
   crimson::os::FuturizedStore::Shard &get_store() {
     return local_state.store;
