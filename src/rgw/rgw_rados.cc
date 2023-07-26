@@ -721,8 +721,10 @@ void add_datalog_entry(const DoutPrefixProvider* dpp,
   }
   int r = datalog->add_entry(dpp, bucket_info, logs.back(), shard_id);
   if (r < 0) {
-    ldpp_dout(dpp, -1) << "ERROR: failed writing data log" << dendl;
-  } // datalog error is not fatal
+    ldpp_dout(dpp, -1) << "ERROR: failed writing data log (bucket="
+                       << bucket_info.bucket << ", shard_id=" << shard_id << ")"
+                       << dendl;
+  }  // datalog error is not fatal
 }
 
 class RGWIndexCompletionManager;
