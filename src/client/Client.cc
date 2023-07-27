@@ -6188,12 +6188,18 @@ int Client::resolve_mds(
   CachedStackStringStream css;
   int role_r = fsmap->parse_role(mds_spec, &role, *css);
   if (role_r == 0) {
-    // We got a role, resolve it to a GID
-    auto& info = fsmap->get_filesystem(role.fscid)->mds_map.get_info(role.rank);
-    ldout(cct, 10) << __func__ << ": resolved " << mds_spec << " to role '"
-      << role << "' aka " << info.human_name() << dendl;
-    targets->push_back(info.global_id);
-    return 0;
+    if (fsmap->get_filesystem(role.fscid)->mds_map.is_down(role.rank)) {
+      lderr(cct) << __func__ << ": targets rank: " << role.rank
+                 << " is down" << dendl;
+      return -CEPHFS_EAGAIN;
+    } else {
+      // We got a role, resolve it to a GID
+      auto& info = fsmap->get_filesystem(role.fscid)->mds_map.get_info(role.rank);
+      ldout(cct, 10) << __func__ << ": resolved " << mds_spec << " to role '"
+        << role << "' aka " << info.human_name() << dendl;
+      targets->push_back(info.global_id);
+      return 0;
+    }
   }
 
   std::string strtol_err;

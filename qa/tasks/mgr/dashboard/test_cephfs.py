@@ -347,3 +347,16 @@ class CephfsTest(DashboardTestCase):
         self.assertEqual(stats['subdirs'], 1)
 
         self.rm_dir('/animal')
+
+    def test_cephfs_clients_get_after_mds_down(self):
+        fs_id = self.get_fs_id()
+        self._get("/api/cephfs/{}/clients".format(fs_id))
+        self.assertStatus(200)
+
+        self.fs.fail()
+        self._get("/api/cephfs/{}/clients".format(fs_id))
+        self.assertStatus(500)
+
+        self.fs.set_joinable()
+        self._get("/api/cephfs/{}/clients".format(fs_id))
+        self.assertStatus(200)
