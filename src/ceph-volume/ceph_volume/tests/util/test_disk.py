@@ -517,7 +517,7 @@ class TestSizeSpecificFormatting(object):
 
 
 class TestAllowLoopDevsWarning(object):
-    def setup(self):
+    def setup_method(self):
         disk.AllowLoopDevices.allow = False
         disk.AllowLoopDevices.warned = False
         if os.environ.get('CEPH_VOLUME_ALLOW_LOOP_DEVICES'):
