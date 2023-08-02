@@ -305,6 +305,7 @@ private:
       is_idle = false;
       auto has_error = false;
       auto remove_entries = false;
+      uint64_t entries_to_remove = 0;
       auto entry_idx = 1U;
       tokens_waiter waiter(io_context);
       for (auto& entry : entries) {
@@ -313,12 +314,13 @@ private:
           break;
         }
         // TODO pass entry pointer instead of by-value
-        spawn::spawn(yield, [this, &queue_name, entry_idx, total_entries, &end_marker, &remove_entries, &has_error, &waiter, entry](yield_context yield) {
+        spawn::spawn(yield, [this, &queue_name, entry_idx, total_entries, &end_marker, &remove_entries, &entries_to_remove, &has_error, &waiter, entry](yield_context yield) {
             const auto token = waiter.make_token();
             if (process_entry(entry, yield)) {
               ldpp_dout(this, 20) << "INFO: processing of entry: " << 
                 entry.marker << " (" << entry_idx << "/" << total_entries << ") from: " << queue_name << " ok" << dendl;
               remove_entries = true;
+              ++entries_to_remove;
             }  else {
               if (set_min_marker(end_marker, entry.marker) < 0) {
                 ldpp_dout(this, 1) << "ERROR: cannot determin minimum between malformed markers: " << end_marker << ", " << entry.marker << dendl;
@@ -344,7 +346,7 @@ private:
           ClsLockType::EXCLUSIVE,
           lock_cookie, 
           "" /*no tag*/);
-        cls_2pc_queue_remove_entries(op, end_marker); 
+        cls_2pc_queue_remove_entries(op, end_marker, entries_to_remove);
         // check ownership and deleted entries in one batch
         const auto ret = rgw_rados_operate(this, rados_ioctx, queue_name, &op, optional_yield(io_context, yield)); 
         if (ret == -ENOENT) {
@@ -810,7 +812,7 @@ static inline bool notification_match(reservation_t& res,
         "' (unique topic: '" << topic_cfg.name <<
         "') apply to event of type: '" << to_string(event_type) << "'" << dendl;
 
-    cls_2pc_reservation::id_t res_id;
+    cls_2pc_reservation::id_t res_id = cls_2pc_reservation::NO_ID;
     if (topic_cfg.dest.persistent) {
       // TODO: take default reservation size from conf
       constexpr auto DEFAULT_RESERVATION = 4*1024U; // 4K

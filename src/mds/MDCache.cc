@@ -6037,8 +6037,6 @@ void MDCache::finish_snaprealm_reconnect(client_t client, SnapRealm *realm, snap
 	     << realm->get_newest_seq() << " on " << *realm << dendl;
     auto snap = make_message<MClientSnap>(CEPH_SNAP_OP_UPDATE);
     snap->bl = mds->server->get_snap_trace(client, realm);
-    for (const auto& child : realm->open_children)
-      snap->split_realms.push_back(child->inode->ino());
     updates.emplace(std::piecewise_construct, std::forward_as_tuple(client), std::forward_as_tuple(snap));
   } else {
     dout(10) << "finish_snaprealm_reconnect client." << client << " up to date"
@@ -9756,7 +9754,7 @@ void MDCache::request_forward(MDRequestRef& mdr, mds_rank_t who, int port)
     if (mdr->is_batch_head()) {
       mdr->release_batch_op()->forward(who);
     } else {
-      mds->forward_message_mds(mdr->release_client_request(), who);
+      mds->forward_message_mds(mdr, who);
     }
     if (mds->logger) mds->logger->inc(l_mds_forward);
   } else if (mdr->internal_op >= 0) {
@@ -12986,24 +12984,19 @@ class C_MDS_EnqueueScrub : public Context
   std::string tag;
   Formatter *formatter;
   Context *on_finish;
-  bool dump_values;
 public:
   ScrubHeaderRef header;
-  C_MDS_EnqueueScrub(std::string_view tag, Formatter *f, Context *fin,
-                     bool dump_values = true) :
-    tag(tag), formatter(f), on_finish(fin), dump_values(dump_values),
-    header(nullptr) {}
+  C_MDS_EnqueueScrub(std::string_view tag, Formatter *f, Context *fin) :
+    tag(tag), formatter(f), on_finish(fin), header(nullptr) {}
 
   void finish(int r) override {
-    if (dump_values) {
-      formatter->open_object_section("results");
-      formatter->dump_int("return_code", r);
-      if (r == 0) {
-        formatter->dump_string("scrub_tag", tag);
-        formatter->dump_string("mode", "asynchronous");
-      }
-      formatter->close_section();
+    formatter->open_object_section("results");
+    formatter->dump_int("return_code", r);
+    if (r == 0) {
+      formatter->dump_string("scrub_tag", tag);
+      formatter->dump_string("mode", "asynchronous");
     }
+    formatter->close_section();
 
     r = 0;
     if (on_finish)
@@ -13041,19 +13034,14 @@ void MDCache::enqueue_scrub(
 
   bool is_internal = false;
   std::string tag_str(tag);
-  C_MDS_EnqueueScrub *cs;
-  if ((path == "~mdsdir" && scrub_mdsdir)) {
+  if (tag_str.empty()) {
+    uuid_d uuid_gen;
+    uuid_gen.generate_random();
+    tag_str = uuid_gen.to_string();
     is_internal = true;
-    cs = new C_MDS_EnqueueScrub(tag_str, f, fin, false);
-  } else {
-    if (tag_str.empty()) {
-      uuid_d uuid_gen;
-      uuid_gen.generate_random();
-      tag_str = uuid_gen.to_string();
-      is_internal = true;
-    }
-    cs = new C_MDS_EnqueueScrub(tag_str, f, fin);
   }
+
+  C_MDS_EnqueueScrub *cs = new C_MDS_EnqueueScrub(tag_str, f, fin);
   cs->header = std::make_shared<ScrubHeader>(tag_str, is_internal, force,
                                              recursive, repair, scrub_mdsdir);
 

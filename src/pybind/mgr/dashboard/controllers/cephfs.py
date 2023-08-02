@@ -2,6 +2,7 @@
 import logging
 import os
 from collections import defaultdict
+from typing import Any, Dict
 
 import cephfs
 import cherrypy
@@ -19,10 +20,16 @@ GET_QUOTAS_SCHEMA = {
     'max_bytes': (int, ''),
     'max_files': (int, '')
 }
+GET_STATFS_SCHEMA = {
+    'bytes': (int, ''),
+    'files': (int, ''),
+    'subdirs': (int, '')
+}
 
 logger = logging.getLogger("controllers.rgw")
 
 
+# pylint: disable=R0904
 @APIRouter('/cephfs', Scope.CEPHFS)
 @APIDoc("Cephfs Management API", "Cephfs")
 class CephFS(RESTController):
@@ -36,6 +43,24 @@ class CephFS(RESTController):
     def list(self):
         fsmap = mgr.get("fs_map")
         return fsmap['filesystems']
+
+    def create(self, name: str, service_spec: Dict[str, Any]):
+        service_spec_str = '1 '
+        if 'labels' in service_spec['placement']:
+            for label in service_spec['placement']['labels']:
+                service_spec_str += f'label:{label},'
+            service_spec_str = service_spec_str[:-1]
+        if 'hosts' in service_spec['placement']:
+            for host in service_spec['placement']['hosts']:
+                service_spec_str += f'{host},'
+            service_spec_str = service_spec_str[:-1]
+
+        error_code, _, err = mgr.remote('volumes', '_cmd_fs_volume_create', None,
+                                        {'name': name, 'placement': service_spec_str})
+        if error_code != 0:
+            raise RuntimeError(
+                f'Error creating volume {name} with placement {str(service_spec)}: {err}')
+        return f'Volume {name} created successfully'
 
     def get(self, fs_id):
         fs_id = self.fs_id_to_int(fs_id)
@@ -460,6 +485,47 @@ class CephFS(RESTController):
         """
         cfs = self._cephfs_instance(fs_id)
         return cfs.get_quotas(path)
+
+    @RESTController.Resource('POST', path='/write_to_file')
+    @allow_empty_body
+    def write_to_file(self, fs_id, path, buf) -> None:
+        """
+        Write some data to the specified path.
+        :param fs_id: The filesystem identifier.
+        :param path: The path of the file to write.
+        :param buf: The str to write to the buf.
+        """
+        cfs = self._cephfs_instance(fs_id)
+        cfs.write_to_file(path, buf)
+
+    @RESTController.Resource('DELETE', path='/unlink')
+    def unlink(self, fs_id, path) -> None:
+        """
+        Removes a file, link, or symbolic link.
+        :param fs_id: The filesystem identifier.
+        :param path: The path of the file or link to unlink.
+        """
+        cfs = self._cephfs_instance(fs_id)
+        cfs.unlink(path)
+
+    @RESTController.Resource('GET', path='/statfs')
+    @EndpointDoc("Get Cephfs statfs of the specified path",
+                 parameters={
+                     'fs_id': (str, 'File System Identifier'),
+                     'path': (str, 'File System Path'),
+                 },
+                 responses={200: GET_STATFS_SCHEMA})
+    def statfs(self, fs_id, path) -> dict:
+        """
+        Get the statfs of the specified path.
+        :param fs_id: The filesystem identifier.
+        :param path: The path of the directory/file.
+        :return: Returns a dictionary containing 'bytes',
+        'files' and 'subdirs'.
+        :rtype: dict
+        """
+        cfs = self._cephfs_instance(fs_id)
+        return cfs.statfs(path)
 
     @RESTController.Resource('POST', path='/snapshot')
     @allow_empty_body

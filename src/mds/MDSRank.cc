@@ -1473,9 +1473,11 @@ void MDSRank::send_message_mds(const ref_t<Message>& m, const entity_addrvec_t &
   messenger->send_to_mds(ref_t<Message>(m).detach(), addr);
 }
 
-void MDSRank::forward_message_mds(const cref_t<MClientRequest>& m, mds_rank_t mds)
+void MDSRank::forward_message_mds(MDRequestRef& mdr, mds_rank_t mds)
 {
   ceph_assert(mds != whoami);
+
+  auto m = mdr->release_client_request();
 
   /*
    * don't actually forward if non-idempotent!
@@ -1488,6 +1490,10 @@ void MDSRank::forward_message_mds(const cref_t<MClientRequest>& m, mds_rank_t md
 
   // tell the client where it should go
   auto session = get_session(m);
+  if (!session) {
+    dout(1) << "no session found, failed to forward client request " << mdr << dendl;
+    return;
+  }
   auto f = make_message<MClientRequestForward>(m->get_tid(), mds, m->get_num_fwd()+1, client_must_resend);
   send_message_client(f, session);
 }
@@ -2991,13 +2997,6 @@ void MDSRank::command_scrub_start(Formatter *f,
   }
 
   std::lock_guard l(mds_lock);
-  if (scrub_mdsdir) {
-    MDSGatherBuilder gather(g_ceph_context);
-    mdcache->enqueue_scrub("~mdsdir", "", false, true, false, scrub_mdsdir,
-                           f, gather.new_sub());
-    gather.set_finisher(new C_MDSInternalNoop);
-    gather.activate();
-  }
   mdcache->enqueue_scrub(path, tag, force, recursive, repair, scrub_mdsdir,
                          f, on_finish);
   // scrub_dentry() finishers will dump the data for us; we're done!

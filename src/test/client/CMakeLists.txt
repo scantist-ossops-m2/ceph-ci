@@ -4,11 +4,13 @@ if(${WITH_CEPHFS})
     alternate_name.cc
     ops.cc
     commands.cc
+    nonblocking.cc
     )
   target_link_libraries(ceph_test_client
     client
     global
     ceph-common
+    cephfs
     ${UNITTEST_LIBS}
     ${EXTRALIBS}
     ${CMAKE_DL_LIBS}
