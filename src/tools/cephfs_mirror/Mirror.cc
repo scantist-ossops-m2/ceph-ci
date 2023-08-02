@@ -196,8 +196,6 @@ Mirror::Mirror(CephContext *cct, const std::vector<const char*> &args,
     m_monc(monc),
     m_msgr(msgr),
     m_listener(this),
-    m_last_blocklist_check(ceph_clock_now()),
-    m_last_failure_check(ceph_clock_now()),
     m_local(new librados::Rados()) {
   auto thread_pool = &(cct->lookup_or_create_singleton_object<ThreadPoolSingleton>(
                          "cephfs::mirror::thread_pool", false, cct));
@@ -496,13 +494,11 @@ void Mirror::update_fs_mirrors() {
   dout(20) << dendl;
 
   auto now = ceph_clock_now();
+
   double blocklist_interval = g_ceph_context->_conf.get_val<std::chrono::seconds>
     ("cephfs_mirror_restart_mirror_on_blocklist_interval").count();
-  bool check_blocklist = blocklist_interval > 0 && ((now - m_last_blocklist_check) >= blocklist_interval);
-
   double failed_interval = g_ceph_context->_conf.get_val<std::chrono::seconds>
     ("cephfs_mirror_restart_mirror_on_failure_interval").count();
-  bool check_failure = failed_interval > 0 && ((now - m_last_failure_check) >= failed_interval);
 
   {
     std::scoped_lock locker(m_lock);
@@ -510,8 +506,10 @@ void Mirror::update_fs_mirrors() {
       auto failed = mirror_action.fs_mirror && mirror_action.fs_mirror->is_failed();
       auto blocklisted = mirror_action.fs_mirror && mirror_action.fs_mirror->is_blocklisted();
 
-      if (check_failure && !mirror_action.action_in_progress &&
-	  !_is_restarting(filesystem) && failed) {
+      if (failed &&
+	  !_is_restarting(filesystem) &&
+	  !mirror_action.action_in_progress &&
+	  (failed_interval > 0 && (mirror_action.fs_mirror->get_failed_ts() - now) > failed_interval)) {
         // about to restart failed mirror instance -- nothing
         // should interfere
         dout(5) << ": filesystem=" << filesystem << " failed mirroring -- restarting" << dendl;
@@ -519,8 +517,10 @@ void Mirror::update_fs_mirrors() {
         auto peers = mirror_action.fs_mirror->get_peers();
         auto ctx =  new C_RestartMirroring(this, filesystem, mirror_action.pool_id, peers);
         ctx->complete(0);
-      } else if (check_blocklist && !mirror_action.action_in_progress &&
-		 !_is_restarting(filesystem) && blocklisted) {
+      } else if (blocklisted &&
+		 !_is_restarting(filesystem) &&
+		 !mirror_action.action_in_progress &&
+		 (blocklist_interval > 0 && (mirror_action.fs_mirror->get_blocklisted_ts() - now) > blocklist_interval)) {
         // about to restart blocklisted mirror instance -- nothing
         // should interfere
 	_set_restarting(filesystem);
@@ -535,13 +535,6 @@ void Mirror::update_fs_mirrors() {
         mirror_action.action_ctxs.pop_front();
         ctx->complete(0);
       }
-    }
-
-    if (check_blocklist) {
-      m_last_blocklist_check = now;
-    }
-    if (check_failure) {
-      m_last_failure_check = now;
     }
   }
 
