@@ -21,8 +21,9 @@ class TestNFS(MgrTestCase):
     def _nfs_cmd(self, *args):
         return self._cmd("nfs", *args)
 
-    def _nfs_complete_cmd(self, cmd):
-        return self.mgr_cluster.mon_manager.run_cluster_cmd(args=f"nfs {cmd}",
+    def _nfs_complete_cmd(self, cmd: list[str]):
+        args = ["nfs"] + cmd
+        return self.mgr_cluster.mon_manager.run_cluster_cmd(args=args,
                                                             stdout=StringIO(),
                                                             stderr=StringIO(),
                                                             check_status=False)
@@ -150,8 +151,8 @@ class TestNFS(MgrTestCase):
                 try:
                     # Disable any running nfs ganesha daemon
                     self._check_nfs_server_status()
-                    cluster_create = self._nfs_complete_cmd(
-                        f'cluster create {self.cluster_id}')
+                    cmd = ["cluster", "create", self.cluster_id]
+                    cluster_create = self._nfs_complete_cmd(cmd)
                     if cluster_create.stderr and 'cluster already exists' \
                             in cluster_create.stderr.getvalue():
                         self._test_delete_cluster()
