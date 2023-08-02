@@ -537,12 +537,8 @@ void Mirror::update_fs_mirrors() {
       }
     }
 
-    if (check_blocklist) {
-      m_last_blocklist_check = now;
-    }
-    if (check_failure) {
-      m_last_failure_check = now;
-    }
+    m_last_blocklist_check = now;
+    m_last_failure_check = now;
   }
 
   schedule_mirror_update_task();
