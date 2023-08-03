@@ -339,6 +339,8 @@ BuildRequires:  libpciaccess-devel
 BuildRequires:  lksctp-tools-devel
 BuildRequires:  ragel
 BuildRequires:  systemtap-sdt-devel
+BuildRequires:  libasan
+BuildRequires:  libubsan
 %if 0%{?fedora}
 BuildRequires:  libubsan
 BuildRequires:  libasan
