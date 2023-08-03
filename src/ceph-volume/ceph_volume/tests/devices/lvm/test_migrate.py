@@ -1,5 +1,4 @@
 import pytest
-from mock.mock import patch
 from ceph_volume import process
 from ceph_volume.api import lvm as api
 from ceph_volume.devices.lvm import migrate
@@ -520,7 +519,7 @@ class TestNew(object):
     def mock_get_lvs(self, *args, **kwargs):
         return self.mock_volumes.pop(0)
 
-    def test_newdb_non_root(self):
+    def test_newdb_non_root(self, is_non_root):
         with pytest.raises(Exception) as error:
             migrate.NewDB(argv=[
                 '--osd-id', '1',
@@ -529,9 +528,7 @@ class TestNew(object):
         expected = 'This command needs to be executed with sudo or as root'
         assert expected in str(error.value)
 
-    @patch('os.getuid')
-    def test_newdb_not_target_lvm(self, m_getuid, capsys):
-        m_getuid.return_value = 0
+    def test_newdb_not_target_lvm(self, is_root, capsys):
         with pytest.raises(SystemExit) as error:
             migrate.NewDB(argv=[
                 '--osd-id', '1',
@@ -544,10 +541,7 @@ class TestNew(object):
         assert expected in stderr
 
 
-    @patch('os.getuid')
-    def test_newdb_already_in_use(self, m_getuid, monkeypatch, capsys):
-        m_getuid.return_value = 0
-
+    def test_newdb_already_in_use(self, is_root, monkeypatch, capsys):
         self.mock_volume = api.Volume(lv_name='volume1',
                                       lv_uuid='y',
                                       vg_name='vg',
@@ -566,10 +560,7 @@ class TestNew(object):
         expected = 'Target Logical Volume is already used by ceph: vgname/new_db'
         assert expected in stderr
 
-    @patch('os.getuid')
-    def test_newdb(self, m_getuid, monkeypatch, capsys):
-        m_getuid.return_value = 0
-
+    def test_newdb(self, is_root, monkeypatch, capsys):
         source_tags = \
         'ceph.osd_id=0,ceph.type=data,ceph.osd_fsid=1234,'\
         'ceph.wal_uuid=wal_uuid,ceph.db_device=/dbdevice'
@@ -814,10 +805,7 @@ class TestNew(object):
             '--dev-target', '/dev/VolGroup/target_volume',
             '--command', 'bluefs-bdev-new-db']
 
-    @patch('os.getuid')
-    def test_newwal(self, m_getuid, monkeypatch, capsys):
-        m_getuid.return_value = 0
-
+    def test_newwal(self, is_root, monkeypatch, capsys):
         source_tags = \
         'ceph.osd_id=0,ceph.type=data,ceph.osd_fsid=1234'
 
@@ -1144,9 +1132,7 @@ Example calls for supported scenarios:
         assert not stderr
 
 
-    @patch('os.getuid')
-    def test_migrate_data_db_to_new_db(self, m_getuid, monkeypatch):
-        m_getuid.return_value = 0
+    def test_migrate_data_db_to_new_db(self, is_root, monkeypatch):
 
         source_tags = 'ceph.osd_id=2,ceph.type=data,ceph.osd_fsid=1234,' \
         'ceph.cluster_name=ceph,ceph.db_uuid=dbuuid,ceph.db_device=db_dev'
@@ -1404,10 +1390,7 @@ Example calls for supported scenarios:
             '--devs-source', '/var/lib/ceph/osd/ceph-2/block',
             '--devs-source', '/var/lib/ceph/osd/ceph-2/block.db']
 
-    @patch('os.getuid')
-    def test_migrate_data_db_to_new_db_skip_wal(self, m_getuid, monkeypatch):
-        m_getuid.return_value = 0
-
+    def test_migrate_data_db_to_new_db_skip_wal(self, is_root, monkeypatch):
         source_tags = 'ceph.osd_id=2,ceph.type=data,ceph.osd_fsid=1234,' \
         'ceph.cluster_name=ceph,ceph.db_uuid=dbuuid,ceph.db_device=db_dev'
         source_db_tags = 'ceph.osd_id=2,ceph.type=db,ceph.osd_fsid=1234,' \
@@ -1526,10 +1509,7 @@ Example calls for supported scenarios:
             '--devs-source', '/var/lib/ceph/osd/ceph-2/block',
             '--devs-source', '/var/lib/ceph/osd/ceph-2/block.db']
 
-    @patch('os.getuid')
-    def test_migrate_data_db_wal_to_new_db(self, m_getuid, monkeypatch):
-        m_getuid.return_value = 0
-
+    def test_migrate_data_db_wal_to_new_db(self, is_root, monkeypatch):
         source_tags = 'ceph.osd_id=2,ceph.type=data,ceph.osd_fsid=1234,' \
         'ceph.cluster_name=ceph,ceph.db_uuid=dbuuid,ceph.db_device=db_dev,' \
         'ceph.wal_uuid=waluuid,ceph.wal_device=wal_dev'
@@ -1653,13 +1633,10 @@ Example calls for supported scenarios:
             '--devs-source', '/var/lib/ceph/osd/ceph-2/block.db',
             '--devs-source', '/var/lib/ceph/osd/ceph-2/block.wal']
 
-    @patch('os.getuid')
     def test_dont_migrate_data_db_wal_to_new_data(self,
-                                                  m_getuid,
+                                                  is_root,
                                                   monkeypatch,
                                                   capsys):
-        m_getuid.return_value = 0
-
         source_tags = 'ceph.osd_id=2,ceph.type=data,ceph.osd_fsid=1234,' \
         'ceph.cluster_name=ceph,ceph.db_uuid=dbuuid,ceph.db_device=db_dev'
         source_db_tags = 'ceph.osd_id=2,ceph.type=db,ceph.osd_fsid=1234,' \
@@ -1721,13 +1698,10 @@ Example calls for supported scenarios:
         ' please use new-db or new-wal command before.'
         assert expected in stderr
 
-    @patch('os.getuid')
     def test_dont_migrate_db_to_wal(self,
-                                    m_getuid,
+                                    is_root,
                                     monkeypatch,
                                     capsys):
-        m_getuid.return_value = 0
-
         source_tags = 'ceph.osd_id=2,ceph.type=data,ceph.osd_fsid=1234,' \
         'ceph.cluster_name=ceph,ceph.db_uuid=dbuuid,ceph.db_device=db_dev,' \
         'ceph.wal_uuid=waluuid,ceph.wal_device=wal_dev'
@@ -1797,13 +1771,10 @@ Example calls for supported scenarios:
         expected = 'Migrate to WAL is not supported'
         assert expected in stderr
 
-    @patch('os.getuid')
     def test_migrate_data_db_to_db(self,
-                                    m_getuid,
+                                    is_root,
                                     monkeypatch,
                                     capsys):
-        m_getuid.return_value = 0
-
         source_tags = 'ceph.osd_id=2,ceph.type=data,ceph.osd_fsid=1234,' \
         'ceph.cluster_name=ceph,ceph.db_uuid=dbuuid,ceph.db_device=db_dev,' \
         'ceph.wal_uuid=waluuid,ceph.wal_device=wal_dev'
@@ -2024,13 +1995,10 @@ Example calls for supported scenarios:
             '--command', 'bluefs-bdev-migrate',
             '--devs-source', '/var/lib/ceph/osd/ceph-2/block']
 
-    @patch('os.getuid')
     def test_migrate_data_wal_to_db(self,
-                                    m_getuid,
+                                    is_root,
                                     monkeypatch,
                                     capsys):
-        m_getuid.return_value = 0
-
         source_tags = 'ceph.osd_id=2,ceph.type=data,ceph.osd_fsid=1234,' \
         'ceph.cluster_name=ceph,ceph.db_uuid=dbuuid,ceph.db_device=db_dev,' \
         'ceph.wal_uuid=waluuid,ceph.wal_device=wal_dev'
