@@ -122,13 +122,13 @@ bool ManagedLock<I>::is_lock_owner(ceph::mutex &lock) const {
     break;
   }
 
-  ldout(m_cct, 20) << lock_owner << dendl;
+  ldout(m_cct, 20) << lock_owner << ", m_state=" << m_state << dendl;
   return lock_owner;
 }
 
 template <typename I>
 void ManagedLock<I>::shut_down(Context *on_shut_down) {
-  ldout(m_cct, 10) << dendl;
+  ldout(m_cct, 10) << ", m_state=" << m_state << dendl;
 
   std::lock_guard locker{m_lock};
   ceph_assert(!is_state_shutdown());
@@ -148,6 +148,7 @@ void ManagedLock<I>::shut_down(Context *on_shut_down) {
 template <typename I>
 void ManagedLock<I>::acquire_lock(Context *on_acquired) {
   int r = 0;
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   {
     std::lock_guard locker{m_lock};
     if (is_state_shutdown()) {
@@ -167,6 +168,7 @@ void ManagedLock<I>::acquire_lock(Context *on_acquired) {
 template <typename I>
 void ManagedLock<I>::try_acquire_lock(Context *on_acquired) {
   int r = 0;
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   {
     std::lock_guard locker{m_lock};
     if (is_state_shutdown()) {
@@ -186,6 +188,7 @@ void ManagedLock<I>::try_acquire_lock(Context *on_acquired) {
 template <typename I>
 void ManagedLock<I>::release_lock(Context *on_released) {
   int r = 0;
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   {
     std::lock_guard locker{m_lock};
     if (is_state_shutdown()) {
@@ -206,6 +209,7 @@ template <typename I>
 void ManagedLock<I>::reacquire_lock(Context *on_reacquired) {
   {
     std::lock_guard locker{m_lock};
+    ldout(m_cct, 10) << " m_state=" << m_state << dendl;
 
     if (m_state == STATE_WAITING_FOR_REGISTER ||
         m_state == STATE_WAITING_FOR_LOCK) {
@@ -235,7 +239,7 @@ void ManagedLock<I>::reacquire_lock(Context *on_reacquired) {
 template <typename I>
 void ManagedLock<I>::get_locker(managed_lock::Locker *locker,
                                 Context *on_finish) {
-  ldout(m_cct, 10) << dendl;
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
 
   int r;
   {
@@ -257,7 +261,7 @@ void ManagedLock<I>::get_locker(managed_lock::Locker *locker,
 template <typename I>
 void ManagedLock<I>::break_lock(const managed_lock::Locker &locker,
                                 bool force_break_lock, Context *on_finish) {
-  ldout(m_cct, 10) << dendl;
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
 
   int r;
   {
@@ -282,7 +286,7 @@ void ManagedLock<I>::break_lock(const managed_lock::Locker &locker,
 
 template <typename I>
 int ManagedLock<I>::assert_header_locked() {
-  ldout(m_cct, 10) << dendl;
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
 
   librados::ObjectReadOperation op;
   {
@@ -318,38 +322,45 @@ int ManagedLock<I>::assert_header_locked() {
 
 template <typename I>
 void ManagedLock<I>::shutdown_handler(int r, Context *on_finish) {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   on_finish->complete(r);
 }
 
 template <typename I>
 void ManagedLock<I>::pre_acquire_lock_handler(Context *on_finish) {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   on_finish->complete(0);
 }
 
 template <typename I>
 void  ManagedLock<I>::post_acquire_lock_handler(int r, Context *on_finish) {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   on_finish->complete(r);
 }
 
 template <typename I>
 void  ManagedLock<I>::pre_release_lock_handler(bool shutting_down,
                                                Context *on_finish) {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   on_finish->complete(0);
 }
 
 template <typename I>
 void  ManagedLock<I>::post_release_lock_handler(bool shutting_down, int r,
                                                 Context *on_finish) {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   on_finish->complete(r);
 }
 
 template <typename I>
 void ManagedLock<I>::post_reacquire_lock_handler(int r, Context *on_finish) {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   on_finish->complete(r);
 }
 
 template <typename I>
 bool ManagedLock<I>::is_transition_state() const {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   switch (m_state) {
   case STATE_ACQUIRING:
   case STATE_WAITING_FOR_REGISTER:
@@ -373,6 +384,7 @@ bool ManagedLock<I>::is_transition_state() const {
 
 template <typename I>
 void ManagedLock<I>::append_context(Action action, Context *ctx) {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
 
   for (auto &action_ctxs : m_actions_contexts) {
@@ -393,6 +405,7 @@ void ManagedLock<I>::append_context(Action action, Context *ctx) {
 
 template <typename I>
 void ManagedLock<I>::execute_action(Action action, Context *ctx) {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
 
   append_context(action, ctx);
@@ -403,6 +416,7 @@ void ManagedLock<I>::execute_action(Action action, Context *ctx) {
 
 template <typename I>
 void ManagedLock<I>::execute_next_action() {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
   ceph_assert(!m_actions_contexts.empty());
   switch (get_active_action()) {
@@ -427,6 +441,7 @@ void ManagedLock<I>::execute_next_action() {
 
 template <typename I>
 typename ManagedLock<I>::Action ManagedLock<I>::get_active_action() const {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
   ceph_assert(!m_actions_contexts.empty());
   return m_actions_contexts.front().first;
@@ -434,6 +449,7 @@ typename ManagedLock<I>::Action ManagedLock<I>::get_active_action() const {
 
 template <typename I>
 void ManagedLock<I>::complete_active_action(State next_state, int r) {
+  ldout(m_cct, 10) << " r=" << r << ", m_state=" << m_state << ", next_state="<< next_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
   ceph_assert(!m_actions_contexts.empty());
 
@@ -454,6 +470,7 @@ void ManagedLock<I>::complete_active_action(State next_state, int r) {
 
 template <typename I>
 bool ManagedLock<I>::is_state_shutdown() const {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
 
   switch (m_state) {
@@ -471,13 +488,13 @@ bool ManagedLock<I>::is_state_shutdown() const {
 
 template <typename I>
 void ManagedLock<I>::send_acquire_lock() {
+  ldout(m_cct, 10) << " m_state=" << m_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
   if (m_state == STATE_LOCKED) {
     complete_active_action(STATE_LOCKED, 0);
     return;
   }
 
-  ldout(m_cct, 10) << dendl;
 
   uint64_t watch_handle = m_watcher->get_watch_handle();
   if (watch_handle == 0) {
@@ -507,7 +524,7 @@ void ManagedLock<I>::send_acquire_lock() {
 
 template <typename I>
 void ManagedLock<I>::handle_pre_acquire_lock(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   if (r < 0) {
     handle_acquire_lock(r);
@@ -525,7 +542,7 @@ void ManagedLock<I>::handle_pre_acquire_lock(int r) {
 
 template <typename I>
 void ManagedLock<I>::handle_acquire_lock(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   if (r == -EBUSY || r == -EAGAIN || r == -EROFS) {
     ldout(m_cct, 5) << "unable to acquire exclusive lock" << dendl;
@@ -546,7 +563,7 @@ void ManagedLock<I>::handle_acquire_lock(int r) {
 
 template <typename I>
 void ManagedLock<I>::handle_post_acquire_lock(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   std::lock_guard locker{m_lock};
 
@@ -561,7 +578,7 @@ void ManagedLock<I>::handle_post_acquire_lock(int r) {
 
 template <typename I>
 void ManagedLock<I>::revert_to_unlock_state(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   using managed_lock::ReleaseRequest;
   ReleaseRequest<I>* req = ReleaseRequest<I>::create(m_ioctx, m_watcher,
@@ -576,6 +593,7 @@ void ManagedLock<I>::revert_to_unlock_state(int r) {
 
 template <typename I>
 void ManagedLock<I>::send_reacquire_lock() {
+  ldout(m_cct, 10) << ", m_state=" << m_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
 
   if (m_state != STATE_LOCKED) {
@@ -583,7 +601,6 @@ void ManagedLock<I>::send_reacquire_lock() {
     return;
   }
 
-  ldout(m_cct, 10) << dendl;
   m_state = STATE_REACQUIRING;
 
   uint64_t watch_handle = m_watcher->get_watch_handle();
@@ -623,7 +640,7 @@ void ManagedLock<I>::send_reacquire_lock() {
 
 template <typename I>
 void ManagedLock<I>::handle_reacquire_lock(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   std::lock_guard locker{m_lock};
   ceph_assert(m_state == STATE_REACQUIRING);
@@ -646,7 +663,7 @@ void ManagedLock<I>::handle_reacquire_lock(int r) {
 
 template <typename I>
 void ManagedLock<I>::handle_no_op_reacquire_lock(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
   ceph_assert(m_state == STATE_REACQUIRING);
   ceph_assert(r >= 0);
   complete_active_action(STATE_LOCKED, 0);
@@ -654,6 +671,7 @@ void ManagedLock<I>::handle_no_op_reacquire_lock(int r) {
 
 template <typename I>
 void ManagedLock<I>::release_acquire_lock() {
+  ldout(m_cct, 10) << ", m_state=" << m_state << dendl;
   assert(ceph_mutex_is_locked(m_lock));
 
   if (!is_state_shutdown()) {
@@ -679,13 +697,13 @@ void ManagedLock<I>::release_acquire_lock() {
 
 template <typename I>
 void ManagedLock<I>::send_release_lock() {
+  ldout(m_cct, 10) << ", m_state=" << m_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
   if (m_state == STATE_UNLOCKED) {
     complete_active_action(STATE_UNLOCKED, 0);
     return;
   }
 
-  ldout(m_cct, 10) << dendl;
   m_state = STATE_PRE_RELEASING;
 
   m_work_queue->queue(new LambdaContext([this](int r) {
@@ -696,7 +714,7 @@ void ManagedLock<I>::send_release_lock() {
 
 template <typename I>
 void ManagedLock<I>::handle_pre_release_lock(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   {
     std::lock_guard locker{m_lock};
@@ -719,7 +737,7 @@ void ManagedLock<I>::handle_pre_release_lock(int r) {
 
 template <typename I>
 void ManagedLock<I>::handle_release_lock(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   std::lock_guard locker{m_lock};
   ceph_assert(m_state == STATE_RELEASING);
@@ -739,7 +757,7 @@ void ManagedLock<I>::handle_release_lock(int r) {
 
 template <typename I>
 void ManagedLock<I>::handle_post_release_lock(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   std::lock_guard locker{m_lock};
   complete_active_action(m_post_next_state, r);
@@ -747,7 +765,7 @@ void ManagedLock<I>::handle_post_release_lock(int r) {
 
 template <typename I>
 void ManagedLock<I>::send_shutdown() {
-  ldout(m_cct, 10) << dendl;
+  ldout(m_cct, 10) << ", m_state=" << m_state << dendl;
   ceph_assert(ceph_mutex_is_locked(m_lock));
   if (m_state == STATE_UNLOCKED) {
     m_state = STATE_SHUTTING_DOWN;
@@ -768,14 +786,14 @@ void ManagedLock<I>::send_shutdown() {
 
 template <typename I>
 void ManagedLock<I>::handle_shutdown(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   wait_for_tracked_ops(r);
 }
 
 template <typename I>
 void ManagedLock<I>::send_shutdown_release() {
-  ldout(m_cct, 10) << dendl;
+  ldout(m_cct, 10) << ", m_state=" << m_state << dendl;
 
   std::lock_guard locker{m_lock};
 
@@ -787,7 +805,7 @@ void ManagedLock<I>::send_shutdown_release() {
 
 template <typename I>
 void ManagedLock<I>::handle_shutdown_pre_release(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   std::string cookie;
   {
@@ -812,14 +830,14 @@ void ManagedLock<I>::handle_shutdown_pre_release(int r) {
 
 template <typename I>
 void ManagedLock<I>::handle_shutdown_post_release(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   wait_for_tracked_ops(r);
 }
 
 template <typename I>
 void ManagedLock<I>::wait_for_tracked_ops(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   Context *ctx = new LambdaContext([this, r](int ret) {
       complete_shutdown(r);
@@ -830,7 +848,7 @@ void ManagedLock<I>::wait_for_tracked_ops(int r) {
 
 template <typename I>
 void ManagedLock<I>::complete_shutdown(int r) {
-  ldout(m_cct, 10) << "r=" << r << dendl;
+  ldout(m_cct, 10) << "r=" << r << ", m_state=" << m_state << dendl;
 
   if (r < 0) {
     lderr(m_cct) << "failed to shut down lock: " << cpp_strerror(r)
