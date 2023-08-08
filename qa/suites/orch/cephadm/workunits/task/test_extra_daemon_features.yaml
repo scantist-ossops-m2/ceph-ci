@@ -62,7 +62,7 @@ tasks:
           dirs:
             - data
           volume_mounts:
-            data: /var/cache/bar
+            data: /var/cache/bar:z
           init_containers:
             # use a different image, just for checking it can be passed
             - image: quay.io/centos/centos:latest
@@ -71,14 +71,14 @@ tasks:
                 - argument: "-c"
                 - argument: ". /etc/os-release && echo from=$ID > /var/cache/bar/from.txt"
               volume_mounts:
-                data: /var/cache/bar
+                data: /var/cache/bar:z
             # ensure from.txt got created, run 2nd init step
             - entrypoint: bash
               entrypoint_args:
                 - argument: "-c"
                 - argument: "test -f /var/cache/bar/from.txt && truncate -s 102400 /var/cache/bar/presized.dat"
               volume_mounts:
-                data: /var/cache/bar
+                data: /var/cache/bar:z
           # end init_containers
         extra_entrypoint_args:
           - "/root/init_check.sh"
