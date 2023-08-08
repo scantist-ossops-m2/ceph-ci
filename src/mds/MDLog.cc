@@ -58,6 +58,7 @@ MDLog::MDLog(MDSRank* m)
   max_events = g_conf().get_val<int64_t>("mds_log_max_events");
   skip_corrupt_events = g_conf().get_val<bool>("mds_log_skip_corrupt_events");
   skip_unbounded_events = g_conf().get_val<bool>("mds_log_skip_unbounded_events");
+  upkeep_thread = std::thread(&MDLog::log_trim_upkeep, this);
 }
 
 MDLog::~MDLog()
@@ -554,6 +555,15 @@ void MDLog::shutdown()
     }
   }
 
+  mds->mds_lock.unlock();
+  {
+    std::scoped_lock lock(submit_mutex);
+    upkeep_log_trim_shutdown = true;
+    cond.notify_one();
+  }
+  mds->mds_lock.lock();
+  upkeep_thread.join();
+
   // Replay thread can be stuck inside e.g. Journaler::wait_for_readable,
   // so we need to shutdown the journaler first.
   if (journaler) {
@@ -604,11 +614,33 @@ void MDLog::try_to_commit_open_file_table(uint64_t last_seq)
   }
 }
 
-void MDLog::trim(int m)
+void MDLog::log_trim_upkeep(void) {
+  dout(10) << dendl;
+
+  submit_mutex.lock();
+  while (!upkeep_log_trim_shutdown.load()) {
+    {
+      // adjust lock order
+      submit_mutex.unlock();
+      std::scoped_lock mlock(mds->mds_lock);
+      submit_mutex.lock();
+
+      if (mds->is_active() || mds->is_stopping()) {
+	trim();
+      }
+    }
+
+    auto now = ceph::coarse_mono_clock::now();
+    auto when = now +
+      ceph::make_timespan(g_conf().get_val<std::chrono::seconds>("mds_log_trim_upkeep_interval").count());
+    cond.wait_until(submit_mutex, when);
+  }
+  dout(10) << __func__ << ": finished" << dendl;
+}
+
+void MDLog::trim()
 {
   int max_ev = max_events;
-  if (m >= 0)
-    max_ev = m;
 
   if (mds->mdcache->is_readonly()) {
     dout(10) << "trim, ignoring read-only FS" <<  dendl;
@@ -620,8 +652,6 @@ void MDLog::trim(int m)
     max_ev = events_per_segment + 1;
   }
 
-  submit_mutex.lock();
-
   // trim!
   dout(10) << "trim " 
 	   << segments.size() << " / " << max_segments << " segments, " 
@@ -631,7 +661,6 @@ void MDLog::trim(int m)
 	   << dendl;
 
   if (segments.empty()) {
-    submit_mutex.unlock();
     return;
   }
 
@@ -718,6 +747,7 @@ void MDLog::trim(int m)
 
   // discard expired segments and unlock submit_mutex
   _trim_expired_segments();
+  submit_mutex.lock();
 }
 
 class C_MaybeExpiredSegment : public MDSInternalContext {
@@ -795,6 +825,7 @@ int MDLog::trim_all()
 
 void MDLog::try_expire(LogSegment *ls, int op_prio)
 {
+  ceph_assert(ceph_mutex_is_locked(mds->mds_lock));
   MDSGatherBuilder gather_bld(g_ceph_context);
   ls->try_to_expire(mds, gather_bld, op_prio);
 
