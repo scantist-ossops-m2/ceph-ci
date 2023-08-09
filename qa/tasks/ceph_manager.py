@@ -2580,6 +2580,7 @@ class CephManager:
             if (pg['state'].count('active') and
                     pg['state'].count('clean') and
                     not pg['state'].count('stale')):
+                self.log('PG %s is %s', pg['pgid'], pg['state'])
                 num += 1
         return num
 
@@ -2677,7 +2678,10 @@ class CephManager:
         True if all pgs are clean
         """
         pgs = self.get_pg_stats()
-        if self._get_num_active_clean(pgs) == len(pgs):
+        pgs_active_clean = self._get_num_active_clean(pgs)
+        total_pgs = len(pgs)
+        if pgs_active_clean == total_pgs:
+            self.log('%d PGs are in active+clean state' % pgs_active_clean)
             return True
         else:
             self.dump_pgs_not_active_clean()
@@ -2703,7 +2707,8 @@ class CephManager:
         """
         pgs = self.get_pg_stats()
         for pg in pgs:
-           if pg['state'] != 'active+clean':
+            if not pg['state'].count('active') or \
+                not pg['state'].count('clean'):
              self.log('PG %s is not active+clean' % pg['pgid'])
              self.log(pg)
 
@@ -2742,7 +2747,7 @@ class CephManager:
         num_active_clean = self.get_num_active_clean()
         while not self.is_clean():
             if timeout is not None:
-                if self.get_is_making_recovery_progress():
+                if self.get_is_making_recovery_progress(): # PG is recovering
                     self.log("making progress, resetting timeout")
                     start = time.time()
                 else:
@@ -2753,7 +2758,7 @@ class CephManager:
                         assert time.time() - start < timeout, \
                             'wait_for_clean: failed before timeout expired'
             cur_active_clean = self.get_num_active_clean()
-            if cur_active_clean != num_active_clean:
+            if cur_active_clean != num_active_clean: # We made progress
                 start = time.time()
                 num_active_clean = cur_active_clean
             time.sleep(3)
