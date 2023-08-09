@@ -16,14 +16,16 @@ NFS_POOL_NAME = '.nfs'  # should match mgr_module.py
 # TODO Add test for cluster update when ganesha can be deployed on multiple ports.
 class TestNFS(MgrTestCase):
     def _cmd(self, *args):
-        return self.get_ceph_cmd_stdout(args)
+        return self.mgr_cluster.mon_manager.raw_cluster_cmd(*args)
 
     def _nfs_cmd(self, *args):
         return self._cmd("nfs", *args)
 
     def _nfs_complete_cmd(self, cmd):
-        return self.run_ceph_cmd(args=f"nfs {cmd}", stdout=StringIO(),
-                                 stderr=StringIO(), check_status=False)
+        return self.mgr_cluster.mon_manager.run_cluster_cmd(args=f"nfs {cmd}",
+                                                            stdout=StringIO(),
+                                                            stderr=StringIO(),
+                                                            check_status=False)
 
     def _orch_cmd(self, *args):
         return self._cmd("orch", *args)
