@@ -44,7 +44,7 @@ class JobThread(threading.Thread):
                         vol_job = self.async_job.get_job()
                         if vol_job:
                             break
-                        self.async_job.cv.wait()
+                        self.async_job.cv.wait(timeout=self.async_job.wakeup_timeout)
                     self.async_job.register_async_job(vol_job[0], vol_job[1], thread_id)
 
                 # execute the job (outside lock)
@@ -85,7 +85,6 @@ class JobThread(threading.Thread):
     def reset_cancel(self):
         self.cancel_event.clear()
 
-
 class AsyncJobs(threading.Thread):
     """
     Class providing asynchronous execution of jobs via worker threads.
@@ -105,6 +104,9 @@ class AsyncJobs(threading.Thread):
     via `should_cancel()` lambda passed to `execute_job()`.
     """
 
+    # not made configurable on purpose
+    WAKEUP_TIMEOUT = 5.0
+
     def __init__(self, volume_client, name_pfx, nr_concurrent_jobs):
         threading.Thread.__init__(self, name="{0}.tick".format(name_pfx))
         self.vc = volume_client
@@ -123,12 +125,24 @@ class AsyncJobs(threading.Thread):
         self.name_pfx = name_pfx
         # each async job group uses its own libcephfs connection (pool)
         self.fs_client = CephfsClient(self.vc.mgr)
+        self.wakeup_timeout = None
 
         self.threads = []
         for i in range(self.nr_concurrent_jobs):
             self.threads.append(JobThread(self, volume_client, name="{0}.{1}".format(self.name_pfx, i)))
             self.threads[-1].start()
         self.start()
+
+    def set_wakeup_timeout(self):
+        with self.lock:
+            # not made configurable on purpose
+            self.wakeup_timeout = AsyncJobs.WAKEUP_TIMEOUT
+            self.cv.notifyAll()
+
+    def unset_wakeup_timeout(self):
+        with self.lock:
+            self.wakeup_timeout = None
+            self.cv.notifyAll()
 
     def run(self):
         log.debug("tick thread {} starting".format(self.name))
