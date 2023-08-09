@@ -44,7 +44,9 @@ class JobThread(threading.Thread):
                         vol_job = self.async_job.get_job()
                         if vol_job:
                             break
-                        self.async_job.cv.wait()
+                        # not made configurable on purpose - by the time you configure,
+                        # the thread will timeout here :-)
+                        self.async_job.cv.wait(timeout=5.0)
                     self.async_job.register_async_job(vol_job[0], vol_job[1], thread_id)
 
                 # execute the job (outside lock)
