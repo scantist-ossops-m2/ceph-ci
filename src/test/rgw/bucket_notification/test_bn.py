@@ -34,7 +34,7 @@ from .api import PSTopicS3, \
     admin
 
 from nose import SkipTest
-from nose.tools import assert_not_equal, assert_equal, assert_in
+from nose.tools import assert_not_equal, assert_equal, assert_in, assert_true
 import boto.s3.tagging
 
 # configure logging for the tests module
@@ -42,6 +42,7 @@ log = logging.getLogger(__name__)
 
 TOPIC_SUFFIX = "_topic"
 NOTIFICATION_SUFFIX = "_notif"
+UID_PREFIX = "superman"
 
 
 num_buckets = 0
@@ -515,6 +516,22 @@ def connection2():
     return conn
 
 
+def another_user(tenant=None):
+    access_key = str(time.time())
+    secret_key = str(time.time())
+    uid = UID_PREFIX + str(time.time())
+    if tenant:
+        _, result = admin(['user', 'create', '--uid', uid, '--tenant', tenant, '--access-key', access_key, '--secret-key', secret_key, '--display-name', '"Super Man"'])  
+    else:
+        _, result = admin(['user', 'create', '--uid', uid, '--access-key', access_key, '--secret-key', secret_key, '--display-name', '"Super Man"'])  
+
+    assert_equal(result, 0)
+    conn = S3Connection(aws_access_key_id=access_key,
+                  aws_secret_access_key=secret_key,
+                      is_secure=False, port=get_config_port(), host=get_config_host(), 
+                      calling_format='boto.s3.connection.OrdinaryCallingFormat')
+    return conn
+
 ##############
 # bucket notifications tests
 ##############
@@ -655,6 +672,8 @@ def test_ps_s3_topic_admin_on_master():
     result = admin(['topic', 'get', '--topic', topic_name+'_3', '--tenant', tenant])  
     parsed_result = json.loads(result[0])
     assert_equal(parsed_result['arn'], topic_arn3)
+    matches = [tenant, UID_PREFIX]
+    assert_true( all([x in parsed_result['user'] for x in matches]))
 
     # delete topic 3
     _, result = admin(['topic', 'rm', '--topic', topic_name+'_3', '--tenant', tenant])  
