@@ -131,6 +131,8 @@ def download_cephadm(ctx, config, ref):
         # cephadm
         elif 'cephadm_git_url' in config and 'cephadm_branch' in config:
             _fetch_cephadm_from_github(ctx, config, ref)
+        elif 'compiled_cephadm_branch' in config:
+            _fetch_stable_branch_cephadm_from_chacra(ctx, config)
         else:
             _fetch_cephadm_from_chachra(ctx, config, cluster_name)
 
@@ -228,6 +230,41 @@ def _fetch_cephadm_from_chachra(ctx, config, cluster_name):
             flavor=flavor,
             branch=branch,
             sha1=sha1,
+    )
+    log.info("Discovered cachra url: %s", url)
+    ctx.cluster.run(
+        args=[
+            'curl', '--silent', '-L', url,
+            run.Raw('>'),
+            ctx.cephadm,
+            run.Raw('&&'),
+            'ls', '-l',
+            ctx.cephadm,
+        ],
+    )
+
+    # sanity-check the resulting file and set executable bit
+    cephadm_file_size = '$(stat -c%s {})'.format(ctx.cephadm)
+    ctx.cluster.run(
+        args=[
+            'test', '-s', ctx.cephadm,
+            run.Raw('&&'),
+            'test', run.Raw(cephadm_file_size), "-gt", run.Raw('1000'),
+            run.Raw('&&'),
+            'chmod', '+x', ctx.cephadm,
+        ],
+    )
+
+def _fetch_stable_branch_cephadm_from_chacra(ctx, config):
+    branch = config.get('compiled_cephadm_branch', 'reef')
+    log.info(f'Downloading "compiled" cephadm from cachra for {branch}')
+
+    # pull the cephadm binary from chacra
+    url = chacra.get_binary_url(
+            'cephadm',
+            project='ceph',
+            flavor='default',
+            branch=branch,
     )
     log.info("Discovered cachra url: %s", url)
     ctx.cluster.run(
