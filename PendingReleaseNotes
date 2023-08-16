@@ -8,6 +8,8 @@
   For multi-site deployments that make any use of Server-Side Encryption, we
   recommended running this command against every bucket in every zone after all
   zones have upgraded.
+* mgr/snap-schedule: For clusters with multiple CephFS file systems, all the
+  snap-schedule commands now expect the '--fs' argument.
 
 >=18.0.0
 
