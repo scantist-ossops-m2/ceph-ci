@@ -94,6 +94,7 @@ void encode_and_write(
 }
 
 void ECTransaction::generate_transactions(
+  PGTransaction* _t,
   WritePlan &plan,
   ErasureCodeInterfaceRef &ecimpl,
   pg_t pgid,
@@ -111,8 +112,8 @@ void ECTransaction::generate_transactions(
   ceph_assert(transactions);
   ceph_assert(temp_added);
   ceph_assert(temp_removed);
-  ceph_assert(plan.t);
-  auto &t = *(plan.t);
+  ceph_assert(_t);
+  auto &t = *_t;
 
   auto &hash_infos = plan.hash_infos;
 
