@@ -20,5 +20,3 @@ tasks:
 - exec:
     client.0:
     - ceph_test_snap_mapper
-
-

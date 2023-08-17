@@ -595,8 +595,7 @@ int SnapMapper::get_next_objects_to_trim(
   ceph_assert(max > 0);
 
   // The prefix_itr is bound to a prefix_itr_snap so if we trim another snap
-  // we must reset the prefix_itr
-  // (Should not happen normally)
+  // we must reset the prefix_itr (should not happen normally)
   if (prefix_itr_snap != snap) {
     dout(10) << __func__ << "::Reset prefix_itr(unexpcted) snap was changed from <"
 	     << prefix_itr_snap << "> to <" << snap << ">" << dendl;
