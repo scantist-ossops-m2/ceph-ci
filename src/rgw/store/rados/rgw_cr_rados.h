@@ -1050,6 +1050,7 @@ class RGWAsyncFetchRemoteObj : public RGWAsyncRadosRequest {
 
   bool copy_if_newer;
   std::shared_ptr<RGWFetchObjFilter> filter;
+  rgw_zone_set_entry source_trace_entry;
   rgw_zone_set zones_trace;
   PerfCounters* counters;
   const DoutPrefixProvider *dpp;
@@ -1068,6 +1069,7 @@ public:
                          std::optional<uint64_t> _versioned_epoch,
                          bool _if_newer,
                          std::shared_ptr<RGWFetchObjFilter> _filter,
+                         const rgw_zone_set_entry& source_trace_entry,
                          rgw_zone_set *_zones_trace,
                          PerfCounters* counters, const DoutPrefixProvider *dpp)
     : RGWAsyncRadosRequest(caller, cn), store(_store),
@@ -1081,6 +1083,7 @@ public:
       versioned_epoch(_versioned_epoch),
       copy_if_newer(_if_newer),
       filter(_filter),
+      source_trace_entry(source_trace_entry),
       counters(counters),
       dpp(dpp)
   {
@@ -1113,6 +1116,7 @@ class RGWFetchRemoteObjCR : public RGWSimpleCoroutine {
   std::shared_ptr<RGWFetchObjFilter> filter;
 
   RGWAsyncFetchRemoteObj *req;
+  const rgw_zone_set_entry& source_trace_entry;
   rgw_zone_set *zones_trace;
   PerfCounters* counters;
   const DoutPrefixProvider *dpp;
@@ -1129,6 +1133,7 @@ public:
                       std::optional<uint64_t> _versioned_epoch,
                       bool _if_newer,
                       std::shared_ptr<RGWFetchObjFilter> _filter,
+                      const rgw_zone_set_entry& source_trace_entry,
                       rgw_zone_set *_zones_trace,
                       PerfCounters* counters, const DoutPrefixProvider *dpp)
     : RGWSimpleCoroutine(_store->ctx()), cct(_store->ctx()),
@@ -1144,6 +1149,7 @@ public:
       copy_if_newer(_if_newer),
       filter(_filter),
       req(NULL),
+      source_trace_entry(source_trace_entry),
       zones_trace(_zones_trace), counters(counters), dpp(dpp) {}
 
 
@@ -1162,7 +1168,7 @@ public:
     req = new RGWAsyncFetchRemoteObj(this, stack->create_completion_notifier(), store,
 				     source_zone, user_id, src_bucket, dest_placement_rule, dest_bucket_info,
                                      key, dest_key, versioned_epoch, copy_if_newer, filter,
-                                     zones_trace, counters, dpp);
+                                     source_trace_entry, zones_trace, counters, dpp);
     async_rados->queue(req);
     return 0;
   }
