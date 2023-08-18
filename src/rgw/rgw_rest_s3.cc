@@ -298,6 +298,8 @@ int RGWGetObj_ObjStore_S3::get_params(optional_yield y)
     skip_decrypt = s->info.args.exists(RGW_SYS_PARAM_PREFIX "skip-decrypt");
   }
 
+  dst_zone_trace = s->info.args.get(RGW_SYS_PARAM_PREFIX "if-not-replicated-to");
+
   return RGWGetObj_ObjStore::get_params(y);
 }
 
