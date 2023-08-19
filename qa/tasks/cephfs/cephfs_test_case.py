@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import re
-from io import StringIO
 
 from tasks.ceph_test_case import CephTestCase
 
@@ -54,32 +53,7 @@ class MountDetails():
         mntobj.hostfs_mntpt = self.hostfs_mntpt
 
 
-class RunCephCmd:
-
-    def run_ceph_cmd(self, *args, **kwargs):
-        if kwargs.get('args') is None and args:
-            if len(args) == 1:
-                args = args[0]
-            kwargs['args'] = args
-        return self.mon_manager.run_cluster_cmd(**kwargs)
-
-    def get_ceph_cmd_result(self, *args, **kwargs):
-        if kwargs.get('args') is None and args:
-            if len(args) == 1:
-                args = args[0]
-            kwargs['args'] = args
-        return self.run_ceph_cmd(**kwargs).exitstatus
-
-    def get_ceph_cmd_stdout(self, *args, **kwargs):
-        if kwargs.get('args') is None and args:
-            if len(args) == 1:
-                args = args[0]
-            kwargs['args'] = args
-        kwargs['stdout'] = kwargs.pop('stdout', StringIO())
-        return self.run_ceph_cmd(**kwargs).stdout.getvalue()
-
-
-class CephFSTestCase(CephTestCase, RunCephCmd):
+class CephFSTestCase(CephTestCase):
     """
     Test case for Ceph FS, requires caller to populate Filesystem and Mounts,
     into the fs, mount_a, mount_b class attributes (setting mount_b is optional)
