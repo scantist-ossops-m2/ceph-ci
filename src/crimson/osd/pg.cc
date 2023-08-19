@@ -764,6 +764,10 @@ PG::submit_transaction(
   peering_state.append_log_with_trim_to_updated(std::move(log_entries), osd_op_p.at_version,
 						txn, true, false);
 
+  ceph_assert(!log_entries.empty());
+  ceph_assert(log_entries.rbegin()->version >= projected_last_update);
+  projected_last_update = log_entries.rbegin()->version;
+
   auto [submitted, all_completed] = backend->mutate_object(
       peering_state.get_acting_recovery_backfill(),
       std::move(obc),
