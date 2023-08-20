@@ -2212,7 +2212,6 @@ void RGWGetObj::execute(optional_yield y)
   bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
   std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
   if(rgw_perf_counters_cache) {
-    perf_counters_cache->add(labels);
     perf_counters_cache->inc(labels, l_rgw_labeled_get_ops, 1);
   }
 
@@ -2507,7 +2506,6 @@ void RGWListBuckets::execute(optional_yield y)
   bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
   std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"User", s->user->get_id().id}});
   if(rgw_perf_counters_cache) {
-    perf_counters_cache->add(labels);
     perf_counters_cache->inc(labels, l_rgw_labeled_list_buckets_ops, 1);
   }
 
@@ -3082,7 +3080,6 @@ void RGWListBucket::execute(optional_yield y)
   bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
   std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
   if(rgw_perf_counters_cache) {
-    perf_counters_cache->add(labels);
     perf_counters_cache->inc(labels, l_rgw_labeled_list_obj_ops, 1);
     perf_counters_cache->tinc(labels, l_rgw_labeled_list_obj_lat, s->time_elapsed());
   }
@@ -3606,7 +3603,6 @@ void RGWDeleteBucket::execute(optional_yield y)
   bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
   if(rgw_perf_counters_cache) {
     std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-    perf_counters_cache->add(labels);
     perf_counters_cache->inc(labels, l_rgw_labeled_del_bucket_ops, 1);
     perf_counters_cache->tinc(labels, l_rgw_labeled_del_bucket_lat, s->time_elapsed());
   }
@@ -4039,9 +4035,6 @@ void RGWPutObj::execute(optional_yield y)
 
   bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
   std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-  if(rgw_perf_counters_cache) {
-    perf_counters_cache->add(labels);
-  }
 
   bool need_calc_md5 = (dlo_manifest == NULL) && (slo_info == NULL);
   perfcounter->inc(l_rgw_put);
@@ -5290,7 +5283,6 @@ void RGWDeleteObj::execute(optional_yield y)
     bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
     if(rgw_perf_counters_cache) {
       std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-      perf_counters_cache->add(labels);
       perf_counters_cache->inc(labels, l_rgw_labeled_del_obj_ops, 1);
       perf_counters_cache->inc(labels, l_rgw_labeled_del_obj_b, obj_size);
       perf_counters_cache->tinc(labels, l_rgw_labeled_del_obj_lat, s->time_elapsed());
@@ -5759,7 +5751,6 @@ void RGWCopyObj::execute(optional_yield y)
   bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
   if(rgw_perf_counters_cache) {
     std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-    perf_counters_cache->add(labels);
     perf_counters_cache->inc(labels, l_rgw_labeled_copy_obj_ops, 1);
     perf_counters_cache->inc(labels, l_rgw_labeled_copy_obj_b, obj_size);
     perf_counters_cache->tinc(labels, l_rgw_labeled_copy_obj_lat, s->time_elapsed());

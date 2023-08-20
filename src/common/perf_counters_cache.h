@@ -101,19 +101,10 @@ private:
     return cct->get_perfcounters_collection()->get(key);
   }
 
-
-public:
-
-  size_t get_cache_size() {
-    std::lock_guard lock(m_lock);
-    return curr_size;
-  }
-
-  void add(const std::string &key) {
-    std::lock_guard lock(m_lock);
+  PerfCounters* add(const std::string &key) {
     // key is not valid, these counters will not be get created
     if (!check_key(key))
-      return;
+      return NULL;
 
     auto counters = get(key);
     if (!counters) {
@@ -127,12 +118,11 @@ public:
       CountersSetup pb = setups[counter_type];
 
       // perf counters instance creation code
-      auto lpcb = new PerfCountersBuilder(cct, key, pb.first, pb.last);
-      pb.add_counters(lpcb);
+      PerfCountersBuilder lpcb(cct, key, pb.first, pb.last);
+      pb.add_counters(&lpcb);
 
       // add counters to builder
-      counters = lpcb->create_perf_counters();
-      delete lpcb;
+      counters = lpcb.create_perf_counters();
 
       // add new counters to collection, cache
       cct->get_perfcounters_collection()->add(counters);
@@ -140,6 +130,16 @@ public:
       list_itrs[key] = pos;
       curr_size++;
     }
+    return counters;
+  }
+
+
+
+public:
+
+  size_t get_cache_size() {
+    std::lock_guard lock(m_lock);
+    return curr_size;
   }
 
   void inc(const std::string &label, int indx, uint64_t v) {
@@ -147,6 +147,11 @@ public:
     auto counters = get(label);
     if (counters) {
       counters->inc(indx, v);
+    } else {
+      auto new_counters = add(label);
+      if (new_counters) {
+        new_counters->inc(indx, v);
+      }
     }
   }
 
@@ -155,6 +160,11 @@ public:
     auto counters = get(label);
     if (counters) {
       counters->dec(indx, v);
+    } else {
+      auto new_counters = add(label);
+      if (new_counters) {
+        new_counters->dec(indx, v);
+      }
     }
   }
 
@@ -163,6 +173,11 @@ public:
     auto counters = get(label);
     if (counters) {
       counters->tinc(indx, amt);
+    } else {
+      auto new_counters = add(label);
+      if (new_counters) {
+        new_counters->tinc(indx, amt);
+      }
     }
   }
 
@@ -171,6 +186,11 @@ public:
     auto counters = get(label);
     if (counters) {
       counters->tinc(indx, amt);
+    } else {
+      auto new_counters = add(label);
+      if (new_counters) {
+        new_counters->tinc(indx, amt);
+      }
     }
   }
 
@@ -179,6 +199,11 @@ public:
     auto counters = get(label);
     if (counters) {
       counters->set(indx, val);
+    } else {
+      auto new_counters = add(label);
+      if (new_counters) {
+        new_counters->set(indx, val);
+      }
     }
   }
 
@@ -209,6 +234,11 @@ public:
     auto counters = get(label);
     if (counters) {
       counters->tset(indx, amt);
+    } else {
+      auto new_counters = add(label);
+      if (new_counters) {
+        new_counters->tset(indx, amt);
+      }
     }
   }
 
