@@ -49,13 +49,23 @@ void add_test_counters(PerfCountersBuilder *pcb) {
 }
 
 
-static PerfCountersCache* setup_test_perf_counters_cache(CephContext *cct, bool eviction = false, uint64_t target_size = 100)
+static PerfCountersCache* setup_test_perf_counters_cache(CephContext *cct, uint64_t target_size = 100)
 {
   std::function<void(PerfCountersBuilder*)> lpcb = add_test_counters;
   CountersSetup test_counters_setup(TEST_PERFCOUNTERS1_ELEMENT_FIRST, TEST_PERFCOUNTERS1_ELEMENT_LAST, lpcb);
-  std::unordered_map<int, CountersSetup> setups;
-  setups[TEST_PERFCOUNTERS1_ELEMENT_FIRST] = test_counters_setup;
-  return new PerfCountersCache(cct, eviction, target_size, setups);
+  std::unordered_map<std::string_view, CountersSetup> setups;
+  setups["key1"] = test_counters_setup;
+  setups["key2"] = test_counters_setup;
+  setups["key3"] = test_counters_setup;
+  setups["key4"] = test_counters_setup;
+  setups["key5"] = test_counters_setup;
+  setups["key6"] = test_counters_setup;
+  setups["good_ctrs"] = test_counters_setup;
+  setups["bad_ctrs1"] = test_counters_setup;
+  setups["bad_ctrs2"] = test_counters_setup;
+  setups["bad_ctrs3"] = test_counters_setup;
+  setups["too_many_delimiters"] = test_counters_setup;
+  return new PerfCountersCache(cct, target_size, setups);
 }
 
 void cleanup_test(PerfCountersCache *pcc) {
@@ -72,27 +82,8 @@ TEST(PerfCountersCache, NoCacheTest) {
   ASSERT_EQ("{}\n", message);
 }
 
-TEST(PerfCountersCache, AddEntries) {
-  PerfCountersCache *pcc = setup_test_perf_counters_cache(g_ceph_context);
-  size_t cache_size = pcc->get_cache_size();
-  ASSERT_EQ(cache_size, 0);
-
-  std::string label1 = ceph::perf_counters::key_create("key1", {{"label1", "val1"}});
-  pcc->add(label1, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  cache_size = pcc->get_cache_size();
-  ASSERT_EQ(cache_size, 1);
-
-  std::string label2 = ceph::perf_counters::key_create("key2", {{"label2", "val3"}});
-  std::string label3 = ceph::perf_counters::key_create("key3", {{"label3", "val3"}});
-  pcc->add(label2, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label3, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  cache_size = pcc->get_cache_size();
-  ASSERT_EQ(cache_size, 3);
-  cleanup_test(pcc);
-}
-
 TEST(PerfCountersCache, TestEviction) {
-  PerfCountersCache *pcc = setup_test_perf_counters_cache(g_ceph_context, true, 4);
+  PerfCountersCache *pcc = setup_test_perf_counters_cache(g_ceph_context, 4);
   std::string label1 = ceph::perf_counters::key_create("key1", {{"label1", "val1"}});
   std::string label2 = ceph::perf_counters::key_create("key2", {{"label2", "val2"}});
   std::string label3 = ceph::perf_counters::key_create("key3", {{"label3", "val3"}});
@@ -100,10 +91,10 @@ TEST(PerfCountersCache, TestEviction) {
   std::string label5 = ceph::perf_counters::key_create("key5", {{"label5", "val5"}});
   std::string label6 = ceph::perf_counters::key_create("key6", {{"label6", "val6"}});
 
-  pcc->add(label1, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label2, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label3, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label4, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
+  pcc->set_counter(label1, TEST_PERFCOUNTERS_COUNTER, 0);
+  pcc->set_counter(label2, TEST_PERFCOUNTERS_COUNTER, 0);
+  pcc->set_counter(label3, TEST_PERFCOUNTERS_COUNTER, 0);
+  pcc->set_counter(label4, TEST_PERFCOUNTERS_COUNTER, 0);
   size_t cache_size = pcc->get_cache_size();
   ASSERT_EQ(cache_size, 4);
 
@@ -327,9 +318,8 @@ TEST(PerfCountersCache, TestEviction) {
 }
 )", message);
 
-
-  pcc->add(label5, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label6, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
+  pcc->set_counter(label5, TEST_PERFCOUNTERS_COUNTER, 0);
+  pcc->set_counter(label6, TEST_PERFCOUNTERS_COUNTER, 0);
   cache_size = pcc->get_cache_size();
   ASSERT_EQ(cache_size, 4);
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
@@ -516,465 +506,6 @@ TEST(PerfCountersCache, TestEviction) {
         {
             "labels": {
                 "label6": "val6"
-            },
-            "counters": {
-                "test_counter": {
-                    "type": 2,
-                    "metric_type": "gauge",
-                    "value_type": "integer",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time": {
-                    "type": 1,
-                    "metric_type": "gauge",
-                    "value_type": "real",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time_avg": {
-                    "type": 5,
-                    "metric_type": "gauge",
-                    "value_type": "real-integer-pair",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                }
-            }
-        }
-    ]
-}
-)", message);
-  cleanup_test(pcc);
-}
-
-TEST(PerfCountersCache, TestNoEviction) {
-  PerfCountersCache *pcc = setup_test_perf_counters_cache(g_ceph_context, false, 3);
-  std::string label1 = ceph::perf_counters::key_create("key1", {{"label1", "val1"}});
-  std::string label2 = ceph::perf_counters::key_create("key2", {{"label2", "val2"}});
-  std::string label3 = ceph::perf_counters::key_create("key3", {{"label3", "val3"}});
-  std::string label4 = ceph::perf_counters::key_create("key4", {{"label4", "val4"}});
-  std::string label5 = ceph::perf_counters::key_create("key5", {{"label5", "val5"}});
-
-  pcc->add(label1, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label2, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label3, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  size_t cache_size = pcc->get_cache_size();
-  ASSERT_EQ(cache_size, 3);
-
-  AdminSocketClient client(get_rand_socket_path());
-  std::string message;
-  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
-  ASSERT_EQ(R"({
-    "key1": [
-        {
-            "labels": {
-                "label1": "val1"
-            },
-            "counters": {
-                "test_counter": 0,
-                "test_time": 0.000000000,
-                "test_time_avg": {
-                    "avgcount": 0,
-                    "sum": 0.000000000,
-                    "avgtime": 0.000000000
-                }
-            }
-        }
-    ],
-    "key2": [
-        {
-            "labels": {
-                "label2": "val2"
-            },
-            "counters": {
-                "test_counter": 0,
-                "test_time": 0.000000000,
-                "test_time_avg": {
-                    "avgcount": 0,
-                    "sum": 0.000000000,
-                    "avgtime": 0.000000000
-                }
-            }
-        }
-    ],
-    "key3": [
-        {
-            "labels": {
-                "label3": "val3"
-            },
-            "counters": {
-                "test_counter": 0,
-                "test_time": 0.000000000,
-                "test_time_avg": {
-                    "avgcount": 0,
-                    "sum": 0.000000000,
-                    "avgtime": 0.000000000
-                }
-            }
-        }
-    ]
-}
-)", message);
-
-  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter schema", "format": "raw" })", &message));
-  ASSERT_EQ(R"({
-    "key1": [
-        {
-            "labels": {
-                "label1": "val1"
-            },
-            "counters": {
-                "test_counter": {
-                    "type": 2,
-                    "metric_type": "gauge",
-                    "value_type": "integer",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time": {
-                    "type": 1,
-                    "metric_type": "gauge",
-                    "value_type": "real",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time_avg": {
-                    "type": 5,
-                    "metric_type": "gauge",
-                    "value_type": "real-integer-pair",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                }
-            }
-        }
-    ],
-    "key2": [
-        {
-            "labels": {
-                "label2": "val2"
-            },
-            "counters": {
-                "test_counter": {
-                    "type": 2,
-                    "metric_type": "gauge",
-                    "value_type": "integer",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time": {
-                    "type": 1,
-                    "metric_type": "gauge",
-                    "value_type": "real",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time_avg": {
-                    "type": 5,
-                    "metric_type": "gauge",
-                    "value_type": "real-integer-pair",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                }
-            }
-        }
-    ],
-    "key3": [
-        {
-            "labels": {
-                "label3": "val3"
-            },
-            "counters": {
-                "test_counter": {
-                    "type": 2,
-                    "metric_type": "gauge",
-                    "value_type": "integer",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time": {
-                    "type": 1,
-                    "metric_type": "gauge",
-                    "value_type": "real",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time_avg": {
-                    "type": 5,
-                    "metric_type": "gauge",
-                    "value_type": "real-integer-pair",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                }
-            }
-        }
-    ]
-}
-)", message);
-
-
-  pcc->add(label4, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label5, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  cache_size = pcc->get_cache_size();
-  ASSERT_EQ(cache_size, 5);
-  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
-  ASSERT_EQ(R"({
-    "key1": [
-        {
-            "labels": {
-                "label1": "val1"
-            },
-            "counters": {
-                "test_counter": 0,
-                "test_time": 0.000000000,
-                "test_time_avg": {
-                    "avgcount": 0,
-                    "sum": 0.000000000,
-                    "avgtime": 0.000000000
-                }
-            }
-        }
-    ],
-    "key2": [
-        {
-            "labels": {
-                "label2": "val2"
-            },
-            "counters": {
-                "test_counter": 0,
-                "test_time": 0.000000000,
-                "test_time_avg": {
-                    "avgcount": 0,
-                    "sum": 0.000000000,
-                    "avgtime": 0.000000000
-                }
-            }
-        }
-    ],
-    "key3": [
-        {
-            "labels": {
-                "label3": "val3"
-            },
-            "counters": {
-                "test_counter": 0,
-                "test_time": 0.000000000,
-                "test_time_avg": {
-                    "avgcount": 0,
-                    "sum": 0.000000000,
-                    "avgtime": 0.000000000
-                }
-            }
-        }
-    ],
-    "key4": [
-        {
-            "labels": {
-                "label4": "val4"
-            },
-            "counters": {
-                "test_counter": 0,
-                "test_time": 0.000000000,
-                "test_time_avg": {
-                    "avgcount": 0,
-                    "sum": 0.000000000,
-                    "avgtime": 0.000000000
-                }
-            }
-        }
-    ],
-    "key5": [
-        {
-            "labels": {
-                "label5": "val5"
-            },
-            "counters": {
-                "test_counter": 0,
-                "test_time": 0.000000000,
-                "test_time_avg": {
-                    "avgcount": 0,
-                    "sum": 0.000000000,
-                    "avgtime": 0.000000000
-                }
-            }
-        }
-    ]
-}
-)", message);
-
-  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter schema", "format": "raw" })", &message));
-  ASSERT_EQ(R"({
-    "key1": [
-        {
-            "labels": {
-                "label1": "val1"
-            },
-            "counters": {
-                "test_counter": {
-                    "type": 2,
-                    "metric_type": "gauge",
-                    "value_type": "integer",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time": {
-                    "type": 1,
-                    "metric_type": "gauge",
-                    "value_type": "real",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time_avg": {
-                    "type": 5,
-                    "metric_type": "gauge",
-                    "value_type": "real-integer-pair",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                }
-            }
-        }
-    ],
-    "key2": [
-        {
-            "labels": {
-                "label2": "val2"
-            },
-            "counters": {
-                "test_counter": {
-                    "type": 2,
-                    "metric_type": "gauge",
-                    "value_type": "integer",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time": {
-                    "type": 1,
-                    "metric_type": "gauge",
-                    "value_type": "real",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time_avg": {
-                    "type": 5,
-                    "metric_type": "gauge",
-                    "value_type": "real-integer-pair",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                }
-            }
-        }
-    ],
-    "key3": [
-        {
-            "labels": {
-                "label3": "val3"
-            },
-            "counters": {
-                "test_counter": {
-                    "type": 2,
-                    "metric_type": "gauge",
-                    "value_type": "integer",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time": {
-                    "type": 1,
-                    "metric_type": "gauge",
-                    "value_type": "real",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time_avg": {
-                    "type": 5,
-                    "metric_type": "gauge",
-                    "value_type": "real-integer-pair",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                }
-            }
-        }
-    ],
-    "key4": [
-        {
-            "labels": {
-                "label4": "val4"
-            },
-            "counters": {
-                "test_counter": {
-                    "type": 2,
-                    "metric_type": "gauge",
-                    "value_type": "integer",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time": {
-                    "type": 1,
-                    "metric_type": "gauge",
-                    "value_type": "real",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                },
-                "test_time_avg": {
-                    "type": 5,
-                    "metric_type": "gauge",
-                    "value_type": "real-integer-pair",
-                    "description": "",
-                    "nick": "",
-                    "priority": 0,
-                    "units": "none"
-                }
-            }
-        }
-    ],
-    "key5": [
-        {
-            "labels": {
-                "label5": "val5"
             },
             "counters": {
                 "test_counter": {
@@ -1017,9 +548,6 @@ TEST(PerfCountersCache, TestLabeledCounters) {
   std::string label1 = ceph::perf_counters::key_create("key1", {{"label1", "val1"}});
   std::string label2 = ceph::perf_counters::key_create("key2", {{"label2", "val2"}});
   std::string label3 = ceph::perf_counters::key_create("key3", {{"label3", "val3"}});
-
-  pcc->add(label1, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label2, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
 
   // test inc()
   pcc->inc(label1, TEST_PERFCOUNTERS_COUNTER, 1);
@@ -1189,7 +717,6 @@ TEST(PerfCountersCache, TestLabeledCounters) {
 
 
   // test set_counters()
-  pcc->add(label3, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
   pcc->set_counter(label3, TEST_PERFCOUNTERS_COUNTER, 4);
   uint64_t val = pcc->get_counter(label3, TEST_PERFCOUNTERS_COUNTER);
   ASSERT_EQ(val, 4);
@@ -1254,9 +781,6 @@ TEST(PerfCountersCache, TestLabeledTimes) {
   std::string label1 = ceph::perf_counters::key_create("key1", {{"label1", "val1"}});
   std::string label2 = ceph::perf_counters::key_create("key2", {{"label2", "val2"}});
   std::string label3 = ceph::perf_counters::key_create("key3", {{"label3", "val3"}});
-
-  pcc->add(label1, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
-  pcc->add(label2, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
 
   // test inc()
   pcc->tinc(label1, TEST_PERFCOUNTERS_TIME, utime_t(100,0));
@@ -1403,13 +927,12 @@ TEST(PerfCountersCache, TestLabelStrings) {
   std::string empty_key = "";
 
   // empty string as should not create a labeled entry
-  pcc->add(empty_key, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
+  pcc->set_counter(empty_key, TEST_PERFCOUNTERS_COUNTER, 1);
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ("{}\n", message);
 
   // key name but no labels at all should not create a labeled entry
   std::string only_key = "only_key";
-  pcc->add(only_key, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
   // run an op on an invalid key name to make sure nothing happens
   pcc->set_counter(only_key, TEST_PERFCOUNTERS_COUNTER, 4);
 
@@ -1418,7 +941,6 @@ TEST(PerfCountersCache, TestLabelStrings) {
 
   // test valid key name with multiple valid label pairs
   std::string label1 = ceph::perf_counters::key_create("good_ctrs", {{"label3", "val3"}, {"label2", "val4"}});
-  pcc->add(label1, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
   pcc->set_counter(label1, TEST_PERFCOUNTERS_COUNTER, 8);
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
@@ -1445,11 +967,9 @@ TEST(PerfCountersCache, TestLabelStrings) {
 
   // test empty val in a label pair will get the label pair added into the perf counters cache but empty key will not
   std::string label2 = ceph::perf_counters::key_create("bad_ctrs1", {{"label3", "val4"}, {"label1", ""}});
-  pcc->add(label2, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
   pcc->set_counter(label2, TEST_PERFCOUNTERS_COUNTER, 2);
 
   std::string label3 = ceph::perf_counters::key_create("bad_ctrs2", {{"", "val4"}, {"label1", "val1"}});
-  pcc->add(label3, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
   pcc->set_counter(label3, TEST_PERFCOUNTERS_COUNTER, 2);
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
@@ -1509,7 +1029,7 @@ TEST(PerfCountersCache, TestLabelStrings) {
 
   // test empty keys in each of the label pairs will not get the label added into the perf counters cache
   std::string label4 = ceph::perf_counters::key_create("bad_ctrs3", {{"", "val2"}, {"", "val33"}});
-  pcc->add(label4, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
+  pcc->set_counter(label4, TEST_PERFCOUNTERS_COUNTER, 0);
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ(R"({
@@ -1575,7 +1095,7 @@ TEST(PerfCountersCache, TestLabelStrings) {
   label5 += '\0';
   label5 += "label2";
   label5 += '\0';
-  pcc->add(label5, TEST_PERFCOUNTERS1_ELEMENT_FIRST);
+  pcc->set_counter(label5, TEST_PERFCOUNTERS_COUNTER, 0);
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ(R"({
