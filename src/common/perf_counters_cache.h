@@ -7,6 +7,18 @@
 
 typedef std::list<std::string> labels_list;
 
+struct CacheEntry {
+  PerfCounters *counters;
+  labels_list::iterator pos;
+
+  CacheEntry(PerfCounters* _counters, labels_list::iterator _pos) {
+    counters = _counters;
+    pos = _pos;
+  }
+
+  ~CacheEntry() {}
+};
+
 class CountersSetup {
 
 public:
@@ -39,27 +51,31 @@ private:
   std::unordered_map<std::string_view, CountersSetup> setups;
   mutable ceph::mutex m_lock;
 
-  std::unordered_map<std::string, labels_list::iterator> list_itrs;
+  std::unordered_map<std::string, CacheEntry*> cache;
 
   labels_list labels;
 
   // move recently updated items in the list to the front
   void update_labels_list(const std::string &label) {
-    labels.erase(list_itrs[label]);
-    list_itrs[label] = labels.insert(labels.begin(), label);
+    labels.erase(cache[label]->pos);
+    cache[label]->pos = labels.insert(labels.begin(), label);
   }
 
   // removes least recently updated label from labels list
-  // removes oldest label's iterator from list_itrs
-  void remove_oldest_counters() {
+  // removes oldest label's CacheEntry from cache
+  void remove_oldest_counter() {
     std::string removed_label = labels.back();
     labels.pop_back();
-    auto counters = cct->get_perfcounters_collection()->get(removed_label);
-    if(counters) {
-      cct->get_perfcounters_collection()->remove(counters);
-      counters = NULL;
-    }
-    list_itrs.erase(removed_label);
+
+    ceph_assert(cache[removed_label]->counters);
+    cct->get_perfcounters_collection()->remove(cache[removed_label]->counters);
+    delete cache[removed_label]->counters;
+    cache[removed_label]->counters = NULL;
+
+    delete cache[removed_label];
+    cache[removed_label] = NULL;
+
+    cache.erase(removed_label);
     curr_size--;
   }
 
@@ -97,8 +113,12 @@ private:
     return true;
   }
 
-  ceph::common::PerfCounters* get(const std::string &key) {
-    return cct->get_perfcounters_collection()->get(key);
+  PerfCounters* get(const std::string &key) {
+    auto got = cache.find(key);
+    if (got != cache.end()) {
+      return got->second->counters;
+    }
+    return NULL;
   }
 
   PerfCounters* add(const std::string &key) {
@@ -110,7 +130,7 @@ private:
     if (!counters) {
       // check to make sure cache isn't full
       if (curr_size >= target_size) {
-        remove_oldest_counters();
+        remove_oldest_counter();
       }
 
       // get specific setup from setups
@@ -127,13 +147,12 @@ private:
       // add new counters to collection, cache
       cct->get_perfcounters_collection()->add(counters);
       labels_list::iterator pos = labels.insert(labels.begin(), key);
-      list_itrs[key] = pos;
+      CacheEntry *e = new CacheEntry(counters, pos);
+      cache[key] = e;
       curr_size++;
     }
     return counters;
   }
-
-
 
 public:
 
@@ -245,13 +264,12 @@ public:
   // for use right before destructor would get called
   void clear_cache() {
     std::lock_guard lock(m_lock);
-    for (auto it = labels.begin(); it != labels.end(); ++it ) {
-      auto counters = get(*it);
-      if(counters) {
-        cct->get_perfcounters_collection()->remove(counters);
-        counters = NULL;
-      }
-      list_itrs.erase(*it);
+    for(auto it = cache.begin(); it != cache.end(); ++it ) {
+      ceph_assert(it->second->counters);
+      cct->get_perfcounters_collection()->remove(it->second->counters);
+      delete it->second->counters;
+      // delete CacheEntry*
+      delete it->second;
       curr_size--;
     }
   }

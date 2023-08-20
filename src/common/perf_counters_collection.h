@@ -16,7 +16,6 @@ public:
   PerfCountersCollection(CephContext *cct);
   ~PerfCountersCollection();
   void add(PerfCounters *l);
-  PerfCounters* get(std::string name);
   void remove(PerfCounters *l);
   void clear();
   bool reset(const std::string &name);

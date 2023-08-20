@@ -18,11 +18,6 @@ void PerfCountersCollection::add(PerfCounters *l)
   std::lock_guard lck(m_lock);
   perf_impl.add(l);
 }
-PerfCounters* PerfCountersCollection::get(std::string name)
-{
-  std::lock_guard lck(m_lock);
-  return perf_impl.get(name);
-}
 void PerfCountersCollection::remove(PerfCounters *l)
 {
   std::lock_guard lck(m_lock);

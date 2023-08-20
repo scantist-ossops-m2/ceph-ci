@@ -47,12 +47,6 @@ void PerfCountersCollectionImpl::add(PerfCounters *l)
 
   m_loggers.insert(l);
 
-  // have an entry in by_path for just l->get_name() 
-  // for PerfCountersCollectionImpl::get()
-  PerfCounters::perf_counter_data_any_d data;
-  std::string path = l->get_name();
-  by_path[path] = {&data, l};
-
   for (unsigned int i = 0; i < l->m_data.size(); ++i) {
     PerfCounters::perf_counter_data_any_d &data = l->m_data[i];
 
@@ -62,15 +56,6 @@ void PerfCountersCollectionImpl::add(PerfCounters *l)
 
     by_path[path] = {&data, l};
   }
-}
-
-PerfCounters* PerfCountersCollectionImpl::get(std::string name)
-{
-    auto got = by_path.find(name);
-    if(got != by_path.end()) {
-      return got->second.perf_counters;
-    }
-    return NULL;
 }
 
 void PerfCountersCollectionImpl::remove(PerfCounters *l)
