@@ -34,10 +34,9 @@ class PerfCountersCache {
 
 private:
   CephContext *cct;
-  bool eviction;
   size_t curr_size = 0; 
   size_t target_size = 0; 
-  std::unordered_map<int, CountersSetup> setups;
+  std::unordered_map<std::string_view, CountersSetup> setups;
   mutable ceph::mutex m_lock;
 
   std::unordered_map<std::string, labels_list::iterator> list_itrs;
@@ -45,7 +44,7 @@ private:
   labels_list labels;
 
   // move recently updated items in the list to the front
-  void update_labels_list(std::string label) {
+  void update_labels_list(const std::string &label) {
     labels.erase(list_itrs[label]);
     list_itrs[label] = labels.insert(labels.begin(), label);
   }
@@ -65,7 +64,7 @@ private:
   }
 
   // check to make sure key name is non-empty and has labels
-  bool check_key(std::string key) {
+  bool check_key(const std::string &key) {
     std::string_view perf_counter_key = ceph::perf_counters::key_name(key);
     // return false for empty key name
     if (perf_counter_key == "") {
@@ -98,7 +97,7 @@ private:
     return true;
   }
 
-  ceph::common::PerfCounters* get(std::string key) {
+  ceph::common::PerfCounters* get(const std::string &key) {
     return cct->get_perfcounters_collection()->get(key);
   }
 
@@ -110,7 +109,7 @@ public:
     return curr_size;
   }
 
-  void add(std::string key, int counter_type) {
+  void add(const std::string &key) {
     std::lock_guard lock(m_lock);
     // key is not valid, these counters will not be get created
     if (!check_key(key))
@@ -119,13 +118,12 @@ public:
     auto counters = get(key);
     if (!counters) {
       // check to make sure cache isn't full
-      if (eviction) {
-        if (curr_size >= target_size) {
-          remove_oldest_counters();
-        }
+      if (curr_size >= target_size) {
+        remove_oldest_counters();
       }
 
       // get specific setup from setups
+      std::string_view counter_type = ceph::perf_counters::key_name(key);
       CountersSetup pb = setups[counter_type];
 
       // perf counters instance creation code
@@ -144,7 +142,7 @@ public:
     }
   }
 
-  void inc(std::string label, int indx, uint64_t v) {
+  void inc(const std::string &label, int indx, uint64_t v) {
     std::lock_guard lock(m_lock);
     auto counters = get(label);
     if (counters) {
@@ -152,7 +150,7 @@ public:
     }
   }
 
-  void dec(std::string label, int indx, uint64_t v) {
+  void dec(const std::string &label, int indx, uint64_t v) {
     std::lock_guard lock(m_lock);
     auto counters = get(label);
     if (counters) {
@@ -160,7 +158,7 @@ public:
     }
   }
 
-  void tinc(std::string label, int indx, utime_t amt) {
+  void tinc(const std::string &label, int indx, utime_t amt) {
     std::lock_guard lock(m_lock);
     auto counters = get(label);
     if (counters) {
@@ -168,7 +166,7 @@ public:
     }
   }
 
-  void tinc(std::string label, int indx, ceph::timespan amt) {
+  void tinc(const std::string &label, int indx, ceph::timespan amt) {
     std::lock_guard lock(m_lock);
     auto counters = get(label);
     if (counters) {
@@ -176,7 +174,7 @@ public:
     }
   }
 
-  void set_counter(std::string label, int indx, uint64_t val) {
+  void set_counter(const std::string &label, int indx, uint64_t val) {
     std::lock_guard lock(m_lock);
     auto counters = get(label);
     if (counters) {
@@ -184,7 +182,7 @@ public:
     }
   }
 
-  uint64_t get_counter(std::string label, int indx) {
+  uint64_t get_counter(const std::string &label, int indx) {
     std::lock_guard lock(m_lock);
     auto counters = get(label);
     uint64_t val = 0;
@@ -194,7 +192,7 @@ public:
     return val;
   }
 
-  utime_t tget(std::string label, int indx) {
+  utime_t tget(const std::string &label, int indx) {
     std::lock_guard lock(m_lock);
     auto counters = get(label);
     utime_t val;
@@ -206,7 +204,7 @@ public:
     }
   }
 
-  void tset(std::string label, int indx, utime_t amt) {
+  void tset(const std::string &label, int indx, utime_t amt) {
     std::lock_guard lock(m_lock);
     auto counters = get(label);
     if (counters) {
@@ -228,8 +226,8 @@ public:
     }
   }
 
-  PerfCountersCache(CephContext *_cct, bool _eviction, size_t _target_size, std::unordered_map<int, CountersSetup> _setups) : cct(_cct), 
-      eviction(_eviction), target_size(_target_size), setups(_setups), m_lock(ceph::make_mutex("PerfCountersCache")) {}
+  PerfCountersCache(CephContext *_cct, size_t _target_size, std::unordered_map<std::string_view, CountersSetup> _setups) : cct(_cct), 
+      target_size(_target_size), setups(_setups), m_lock(ceph::make_mutex("PerfCountersCache")) {}
 
   ~PerfCountersCache() {}
 

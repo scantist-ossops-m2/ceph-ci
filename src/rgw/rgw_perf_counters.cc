@@ -7,6 +7,37 @@
 
 PerfCounters *perfcounter = NULL;
 PerfCountersCache *perf_counters_cache = NULL;
+std::string_view rgw_op_counters_key = "rgw";
+
+static void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
+  // description must match general rgw counters description above
+  lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
+
+  lpcb->add_u64_counter(l_rgw_labeled_put_ops, "put_ops", "Puts");
+  lpcb->add_u64_counter(l_rgw_labeled_put_b, "put_bytes", "Size of puts");
+  lpcb->add_time_avg(l_rgw_labeled_put_lat, "put_lat", "Put latency");
+
+  lpcb->add_u64_counter(l_rgw_labeled_get_ops, "get_ops", "Gets");
+  lpcb->add_u64_counter(l_rgw_labeled_get_b, "get_bytes", "Size of gets");
+  lpcb->add_time_avg(l_rgw_labeled_get_lat, "get_lat", "Get latency");
+
+  lpcb->add_u64_counter(l_rgw_labeled_del_obj_ops, "del_obj_ops", "Delete objects");
+  lpcb->add_u64_counter(l_rgw_labeled_del_obj_b, "del_obj_bytes", "Size of delete objects");
+  lpcb->add_time_avg(l_rgw_labeled_del_obj_lat, "del_obj_lat", "Delete object latency");
+
+  lpcb->add_u64_counter(l_rgw_labeled_del_bucket_ops, "del_bucket_ops", "Delete Buckets");
+  lpcb->add_time_avg(l_rgw_labeled_del_bucket_lat, "del_bucket_lat", "Delete bucket latency");
+
+  lpcb->add_u64_counter(l_rgw_labeled_copy_obj_ops, "copy_obj_ops", "Copy objects");
+  lpcb->add_u64_counter(l_rgw_labeled_copy_obj_b, "copy_obj_bytes", "Size of copy objects");
+  lpcb->add_time_avg(l_rgw_labeled_copy_obj_lat, "copy_obj_lat", "Copy object latency");
+
+  lpcb->add_u64_counter(l_rgw_labeled_list_obj_ops, "list_obj_ops", "List objects");
+  lpcb->add_time_avg(l_rgw_labeled_list_obj_lat, "list_obj_lat", "List objects latency");
+
+  lpcb->add_u64_counter(l_rgw_labeled_list_buckets_ops, "list_buckets_ops", "List buckets");
+  lpcb->add_time_avg(l_rgw_labeled_list_buckets_lat, "list_buckets_lat", "List buckets latency");
+}
 
 int rgw_perf_start(CephContext *cct)
 {
@@ -69,84 +100,15 @@ int rgw_perf_start(CephContext *cct)
   cct->get_perfcounters_collection()->add(perfcounter);
 
 
-  std::function<void(PerfCountersBuilder*)> lpcb_init_puts = add_rgw_put_counters;
-  std::function<void(PerfCountersBuilder*)> lpcb_init_gets = add_rgw_get_counters;
-  std::function<void(PerfCountersBuilder*)> lpcb_init_del_objs = add_rgw_del_obj_counters;
-  std::function<void(PerfCountersBuilder*)> lpcb_init_del_buckets = add_rgw_del_bucket_counters;
-  std::function<void(PerfCountersBuilder*)> lpcb_init_copy_objs = add_rgw_copy_obj_counters;
-  std::function<void(PerfCountersBuilder*)> lpcb_init_list_objs = add_rgw_list_obj_counters;
-  std::function<void(PerfCountersBuilder*)> lpcb_init_list_buckets = add_rgw_list_buckets_counters;
+  std::function<void(PerfCountersBuilder*)> op_lpcb = add_rgw_op_counters;
+  CountersSetup op_counters_setup(l_rgw_labeled_op_first, l_rgw_labeled_op_last, op_lpcb);
 
-  CountersSetup put_counters_setup(l_rgw_cache_put_first, l_rgw_cache_put_last, lpcb_init_puts);
-  CountersSetup get_counters_setup(l_rgw_cache_get_first, l_rgw_cache_get_last, lpcb_init_gets);
-  CountersSetup del_obj_counters_setup(l_rgw_cache_del_obj_first, l_rgw_cache_del_obj_last, lpcb_init_del_objs);
-  CountersSetup del_bucket_counters_setup(l_rgw_cache_del_bucket_first, l_rgw_cache_del_bucket_last, lpcb_init_del_buckets);
-  CountersSetup copy_obj_counters_setup(l_rgw_cache_copy_obj_first, l_rgw_cache_copy_obj_last, lpcb_init_copy_objs);
-  CountersSetup list_obj_counters_setup(l_rgw_cache_list_obj_first, l_rgw_cache_list_obj_last, lpcb_init_list_objs);
-  CountersSetup list_buckets_counters_setup(l_rgw_cache_list_buckets_first, l_rgw_cache_list_buckets_last, lpcb_init_list_buckets);
-
-  std::unordered_map<int, CountersSetup> setups;
-  setups[rgw_put_counters] = put_counters_setup;
-  setups[rgw_get_counters] = get_counters_setup;
-  setups[rgw_del_obj_counters] = del_obj_counters_setup;
-  setups[rgw_del_bucket_counters] = del_bucket_counters_setup;
-  setups[rgw_copy_obj_counters] = copy_obj_counters_setup;
-  setups[rgw_list_obj_counters] = list_obj_counters_setup;
-  setups[rgw_list_buckets_counters] = list_buckets_counters_setup;
+  std::unordered_map<std::string_view, CountersSetup> setups;
+  setups[rgw_op_counters_key] = op_counters_setup;
 
   uint64_t target_size = cct->_conf.get_val<uint64_t>("rgw_perf_counters_cache_size");
-  bool eviction = cct->_conf.get_val<bool>("rgw_perf_counters_cache_eviction");
-  perf_counters_cache = new PerfCountersCache(cct, eviction, target_size, setups); 
+  perf_counters_cache = new PerfCountersCache(cct, target_size, setups); 
   return 0;
-}
-
-void add_rgw_put_counters(PerfCountersBuilder *lpcb) {
-  // description must match general rgw counters description above
-  lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
-  lpcb->add_u64_counter(l_rgw_cache_put_ops, "ops", "Puts");
-  lpcb->add_u64_counter(l_rgw_cache_put_b, "bytes", "Size of puts");
-  lpcb->add_time_avg(l_rgw_cache_put_lat, "lat", "Put latency");
-}
-
-void add_rgw_get_counters(PerfCountersBuilder *lpcb) {
-  // description must match general rgw counters description above
-  lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
-  lpcb->add_u64_counter(l_rgw_cache_get_ops, "ops", "Gets");
-  lpcb->add_u64_counter(l_rgw_cache_get_b, "bytes", "Size of gets");
-  lpcb->add_time_avg(l_rgw_cache_get_lat, "lat", "Get latency");
-}
-
-void add_rgw_del_obj_counters(PerfCountersBuilder* lpcb) {
-  lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
-  lpcb->add_u64_counter(l_rgw_cache_del_obj_ops, "ops", "Delete objects");
-  lpcb->add_u64_counter(l_rgw_cache_del_obj_b, "bytes", "Size of delete objects");
-  lpcb->add_time_avg(l_rgw_cache_del_obj_lat, "lat", "Delete object latency");
-}
-
-void add_rgw_del_bucket_counters(PerfCountersBuilder* lpcb) {
-  lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
-  lpcb->add_u64_counter(l_rgw_cache_del_bucket_ops, "ops", "Delete Buckets");
-  lpcb->add_time_avg(l_rgw_cache_del_bucket_lat, "lat", "Delete bucket latency");
-}
-
-void add_rgw_copy_obj_counters(PerfCountersBuilder* lpcb) {
-  lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
-  lpcb->add_u64_counter(l_rgw_cache_copy_obj_ops, "ops", "Copy objects");
-  lpcb->add_u64_counter(l_rgw_cache_copy_obj_b, "bytes", "Size of copy objects");
-  lpcb->add_time_avg(l_rgw_cache_copy_obj_lat, "lat", "Copy object latency");
-}
-
-void add_rgw_list_obj_counters(PerfCountersBuilder* lpcb) {
-  lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
-  lpcb->add_u64_counter(l_rgw_cache_list_obj_ops, "ops", "List objects");
-  lpcb->add_time_avg(l_rgw_cache_list_obj_lat, "lat", "List objects latency");
-
-}
-
-void add_rgw_list_buckets_counters(PerfCountersBuilder* lpcb) {
-  lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
-  lpcb->add_u64_counter(l_rgw_cache_list_buckets_ops, "ops", "List buckets");
-  lpcb->add_time_avg(l_rgw_cache_list_buckets_lat, "lat", "List buckets latency");
 }
 
 void rgw_perf_stop(CephContext *cct)

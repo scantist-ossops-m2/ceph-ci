@@ -11,13 +11,8 @@ extern PerfCountersCache *perf_counters_cache;
 
 extern int rgw_perf_start(CephContext *cct);
 extern void rgw_perf_stop(CephContext *cct);
-extern void add_rgw_put_counters(PerfCountersBuilder* lpcb);
-extern void add_rgw_get_counters(PerfCountersBuilder* lpcb);
-extern void add_rgw_del_obj_counters(PerfCountersBuilder* lpcb);
-extern void add_rgw_del_bucket_counters(PerfCountersBuilder* lpcb);
-extern void add_rgw_copy_obj_counters(PerfCountersBuilder* lpcb);
-extern void add_rgw_list_obj_counters(PerfCountersBuilder* lpcb);
-extern void add_rgw_list_buckets_counters(PerfCountersBuilder* lpcb);
+
+extern std::string_view rgw_op_counters_key;
 
 enum {
   l_rgw_first = 15000,
@@ -67,66 +62,33 @@ enum {
   l_rgw_last,
 };
 
-// keys for CountersSetup map in perf counters cache
 enum {
-  rgw_put_counters = 16000,
-  rgw_get_counters,
-  rgw_del_obj_counters,
-  rgw_del_bucket_counters,
-  rgw_copy_obj_counters,
-  rgw_list_obj_counters,
-  rgw_list_buckets_counters,
-};
+  l_rgw_labeled_op_first = 16000,
 
-enum {
-  l_rgw_cache_put_first = 16100,
-  l_rgw_cache_put_ops,
-  l_rgw_cache_put_b,
-  l_rgw_cache_put_lat,
-  l_rgw_cache_put_last,
-};
+  l_rgw_labeled_put_ops,
+  l_rgw_labeled_put_b,
+  l_rgw_labeled_put_lat,
 
-enum {
-  l_rgw_cache_get_first = 16200,
-  l_rgw_cache_get_ops,
-  l_rgw_cache_get_b,
-  l_rgw_cache_get_lat,
-  l_rgw_cache_get_last,
-};
+  l_rgw_labeled_get_ops,
+  l_rgw_labeled_get_b,
+  l_rgw_labeled_get_lat,
 
-enum {
-  l_rgw_cache_del_obj_first = 16300,
-  l_rgw_cache_del_obj_ops,
-  l_rgw_cache_del_obj_b,
-  l_rgw_cache_del_obj_lat,
-  l_rgw_cache_del_obj_last,
-};
+  l_rgw_labeled_del_obj_ops,
+  l_rgw_labeled_del_obj_b,
+  l_rgw_labeled_del_obj_lat,
 
-enum {
-  l_rgw_cache_del_bucket_first = 16400,
-  l_rgw_cache_del_bucket_ops,
-  l_rgw_cache_del_bucket_lat,
-  l_rgw_cache_del_bucket_last
-};
+  l_rgw_labeled_del_bucket_ops,
+  l_rgw_labeled_del_bucket_lat,
 
-enum {
-  l_rgw_cache_copy_obj_first = 16500,
-  l_rgw_cache_copy_obj_ops,
-  l_rgw_cache_copy_obj_b,
-  l_rgw_cache_copy_obj_lat,
-  l_rgw_cache_copy_obj_last
-};
+  l_rgw_labeled_copy_obj_ops,
+  l_rgw_labeled_copy_obj_b,
+  l_rgw_labeled_copy_obj_lat,
 
-enum {
-  l_rgw_cache_list_obj_first = 16600,
-  l_rgw_cache_list_obj_ops,
-  l_rgw_cache_list_obj_lat,
-  l_rgw_cache_list_obj_last
-};
+  l_rgw_labeled_list_obj_ops,
+  l_rgw_labeled_list_obj_lat,
 
-enum {
-  l_rgw_cache_list_buckets_first = 16700,
-  l_rgw_cache_list_buckets_ops,
-  l_rgw_cache_list_buckets_lat,
-  l_rgw_cache_list_buckets_last
+  l_rgw_labeled_list_buckets_ops,
+  l_rgw_labeled_list_buckets_lat,
+
+  l_rgw_labeled_op_last
 };
