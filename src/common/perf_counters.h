@@ -185,6 +185,7 @@ public:
     uint8_t prio = 0;
     enum perfcounter_type_d type;
     enum unit_t unit;
+    bool initialized = false;
     std::atomic<uint64_t> u64 = { 0 };
     std::atomic<uint64_t> avgcount = { 0 };
     std::atomic<uint64_t> avgcount2 = { 0 };
@@ -200,6 +201,7 @@ public:
       if (histogram) {
         histogram->reset();
       }
+      initialized = false;
     }
 
     // read <sum, count> safely by making sure the post- and pre-count
