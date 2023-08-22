@@ -95,8 +95,6 @@ TEST(PerfCountersCache, TestEviction) {
   counter->set(TEST_PERFCOUNTERS_COUNTER, 0);
   pcc->set_counter(label3, TEST_PERFCOUNTERS_COUNTER, 0);
   pcc->set_counter(label4, TEST_PERFCOUNTERS_COUNTER, 0);
-  size_t cache_size = pcc->get_cache_size();
-  ASSERT_EQ(cache_size, 4);
 
   AdminSocketClient client(get_rand_socket_path());
   std::string message;
@@ -224,8 +222,6 @@ TEST(PerfCountersCache, TestEviction) {
 
   pcc->set_counter(label5, TEST_PERFCOUNTERS_COUNTER, 0);
   pcc->set_counter(label6, TEST_PERFCOUNTERS_COUNTER, 0);
-  cache_size = pcc->get_cache_size();
-  ASSERT_EQ(cache_size, 4);
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ(R"({
     "key3": [

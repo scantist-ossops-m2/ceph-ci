@@ -4,19 +4,32 @@
 #include "common/perf_counters_key.h"
 #include "common/ceph_context.h"
 #include "common/ceph_mutex.h"
-#include <boost/intrusive/list.hpp>
+#include "common/intrusive_lru.h"
 
-struct Label : public boost::intrusive::list_base_hook<> {
-  std::string label;
-  Label(const std::string& _label) :  label(_label)  {}
-  Label(const Label& l) {
-    label = l.label;
+template <typename LRUItem>
+struct item_to_key {
+  using type = std::string;
+  const type &operator()(const LRUItem &item) {
+    return item.labels;
   }
-
-  ~Label() {}
 };
 
-typedef boost::intrusive::list<Label> labels_list;
+struct PerfCountersCacheEntry : public ceph::common::intrusive_lru_base<
+                                       ceph::common::intrusive_lru_config<
+                                       std::string, PerfCountersCacheEntry, item_to_key<PerfCountersCacheEntry>>> {
+  std::string labels;
+  std::shared_ptr<PerfCounters> counters;
+  CephContext *cct;
+
+  PerfCountersCacheEntry(std::string _key) : labels(_key) {}
+
+  ~PerfCountersCacheEntry() {
+    if(counters) {
+      ceph_assert(counters.get());
+      cct->get_perfcounters_collection()->remove(counters.get());
+    }
+  }
+};
 
 class CountersSetup {
 
@@ -41,38 +54,11 @@ public:
 };
 
 
-class PerfCountersCache {
-
+class PerfCountersCache : public PerfCountersCacheEntry::lru_t {
 private:
   CephContext *cct;
-  size_t curr_size = 0; 
-  size_t target_size = 0; 
   std::unordered_map<std::string_view, CountersSetup> setups;
   mutable ceph::mutex m_lock;
-
-  std::unordered_map<std::string, std::shared_ptr<PerfCounters>> cache;
-
-  labels_list labels;
-
-  // move recently updated items in the list to the front
-  void update_labels_list(const std::string &key) {
-    Label l(key);
-    labels.erase_and_dispose(labels.iterator_to(l), std::default_delete<Label>{});
-    labels.push_back(l);
-  }
-
-  // removes least recently updated label from labels list
-  // removes oldest label's PerfCounters from cache
-  void remove_oldest_counter() {
-    std::string removed_key = labels.front().label;
-    labels.pop_front_and_dispose(std::default_delete<Label>{});
-
-    ceph_assert(cache[removed_key]);
-    cct->get_perfcounters_collection()->remove(cache[removed_key].get());
-
-    cache.erase(removed_key);
-    curr_size--;
-  }
 
   // check to make sure key name is non-empty and has labels
   bool check_key(const std::string &key) {
@@ -109,19 +95,11 @@ private:
   }
 
   std::shared_ptr<PerfCounters> add(const std::string &key) {
-    // key is not valid, these counters will not be get created
     if (!check_key(key))
       return std::shared_ptr<PerfCounters>(nullptr);
 
-    auto got = cache.find(key);
-    if (got != cache.end()) {
-      return got->second;
-    } else {
-      // check to make sure cache isn't full
-      if (curr_size >= target_size) {
-        remove_oldest_counter();
-      }
-
+    auto [ref, key_existed] = get_or_create(key);
+    if (!key_existed) {
       // get specific setup from setups
       std::string_view counter_type = ceph::perf_counters::key_name(key);
       CountersSetup pb = setups[counter_type];
@@ -131,15 +109,14 @@ private:
       pb.add_counters(&lpcb);
 
       // add counters to builder
-      std::shared_ptr<PerfCounters> counters(lpcb.create_perf_counters());
+      std::shared_ptr<PerfCounters> new_counters(lpcb.create_perf_counters());
 
       // add new counters to collection, cache
-      cct->get_perfcounters_collection()->add(counters.get());
-      labels.push_back(*new Label{key});
-      cache[key] = counters;
-      curr_size++;
-      return counters;
+      cct->get_perfcounters_collection()->add(new_counters.get());
+      ref->counters = new_counters;
+      ref->cct = cct;
     }
+    return ref->counters;
   }
 
 public:
@@ -147,11 +124,6 @@ public:
   std::shared_ptr<PerfCounters> get(const std::string &key) {
     std::lock_guard lock(m_lock);
     return add(key);
-  }
-
-  size_t get_cache_size() {
-    std::lock_guard lock(m_lock);
-    return curr_size;
   }
 
   void inc(const std::string &key, int indx, uint64_t v) {
@@ -254,19 +226,9 @@ public:
     }
   }
 
-  void clear_cache() {
-    std::lock_guard lock(m_lock);
-    for (auto it = cache.begin(); it != cache.end(); ++it ) {
-      ceph_assert(it->second);
-      cct->get_perfcounters_collection()->remove(it->second.get());
-      curr_size--;
-    }
-    labels.clear_and_dispose(std::default_delete<Label>{});
-  }
-
   PerfCountersCache(CephContext *_cct, size_t _target_size, std::unordered_map<std::string_view, CountersSetup> _setups) : cct(_cct), 
-      target_size(_target_size), setups(_setups), m_lock(ceph::make_mutex("PerfCountersCache")) {}
+      setups(_setups), m_lock(ceph::make_mutex("PerfCountersCache")) { set_target_size(_target_size); }
 
-  ~PerfCountersCache() { clear_cache(); }
+  ~PerfCountersCache() { set_target_size(0); }
 
 };
