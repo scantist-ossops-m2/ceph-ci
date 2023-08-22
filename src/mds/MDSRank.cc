@@ -743,10 +743,6 @@ void MDSRankDispatcher::tick()
   // update average session uptime
   sessionmap.update_average_session_age();
 
-  if (is_active() || is_stopping()) {
-    mdlog->trim();  // NOT during recovery!
-  }
-
   // ...
   if (is_clientreplay() || is_active() || is_stopping()) {
     server->clear_laggy_clients();
@@ -3867,6 +3863,8 @@ const char** MDSRankDispatcher::get_tracked_conf_keys() const
     "mds_session_cap_acquisition_throttle",
     "mds_session_max_caps_throttle_ratio",
     "mds_symlink_recovery",
+    "mds_log_trim_threshold",
+    "mds_log_trim_decay_rate",
     NULL
   };
   return KEYS;
