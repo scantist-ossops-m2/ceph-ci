@@ -69,7 +69,6 @@ static PerfCountersCache* setup_test_perf_counters_cache(CephContext *cct, uint6
 }
 
 void cleanup_test(PerfCountersCache *pcc) {
-  pcc->clear_cache();
   delete pcc;
 }
 

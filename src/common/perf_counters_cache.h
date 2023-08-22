@@ -262,7 +262,6 @@ public:
     }
   }
 
-  // for use right before destructor would get called
   void clear_cache() {
     std::lock_guard lock(m_lock);
     for(auto it = cache.begin(); it != cache.end(); ++it ) {
@@ -276,6 +275,6 @@ public:
   PerfCountersCache(CephContext *_cct, size_t _target_size, std::unordered_map<std::string_view, CountersSetup> _setups) : cct(_cct), 
       target_size(_target_size), setups(_setups), m_lock(ceph::make_mutex("PerfCountersCache")) {}
 
-  ~PerfCountersCache() {}
+  ~PerfCountersCache() { clear_cache(); }
 
 };
