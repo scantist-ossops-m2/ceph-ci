@@ -60,9 +60,6 @@ void PerfCountersCollectionImpl::add(PerfCounters *l)
 
 void PerfCountersCollectionImpl::remove(PerfCounters *l)
 {
-  std::string path = l->get_name();
-  by_path.erase(path);
-
   for (unsigned int i = 0; i < l->m_data.size(); ++i) {
     PerfCounters::perf_counter_data_any_d &data = l->m_data[i];
 
