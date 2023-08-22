@@ -61,23 +61,23 @@ private:
   labels_list labels;
 
   // move recently updated items in the list to the front
-  void update_labels_list(const std::string &label) {
-    labels.erase(cache[label].pos);
-    cache[label].pos = labels.insert(labels.begin(), label);
+  void update_labels_list(const std::string &key) {
+    labels.erase(cache[key].pos);
+    cache[key].pos = labels.insert(labels.begin(), key);
   }
 
   // removes least recently updated label from labels list
   // removes oldest label's CacheEntry from cache
   void remove_oldest_counter() {
-    std::string removed_label = labels.back();
+    std::string removed_key = labels.back();
     labels.pop_back();
 
-    ceph_assert(cache[removed_label].counters);
-    cct->get_perfcounters_collection()->remove(cache[removed_label].counters);
-    delete cache[removed_label].counters;
-    cache[removed_label].counters = NULL;
+    ceph_assert(cache[removed_key].counters);
+    cct->get_perfcounters_collection()->remove(cache[removed_key].counters);
+    delete cache[removed_key].counters;
+    cache[removed_key].counters = NULL;
 
-    cache.erase(removed_label);
+    cache.erase(removed_key);
     curr_size--;
   }
 
@@ -115,21 +115,15 @@ private:
     return true;
   }
 
-  PerfCounters* get(const std::string &key) {
-    auto got = cache.find(key);
-    if (got != cache.end()) {
-      return got->second.counters;
-    }
-    return NULL;
-  }
-
   PerfCounters* add(const std::string &key) {
     // key is not valid, these counters will not be get created
     if (!check_key(key))
       return NULL;
 
-    auto counters = get(key);
-    if (!counters) {
+    auto got = cache.find(key);
+    if (got != cache.end()) {
+      return got->second.counters;
+    } else {
       // check to make sure cache isn't full
       if (curr_size >= target_size) {
         remove_oldest_counter();
@@ -144,7 +138,7 @@ private:
       pb.add_counters(&lpcb);
 
       // add counters to builder
-      counters = lpcb.create_perf_counters();
+      PerfCounters* counters = lpcb.create_perf_counters();
 
       // add new counters to collection, cache
       cct->get_perfcounters_collection()->add(counters);
@@ -152,85 +146,90 @@ private:
       CacheEntry e(counters, pos);
       cache[key] = e;
       curr_size++;
+      return counters;
     }
-    return counters;
   }
 
 public:
+
+  PerfCounters* get(const std::string &key) {
+    std::lock_guard lock(m_lock);
+    return add(key);
+  }
 
   size_t get_cache_size() {
     std::lock_guard lock(m_lock);
     return curr_size;
   }
 
-  void inc(const std::string &label, int indx, uint64_t v) {
+  void inc(const std::string &key, int indx, uint64_t v) {
     std::lock_guard lock(m_lock);
-    auto counters = get(label);
+    auto counters = add(key);
     if (counters) {
       counters->inc(indx, v);
     } else {
-      auto new_counters = add(label);
+      auto new_counters = add(key);
       if (new_counters) {
         new_counters->inc(indx, v);
       }
     }
   }
 
-  void dec(const std::string &label, int indx, uint64_t v) {
+  void dec(const std::string &key, int indx, uint64_t v) {
     std::lock_guard lock(m_lock);
-    auto counters = get(label);
+    auto counters = add(key);
     if (counters) {
       counters->dec(indx, v);
     } else {
-      auto new_counters = add(label);
+      auto new_counters = add(key);
       if (new_counters) {
         new_counters->dec(indx, v);
       }
     }
   }
 
-  void tinc(const std::string &label, int indx, utime_t amt) {
+  void tinc(const std::string &key, int indx, utime_t amt) {
     std::lock_guard lock(m_lock);
-    auto counters = get(label);
+    auto counters = add(key);
     if (counters) {
       counters->tinc(indx, amt);
     } else {
-      auto new_counters = add(label);
+      auto new_counters = add(key);
       if (new_counters) {
         new_counters->tinc(indx, amt);
       }
     }
   }
 
-  void tinc(const std::string &label, int indx, ceph::timespan amt) {
+  void tinc(const std::string &key, int indx, ceph::timespan amt) {
     std::lock_guard lock(m_lock);
-    auto counters = get(label);
+    auto counters = add(key);
     if (counters) {
       counters->tinc(indx, amt);
     } else {
-      auto new_counters = add(label);
+      auto new_counters = add(key);
       if (new_counters) {
         new_counters->tinc(indx, amt);
       }
     }
   }
 
-  void set_counter(const std::string &label, int indx, uint64_t val) {
+  void set_counter(const std::string &key, int indx, uint64_t val) {
     std::lock_guard lock(m_lock);
-    auto counters = get(label);
+    auto counters = add(key);
     if (counters) {
       counters->set(indx, val);
     } else {
-      auto new_counters = add(label);
+      auto new_counters = add(key);
       if (new_counters) {
         new_counters->set(indx, val);
       }
     }
   }
 
-  uint64_t get_counter(const std::string &label, int indx) {
+  uint64_t get_counter(const std::string &key, int indx) {
     std::lock_guard lock(m_lock);
-    auto counters = get(label);
+    auto counters = add(key);
     uint64_t val = 0;
     if (counters) {
       val = counters->get(indx);
@@ -238,9 +237,9 @@ public:
     return val;
   }
 
-  utime_t tget(const std::string &label, int indx) {
+  utime_t tget(const std::string &key, int indx) {
     std::lock_guard lock(m_lock);
-    auto counters = get(label);
+    auto counters = add(key);
     utime_t val;
     if (counters) {
       val = counters->tget(indx);
@@ -250,13 +249,13 @@ public:
     }
   }
 
-  void tset(const std::string &label, int indx, utime_t amt) {
+  void tset(const std::string &key, int indx, utime_t amt) {
     std::lock_guard lock(m_lock);
-    auto counters = get(label);
+    auto counters = add(key);
     if (counters) {
       counters->tset(indx, amt);
     } else {
-      auto new_counters = add(label);
+      auto new_counters = add(key);
       if (new_counters) {
         new_counters->tset(indx, amt);
       }
