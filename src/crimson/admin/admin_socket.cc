@@ -231,41 +231,50 @@ seastar::future<> AdminSocket::start(const std::string& path)
       "{}: Admin Socket socket path missing from the configuration", __func__);
     return seastar::now();
   }
-
-  logger().debug("{}: asok socket path={}", __func__, path);
-  auto sock_path = seastar::socket_address{ seastar::unix_domain_addr{ path } };
-  try {
-    server_sock = seastar::engine().listen(sock_path);
-  } catch (const std::system_error& e) {
-    logger().error("{}: unable to listen({}): {}", __func__, path, e.what());
-    server_sock.reset();
-    return seastar::make_ready_future<>();
-  }
-  // listen in background
-  task = seastar::keep_doing([this] {
-    return seastar::try_with_gate(stop_gate, [this] {
-      assert(!connected_sock.has_value());
-      return server_sock->accept().then([this](seastar::accept_result acc) {
-        connected_sock = std::move(acc.connection);
-        return seastar::do_with(connected_sock->input(),
-                                connected_sock->output(),
-          [this](auto& input, auto& output) mutable {
-          return handle_client(input, output);
-        }).finally([this] {
-          assert(connected_sock.has_value());
-          connected_sock.reset();
+  return seastar::file_exists(path).then([this, path](auto exists) {
+    auto fut = seastar::now();
+    if (exists) {
+      logger().debug("{}: Admin Socket socket path={} already exists, removing",
+                     __func__, path);
+      fut = seastar::remove_file(path);
+    }
+    return fut.then([this, path] {
+    logger().debug("{}: asok socket path={}", __func__, path);
+    auto sock_path = seastar::socket_address{ seastar::unix_domain_addr{ path } };
+    try {
+      server_sock = seastar::engine().listen(sock_path);
+    } catch (const std::system_error& e) {
+      logger().error("{}: unable to listen({}): {}", __func__, path, e.what());
+      server_sock.reset();
+      return seastar::make_ready_future<>();
+    }
+    // listen in background
+    task = seastar::keep_doing([this] {
+      return seastar::try_with_gate(stop_gate, [this] {
+        assert(!connected_sock.has_value());
+        return server_sock->accept().then([this](seastar::accept_result acc) {
+          connected_sock = std::move(acc.connection);
+          return seastar::do_with(connected_sock->input(),
+                                  connected_sock->output(),
+            [this](auto& input, auto& output) mutable {
+            return handle_client(input, output);
+          }).finally([this] {
+            assert(connected_sock.has_value());
+            connected_sock.reset();
+          });
+        }).handle_exception([this](auto ep) {
+          if (!stop_gate.is_closed()) {
+            logger().error("AdminSocket: terminated: {}", ep);
+          }
         });
-      }).handle_exception([this](auto ep) {
-        if (!stop_gate.is_closed()) {
-          logger().error("AdminSocket: terminated: {}", ep);
-        }
       });
+    }).handle_exception_type([](const seastar::gate_closed_exception&) {
+    }).finally([path] {
+      return seastar::remove_file(path);
     });
-  }).handle_exception_type([](const seastar::gate_closed_exception&) {
-  }).finally([path] {
-    return seastar::remove_file(path);
+    return seastar::make_ready_future<>();
+    });
   });
-  return seastar::make_ready_future<>();
 }
 
 seastar::future<> AdminSocket::stop()
