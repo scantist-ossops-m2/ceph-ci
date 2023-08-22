@@ -1147,7 +1147,7 @@ private:
   struct uleader {
     uleader() {}
     std::set<mds_rank_t> peers;
-    LogSegment *ls = nullptr;
+    AutoSharedLogSegment ls = nullptr;
     MDSContext::vec waiters;
     bool safe = false;
     bool committing = false;
@@ -1157,7 +1157,7 @@ private:
   struct upeer {
     upeer() {}
     mds_rank_t leader;
-    LogSegment *ls = nullptr;
+    AutoSharedLogSegment ls = nullptr;
     MDPeerUpdate *su = nullptr;
     MDSContext::vec waiters;
   };
@@ -1367,7 +1367,7 @@ private:
     ufragment() {}
     int bits = 0;
     bool committed = false;
-    LogSegment *ls = nullptr;
+    AutoSharedLogSegment ls = nullptr;
     MDSContext::vec waiters;
     frag_vec_t old_frags;
     bufferlist rollback;
