@@ -13,13 +13,13 @@ static void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
   // description must match general rgw counters description above
   lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
 
-  lpcb->add_u64_counter(l_rgw_labeled_put_ops, "put_ops", "Puts");
-  lpcb->add_u64_counter(l_rgw_labeled_put_b, "put_bytes", "Size of puts");
-  lpcb->add_time_avg(l_rgw_labeled_put_lat, "put_lat", "Put latency");
+  lpcb->add_u64_counter(l_rgw_labeled_put_ops, "put", "Puts");
+  lpcb->add_u64_counter(l_rgw_labeled_put_b, "put_b", "Size of puts");
+  lpcb->add_time_avg(l_rgw_labeled_put_lat, "put_initial_lat", "Put latency");
 
-  lpcb->add_u64_counter(l_rgw_labeled_get_ops, "get_ops", "Gets");
-  lpcb->add_u64_counter(l_rgw_labeled_get_b, "get_bytes", "Size of gets");
-  lpcb->add_time_avg(l_rgw_labeled_get_lat, "get_lat", "Get latency");
+  lpcb->add_u64_counter(l_rgw_labeled_get_ops, "get", "Gets");
+  lpcb->add_u64_counter(l_rgw_labeled_get_b, "get_b", "Size of gets");
+  lpcb->add_time_avg(l_rgw_labeled_get_lat, "get_initial_lat", "Get latency");
 
   lpcb->add_u64_counter(l_rgw_labeled_del_obj_ops, "del_obj_ops", "Delete objects");
   lpcb->add_u64_counter(l_rgw_labeled_del_obj_b, "del_obj_bytes", "Size of delete objects");
@@ -50,12 +50,12 @@ int rgw_perf_start(CephContext *cct)
   plb.add_u64_counter(l_rgw_req, "req", "Requests");
   plb.add_u64_counter(l_rgw_failed_req, "failed_req", "Aborted requests");
 
-  plb.add_u64_counter(l_rgw_get, "get_ops", "Gets");
-  plb.add_u64_counter(l_rgw_get_b, "get_bytes", "Size of gets");
-  plb.add_time_avg(l_rgw_get_lat, "get_lat", "Get latency");
-  plb.add_u64_counter(l_rgw_put, "put_ops", "Puts");
-  plb.add_u64_counter(l_rgw_put_b, "put_bytes", "Size of puts");
-  plb.add_time_avg(l_rgw_put_lat, "put_lat", "Put latency");
+  plb.add_u64_counter(l_rgw_get, "get", "Gets");
+  plb.add_u64_counter(l_rgw_get_b, "get_b", "Size of gets");
+  plb.add_time_avg(l_rgw_get_lat, "get_initial_lat", "Get latency");
+  plb.add_u64_counter(l_rgw_put, "put", "Puts");
+  plb.add_u64_counter(l_rgw_put_b, "put_b", "Size of puts");
+  plb.add_time_avg(l_rgw_put_lat, "put_initial_lat", "Put latency");
 
   plb.add_u64(l_rgw_qlen, "qlen", "Queue length");
   plb.add_u64(l_rgw_qactive, "qactive", "Active requests queue");
