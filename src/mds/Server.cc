@@ -7929,6 +7929,23 @@ void Server::handle_client_unlink(MDRequestRef& mdr)
   if (!dn)
     return;
 
+  CDentry::linkage_t *dnl = dn->get_linkage(client, mdr);
+  ceph_assert(!dnl->is_null());
+  CInode *in = dnl->get_inode();
+
+  // wait the previous unlink finshes thoroughly.
+  CDentry* _dn = in->get_projected_parent_dn();
+  if (_dn->get_dir()->inode->is_stray()) {
+    mds->locker->drop_locks(mdr.get());
+
+    // after reintegrating retry it
+    in->add_waiter(CInode::WAIT_UNLINK, new C_MDS_RetryRequest(mdcache, mdr));
+
+    // trigger to flush the logs, after which will it trigger stray dentry reintegrate
+    mdlog->flush();
+    return;
+  }
+
   // notify replica MDSes the dentry is under unlink
   if (!dn->state_test(CDentry::STATE_UNLINKING)) {
     dn->state_set(CDentry::STATE_UNLINKING);
@@ -7937,10 +7954,6 @@ void Server::handle_client_unlink(MDRequestRef& mdr)
       return;
     }
   }
-
-  CDentry::linkage_t *dnl = dn->get_linkage(client, mdr);
-  ceph_assert(!dnl->is_null());
-  CInode *in = dnl->get_inode();
 
   if (rmdir) {
     dout(7) << "handle_client_rmdir on " << *dn << dendl;
