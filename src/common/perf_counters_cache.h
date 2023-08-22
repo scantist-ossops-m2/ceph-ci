@@ -18,20 +18,6 @@ struct Label : public boost::intrusive::list_base_hook<> {
 
 typedef boost::intrusive::list<Label> labels_list;
 
-struct CacheEntry {
-  PerfCounters *counters;
-
-  CacheEntry() : counters(NULL) {}
-
-  CacheEntry(PerfCounters* _counters) {
-    counters = _counters;
-  }
-
-  CacheEntry(const CacheEntry& ce) {
-    counters = ce.counters;
-  }
-};
-
 class CountersSetup {
 
 public:
@@ -64,7 +50,7 @@ private:
   std::unordered_map<std::string_view, CountersSetup> setups;
   mutable ceph::mutex m_lock;
 
-  std::unordered_map<std::string, CacheEntry> cache;
+  std::unordered_map<std::string, PerfCounters*> cache;
 
   labels_list labels;
 
@@ -76,15 +62,15 @@ private:
   }
 
   // removes least recently updated label from labels list
-  // removes oldest label's CacheEntry from cache
+  // removes oldest label's PerfCounters from cache
   void remove_oldest_counter() {
     std::string removed_key = labels.front().label;
     labels.pop_front_and_dispose(std::default_delete<Label>{});
 
-    ceph_assert(cache[removed_key].counters);
-    cct->get_perfcounters_collection()->remove(cache[removed_key].counters);
-    delete cache[removed_key].counters;
-    cache[removed_key].counters = NULL;
+    ceph_assert(cache[removed_key]);
+    cct->get_perfcounters_collection()->remove(cache[removed_key]);
+    delete cache[removed_key];
+    cache[removed_key] = NULL;
 
     cache.erase(removed_key);
     curr_size--;
@@ -131,7 +117,7 @@ private:
 
     auto got = cache.find(key);
     if (got != cache.end()) {
-      return got->second.counters;
+      return got->second;
     } else {
       // check to make sure cache isn't full
       if (curr_size >= target_size) {
@@ -152,8 +138,7 @@ private:
       // add new counters to collection, cache
       cct->get_perfcounters_collection()->add(counters);
       labels.push_back(*new Label{key});
-      CacheEntry e(counters);
-      cache[key] = e;
+      cache[key] = counters;
       curr_size++;
       return counters;
     }
@@ -274,9 +259,9 @@ public:
   void clear_cache() {
     std::lock_guard lock(m_lock);
     for (auto it = cache.begin(); it != cache.end(); ++it ) {
-      ceph_assert(it->second.counters);
-      cct->get_perfcounters_collection()->remove(it->second.counters);
-      delete it->second.counters;
+      ceph_assert(it->second);
+      cct->get_perfcounters_collection()->remove(it->second);
+      delete it->second;
       curr_size--;
     }
     labels.clear_and_dispose(std::default_delete<Label>{});
