@@ -4,23 +4,31 @@
 #include "common/perf_counters_key.h"
 #include "common/ceph_context.h"
 #include "common/ceph_mutex.h"
+#include <boost/intrusive/list.hpp>
 
-typedef std::list<std::string> labels_list;
+struct Label : public boost::intrusive::list_base_hook<> {
+  std::string label;
+  Label(const std::string& _label) :  label(_label)  {}
+  Label(const Label& l) {
+    label = l.label;
+  }
+
+  ~Label() {}
+};
+
+typedef boost::intrusive::list<Label> labels_list;
 
 struct CacheEntry {
   PerfCounters *counters;
-  labels_list::iterator pos;
 
   CacheEntry() : counters(NULL) {}
 
-  CacheEntry(PerfCounters* _counters, labels_list::iterator _pos) {
+  CacheEntry(PerfCounters* _counters) {
     counters = _counters;
-    pos = _pos;
   }
 
   CacheEntry(const CacheEntry& ce) {
     counters = ce.counters;
-    pos = ce.pos;
   }
 };
 
@@ -62,15 +70,16 @@ private:
 
   // move recently updated items in the list to the front
   void update_labels_list(const std::string &key) {
-    labels.erase(cache[key].pos);
-    cache[key].pos = labels.insert(labels.begin(), key);
+    Label l(key);
+    labels.erase_and_dispose(labels.iterator_to(l), std::default_delete<Label>{});
+    labels.push_back(l);
   }
 
   // removes least recently updated label from labels list
   // removes oldest label's CacheEntry from cache
   void remove_oldest_counter() {
-    std::string removed_key = labels.back();
-    labels.pop_back();
+    std::string removed_key = labels.front().label;
+    labels.pop_front_and_dispose(std::default_delete<Label>{});
 
     ceph_assert(cache[removed_key].counters);
     cct->get_perfcounters_collection()->remove(cache[removed_key].counters);
@@ -90,15 +99,15 @@ private:
     }
 
     // if there are no labels key name is not valid
-    auto labels = ceph::perf_counters::key_labels(key);
-    if (labels.begin() == labels.end()) {
+    auto key_labels = ceph::perf_counters::key_labels(key);
+    if (key_labels.begin() == key_labels.end()) {
       return false;
     }
 
     // don't accept keys where all labels have an empty label name
     bool valid_label_pair = false;
-    for (auto label : labels) {
-      if (label.first == "") {
+    for (auto key_label : key_labels) {
+      if (key_label.first == "") {
         continue;
       } else {
         // a label in the set of labels is valid so entire key is valid
@@ -142,8 +151,8 @@ private:
 
       // add new counters to collection, cache
       cct->get_perfcounters_collection()->add(counters);
-      labels_list::iterator pos = labels.insert(labels.begin(), key);
-      CacheEntry e(counters, pos);
+      labels.push_back(*new Label{key});
+      CacheEntry e(counters);
       cache[key] = e;
       curr_size++;
       return counters;
@@ -264,12 +273,13 @@ public:
 
   void clear_cache() {
     std::lock_guard lock(m_lock);
-    for(auto it = cache.begin(); it != cache.end(); ++it ) {
+    for (auto it = cache.begin(); it != cache.end(); ++it ) {
       ceph_assert(it->second.counters);
       cct->get_perfcounters_collection()->remove(it->second.counters);
       delete it->second.counters;
       curr_size--;
     }
+    labels.clear_and_dispose(std::default_delete<Label>{});
   }
 
   PerfCountersCache(CephContext *_cct, size_t _target_size, std::unordered_map<std::string_view, CountersSetup> _setups) : cct(_cct), 
