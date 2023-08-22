@@ -91,7 +91,8 @@ TEST(PerfCountersCache, TestEviction) {
   std::string label6 = ceph::perf_counters::key_create("key6", {{"label6", "val6"}});
 
   pcc->set_counter(label1, TEST_PERFCOUNTERS_COUNTER, 0);
-  pcc->set_counter(label2, TEST_PERFCOUNTERS_COUNTER, 0);
+  std::shared_ptr<PerfCounters> counter = pcc->get(label2);
+  counter->set(TEST_PERFCOUNTERS_COUNTER, 0);
   pcc->set_counter(label3, TEST_PERFCOUNTERS_COUNTER, 0);
   pcc->set_counter(label4, TEST_PERFCOUNTERS_COUNTER, 0);
   size_t cache_size = pcc->get_cache_size();
@@ -637,6 +638,8 @@ TEST(PerfCountersCache, TestLabelStrings) {
 
   // empty string as should not create a labeled entry
   pcc->set_counter(empty_key, TEST_PERFCOUNTERS_COUNTER, 1);
+  std::shared_ptr<PerfCounters> counter = pcc->get(empty_key);
+  ASSERT_EQ(counter, std::shared_ptr<PerfCounters>(nullptr));
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ("{}\n", message);
 
@@ -644,6 +647,8 @@ TEST(PerfCountersCache, TestLabelStrings) {
   std::string only_key = "only_key";
   // run an op on an invalid key name to make sure nothing happens
   pcc->set_counter(only_key, TEST_PERFCOUNTERS_COUNTER, 4);
+  counter = pcc->get(only_key);
+  ASSERT_EQ(counter, std::shared_ptr<PerfCounters>(nullptr));
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ("{}\n", message);
@@ -715,6 +720,8 @@ TEST(PerfCountersCache, TestLabelStrings) {
   // test empty keys in each of the label pairs will not get the label added into the perf counters cache
   std::string label4 = ceph::perf_counters::key_create("bad_ctrs3", {{"", "val2"}, {"", "val33"}});
   pcc->set_counter(label4, TEST_PERFCOUNTERS_COUNTER, 0);
+  counter = pcc->get(label4);
+  ASSERT_EQ(counter, std::shared_ptr<PerfCounters>(nullptr));
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ(R"({

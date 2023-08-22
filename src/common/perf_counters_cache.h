@@ -50,7 +50,7 @@ private:
   std::unordered_map<std::string_view, CountersSetup> setups;
   mutable ceph::mutex m_lock;
 
-  std::unordered_map<std::string, PerfCounters*> cache;
+  std::unordered_map<std::string, std::shared_ptr<PerfCounters>> cache;
 
   labels_list labels;
 
@@ -68,9 +68,7 @@ private:
     labels.pop_front_and_dispose(std::default_delete<Label>{});
 
     ceph_assert(cache[removed_key]);
-    cct->get_perfcounters_collection()->remove(cache[removed_key]);
-    delete cache[removed_key];
-    cache[removed_key] = NULL;
+    cct->get_perfcounters_collection()->remove(cache[removed_key].get());
 
     cache.erase(removed_key);
     curr_size--;
@@ -110,10 +108,10 @@ private:
     return true;
   }
 
-  PerfCounters* add(const std::string &key) {
+  std::shared_ptr<PerfCounters> add(const std::string &key) {
     // key is not valid, these counters will not be get created
     if (!check_key(key))
-      return NULL;
+      return std::shared_ptr<PerfCounters>(nullptr);
 
     auto got = cache.find(key);
     if (got != cache.end()) {
@@ -133,10 +131,10 @@ private:
       pb.add_counters(&lpcb);
 
       // add counters to builder
-      PerfCounters* counters = lpcb.create_perf_counters();
+      std::shared_ptr<PerfCounters> counters(lpcb.create_perf_counters());
 
       // add new counters to collection, cache
-      cct->get_perfcounters_collection()->add(counters);
+      cct->get_perfcounters_collection()->add(counters.get());
       labels.push_back(*new Label{key});
       cache[key] = counters;
       curr_size++;
@@ -146,7 +144,7 @@ private:
 
 public:
 
-  PerfCounters* get(const std::string &key) {
+  std::shared_ptr<PerfCounters> get(const std::string &key) {
     std::lock_guard lock(m_lock);
     return add(key);
   }
@@ -260,8 +258,7 @@ public:
     std::lock_guard lock(m_lock);
     for (auto it = cache.begin(); it != cache.end(); ++it ) {
       ceph_assert(it->second);
-      cct->get_perfcounters_collection()->remove(it->second);
-      delete it->second;
+      cct->get_perfcounters_collection()->remove(it->second.get());
       curr_size--;
     }
     labels.clear_and_dispose(std::default_delete<Label>{});
