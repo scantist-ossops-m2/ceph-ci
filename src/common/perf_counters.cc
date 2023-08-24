@@ -203,7 +203,6 @@ void PerfCounters::inc(int idx, uint64_t amt)
   } else {
     data.u64 += amt;
   }
-  data.initialized = true;
 }
 
 void PerfCounters::dec(int idx, uint64_t amt)
@@ -220,7 +219,6 @@ void PerfCounters::dec(int idx, uint64_t amt)
   if (!(data.type & PERFCOUNTER_U64))
     return;
   data.u64 -= amt;
-  data.initialized = true;
 }
 
 void PerfCounters::set(int idx, uint64_t amt)
@@ -245,7 +243,6 @@ void PerfCounters::set(int idx, uint64_t amt)
   } else {
     data.u64 = amt;
   }
-  data.initialized = true;
 }
 
 uint64_t PerfCounters::get(int idx) const
@@ -282,7 +279,6 @@ void PerfCounters::tinc(int idx, utime_t amt)
   } else {
     data.u64 += amt.to_nsec();
   }
-  data.initialized = true;
 }
 
 void PerfCounters::tinc(int idx, ceph::timespan amt)
@@ -304,7 +300,6 @@ void PerfCounters::tinc(int idx, ceph::timespan amt)
   } else {
     data.u64 += amt.count();
   }
-  data.initialized = true;
 }
 
 void PerfCounters::tset(int idx, utime_t amt)
@@ -322,7 +317,6 @@ void PerfCounters::tset(int idx, utime_t amt)
   data.u64 = amt.to_nsec();
   if (data.type & PERFCOUNTER_LONGRUNAVG)
     ceph_abort();
-  data.initialized = true;
 }
 
 utime_t PerfCounters::tget(int idx) const
@@ -421,10 +415,6 @@ void PerfCounters::dump_formatted_generic(Formatter *f, bool schema,
     // Switch between normal and histogram view
     bool is_histogram = (d->type & PERFCOUNTER_HISTOGRAM) != 0;
     if (is_histogram != histograms) {
-      continue;
-    }
-
-    if (dump_labeled && !d->initialized) {
       continue;
     }
 

@@ -298,7 +298,8 @@ TEST(PerfCounters, TestLabeledCountersOnly) {
                 "label1": "val1"
             },
             "counters": {
-                "foo": 2
+                "foo": 2,
+                "bar": 0.000000000
             }
         },
         {
@@ -306,7 +307,8 @@ TEST(PerfCounters, TestLabeledCountersOnly) {
                 "label1": "val3"
             },
             "counters": {
-                "foo": 3
+                "foo": 3,
+                "bar": 0.000000000
             }
         }
     ],
@@ -316,7 +318,8 @@ TEST(PerfCounters, TestLabeledCountersOnly) {
                 "label2": "val2"
             },
             "counters": {
-                "foo": 4
+                "foo": 4,
+                "bar": 0.000000000
             }
         }
     ]
@@ -343,6 +346,15 @@ TEST(PerfCounters, TestLabeledCountersOnly) {
                     "nick": "",
                     "priority": 0,
                     "units": "none"
+                },
+                "bar": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
                 }
             }
         },
@@ -355,6 +367,15 @@ TEST(PerfCounters, TestLabeledCountersOnly) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "bar": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
                     "description": "",
                     "nick": "",
                     "priority": 0,
@@ -373,6 +394,15 @@ TEST(PerfCounters, TestLabeledCountersOnly) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "bar": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
                     "description": "",
                     "nick": "",
                     "priority": 0,
@@ -435,7 +465,8 @@ TEST(PerfCounters, TestLabelStrings) {
                 "label1": "val1"
             },
             "counters": {
-                "foo": 4
+                "foo": 4,
+                "bar": 0.000000000
             }
         }
     ],
@@ -443,7 +474,8 @@ TEST(PerfCounters, TestLabelStrings) {
         {
             "labels": {},
             "counters": {
-                "foo": 6
+                "foo": 6,
+                "bar": 0.000000000
             }
         }
     ],
@@ -454,7 +486,8 @@ TEST(PerfCounters, TestLabelStrings) {
                 "label3": "val4"
             },
             "counters": {
-                "foo": 2
+                "foo": 2,
+                "bar": 0.000000000
             }
         }
     ],
@@ -462,7 +495,8 @@ TEST(PerfCounters, TestLabelStrings) {
         {
             "labels": {},
             "counters": {
-                "foo": 4
+                "foo": 4,
+                "bar": 0.000000000
             }
         }
     ],
@@ -472,7 +506,8 @@ TEST(PerfCounters, TestLabelStrings) {
                 "label1": "val1"
             },
             "counters": {
-                "foo": 8
+                "foo": 8,
+                "bar": 0.000000000
             }
         }
     ]
@@ -496,6 +531,15 @@ TEST(PerfCounters, TestLabelStrings) {
                     "nick": "",
                     "priority": 0,
                     "units": "none"
+                },
+                "bar": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
                 }
             }
         }
@@ -508,6 +552,15 @@ TEST(PerfCounters, TestLabelStrings) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "bar": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
                     "description": "",
                     "nick": "",
                     "priority": 0,
@@ -531,6 +584,15 @@ TEST(PerfCounters, TestLabelStrings) {
                     "nick": "",
                     "priority": 0,
                     "units": "none"
+                },
+                "bar": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
                 }
             }
         }
@@ -543,6 +605,15 @@ TEST(PerfCounters, TestLabelStrings) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "bar": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
                     "description": "",
                     "nick": "",
                     "priority": 0,
@@ -561,6 +632,15 @@ TEST(PerfCounters, TestLabelStrings) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "bar": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
                     "description": "",
                     "nick": "",
                     "priority": 0,

@@ -106,7 +106,13 @@ TEST(PerfCountersCache, TestEviction) {
                 "label1": "val1"
             },
             "counters": {
-                "test_counter": 0
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -116,7 +122,13 @@ TEST(PerfCountersCache, TestEviction) {
                 "label2": "val2"
             },
             "counters": {
-                "test_counter": 0
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -126,7 +138,13 @@ TEST(PerfCountersCache, TestEviction) {
                 "label3": "val3"
             },
             "counters": {
-                "test_counter": 0
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -136,7 +154,13 @@ TEST(PerfCountersCache, TestEviction) {
                 "label4": "val4"
             },
             "counters": {
-                "test_counter": 0
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ]
@@ -159,6 +183,24 @@ TEST(PerfCountersCache, TestEviction) {
                     "nick": "",
                     "priority": 0,
                     "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
                 }
             }
         }
@@ -173,6 +215,24 @@ TEST(PerfCountersCache, TestEviction) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
                     "description": "",
                     "nick": "",
                     "priority": 0,
@@ -195,6 +255,24 @@ TEST(PerfCountersCache, TestEviction) {
                     "nick": "",
                     "priority": 0,
                     "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
                 }
             }
         }
@@ -209,6 +287,24 @@ TEST(PerfCountersCache, TestEviction) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
                     "description": "",
                     "nick": "",
                     "priority": 0,
@@ -230,7 +326,13 @@ TEST(PerfCountersCache, TestEviction) {
                 "label3": "val3"
             },
             "counters": {
-                "test_counter": 0
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -240,7 +342,13 @@ TEST(PerfCountersCache, TestEviction) {
                 "label4": "val4"
             },
             "counters": {
-                "test_counter": 0
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -250,7 +358,13 @@ TEST(PerfCountersCache, TestEviction) {
                 "label5": "val5"
             },
             "counters": {
-                "test_counter": 0
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -260,7 +374,13 @@ TEST(PerfCountersCache, TestEviction) {
                 "label6": "val6"
             },
             "counters": {
-                "test_counter": 0
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ]
@@ -284,6 +404,24 @@ TEST(PerfCountersCache, TestEviction) {
                     "nick": "",
                     "priority": 0,
                     "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
                 }
             }
         }
@@ -298,6 +436,24 @@ TEST(PerfCountersCache, TestEviction) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
                     "description": "",
                     "nick": "",
                     "priority": 0,
@@ -320,6 +476,24 @@ TEST(PerfCountersCache, TestEviction) {
                     "nick": "",
                     "priority": 0,
                     "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
                 }
             }
         }
@@ -334,6 +508,24 @@ TEST(PerfCountersCache, TestEviction) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
                     "description": "",
                     "nick": "",
                     "priority": 0,
@@ -367,7 +559,13 @@ TEST(PerfCountersCache, TestLabeledCounters) {
                 "label1": "val1"
             },
             "counters": {
-                "test_counter": 1
+                "test_counter": 1,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -377,7 +575,13 @@ TEST(PerfCountersCache, TestLabeledCounters) {
                 "label2": "val2"
             },
             "counters": {
-                "test_counter": 2
+                "test_counter": 2,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ]
@@ -401,6 +605,24 @@ TEST(PerfCountersCache, TestLabeledCounters) {
                     "nick": "",
                     "priority": 0,
                     "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
                 }
             }
         }
@@ -415,6 +637,24 @@ TEST(PerfCountersCache, TestLabeledCounters) {
                     "type": 2,
                     "metric_type": "gauge",
                     "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time": {
+                    "type": 1,
+                    "metric_type": "gauge",
+                    "value_type": "real",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
+                "test_time_avg": {
+                    "type": 5,
+                    "metric_type": "gauge",
+                    "value_type": "real-integer-pair",
                     "description": "",
                     "nick": "",
                     "priority": 0,
@@ -442,7 +682,13 @@ TEST(PerfCountersCache, TestLabeledCounters) {
                 "label1": "val1"
             },
             "counters": {
-                "test_counter": 1
+                "test_counter": 1,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -452,7 +698,13 @@ TEST(PerfCountersCache, TestLabeledCounters) {
                 "label2": "val2"
             },
             "counters": {
-                "test_counter": 1
+                "test_counter": 1,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ]
@@ -472,7 +724,13 @@ TEST(PerfCountersCache, TestLabeledCounters) {
                 "label1": "val1"
             },
             "counters": {
-                "test_counter": 1
+                "test_counter": 1,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -482,7 +740,13 @@ TEST(PerfCountersCache, TestLabeledCounters) {
                 "label2": "val2"
             },
             "counters": {
-                "test_counter": 1
+                "test_counter": 1,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -492,7 +756,13 @@ TEST(PerfCountersCache, TestLabeledCounters) {
                 "label3": "val3"
             },
             "counters": {
-                "test_counter": 4
+                "test_counter": 4,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ]
@@ -531,6 +801,7 @@ TEST(PerfCountersCache, TestLabeledTimes) {
                 "label1": "val1"
             },
             "counters": {
+                "test_counter": 0,
                 "test_time": 110.000000000,
                 "test_time_avg": {
                     "avgcount": 2,
@@ -546,6 +817,7 @@ TEST(PerfCountersCache, TestLabeledTimes) {
                 "label2": "val2"
             },
             "counters": {
+                "test_counter": 0,
                 "test_time": 200.000000000,
                 "test_time_avg": {
                     "avgcount": 2,
@@ -567,6 +839,15 @@ TEST(PerfCountersCache, TestLabeledTimes) {
                 "label1": "val1"
             },
             "counters": {
+                "test_counter": {
+                    "type": 2,
+                    "metric_type": "gauge",
+                    "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
                 "test_time": {
                     "type": 1,
                     "metric_type": "gauge",
@@ -594,6 +875,15 @@ TEST(PerfCountersCache, TestLabeledTimes) {
                 "label2": "val2"
             },
             "counters": {
+                "test_counter": {
+                    "type": 2,
+                    "metric_type": "gauge",
+                    "value_type": "integer",
+                    "description": "",
+                    "nick": "",
+                    "priority": 0,
+                    "units": "none"
+                },
                 "test_time": {
                     "type": 1,
                     "metric_type": "gauge",
@@ -662,7 +952,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label3": "val3"
             },
             "counters": {
-                "test_counter": 8
+                "test_counter": 8,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ]
@@ -685,7 +981,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label3": "val4"
             },
             "counters": {
-                "test_counter": 2
+                "test_counter": 2,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -695,7 +997,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label1": "val1"
             },
             "counters": {
-                "test_counter": 2
+                "test_counter": 2,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -706,7 +1014,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label3": "val3"
             },
             "counters": {
-                "test_counter": 8
+                "test_counter": 8,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ]
@@ -728,7 +1042,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label3": "val4"
             },
             "counters": {
-                "test_counter": 2
+                "test_counter": 2,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -738,7 +1058,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label1": "val1"
             },
             "counters": {
-                "test_counter": 2
+                "test_counter": 2,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -749,7 +1075,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label3": "val3"
             },
             "counters": {
-                "test_counter": 8
+                "test_counter": 8,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ]
@@ -776,7 +1108,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label3": "val4"
             },
             "counters": {
-                "test_counter": 2
+                "test_counter": 2,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -786,7 +1124,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label1": "val1"
             },
             "counters": {
-                "test_counter": 2
+                "test_counter": 2,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -797,7 +1141,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label3": "val3"
             },
             "counters": {
-                "test_counter": 8
+                "test_counter": 8,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ],
@@ -807,7 +1157,13 @@ TEST(PerfCountersCache, TestLabelStrings) {
                 "label1": "val1"
             },
             "counters": {
-                "test_counter": 0
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
             }
         }
     ]
