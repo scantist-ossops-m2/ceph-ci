@@ -383,10 +383,7 @@ void DaemonMetricCollector::dump_asok_metric(json_object perf_info,
     add_metric(builder, count, name + "_count", description + " Count", "counter",
                labels);
     json_value sum_value = perf_values.as_object()["sum"];
-    add_double_or_int_metric(builder, sum_value, name + "_sum", description + " total",
-                             metric_type, labels);
-    json_value avg_value = perf_values.as_object()["avgtime"];
-    add_double_or_int_metric(builder, avg_value, name + "_avg", description + " average",
+    add_double_or_int_metric(builder, sum_value, name + "_sum", description + " Total",
                              metric_type, labels);
   } else {
     add_double_or_int_metric(builder, perf_values, name, description,
