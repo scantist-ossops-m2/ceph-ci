@@ -11,7 +11,7 @@ std::string_view rgw_op_counters_key = "rgw";
 
 static void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
   // description must match general rgw counters description above
-  lpcb->set_prio_default(PerfCountersBuilder::PRIO_CRITICAL);
+  lpcb->set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
 
   lpcb->add_u64_counter(l_rgw_labeled_put_ops, "put", "Puts");
   lpcb->add_u64_counter(l_rgw_labeled_put_b, "put_b", "Size of puts");

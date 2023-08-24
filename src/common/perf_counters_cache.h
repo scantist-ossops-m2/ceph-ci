@@ -10,22 +10,21 @@ template <typename LRUItem>
 struct item_to_key {
   using type = std::string;
   const type &operator()(const LRUItem &item) {
-    return item.labels;
+    return item.key;
   }
 };
 
 struct PerfCountersCacheEntry : public ceph::common::intrusive_lru_base<
                                        ceph::common::intrusive_lru_config<
                                        std::string, PerfCountersCacheEntry, item_to_key<PerfCountersCacheEntry>>> {
-  std::string labels;
+  std::string key;
   std::shared_ptr<PerfCounters> counters;
   CephContext *cct;
 
-  PerfCountersCacheEntry(std::string _key) : labels(_key) {}
+  PerfCountersCacheEntry(const std::string &_key) : key(_key) {}
 
   ~PerfCountersCacheEntry() {
     if(counters) {
-      ceph_assert(counters.get());
       cct->get_perfcounters_collection()->remove(counters.get());
     }
   }
@@ -60,43 +59,34 @@ private:
   std::unordered_map<std::string_view, CountersSetup> setups;
   mutable ceph::mutex m_lock;
 
-  // check to make sure key name is non-empty and has labels
-  bool check_key(const std::string &key) {
-    std::string_view perf_counter_key = ceph::perf_counters::key_name(key);
+  /* check to make sure key name is non-empty and non-empty labels
+   *
+   * A valid key has the the form 
+   * key:label1:val1:label2:val2 ... labelN:valN
+   * The following 3 properties checked for in this function
+   * 1. A non-empty key
+   * 2. At least 1 set of labels
+   * 3. Each label has a non-empty key and value
+   *
+   */
+  void check_key(const std::string &key) {
+    std::string_view key_name = ceph::perf_counters::key_name(key);
     // return false for empty key name
-    if (perf_counter_key == "") {
-      return false;
-    }
+    ceph_assert(key_name != "");
 
     // if there are no labels key name is not valid
     auto key_labels = ceph::perf_counters::key_labels(key);
-    if (key_labels.begin() == key_labels.end()) {
-      return false;
-    }
+    ceph_assert(key_labels.begin() != key_labels.end());
 
-    // don't accept keys where all labels have an empty label name
-    bool valid_label_pair = false;
+    // don't accept keys where any labels have an empty label name
     for (auto key_label : key_labels) {
-      if (key_label.first == "") {
-        continue;
-      } else {
-        // a label in the set of labels is valid so entire key is valid
-        // labels with empty strings are not dumped into json
-        valid_label_pair = true;
-        break;
-      }
+      ceph_assert(key_label.first != "");
+      ceph_assert(key_label.second != "");
     }
-
-    if (!valid_label_pair) {
-      return false;
-    }
-
-    return true;
   }
 
   std::shared_ptr<PerfCounters> add(const std::string &key) {
-    if (!check_key(key))
-      return std::shared_ptr<PerfCounters>(nullptr);
+    check_key(key);
 
     auto [ref, key_existed] = get_or_create(key);
     if (!key_existed) {
@@ -121,6 +111,10 @@ private:
 
 public:
 
+  // get() and its associated shared_ptr reference counting should be avoided 
+  // unless the caller intends to modify multiple counter values at the same time.
+  // If multiple counter values will not be modified at the same time, inc/dec/etc. 
+  // are recommended.
   std::shared_ptr<PerfCounters> get(const std::string &key) {
     std::lock_guard lock(m_lock);
     return add(key);
@@ -131,11 +125,6 @@ public:
     auto counters = add(key);
     if (counters) {
       counters->inc(indx, v);
-    } else {
-      auto new_counters = add(key);
-      if (new_counters) {
-        new_counters->inc(indx, v);
-      }
     }
   }
 
@@ -144,11 +133,6 @@ public:
     auto counters = add(key);
     if (counters) {
       counters->dec(indx, v);
-    } else {
-      auto new_counters = add(key);
-      if (new_counters) {
-        new_counters->dec(indx, v);
-      }
     }
   }
 
@@ -157,11 +141,6 @@ public:
     auto counters = add(key);
     if (counters) {
       counters->tinc(indx, amt);
-    } else {
-      auto new_counters = add(key);
-      if (new_counters) {
-        new_counters->tinc(indx, amt);
-      }
     }
   }
 
@@ -170,11 +149,6 @@ public:
     auto counters = add(key);
     if (counters) {
       counters->tinc(indx, amt);
-    } else {
-      auto new_counters = add(key);
-      if (new_counters) {
-        new_counters->tinc(indx, amt);
-      }
     }
   }
 
@@ -183,11 +157,6 @@ public:
     auto counters = add(key);
     if (counters) {
       counters->set(indx, val);
-    } else {
-      auto new_counters = add(key);
-      if (new_counters) {
-        new_counters->set(indx, val);
-      }
     }
   }
 
@@ -218,11 +187,6 @@ public:
     auto counters = add(key);
     if (counters) {
       counters->tset(indx, amt);
-    } else {
-      auto new_counters = add(key);
-      if (new_counters) {
-        new_counters->tset(indx, amt);
-      }
     }
   }
 

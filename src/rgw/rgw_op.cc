@@ -2209,7 +2209,7 @@ void RGWGetObj::execute(optional_yield y)
   std::unique_ptr<RGWGetObj_Filter> run_lua;
   map<string, bufferlist>::iterator attr_iter;
 
-  bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
+  bool rgw_perf_counters_cache = s->cct->_conf->rgw_perf_counters_cache;
   std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
   std::shared_ptr<PerfCounters> labeled_counters;
   if(rgw_perf_counters_cache) {
@@ -2507,7 +2507,7 @@ void RGWListBuckets::execute(optional_yield y)
 
   const uint64_t max_buckets = s->cct->_conf->rgw_list_buckets_max_chunk;
 
-  bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
+  bool rgw_perf_counters_cache = s->cct->_conf->rgw_perf_counters_cache;
   std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"User", s->user->get_id().id}});
   std::shared_ptr<PerfCounters> labeled_counters;
   if(rgw_perf_counters_cache) {
@@ -3085,7 +3085,7 @@ void RGWListBucket::execute(optional_yield y)
     common_prefixes = std::move(results.common_prefixes);
   }
 
-  bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
+  bool rgw_perf_counters_cache = s->cct->_conf->rgw_perf_counters_cache;
   std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
   std::shared_ptr<PerfCounters> labeled_counters;
   if(rgw_perf_counters_cache) {
@@ -3612,7 +3612,7 @@ void RGWDeleteBucket::execute(optional_yield y)
       op_ret = 0;
   }
 
-  bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
+  bool rgw_perf_counters_cache = s->cct->_conf->rgw_perf_counters_cache;
   if(rgw_perf_counters_cache) {
     std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
     std::shared_ptr<PerfCounters> labeled_counters;
@@ -4048,7 +4048,7 @@ void RGWPutObj::execute(optional_yield y)
   off_t fst;
   off_t lst;
 
-  bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
+  bool rgw_perf_counters_cache = s->cct->_conf->rgw_perf_counters_cache;
   std::shared_ptr<PerfCounters> labeled_counters;
   if (rgw_perf_counters_cache) {
     std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
@@ -4340,7 +4340,7 @@ void RGWPutObj::execute(optional_yield y)
   s->obj_size = ofs;
   s->object->set_obj_size(ofs);
 
-  rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
+  rgw_perf_counters_cache = s->cct->_conf->rgw_perf_counters_cache;
   if(rgw_perf_counters_cache && labeled_counters) {
     labeled_counters->inc(l_rgw_labeled_put_b, s->obj_size);
   }
@@ -5303,7 +5303,7 @@ void RGWDeleteObj::execute(optional_yield y)
       op_ret = 0;
     }
 
-    bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
+    bool rgw_perf_counters_cache = s->cct->_conf->rgw_perf_counters_cache;
     if(rgw_perf_counters_cache) {
       std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
       std::shared_ptr<PerfCounters> labeled_counters;
@@ -5774,7 +5774,7 @@ void RGWCopyObj::execute(optional_yield y)
     // too late to rollback operation, hence op_ret is not set here
   }
 
-  bool rgw_perf_counters_cache = s->cct->_conf.get_val<bool>("rgw_perf_counters_cache");
+  bool rgw_perf_counters_cache = s->cct->_conf->rgw_perf_counters_cache;
   if(rgw_perf_counters_cache) {
     std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
     std::shared_ptr<PerfCounters> labeled_counters;
