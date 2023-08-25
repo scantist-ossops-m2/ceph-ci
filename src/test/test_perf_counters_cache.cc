@@ -18,6 +18,7 @@ int main(int argc, char **argv) {
 			 CINIT_FLAG_NO_DEFAULT_CONFIG_FILE|
 			 CINIT_FLAG_NO_CCT_PERF_COUNTERS);
   common_init_finish(g_ceph_context);
+  ::testing::FLAGS_gtest_death_test_style = "threadsafe";
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
@@ -912,6 +913,157 @@ TEST(PerfCountersCache, TestLabeledTimes) {
   pcc->tset(label1, TEST_PERFCOUNTERS_TIME, utime_t(500,0));
   utime_t label1_time = pcc->tget(label1, TEST_PERFCOUNTERS_TIME);
   ASSERT_EQ(utime_t(500,0), label1_time);
+
+  cleanup_test(pcc);
+}
+
+TEST(PerfCountersCache, TestLabelStrings) {
+  AdminSocketClient client(get_rand_socket_path());
+  std::string message;
+  PerfCountersCache *pcc = setup_test_perf_counters_cache(g_ceph_context);
+  std::string empty_key = "";
+
+  // empty string as should not create a labeled entry
+  EXPECT_DEATH(pcc->set_counter(empty_key, TEST_PERFCOUNTERS_COUNTER, 1), "");
+  EXPECT_DEATH(pcc->get(empty_key), "");
+  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
+  ASSERT_EQ("{}\n", message);
+
+  // key name but no labels at all should not create a labeled entry
+  std::string only_key = "only_key";
+  // run an op on an invalid key name to make sure nothing happens
+  EXPECT_DEATH(pcc->set_counter(only_key, TEST_PERFCOUNTERS_COUNTER, 4), "");
+  EXPECT_DEATH(pcc->get(only_key), "");
+
+  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
+  ASSERT_EQ("{}\n", message);
+
+  // test valid key name with multiple valid label pairs
+  std::string label1 = ceph::perf_counters::key_create("good_ctrs", {{"label3", "val3"}, {"label2", "val4"}});
+  pcc->set_counter(label1, TEST_PERFCOUNTERS_COUNTER, 8);
+
+  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
+  ASSERT_EQ(R"({
+    "good_ctrs": [
+        {
+            "labels": {
+                "label2": "val4",
+                "label3": "val3"
+            },
+            "counters": {
+                "test_counter": 8,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
+            }
+        }
+    ]
+}
+)", message);
+
+  // test empty val in a label pair will get the label pair added into the perf counters cache but empty key will not
+  std::string label2 = ceph::perf_counters::key_create("bad_ctrs1", {{"label3", "val4"}, {"label1", ""}});
+  EXPECT_DEATH(pcc->set_counter(label2, TEST_PERFCOUNTERS_COUNTER, 2), "");
+
+  std::string label3 = ceph::perf_counters::key_create("bad_ctrs2", {{"", "val4"}, {"label1", "val1"}});
+  EXPECT_DEATH(pcc->set_counter(label3, TEST_PERFCOUNTERS_COUNTER, 2), "");
+
+  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
+  ASSERT_EQ(R"({
+    "good_ctrs": [
+        {
+            "labels": {
+                "label2": "val4",
+                "label3": "val3"
+            },
+            "counters": {
+                "test_counter": 8,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
+            }
+        }
+    ]
+}
+)", message);
+
+  // test empty keys in each of the label pairs will not get the label added into the perf counters cache
+  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
+  ASSERT_EQ(R"({
+    "good_ctrs": [
+        {
+            "labels": {
+                "label2": "val4",
+                "label3": "val3"
+            },
+            "counters": {
+                "test_counter": 8,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
+            }
+        }
+    ]
+}
+)", message);
+
+  // a key with a somehow odd number of entries after the the key name will omit final unfinished label pair
+  std::string label5 = "too_many_delimiters";
+  label5 += '\0';
+  label5 += "label1";
+  label5 += '\0';
+  label5 += "val1";
+  label5 += '\0';
+  label5 += "label2";
+  label5 += '\0';
+  pcc->set_counter(label5, TEST_PERFCOUNTERS_COUNTER, 0);
+
+  ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
+  ASSERT_EQ(R"({
+    "good_ctrs": [
+        {
+            "labels": {
+                "label2": "val4",
+                "label3": "val3"
+            },
+            "counters": {
+                "test_counter": 8,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
+            }
+        }
+    ],
+    "too_many_delimiters": [
+        {
+            "labels": {
+                "label1": "val1"
+            },
+            "counters": {
+                "test_counter": 0,
+                "test_time": 0.000000000,
+                "test_time_avg": {
+                    "avgcount": 0,
+                    "sum": 0.000000000,
+                    "avgtime": 0.000000000
+                }
+            }
+        }
+    ]
+}
+)", message);
 
   cleanup_test(pcc);
 }
