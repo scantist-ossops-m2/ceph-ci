@@ -40,6 +40,14 @@ static void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
   lpcb->add_time_avg(l_rgw_op_list_buckets_lat, "list_buckets_lat", "List buckets latency");
 }
 
+static std::shared_ptr<PerfCounters> create_rgw_counters(const std::string& name, CephContext *cct) {
+  PerfCountersBuilder pcb(cct, name, l_rgw_op_first, l_rgw_op_last);
+  add_rgw_op_counters(&pcb);
+  std::shared_ptr<PerfCounters> new_counters(pcb.create_perf_counters());
+  cct->get_perfcounters_collection()->add(new_counters.get());
+  return new_counters;
+}
+
 int rgw_perf_start(CephContext *cct)
 {
   PerfCountersBuilder plb(cct, "rgw", l_rgw_first, l_rgw_last);
@@ -98,14 +106,8 @@ int rgw_perf_start(CephContext *cct)
   global_op_counters = op_pcb.create_perf_counters();
   cct->get_perfcounters_collection()->add(global_op_counters);
 
-  std::function<void(PerfCountersBuilder*)> op_pcb_func = add_rgw_op_counters;
-  CountersSetup op_counters_setup(l_rgw_op_first, l_rgw_op_last, op_pcb_func);
-
-  std::unordered_map<std::string_view, CountersSetup> setups;
-  setups[rgw_op_counters_key] = op_counters_setup;
-
   uint64_t target_size = cct->_conf.get_val<uint64_t>("rgw_perf_counters_cache_size");
-  perf_counters_cache = new PerfCountersCache(cct, target_size, setups); 
+  perf_counters_cache = new PerfCountersCache(cct, target_size, create_rgw_counters); 
   return 0;
 }
 

@@ -32,33 +32,10 @@ struct perf_counters_cache_item_to_key {
 };
 
 
-class CountersSetup {
-
-public:
-  int first;
-  int last;
-  std::function<void(PerfCountersBuilder*)> add_counters;
-
-  CountersSetup() : first(0), last(0) {}
-
-  CountersSetup(int _first, int _last, std::function<void(PerfCountersBuilder*)> _add_counters) {
-    first = _first;
-    last = _last;
-    add_counters = _add_counters;
-  }
-
-  CountersSetup(const CountersSetup& cs) {
-    first = cs.first;
-    last = cs.last;
-    add_counters = cs.add_counters;
-  }
-};
-
-
 class PerfCountersCache {
 private:
   CephContext *cct;
-  std::unordered_map<std::string_view, CountersSetup> setups;
+  std::function<std::shared_ptr<PerfCounters>(const std::string&, CephContext*)> create_counters;
   PerfCountersCacheEntry::lru_t cache;
   mutable ceph::mutex m_lock;
 
@@ -93,20 +70,8 @@ private:
 
     auto [ref, key_existed] = cache.get_or_create(key);
     if (!key_existed) {
-      // get specific setup from setups
-      std::string_view counter_type = ceph::perf_counters::key_name(key);
-      CountersSetup pb = setups[counter_type];
-
-      // perf counters instance creation code
-      PerfCountersBuilder lpcb(cct, key, pb.first, pb.last);
-      pb.add_counters(&lpcb);
-
-      // add counters to builder
-      std::shared_ptr<PerfCounters> new_counters(lpcb.create_perf_counters());
-
-      // add new counters to collection, cache
-      cct->get_perfcounters_collection()->add(new_counters.get());
-      ref->counters = new_counters;
+      ref->counters = create_counters(key, cct);
+      ceph_assert(ref->counters);
       ref->cct = cct;
     }
     return ref->counters;
@@ -193,8 +158,12 @@ public:
     }
   }
 
-  PerfCountersCache(CephContext *_cct, size_t _target_size, std::unordered_map<std::string_view, CountersSetup> _setups) : cct(_cct), 
-      setups(_setups), m_lock(ceph::make_mutex("PerfCountersCache")) { cache.set_target_size(_target_size); }
+  // _create_counters should be a function that returns a valid, newly created perf counters instance
+  // Ceph components utilizing the PerfCountersCache are encouraged to pass in a factory function that would
+  // create and initialize different kinds of counters based on the name returned from ceph::perfcounters::key_name(key)
+  PerfCountersCache(CephContext *_cct, size_t _target_size,
+      std::function<std::shared_ptr<PerfCounters>(const std::string&, CephContext*)> _create_counters)
+      : cct(_cct), create_counters(_create_counters), m_lock(ceph::make_mutex("PerfCountersCache")) { cache.set_target_size(_target_size); }
 
   ~PerfCountersCache() { cache.set_target_size(0); }
 

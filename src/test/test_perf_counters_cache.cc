@@ -49,25 +49,19 @@ void add_test_counters(PerfCountersBuilder *pcb) {
   pcb->add_time_avg(TEST_PERFCOUNTERS_TIME_AVG, "test_time_avg");
 }
 
+static std::shared_ptr<PerfCounters> create_test_counters(const std::string& name, CephContext *cct) {
+  PerfCountersBuilder pcb(cct, name, TEST_PERFCOUNTERS1_ELEMENT_FIRST, TEST_PERFCOUNTERS1_ELEMENT_LAST);
+  add_test_counters(&pcb);
+  std::shared_ptr<PerfCounters> new_counters(pcb.create_perf_counters());
+  cct->get_perfcounters_collection()->add(new_counters.get());
+  return new_counters;
+}
 
 static PerfCountersCache* setup_test_perf_counters_cache(CephContext *cct, uint64_t target_size = 100)
 {
-  std::function<void(PerfCountersBuilder*)> lpcb = add_test_counters;
-  CountersSetup test_counters_setup(TEST_PERFCOUNTERS1_ELEMENT_FIRST, TEST_PERFCOUNTERS1_ELEMENT_LAST, lpcb);
-  std::unordered_map<std::string_view, CountersSetup> setups;
-  setups["key1"] = test_counters_setup;
-  setups["key2"] = test_counters_setup;
-  setups["key3"] = test_counters_setup;
-  setups["key4"] = test_counters_setup;
-  setups["key5"] = test_counters_setup;
-  setups["key6"] = test_counters_setup;
-  setups["good_ctrs"] = test_counters_setup;
-  setups["bad_ctrs1"] = test_counters_setup;
-  setups["bad_ctrs2"] = test_counters_setup;
-  setups["bad_ctrs3"] = test_counters_setup;
-  setups["too_many_delimiters"] = test_counters_setup;
-  return new PerfCountersCache(cct, target_size, setups);
+  return new PerfCountersCache(cct, target_size, create_test_counters);
 }
+
 
 void cleanup_test(PerfCountersCache *pcc) {
   delete pcc;
