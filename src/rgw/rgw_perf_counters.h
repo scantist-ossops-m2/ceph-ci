@@ -8,7 +8,7 @@
 
 extern PerfCounters *perfcounter;
 extern PerfCounters *global_op_counters;
-extern PerfCountersCache *perf_counters_cache;
+extern ceph::perf_counters::PerfCountersCache *perf_counters_cache;
 
 extern int rgw_perf_start(CephContext *cct);
 extern void rgw_perf_stop(CephContext *cct);

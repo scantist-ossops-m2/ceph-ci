@@ -1,10 +1,10 @@
 #pragma once
 
 #include "common/perf_counters.h"
-#include "common/perf_counters_key.h"
 #include "common/ceph_context.h"
-#include "common/ceph_mutex.h"
 #include "common/intrusive_lru.h"
+
+namespace ceph::perf_counters {
 
 struct perf_counters_cache_item_to_key;
 
@@ -31,7 +31,6 @@ struct perf_counters_cache_item_to_key {
   }
 };
 
-
 class PerfCountersCache {
 private:
   CephContext *cct;
@@ -42,40 +41,19 @@ private:
   /* check to make sure key name is non-empty and non-empty labels
    *
    * A valid key has the the form 
-   * key:label1:val1:label2:val2 ... labelN:valN
+   * key\0label1\0val1\0label2\0val2 ... label\0valN
    * The following 3 properties checked for in this function
    * 1. A non-empty key
    * 2. At least 1 set of labels
    * 3. Each label has a non-empty key and value
    *
+   * See perf_counters_key.h
    */
-  void check_key(const std::string &key) {
-    std::string_view key_name = ceph::perf_counters::key_name(key);
-    // return false for empty key name
-    ceph_assert(key_name != "");
+  void check_key(const std::string &key);
 
-    // if there are no labels key name is not valid
-    auto key_labels = ceph::perf_counters::key_labels(key);
-    ceph_assert(key_labels.begin() != key_labels.end());
-
-    // don't accept keys where any labels have an empty label name
-    for (auto key_label : key_labels) {
-      ceph_assert(key_label.first != "");
-      ceph_assert(key_label.second != "");
-    }
-  }
-
-  std::shared_ptr<PerfCounters> add(const std::string &key) {
-    check_key(key);
-
-    auto [ref, key_existed] = cache.get_or_create(key);
-    if (!key_existed) {
-      ref->counters = create_counters(key, cct);
-      ceph_assert(ref->counters);
-      ref->cct = cct;
-    }
-    return ref->counters;
-  }
+  // adds a new entry to the cache and returns its respective PerfCounter*
+  // or returns the PerfCounter* of an existing entry in the cache
+  std::shared_ptr<PerfCounters> add(const std::string &key);
 
 public:
 
@@ -83,88 +61,23 @@ public:
   // unless the caller intends to modify multiple counter values at the same time.
   // If multiple counter values will not be modified at the same time, inc/dec/etc. 
   // are recommended.
-  std::shared_ptr<PerfCounters> get(const std::string &key) {
-    std::lock_guard lock(m_lock);
-    return add(key);
-  }
+  std::shared_ptr<PerfCounters> get(const std::string &key);
 
-  void inc(const std::string &key, int indx, uint64_t v) {
-    std::lock_guard lock(m_lock);
-    auto counters = add(key);
-    if (counters) {
-      counters->inc(indx, v);
-    }
-  }
-
-  void dec(const std::string &key, int indx, uint64_t v) {
-    std::lock_guard lock(m_lock);
-    auto counters = add(key);
-    if (counters) {
-      counters->dec(indx, v);
-    }
-  }
-
-  void tinc(const std::string &key, int indx, utime_t amt) {
-    std::lock_guard lock(m_lock);
-    auto counters = add(key);
-    if (counters) {
-      counters->tinc(indx, amt);
-    }
-  }
-
-  void tinc(const std::string &key, int indx, ceph::timespan amt) {
-    std::lock_guard lock(m_lock);
-    auto counters = add(key);
-    if (counters) {
-      counters->tinc(indx, amt);
-    }
-  }
-
-  void set_counter(const std::string &key, int indx, uint64_t val) {
-    std::lock_guard lock(m_lock);
-    auto counters = add(key);
-    if (counters) {
-      counters->set(indx, val);
-    }
-  }
-
-  uint64_t get_counter(const std::string &key, int indx) {
-    std::lock_guard lock(m_lock);
-    auto counters = add(key);
-    uint64_t val = 0;
-    if (counters) {
-      val = counters->get(indx);
-    }
-    return val;
-  }
-
-  utime_t tget(const std::string &key, int indx) {
-    std::lock_guard lock(m_lock);
-    auto counters = add(key);
-    utime_t val;
-    if (counters) {
-      val = counters->tget(indx);
-      return val;
-    } else {
-      return utime_t();
-    }
-  }
-
-  void tset(const std::string &key, int indx, utime_t amt) {
-    std::lock_guard lock(m_lock);
-    auto counters = add(key);
-    if (counters) {
-      counters->tset(indx, amt);
-    }
-  }
+  void inc(const std::string &key, int indx, uint64_t v);
+  void dec(const std::string &key, int indx, uint64_t v);
+  void tinc(const std::string &key, int indx, utime_t amt);
+  void tinc(const std::string &key, int indx, ceph::timespan amt);
+  void set_counter(const std::string &key, int indx, uint64_t val);
+  uint64_t get_counter(const std::string &key, int indx);
+  utime_t tget(const std::string &key, int indx);
+  void tset(const std::string &key, int indx, utime_t amt);
 
   // _create_counters should be a function that returns a valid, newly created perf counters instance
   // Ceph components utilizing the PerfCountersCache are encouraged to pass in a factory function that would
   // create and initialize different kinds of counters based on the name returned from ceph::perfcounters::key_name(key)
   PerfCountersCache(CephContext *_cct, size_t _target_size,
-      std::function<std::shared_ptr<PerfCounters>(const std::string&, CephContext*)> _create_counters)
-      : cct(_cct), create_counters(_create_counters), m_lock(ceph::make_mutex("PerfCountersCache")) { cache.set_target_size(_target_size); }
-
-  ~PerfCountersCache() { cache.set_target_size(0); }
-
+                    std::function<std::shared_ptr<PerfCounters>(const std::string&, CephContext*)> _create_counters);
+  ~PerfCountersCache();
 };
+
+} // namespace ceph::perf_counters

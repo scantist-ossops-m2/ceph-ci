@@ -6,10 +6,10 @@
 #include "include/msgr.h" // for CEPH_ENTITY_TYPE_CLIENT
 #include "gtest/gtest.h"
 
-using namespace std;
+using namespace ceph::perf_counters;
 
 int main(int argc, char **argv) {
-  std::map<string,string> defaults = {
+  std::map<std::string,std::string> defaults = {
     { "admin_socket", get_rand_socket_path() }
   };
   std::vector<const char*> args;
@@ -78,12 +78,12 @@ TEST(PerfCountersCache, NoCacheTest) {
 
 TEST(PerfCountersCache, TestEviction) {
   PerfCountersCache *pcc = setup_test_perf_counters_cache(g_ceph_context, 4);
-  std::string label1 = ceph::perf_counters::key_create("key1", {{"label1", "val1"}});
-  std::string label2 = ceph::perf_counters::key_create("key2", {{"label2", "val2"}});
-  std::string label3 = ceph::perf_counters::key_create("key3", {{"label3", "val3"}});
-  std::string label4 = ceph::perf_counters::key_create("key4", {{"label4", "val4"}});
-  std::string label5 = ceph::perf_counters::key_create("key5", {{"label5", "val5"}});
-  std::string label6 = ceph::perf_counters::key_create("key6", {{"label6", "val6"}});
+  std::string label1 = key_create("key1", {{"label1", "val1"}});
+  std::string label2 = key_create("key2", {{"label2", "val2"}});
+  std::string label3 = key_create("key3", {{"label3", "val3"}});
+  std::string label4 = key_create("key4", {{"label4", "val4"}});
+  std::string label5 = key_create("key5", {{"label5", "val5"}});
+  std::string label6 = key_create("key6", {{"label6", "val6"}});
 
   pcc->set_counter(label1, TEST_PERFCOUNTERS_COUNTER, 0);
   std::shared_ptr<PerfCounters> counter = pcc->get(label2);
@@ -536,9 +536,9 @@ TEST(PerfCountersCache, TestEviction) {
 
 TEST(PerfCountersCache, TestLabeledCounters) {
   PerfCountersCache *pcc = setup_test_perf_counters_cache(g_ceph_context);
-  std::string label1 = ceph::perf_counters::key_create("key1", {{"label1", "val1"}});
-  std::string label2 = ceph::perf_counters::key_create("key2", {{"label2", "val2"}});
-  std::string label3 = ceph::perf_counters::key_create("key3", {{"label3", "val3"}});
+  std::string label1 = key_create("key1", {{"label1", "val1"}});
+  std::string label2 = key_create("key2", {{"label2", "val2"}});
+  std::string label3 = key_create("key3", {{"label3", "val3"}});
 
   // test inc()
   pcc->inc(label1, TEST_PERFCOUNTERS_COUNTER, 1);
@@ -769,9 +769,9 @@ TEST(PerfCountersCache, TestLabeledCounters) {
 
 TEST(PerfCountersCache, TestLabeledTimes) {
   PerfCountersCache *pcc = setup_test_perf_counters_cache(g_ceph_context);
-  std::string label1 = ceph::perf_counters::key_create("key1", {{"label1", "val1"}});
-  std::string label2 = ceph::perf_counters::key_create("key2", {{"label2", "val2"}});
-  std::string label3 = ceph::perf_counters::key_create("key3", {{"label3", "val3"}});
+  std::string label1 = key_create("key1", {{"label1", "val1"}});
+  std::string label2 = key_create("key2", {{"label2", "val2"}});
+  std::string label3 = key_create("key3", {{"label3", "val3"}});
 
   // test inc()
   pcc->tinc(label1, TEST_PERFCOUNTERS_TIME, utime_t(100,0));
@@ -933,7 +933,7 @@ TEST(PerfCountersCache, TestLabelStrings) {
   ASSERT_EQ("{}\n", message);
 
   // test valid key name with multiple valid label pairs
-  std::string label1 = ceph::perf_counters::key_create("good_ctrs", {{"label3", "val3"}, {"label2", "val4"}});
+  std::string label1 = key_create("good_ctrs", {{"label3", "val3"}, {"label2", "val4"}});
   pcc->set_counter(label1, TEST_PERFCOUNTERS_COUNTER, 8);
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
@@ -959,10 +959,10 @@ TEST(PerfCountersCache, TestLabelStrings) {
 )", message);
 
   // test empty val in a label pair will get the label pair added into the perf counters cache but empty key will not
-  std::string label2 = ceph::perf_counters::key_create("bad_ctrs1", {{"label3", "val4"}, {"label1", ""}});
+  std::string label2 = key_create("bad_ctrs1", {{"label3", "val4"}, {"label1", ""}});
   EXPECT_DEATH(pcc->set_counter(label2, TEST_PERFCOUNTERS_COUNTER, 2), "");
 
-  std::string label3 = ceph::perf_counters::key_create("bad_ctrs2", {{"", "val4"}, {"label1", "val1"}});
+  std::string label3 = key_create("bad_ctrs2", {{"", "val4"}, {"label1", "val1"}});
   EXPECT_DEATH(pcc->set_counter(label3, TEST_PERFCOUNTERS_COUNTER, 2), "");
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));

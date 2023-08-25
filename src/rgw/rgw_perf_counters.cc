@@ -7,7 +7,7 @@
 
 PerfCounters *perfcounter = NULL;
 PerfCounters *global_op_counters = NULL;
-PerfCountersCache *perf_counters_cache = NULL;
+ceph::perf_counters::PerfCountersCache *perf_counters_cache = NULL;
 std::string rgw_op_counters_key = "rgw_op";
 
 static void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
@@ -107,7 +107,7 @@ int rgw_perf_start(CephContext *cct)
   cct->get_perfcounters_collection()->add(global_op_counters);
 
   uint64_t target_size = cct->_conf.get_val<uint64_t>("rgw_perf_counters_cache_size");
-  perf_counters_cache = new PerfCountersCache(cct, target_size, create_rgw_counters); 
+  perf_counters_cache = new ceph::perf_counters::PerfCountersCache(cct, target_size, create_rgw_counters); 
   return 0;
 }
 
