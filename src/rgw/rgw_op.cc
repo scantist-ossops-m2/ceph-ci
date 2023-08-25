@@ -1692,7 +1692,7 @@ int RGWGetObj::read_user_manifest_part(rgw::sal::Bucket* bucket,
     return 0;
   }
 
-  perfcounter->inc(l_rgw_get_b, cur_end - cur_ofs);
+  global_op_counters->inc(l_rgw_op_get_b, cur_end - cur_ofs);
   filter->fixup_range(cur_ofs, cur_end);
   op_ret = read_op->iterate(this, cur_ofs, cur_end, filter, s->yield);
   if (op_ret >= 0)
@@ -1765,7 +1765,7 @@ static int iterate_user_manifest_parts(const DoutPrefixProvider *dpp,
 	found_end = true;
       }
 
-      perfcounter->tinc(l_rgw_get_lat,
+      global_op_counters->tinc(l_rgw_op_get_lat,
 			(ceph_clock_now() - start_time));
 
       if (found_start && !handled_end) {
@@ -1861,7 +1861,7 @@ static int iterate_slo_parts(const DoutPrefixProvider *dpp,
       found_end = true;
     }
 
-    perfcounter->tinc(l_rgw_get_lat,
+    global_op_counters->tinc(l_rgw_op_get_lat,
 		      (ceph_clock_now() - start_time));
 
     if (found_start) {
@@ -2215,11 +2215,11 @@ void RGWGetObj::execute(optional_yield y)
   if(rgw_perf_counters_cache) {
     labeled_counters = perf_counters_cache->get(labels);
     if(labeled_counters) {
-      labeled_counters->inc(l_rgw_labeled_get_ops, 1);
+      labeled_counters->inc(l_rgw_op_get, 1);
     }
   }
 
-  perfcounter->inc(l_rgw_get);
+  global_op_counters->inc(l_rgw_op_get);
 
   std::unique_ptr<rgw::sal::Object::ReadOp> read_op(s->object->get_read_op());
 
@@ -2418,9 +2418,9 @@ void RGWGetObj::execute(optional_yield y)
   }
 
   if(rgw_perf_counters_cache && labeled_counters) {
-    labeled_counters->inc(l_rgw_labeled_get_b, end - ofs);
+    labeled_counters->inc(l_rgw_op_get_b, end - ofs);
   }
-  perfcounter->inc(l_rgw_get_b, end - ofs);
+  global_op_counters->inc(l_rgw_op_get_b, end - ofs);
 
   op_ret = read_op->iterate(this, ofs_x, end_x, filter, s->yield);
 
@@ -2428,9 +2428,9 @@ void RGWGetObj::execute(optional_yield y)
     op_ret = filter->flush();
 
   if(rgw_perf_counters_cache && labeled_counters) {
-    labeled_counters->tinc(l_rgw_labeled_get_lat, s->time_elapsed());
+    labeled_counters->tinc(l_rgw_op_get_lat, s->time_elapsed());
   }
-  perfcounter->tinc(l_rgw_get_lat, s->time_elapsed());
+  global_op_counters->tinc(l_rgw_op_get_lat, s->time_elapsed());
 
   if (op_ret < 0) {
     goto done_err;
@@ -2513,9 +2513,10 @@ void RGWListBuckets::execute(optional_yield y)
   if(rgw_perf_counters_cache) {
     labeled_counters = perf_counters_cache->get(labels);
     if(labeled_counters) {
-      labeled_counters->inc(l_rgw_labeled_list_buckets_ops, 1);
+      labeled_counters->inc(l_rgw_op_list_buckets, 1);
     }
   }
+  global_op_counters->inc(l_rgw_op_list_buckets, 1);
 
   op_ret = get_params(y);
   if (op_ret < 0) {
@@ -2596,8 +2597,9 @@ void RGWListBuckets::execute(optional_yield y)
     }
 
     if(rgw_perf_counters_cache && labeled_counters) {
-      labeled_counters->tinc(l_rgw_labeled_list_buckets_lat, s->time_elapsed());
+      labeled_counters->tinc(l_rgw_op_list_buckets_lat, s->time_elapsed());
     }
+    global_op_counters->tinc(l_rgw_op_list_buckets_lat, s->time_elapsed());
 
   } while (is_truncated && !done);
 
@@ -3091,10 +3093,12 @@ void RGWListBucket::execute(optional_yield y)
   if(rgw_perf_counters_cache) {
     labeled_counters = perf_counters_cache->get(labels);
     if(labeled_counters) {
-      labeled_counters->inc(l_rgw_labeled_list_obj_ops, 1);
-      labeled_counters->tinc(l_rgw_labeled_list_obj_lat, s->time_elapsed());
+      labeled_counters->inc(l_rgw_op_list_obj, 1);
+      labeled_counters->tinc(l_rgw_op_list_obj_lat, s->time_elapsed());
     }
   }
+  global_op_counters->inc(l_rgw_op_list_obj, 1);
+  global_op_counters->tinc(l_rgw_op_list_obj_lat, s->time_elapsed());
 }
 
 int RGWGetBucketLogging::verify_permission(optional_yield y)
@@ -3617,10 +3621,12 @@ void RGWDeleteBucket::execute(optional_yield y)
     std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
     std::shared_ptr<PerfCounters> labeled_counters;
     if(labeled_counters) {
-      labeled_counters->inc(l_rgw_labeled_del_bucket_ops, 1);
-      labeled_counters->tinc(l_rgw_labeled_del_bucket_lat, s->time_elapsed());
+      labeled_counters->inc(l_rgw_op_del_bucket, 1);
+      labeled_counters->tinc(l_rgw_op_del_bucket_lat, s->time_elapsed());
     }
   }
+  global_op_counters->inc(l_rgw_op_del_bucket, 1);
+  global_op_counters->tinc(l_rgw_op_del_bucket_lat, s->time_elapsed());
 
   return;
 }
@@ -4056,15 +4062,15 @@ void RGWPutObj::execute(optional_yield y)
   }
 
   bool need_calc_md5 = (dlo_manifest == NULL) && (slo_info == NULL);
-  perfcounter->inc(l_rgw_put);
+  global_op_counters->inc(l_rgw_op_put);
   if (rgw_perf_counters_cache && labeled_counters) {
-    labeled_counters->inc(l_rgw_labeled_put_ops, 1);
+    labeled_counters->inc(l_rgw_op_put, 1);
   }
   // report latency on return
   auto put_lat = make_scope_guard([&] {
-      perfcounter->tinc(l_rgw_put_lat, s->time_elapsed());
+      global_op_counters->tinc(l_rgw_op_put_lat, s->time_elapsed());
       if(labeled_counters) {
-        labeled_counters->tinc(l_rgw_labeled_put_lat, s->time_elapsed());
+        labeled_counters->tinc(l_rgw_op_put_lat, s->time_elapsed());
       }
     });
 
@@ -4342,10 +4348,10 @@ void RGWPutObj::execute(optional_yield y)
 
   rgw_perf_counters_cache = s->cct->_conf->rgw_perf_counters_cache;
   if(rgw_perf_counters_cache && labeled_counters) {
-    labeled_counters->inc(l_rgw_labeled_put_b, s->obj_size);
+    labeled_counters->inc(l_rgw_op_put_b, s->obj_size);
   }
 
-  perfcounter->inc(l_rgw_put_b, s->obj_size);
+  global_op_counters->inc(l_rgw_op_put_b, s->obj_size);
 
   op_ret = do_aws4_auth_completion();
   if (op_ret < 0) {
@@ -5308,11 +5314,14 @@ void RGWDeleteObj::execute(optional_yield y)
       std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
       std::shared_ptr<PerfCounters> labeled_counters;
       if(labeled_counters) {
-        labeled_counters->inc(l_rgw_labeled_del_obj_ops, 1);
-        labeled_counters->inc(l_rgw_labeled_del_obj_b, obj_size);
-        labeled_counters->tinc(l_rgw_labeled_del_obj_lat, s->time_elapsed());
+        labeled_counters->inc(l_rgw_op_del_obj, 1);
+        labeled_counters->inc(l_rgw_op_del_obj_b, obj_size);
+        labeled_counters->tinc(l_rgw_op_del_obj_lat, s->time_elapsed());
       }
     }
+    global_op_counters->inc(l_rgw_op_del_obj, 1);
+    global_op_counters->inc(l_rgw_op_del_obj_b, obj_size);
+    global_op_counters->tinc(l_rgw_op_del_obj_lat, s->time_elapsed());
 
     // send request to notification manager
     int ret = res->publish_commit(this, obj_size, ceph::real_clock::now(), etag, version_id);
@@ -5779,11 +5788,14 @@ void RGWCopyObj::execute(optional_yield y)
     std::string labels = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
     std::shared_ptr<PerfCounters> labeled_counters;
     if(labeled_counters) {
-      labeled_counters->inc(l_rgw_labeled_copy_obj_ops, 1);
-      labeled_counters->inc(l_rgw_labeled_copy_obj_b, obj_size);
-      labeled_counters->tinc(l_rgw_labeled_copy_obj_lat, s->time_elapsed());
+      labeled_counters->inc(l_rgw_op_copy_obj, 1);
+      labeled_counters->inc(l_rgw_op_copy_obj_b, obj_size);
+      labeled_counters->tinc(l_rgw_op_copy_obj_lat, s->time_elapsed());
     }
   }
+  global_op_counters->inc(l_rgw_op_copy_obj, 1);
+  global_op_counters->inc(l_rgw_op_copy_obj_b, obj_size);
+  global_op_counters->tinc(l_rgw_op_copy_obj_lat, s->time_elapsed());
 }
 
 int RGWGetACLs::verify_permission(optional_yield y)

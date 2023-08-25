@@ -6,37 +6,38 @@
 #include "common/ceph_context.h"
 
 PerfCounters *perfcounter = NULL;
+PerfCounters *global_op_counters = NULL;
 PerfCountersCache *perf_counters_cache = NULL;
-std::string_view rgw_op_counters_key = "rgw";
+std::string rgw_op_counters_key = "rgw_op";
 
 static void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
   // description must match general rgw counters description above
   lpcb->set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
 
-  lpcb->add_u64_counter(l_rgw_labeled_put_ops, "put", "Puts");
-  lpcb->add_u64_counter(l_rgw_labeled_put_b, "put_b", "Size of puts");
-  lpcb->add_time_avg(l_rgw_labeled_put_lat, "put_initial_lat", "Put latency");
+  lpcb->add_u64_counter(l_rgw_op_put, "put_ops", "Puts");
+  lpcb->add_u64_counter(l_rgw_op_put_b, "put_b", "Size of puts");
+  lpcb->add_time_avg(l_rgw_op_put_lat, "put_initial_lat", "Put latency");
 
-  lpcb->add_u64_counter(l_rgw_labeled_get_ops, "get", "Gets");
-  lpcb->add_u64_counter(l_rgw_labeled_get_b, "get_b", "Size of gets");
-  lpcb->add_time_avg(l_rgw_labeled_get_lat, "get_initial_lat", "Get latency");
+  lpcb->add_u64_counter(l_rgw_op_get, "get_ops", "Gets");
+  lpcb->add_u64_counter(l_rgw_op_get_b, "get_b", "Size of gets");
+  lpcb->add_time_avg(l_rgw_op_get_lat, "get_initial_lat", "Get latency");
 
-  lpcb->add_u64_counter(l_rgw_labeled_del_obj_ops, "del_obj_ops", "Delete objects");
-  lpcb->add_u64_counter(l_rgw_labeled_del_obj_b, "del_obj_bytes", "Size of delete objects");
-  lpcb->add_time_avg(l_rgw_labeled_del_obj_lat, "del_obj_lat", "Delete object latency");
+  lpcb->add_u64_counter(l_rgw_op_del_obj, "del_obj_ops", "Delete objects");
+  lpcb->add_u64_counter(l_rgw_op_del_obj_b, "del_obj_bytes", "Size of delete objects");
+  lpcb->add_time_avg(l_rgw_op_del_obj_lat, "del_obj_lat", "Delete object latency");
 
-  lpcb->add_u64_counter(l_rgw_labeled_del_bucket_ops, "del_bucket_ops", "Delete Buckets");
-  lpcb->add_time_avg(l_rgw_labeled_del_bucket_lat, "del_bucket_lat", "Delete bucket latency");
+  lpcb->add_u64_counter(l_rgw_op_del_bucket, "del_bucket_ops", "Delete Buckets");
+  lpcb->add_time_avg(l_rgw_op_del_bucket_lat, "del_bucket_lat", "Delete bucket latency");
 
-  lpcb->add_u64_counter(l_rgw_labeled_copy_obj_ops, "copy_obj_ops", "Copy objects");
-  lpcb->add_u64_counter(l_rgw_labeled_copy_obj_b, "copy_obj_bytes", "Size of copy objects");
-  lpcb->add_time_avg(l_rgw_labeled_copy_obj_lat, "copy_obj_lat", "Copy object latency");
+  lpcb->add_u64_counter(l_rgw_op_copy_obj, "copy_obj_ops", "Copy objects");
+  lpcb->add_u64_counter(l_rgw_op_copy_obj_b, "copy_obj_bytes", "Size of copy objects");
+  lpcb->add_time_avg(l_rgw_op_copy_obj_lat, "copy_obj_lat", "Copy object latency");
 
-  lpcb->add_u64_counter(l_rgw_labeled_list_obj_ops, "list_obj_ops", "List objects");
-  lpcb->add_time_avg(l_rgw_labeled_list_obj_lat, "list_obj_lat", "List objects latency");
+  lpcb->add_u64_counter(l_rgw_op_list_obj, "list_obj_ops", "List objects");
+  lpcb->add_time_avg(l_rgw_op_list_obj_lat, "list_obj_lat", "List objects latency");
 
-  lpcb->add_u64_counter(l_rgw_labeled_list_buckets_ops, "list_buckets_ops", "List buckets");
-  lpcb->add_time_avg(l_rgw_labeled_list_buckets_lat, "list_buckets_lat", "List buckets latency");
+  lpcb->add_u64_counter(l_rgw_op_list_buckets, "list_buckets_ops", "List buckets");
+  lpcb->add_time_avg(l_rgw_op_list_buckets_lat, "list_buckets_lat", "List buckets latency");
 }
 
 int rgw_perf_start(CephContext *cct)
@@ -49,13 +50,6 @@ int rgw_perf_start(CephContext *cct)
 
   plb.add_u64_counter(l_rgw_req, "req", "Requests");
   plb.add_u64_counter(l_rgw_failed_req, "failed_req", "Aborted requests");
-
-  plb.add_u64_counter(l_rgw_get, "get", "Gets");
-  plb.add_u64_counter(l_rgw_get_b, "get_b", "Size of gets");
-  plb.add_time_avg(l_rgw_get_lat, "get_initial_lat", "Get latency");
-  plb.add_u64_counter(l_rgw_put, "put", "Puts");
-  plb.add_u64_counter(l_rgw_put_b, "put_b", "Size of puts");
-  plb.add_time_avg(l_rgw_put_lat, "put_initial_lat", "Put latency");
 
   plb.add_u64(l_rgw_qlen, "qlen", "Queue length");
   plb.add_u64(l_rgw_qactive, "qactive", "Active requests queue");
@@ -99,9 +93,13 @@ int rgw_perf_start(CephContext *cct)
   perfcounter = plb.create_perf_counters();
   cct->get_perfcounters_collection()->add(perfcounter);
 
+  PerfCountersBuilder op_pcb(cct, rgw_op_counters_key, l_rgw_op_first, l_rgw_op_last);
+  add_rgw_op_counters(&op_pcb);
+  global_op_counters = op_pcb.create_perf_counters();
+  cct->get_perfcounters_collection()->add(global_op_counters);
 
-  std::function<void(PerfCountersBuilder*)> op_lpcb = add_rgw_op_counters;
-  CountersSetup op_counters_setup(l_rgw_labeled_op_first, l_rgw_labeled_op_last, op_lpcb);
+  std::function<void(PerfCountersBuilder*)> op_pcb_func = add_rgw_op_counters;
+  CountersSetup op_counters_setup(l_rgw_op_first, l_rgw_op_last, op_pcb_func);
 
   std::unordered_map<std::string_view, CountersSetup> setups;
   setups[rgw_op_counters_key] = op_counters_setup;

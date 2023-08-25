@@ -7,25 +7,18 @@
 #include "common/perf_counters_cache.h"
 
 extern PerfCounters *perfcounter;
+extern PerfCounters *global_op_counters;
 extern PerfCountersCache *perf_counters_cache;
 
 extern int rgw_perf_start(CephContext *cct);
 extern void rgw_perf_stop(CephContext *cct);
 
-extern std::string_view rgw_op_counters_key;
+extern std::string rgw_op_counters_key;
 
 enum {
   l_rgw_first = 15000,
   l_rgw_req,
   l_rgw_failed_req,
-
-  l_rgw_get,
-  l_rgw_get_b,
-  l_rgw_get_lat,
-
-  l_rgw_put,
-  l_rgw_put_b,
-  l_rgw_put_lat,
 
   l_rgw_qlen,
   l_rgw_qactive,
@@ -63,32 +56,32 @@ enum {
 };
 
 enum {
-  l_rgw_labeled_op_first = 16000,
+  l_rgw_op_first = 16000,
 
-  l_rgw_labeled_put_ops,
-  l_rgw_labeled_put_b,
-  l_rgw_labeled_put_lat,
+  l_rgw_op_put,
+  l_rgw_op_put_b,
+  l_rgw_op_put_lat,
 
-  l_rgw_labeled_get_ops,
-  l_rgw_labeled_get_b,
-  l_rgw_labeled_get_lat,
+  l_rgw_op_get,
+  l_rgw_op_get_b,
+  l_rgw_op_get_lat,
 
-  l_rgw_labeled_del_obj_ops,
-  l_rgw_labeled_del_obj_b,
-  l_rgw_labeled_del_obj_lat,
+  l_rgw_op_del_obj,
+  l_rgw_op_del_obj_b,
+  l_rgw_op_del_obj_lat,
 
-  l_rgw_labeled_del_bucket_ops,
-  l_rgw_labeled_del_bucket_lat,
+  l_rgw_op_del_bucket,
+  l_rgw_op_del_bucket_lat,
 
-  l_rgw_labeled_copy_obj_ops,
-  l_rgw_labeled_copy_obj_b,
-  l_rgw_labeled_copy_obj_lat,
+  l_rgw_op_copy_obj,
+  l_rgw_op_copy_obj_b,
+  l_rgw_op_copy_obj_lat,
 
-  l_rgw_labeled_list_obj_ops,
-  l_rgw_labeled_list_obj_lat,
+  l_rgw_op_list_obj,
+  l_rgw_op_list_obj_lat,
 
-  l_rgw_labeled_list_buckets_ops,
-  l_rgw_labeled_list_buckets_lat,
+  l_rgw_op_list_buckets,
+  l_rgw_op_list_buckets_lat,
 
-  l_rgw_labeled_op_last
+  l_rgw_op_last
 };
