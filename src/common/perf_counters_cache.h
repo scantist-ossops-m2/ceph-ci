@@ -6,17 +6,11 @@
 #include "common/ceph_mutex.h"
 #include "common/intrusive_lru.h"
 
-template <typename LRUItem>
-struct item_to_key {
-  using type = std::string;
-  const type &operator()(const LRUItem &item) {
-    return item.key;
-  }
-};
+struct perf_counters_cache_item_to_key;
 
 struct PerfCountersCacheEntry : public ceph::common::intrusive_lru_base<
                                        ceph::common::intrusive_lru_config<
-                                       std::string, PerfCountersCacheEntry, item_to_key<PerfCountersCacheEntry>>> {
+                                       std::string, PerfCountersCacheEntry, perf_counters_cache_item_to_key>> {
   std::string key;
   std::shared_ptr<PerfCounters> counters;
   CephContext *cct;
@@ -24,11 +18,19 @@ struct PerfCountersCacheEntry : public ceph::common::intrusive_lru_base<
   PerfCountersCacheEntry(const std::string &_key) : key(_key) {}
 
   ~PerfCountersCacheEntry() {
-    if(counters) {
+    if (counters) {
       cct->get_perfcounters_collection()->remove(counters.get());
     }
   }
 };
+
+struct perf_counters_cache_item_to_key {
+  using type = std::string;
+  const type &operator()(const PerfCountersCacheEntry &entry) {
+    return entry.key;
+  }
+};
+
 
 class CountersSetup {
 
@@ -53,10 +55,11 @@ public:
 };
 
 
-class PerfCountersCache : public PerfCountersCacheEntry::lru_t {
+class PerfCountersCache {
 private:
   CephContext *cct;
   std::unordered_map<std::string_view, CountersSetup> setups;
+  PerfCountersCacheEntry::lru_t cache;
   mutable ceph::mutex m_lock;
 
   /* check to make sure key name is non-empty and non-empty labels
@@ -88,7 +91,7 @@ private:
   std::shared_ptr<PerfCounters> add(const std::string &key) {
     check_key(key);
 
-    auto [ref, key_existed] = get_or_create(key);
+    auto [ref, key_existed] = cache.get_or_create(key);
     if (!key_existed) {
       // get specific setup from setups
       std::string_view counter_type = ceph::perf_counters::key_name(key);
@@ -191,8 +194,8 @@ public:
   }
 
   PerfCountersCache(CephContext *_cct, size_t _target_size, std::unordered_map<std::string_view, CountersSetup> _setups) : cct(_cct), 
-      setups(_setups), m_lock(ceph::make_mutex("PerfCountersCache")) { set_target_size(_target_size); }
+      setups(_setups), m_lock(ceph::make_mutex("PerfCountersCache")) { cache.set_target_size(_target_size); }
 
-  ~PerfCountersCache() { set_target_size(0); }
+  ~PerfCountersCache() { cache.set_target_size(0); }
 
 };
