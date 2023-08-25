@@ -5,15 +5,15 @@
 
 #include "include/common_fwd.h"
 #include "common/perf_counters_cache.h"
+#include "common/perf_counters_key.h"
 
 extern PerfCounters *perfcounter;
-extern PerfCounters *global_op_counters;
 extern ceph::perf_counters::PerfCountersCache *perf_counters_cache;
+extern std::string rgw_op_counters_key;
 
 extern int rgw_perf_start(CephContext *cct);
 extern void rgw_perf_stop(CephContext *cct);
-
-extern std::string rgw_op_counters_key;
+std::shared_ptr<PerfCounters> create_rgw_counters(const std::string& name, CephContext *cct);
 
 enum {
   l_rgw_first = 15000,
@@ -85,3 +85,30 @@ enum {
 
   l_rgw_op_last
 };
+
+namespace rgw::op_counters {
+
+extern PerfCounters *global_op_counters;
+
+void initialize_op_counters(CephContext *cct);
+
+template <std::size_t Count>
+std::shared_ptr<PerfCounters> get(ceph::perf_counters::label_pair (&&labels)[Count]) {
+  if (perf_counters_cache) {
+    std::string key = ceph::perf_counters::key_create(rgw_op_counters_key, std::move(labels));
+    return perf_counters_cache->get(key);
+  } else {
+    return std::shared_ptr<PerfCounters>(nullptr);
+  }
+}
+
+// labeled may be null
+void inc(PerfCounters* labeled, int idx, uint64_t v);
+
+// labeled may be null
+void tinc(PerfCounters* labeled, int idx, utime_t);
+
+// labeled may be null
+void tinc(PerfCounters* labeled, int idx, ceph::timespan amt);
+
+} // namespace rgw::op_counters

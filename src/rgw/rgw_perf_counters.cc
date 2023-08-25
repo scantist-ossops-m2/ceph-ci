@@ -3,12 +3,60 @@
 
 #include "rgw_perf_counters.h"
 #include "common/perf_counters.h"
+#include "common/perf_counters_key.h"
 #include "common/ceph_context.h"
 
 PerfCounters *perfcounter = NULL;
-PerfCounters *global_op_counters = NULL;
 ceph::perf_counters::PerfCountersCache *perf_counters_cache = NULL;
 std::string rgw_op_counters_key = "rgw_op";
+
+static void add_rgw_frontend_counters(PerfCountersBuilder *pcb) {
+  // RGW emits comparatively few metrics, so let's be generous
+  // and mark them all USEFUL to get transmission to ceph-mgr by default.
+  pcb->set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
+
+  pcb->add_u64_counter(l_rgw_req, "req", "Requests");
+  pcb->add_u64_counter(l_rgw_failed_req, "failed_req", "Aborted requests");
+
+  pcb->add_u64(l_rgw_qlen, "qlen", "Queue length");
+  pcb->add_u64(l_rgw_qactive, "qactive", "Active requests queue");
+
+  pcb->add_u64_counter(l_rgw_cache_hit, "cache_hit", "Cache hits");
+  pcb->add_u64_counter(l_rgw_cache_miss, "cache_miss", "Cache miss");
+
+  pcb->add_u64_counter(l_rgw_keystone_token_cache_hit, "keystone_token_cache_hit", "Keystone token cache hits");
+  pcb->add_u64_counter(l_rgw_keystone_token_cache_miss, "keystone_token_cache_miss", "Keystone token cache miss");
+
+  pcb->add_u64_counter(l_rgw_gc_retire, "gc_retire_object", "GC object retires");
+
+  pcb->add_u64_counter(l_rgw_lc_expire_current, "lc_expire_current",
+		      "Lifecycle current expiration");
+  pcb->add_u64_counter(l_rgw_lc_expire_noncurrent, "lc_expire_noncurrent",
+		      "Lifecycle non-current expiration");
+  pcb->add_u64_counter(l_rgw_lc_expire_dm, "lc_expire_dm",
+		      "Lifecycle delete-marker expiration");
+  pcb->add_u64_counter(l_rgw_lc_transition_current, "lc_transition_current",
+		      "Lifecycle current transition");
+  pcb->add_u64_counter(l_rgw_lc_transition_noncurrent,
+		      "lc_transition_noncurrent",
+		      "Lifecycle non-current transition");
+  pcb->add_u64_counter(l_rgw_lc_abort_mpu, "lc_abort_mpu",
+		      "Lifecycle abort multipart upload");
+
+  pcb->add_u64_counter(l_rgw_pubsub_event_triggered, "pubsub_event_triggered", "Pubsub events with at least one topic");
+  pcb->add_u64_counter(l_rgw_pubsub_event_lost, "pubsub_event_lost", "Pubsub events lost");
+  pcb->add_u64_counter(l_rgw_pubsub_store_ok, "pubsub_store_ok", "Pubsub events successfully stored");
+  pcb->add_u64_counter(l_rgw_pubsub_store_fail, "pubsub_store_fail", "Pubsub events failed to be stored");
+  pcb->add_u64(l_rgw_pubsub_events, "pubsub_events", "Pubsub events in store");
+  pcb->add_u64_counter(l_rgw_pubsub_push_ok, "pubsub_push_ok", "Pubsub events pushed to an endpoint");
+  pcb->add_u64_counter(l_rgw_pubsub_push_failed, "pubsub_push_failed", "Pubsub events failed to be pushed to an endpoint");
+  pcb->add_u64(l_rgw_pubsub_push_pending, "pubsub_push_pending", "Pubsub events pending reply from endpoint");
+  pcb->add_u64_counter(l_rgw_pubsub_missing_conf, "pubsub_missing_conf", "Pubsub events could not be handled because of missing configuration");
+  
+  pcb->add_u64_counter(l_rgw_lua_script_ok, "lua_script_ok", "Successfull executions of lua scripts");
+  pcb->add_u64_counter(l_rgw_lua_script_fail, "lua_script_fail", "Failed executions of lua scripts");
+  pcb->add_u64(l_rgw_lua_current_vms, "lua_current_vms", "Number of Lua VMs currently being executed");
+}
 
 static void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
   // description must match general rgw counters description above
@@ -40,74 +88,73 @@ static void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
   lpcb->add_time_avg(l_rgw_op_list_buckets_lat, "list_buckets_lat", "List buckets latency");
 }
 
-static std::shared_ptr<PerfCounters> create_rgw_counters(const std::string& name, CephContext *cct) {
-  PerfCountersBuilder pcb(cct, name, l_rgw_op_first, l_rgw_op_last);
-  add_rgw_op_counters(&pcb);
-  std::shared_ptr<PerfCounters> new_counters(pcb.create_perf_counters());
-  cct->get_perfcounters_collection()->add(new_counters.get());
-  return new_counters;
+std::shared_ptr<PerfCounters> create_rgw_counters(const std::string& name, CephContext *cct) {
+  std::string_view key = ceph::perf_counters::key_name(name);
+  if (rgw_op_counters_key.compare(key) == 0) {
+    PerfCountersBuilder pcb(cct, name, l_rgw_op_first, l_rgw_op_last);
+    add_rgw_op_counters(&pcb);
+    std::shared_ptr<PerfCounters> new_counters(pcb.create_perf_counters());
+    cct->get_perfcounters_collection()->add(new_counters.get());
+    return new_counters;
+  } else {
+    PerfCountersBuilder pcb(cct, name, l_rgw_first, l_rgw_last);
+    add_rgw_frontend_counters(&pcb);
+    std::shared_ptr<PerfCounters> new_counters(pcb.create_perf_counters());
+    cct->get_perfcounters_collection()->add(new_counters.get());
+    return new_counters;
+  }
 }
+
+namespace rgw::op_counters {
+
+PerfCounters *global_op_counters = NULL;
+
+void initialize_op_counters(CephContext *cct) {
+  auto temp_global_counters = create_rgw_counters(rgw_op_counters_key, cct);
+  global_op_counters = temp_global_counters.get();
+}
+
+void inc(PerfCounters* labeled, int idx, uint64_t v) {
+  if (labeled) {
+    labeled->inc(idx, v);
+  }
+  if (global_op_counters) {
+    global_op_counters->inc(idx, v);
+  }
+}
+
+void tinc(PerfCounters* labeled, int idx, utime_t amt) {
+  if (labeled) {
+    labeled->tinc(idx, amt);
+  }
+  if (global_op_counters) {
+    global_op_counters->tinc(idx, amt);
+  }
+}
+
+void tinc(PerfCounters* labeled, int idx, ceph::timespan amt) {
+  if (labeled) {
+    labeled->tinc(idx, amt);
+  }
+  if (global_op_counters) {
+    global_op_counters->tinc(idx, amt);
+  }
+}
+
+} // namespace rgw::op_counters
 
 int rgw_perf_start(CephContext *cct)
 {
-  PerfCountersBuilder plb(cct, "rgw", l_rgw_first, l_rgw_last);
+  auto temp_perfcounter = create_rgw_counters("rgw", cct);
+  perfcounter = temp_perfcounter.get();
 
-  // RGW emits comparatively few metrics, so let's be generous
-  // and mark them all USEFUL to get transmission to ceph-mgr by default.
-  plb.set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
+  bool cache_enabled = cct->_conf.get_val<bool>("rgw_perf_counters_cache");
+  if (cache_enabled) {
+    uint64_t target_size = cct->_conf.get_val<uint64_t>("rgw_perf_counters_cache_size");
+    perf_counters_cache = new ceph::perf_counters::PerfCountersCache(cct, target_size, create_rgw_counters); 
+  }
 
-  plb.add_u64_counter(l_rgw_req, "req", "Requests");
-  plb.add_u64_counter(l_rgw_failed_req, "failed_req", "Aborted requests");
-
-  plb.add_u64(l_rgw_qlen, "qlen", "Queue length");
-  plb.add_u64(l_rgw_qactive, "qactive", "Active requests queue");
-
-  plb.add_u64_counter(l_rgw_cache_hit, "cache_hit", "Cache hits");
-  plb.add_u64_counter(l_rgw_cache_miss, "cache_miss", "Cache miss");
-
-  plb.add_u64_counter(l_rgw_keystone_token_cache_hit, "keystone_token_cache_hit", "Keystone token cache hits");
-  plb.add_u64_counter(l_rgw_keystone_token_cache_miss, "keystone_token_cache_miss", "Keystone token cache miss");
-
-  plb.add_u64_counter(l_rgw_gc_retire, "gc_retire_object", "GC object retires");
-
-  plb.add_u64_counter(l_rgw_lc_expire_current, "lc_expire_current",
-		      "Lifecycle current expiration");
-  plb.add_u64_counter(l_rgw_lc_expire_noncurrent, "lc_expire_noncurrent",
-		      "Lifecycle non-current expiration");
-  plb.add_u64_counter(l_rgw_lc_expire_dm, "lc_expire_dm",
-		      "Lifecycle delete-marker expiration");
-  plb.add_u64_counter(l_rgw_lc_transition_current, "lc_transition_current",
-		      "Lifecycle current transition");
-  plb.add_u64_counter(l_rgw_lc_transition_noncurrent,
-		      "lc_transition_noncurrent",
-		      "Lifecycle non-current transition");
-  plb.add_u64_counter(l_rgw_lc_abort_mpu, "lc_abort_mpu",
-		      "Lifecycle abort multipart upload");
-
-  plb.add_u64_counter(l_rgw_pubsub_event_triggered, "pubsub_event_triggered", "Pubsub events with at least one topic");
-  plb.add_u64_counter(l_rgw_pubsub_event_lost, "pubsub_event_lost", "Pubsub events lost");
-  plb.add_u64_counter(l_rgw_pubsub_store_ok, "pubsub_store_ok", "Pubsub events successfully stored");
-  plb.add_u64_counter(l_rgw_pubsub_store_fail, "pubsub_store_fail", "Pubsub events failed to be stored");
-  plb.add_u64(l_rgw_pubsub_events, "pubsub_events", "Pubsub events in store");
-  plb.add_u64_counter(l_rgw_pubsub_push_ok, "pubsub_push_ok", "Pubsub events pushed to an endpoint");
-  plb.add_u64_counter(l_rgw_pubsub_push_failed, "pubsub_push_failed", "Pubsub events failed to be pushed to an endpoint");
-  plb.add_u64(l_rgw_pubsub_push_pending, "pubsub_push_pending", "Pubsub events pending reply from endpoint");
-  plb.add_u64_counter(l_rgw_pubsub_missing_conf, "pubsub_missing_conf", "Pubsub events could not be handled because of missing configuration");
-  
-  plb.add_u64_counter(l_rgw_lua_script_ok, "lua_script_ok", "Successfull executions of lua scripts");
-  plb.add_u64_counter(l_rgw_lua_script_fail, "lua_script_fail", "Failed executions of lua scripts");
-  plb.add_u64(l_rgw_lua_current_vms, "lua_current_vms", "Number of Lua VMs currently being executed");
-  
-  perfcounter = plb.create_perf_counters();
-  cct->get_perfcounters_collection()->add(perfcounter);
-
-  PerfCountersBuilder op_pcb(cct, rgw_op_counters_key, l_rgw_op_first, l_rgw_op_last);
-  add_rgw_op_counters(&op_pcb);
-  global_op_counters = op_pcb.create_perf_counters();
-  cct->get_perfcounters_collection()->add(global_op_counters);
-
-  uint64_t target_size = cct->_conf.get_val<uint64_t>("rgw_perf_counters_cache_size");
-  perf_counters_cache = new ceph::perf_counters::PerfCountersCache(cct, target_size, create_rgw_counters); 
+  rgw::op_counters::initialize_op_counters(cct);
   return 0;
 }
 
