@@ -105,13 +105,24 @@ std::shared_ptr<PerfCounters> create_rgw_counters(const std::string& name, CephC
   }
 }
 
+void frontend_counters_init(CephContext *cct) {
+  PerfCountersBuilder pcb(cct, "rgw", l_rgw_first, l_rgw_last);
+  add_rgw_frontend_counters(&pcb);
+  PerfCounters *new_counters = pcb.create_perf_counters();
+  cct->get_perfcounters_collection()->add(new_counters);
+  perfcounter = new_counters;
+}
+
 namespace rgw::op_counters {
 
 PerfCounters *global_op_counters = NULL;
 
-void initialize_op_counters(CephContext *cct) {
-  auto temp_global_counters = create_rgw_counters(rgw_op_counters_key, cct);
-  global_op_counters = temp_global_counters.get();
+void global_op_counters_init(CephContext *cct) {
+  PerfCountersBuilder pcb(cct, rgw_op_counters_key, l_rgw_op_first, l_rgw_op_last);
+  add_rgw_op_counters(&pcb);
+  PerfCounters *new_counters = pcb.create_perf_counters();
+  cct->get_perfcounters_collection()->add(new_counters);
+  global_op_counters = new_counters;
 }
 
 void inc(PerfCounters* labeled, int idx, uint64_t v) {
@@ -145,8 +156,7 @@ void tinc(PerfCounters* labeled, int idx, ceph::timespan amt) {
 
 int rgw_perf_start(CephContext *cct)
 {
-  auto temp_perfcounter = create_rgw_counters("rgw", cct);
-  perfcounter = temp_perfcounter.get();
+  frontend_counters_init(cct);
 
   bool cache_enabled = cct->_conf.get_val<bool>("rgw_perf_counters_cache");
   if (cache_enabled) {
@@ -154,7 +164,7 @@ int rgw_perf_start(CephContext *cct)
     perf_counters_cache = new ceph::perf_counters::PerfCountersCache(cct, target_size, create_rgw_counters); 
   }
 
-  rgw::op_counters::initialize_op_counters(cct);
+  rgw::op_counters::global_op_counters_init(cct);
   return 0;
 }
 

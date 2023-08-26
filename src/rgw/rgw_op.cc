@@ -2493,7 +2493,7 @@ void RGWListBuckets::execute(optional_yield y)
 
   const uint64_t max_buckets = s->cct->_conf->rgw_list_buckets_max_chunk;
 
-  auto labeled_counters = rgw::op_counters::get({{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
+  auto labeled_counters = rgw::op_counters::get({{"User", s->user->get_id().id}});
   rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_list_buckets, 1);
 
   op_ret = get_params(y);

@@ -13,7 +13,8 @@ extern std::string rgw_op_counters_key;
 
 extern int rgw_perf_start(CephContext *cct);
 extern void rgw_perf_stop(CephContext *cct);
-std::shared_ptr<PerfCounters> create_rgw_counters(const std::string& name, CephContext *cct);
+extern void frontend_counters_init(CephContext *cct);
+extern std::shared_ptr<PerfCounters> create_rgw_counters(const std::string& name, CephContext *cct);
 
 enum {
   l_rgw_first = 15000,
@@ -90,7 +91,7 @@ namespace rgw::op_counters {
 
 extern PerfCounters *global_op_counters;
 
-void initialize_op_counters(CephContext *cct);
+void global_op_counters_init(CephContext *cct);
 
 template <std::size_t Count>
 std::shared_ptr<PerfCounters> get(ceph::perf_counters::label_pair (&&labels)[Count]) {
