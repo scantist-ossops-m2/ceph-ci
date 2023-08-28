@@ -525,7 +525,7 @@ class ExportMgr:
             return j  # j is already a list object
         return [j]  # return a single object list, with j as the only item
 
-    def _change_export(self, cluster_id: str, export: Dict) -> Dict[str, str]:
+    def _change_export(self, cluster_id: str, export: Dict) -> Dict[str, Any]:
         try:
             return self._apply_export(cluster_id, export)
         except NotImplementedError:
@@ -543,7 +543,26 @@ class ExportMgr:
         except Exception as ex:
             msg = f'Failed to apply export: {ex}'
             log.exception(msg)
-            return {"state": "error", "msg": msg}
+
+            old_export = self._fetch_export(cluster_id, export['pseudo'])
+            if old_export:
+                # without this, if a try is made to modify export_id then,
+                # although it won't be allowed but the err dict will show
+                # the export_id from the supplied export block.
+                export_id = old_export.export_id
+            else:
+                # it's a request to create a new export, two cases:
+                # 1) export block contains export_id: fetching directly it
+                # from the supplied export block should work.
+                # 2) export block doesn't contain export_id: get the next
+                # available val, this is safe since we are here because
+                # of an error occurred in create_export_from_dict() and the
+                # problematic export won't have been saved in exports dict
+                # i.e. _save_export() won't have been called.
+                export_id = export['export_id'] if export.get('export_id') \
+                    else self._gen_export_id(cluster_id)
+
+            return {"export_id": export_id, "state": "error", "msg": msg}
 
     def _update_user_id(
             self,
