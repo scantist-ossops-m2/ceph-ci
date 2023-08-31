@@ -1109,7 +1109,8 @@ void Locker::eval_gather(SimpleLock *lock, bool first, bool *pneed_issue, MDSCon
 		 (~lock->gcaps_allowed(CAP_LONER, next) & loner_issued) == 0 &&
 		 (~lock->gcaps_allowed(CAP_XLOCKER, next) & xlocker_issued) == 0)) &&
       lock->get_state() != LOCK_SYNC_MIX2 &&  // these states need an explicit trigger from the auth mds
-      lock->get_state() != LOCK_MIX_SYNC2
+      lock->get_state() != LOCK_MIX_SYNC2 &&
+      !(lock->get_sm() == &sm_filelock && !in->client_need_snapflush.empty()) // revoke Fb caps
       ) {
     dout(7) << "eval_gather finished gather on " << *lock
 	    << " on " << *lock->get_parent() << dendl;
