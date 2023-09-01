@@ -104,12 +104,12 @@ std::shared_ptr<PerfCounters> get(ceph::perf_counters::label_pair (&&labels)[Cou
 }
 
 // labeled may be null
-void inc(PerfCounters* labeled, int idx, uint64_t v);
+void inc(std::shared_ptr<PerfCounters> labeled, int idx, uint64_t v);
 
 // labeled may be null
-void tinc(PerfCounters* labeled, int idx, utime_t);
+void tinc(std::shared_ptr<PerfCounters> labeled, int idx, utime_t);
 
 // labeled may be null
-void tinc(PerfCounters* labeled, int idx, ceph::timespan amt);
+void tinc(std::shared_ptr<PerfCounters> labeled, int idx, ceph::timespan amt);
 
 } // namespace rgw::op_counters

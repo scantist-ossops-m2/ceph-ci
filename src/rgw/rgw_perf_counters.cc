@@ -125,27 +125,30 @@ void global_op_counters_init(CephContext *cct) {
   global_op_counters = new_counters;
 }
 
-void inc(PerfCounters* labeled, int idx, uint64_t v) {
+void inc(std::shared_ptr<PerfCounters> labeled, int idx, uint64_t v) {
   if (labeled) {
-    labeled->inc(idx, v);
+    PerfCounters *counter = labeled.get();
+    counter->inc(idx, v);
   }
   if (global_op_counters) {
     global_op_counters->inc(idx, v);
   }
 }
 
-void tinc(PerfCounters* labeled, int idx, utime_t amt) {
+void tinc(std::shared_ptr<PerfCounters> labeled, int idx, utime_t amt) {
   if (labeled) {
-    labeled->tinc(idx, amt);
+    PerfCounters *counter = labeled.get();
+    counter->tinc(idx, amt);
   }
   if (global_op_counters) {
     global_op_counters->tinc(idx, amt);
   }
 }
 
-void tinc(PerfCounters* labeled, int idx, ceph::timespan amt) {
+void tinc(std::shared_ptr<PerfCounters> labeled, int idx, ceph::timespan amt) {
   if (labeled) {
-    labeled->tinc(idx, amt);
+    PerfCounters *counter = labeled.get();
+    counter->tinc(idx, amt);
   }
   if (global_op_counters) {
     global_op_counters->tinc(idx, amt);

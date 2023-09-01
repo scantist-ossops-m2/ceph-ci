@@ -918,16 +918,17 @@ TEST(PerfCountersCache, TestLabelStrings) {
   std::string empty_key = "";
 
   // empty string as should not create a labeled entry
-  EXPECT_DEATH(pcc->set_counter(empty_key, TEST_PERFCOUNTERS_COUNTER, 1), "");
-  EXPECT_DEATH(pcc->get(empty_key), "");
+  std::shared_ptr<PerfCounters> null_counter = pcc->get(empty_key);
+  ASSERT_EQ(std::shared_ptr<PerfCounters>{nullptr}, null_counter);
+
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ("{}\n", message);
 
   // key name but no labels at all should not create a labeled entry
   std::string only_key = "only_key";
   // run an op on an invalid key name to make sure nothing happens
-  EXPECT_DEATH(pcc->set_counter(only_key, TEST_PERFCOUNTERS_COUNTER, 4), "");
-  EXPECT_DEATH(pcc->get(only_key), "");
+  null_counter = pcc->get(only_key);
+  ASSERT_EQ(std::shared_ptr<PerfCounters>{nullptr}, null_counter);
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ("{}\n", message);
@@ -960,10 +961,12 @@ TEST(PerfCountersCache, TestLabelStrings) {
 
   // test empty val in a label pair will get the label pair added into the perf counters cache but empty key will not
   std::string label2 = key_create("bad_ctrs1", {{"label3", "val4"}, {"label1", ""}});
-  EXPECT_DEATH(pcc->set_counter(label2, TEST_PERFCOUNTERS_COUNTER, 2), "");
+  null_counter = pcc->get(label2);
+  ASSERT_EQ(std::shared_ptr<PerfCounters>{nullptr}, null_counter);
 
   std::string label3 = key_create("bad_ctrs2", {{"", "val4"}, {"label1", "val1"}});
-  EXPECT_DEATH(pcc->set_counter(label3, TEST_PERFCOUNTERS_COUNTER, 2), "");
+  null_counter = pcc->get(label3);
+  ASSERT_EQ(std::shared_ptr<PerfCounters>{nullptr}, null_counter);
 
   ASSERT_EQ("", client.do_request(R"({ "prefix": "counter dump", "format": "raw" })", &message));
   ASSERT_EQ(R"({

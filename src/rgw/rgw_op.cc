@@ -1693,7 +1693,7 @@ int RGWGetObj::read_user_manifest_part(rgw::sal::Bucket* bucket,
   }
 
   auto labeled_counters = rgw::op_counters::get({{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_get_b, cur_end - cur_ofs);
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_get_b, cur_end - cur_ofs);
   filter->fixup_range(cur_ofs, cur_end);
   op_ret = read_op->iterate(this, cur_ofs, cur_end, filter, s->yield);
   if (op_ret >= 0)
@@ -2211,7 +2211,7 @@ void RGWGetObj::execute(optional_yield y)
   map<string, bufferlist>::iterator attr_iter;
 
   auto labeled_counters = rgw::op_counters::get({{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_get, 1);
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_get, 1);
 
   std::unique_ptr<rgw::sal::Object::ReadOp> read_op(s->object->get_read_op());
 
@@ -2409,14 +2409,14 @@ void RGWGetObj::execute(optional_yield y)
     return;
   }
 
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_get_b, end-ofs);
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_get_b, end-ofs);
 
   op_ret = read_op->iterate(this, ofs_x, end_x, filter, s->yield);
 
   if (op_ret >= 0)
     op_ret = filter->flush();
 
-  rgw::op_counters::tinc(labeled_counters.get(), l_rgw_op_get_lat, s->time_elapsed());
+  rgw::op_counters::tinc(labeled_counters, l_rgw_op_get_lat, s->time_elapsed());
 
   if (op_ret < 0) {
     goto done_err;
@@ -2494,7 +2494,7 @@ void RGWListBuckets::execute(optional_yield y)
   const uint64_t max_buckets = s->cct->_conf->rgw_list_buckets_max_chunk;
 
   auto labeled_counters = rgw::op_counters::get({{"User", s->user->get_id().id}});
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_list_buckets, 1);
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_list_buckets, 1);
 
   op_ret = get_params(y);
   if (op_ret < 0) {
@@ -2574,7 +2574,7 @@ void RGWListBuckets::execute(optional_yield y)
       handle_listing_chunk(std::move(buckets));
     }
 
-    rgw::op_counters::tinc(labeled_counters.get(), l_rgw_op_list_buckets_lat, s->time_elapsed());
+    rgw::op_counters::tinc(labeled_counters, l_rgw_op_list_buckets_lat, s->time_elapsed());
 
   } while (is_truncated && !done);
 
@@ -3063,8 +3063,8 @@ void RGWListBucket::execute(optional_yield y)
   }
 
   auto labeled_counters = rgw::op_counters::get({{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_list_obj, 1);
-  rgw::op_counters::tinc(labeled_counters.get(), l_rgw_op_list_obj_lat, s->time_elapsed());
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_list_obj, 1);
+  rgw::op_counters::tinc(labeled_counters, l_rgw_op_list_obj_lat, s->time_elapsed());
 }
 
 int RGWGetBucketLogging::verify_permission(optional_yield y)
@@ -3583,8 +3583,8 @@ void RGWDeleteBucket::execute(optional_yield y)
   }
 
   auto labeled_counters = rgw::op_counters::get({{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_del_bucket, 1);
-  rgw::op_counters::tinc(labeled_counters.get(), l_rgw_op_del_bucket_lat, s->time_elapsed());
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_del_bucket, 1);
+  rgw::op_counters::tinc(labeled_counters, l_rgw_op_del_bucket_lat, s->time_elapsed());
 
   return;
 }
@@ -4015,11 +4015,11 @@ void RGWPutObj::execute(optional_yield y)
   auto labeled_counters = rgw::op_counters::get({{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
 
   bool need_calc_md5 = (dlo_manifest == NULL) && (slo_info == NULL);
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_put, 1);
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_put, 1);
 
   // report latency on return
   auto put_lat = make_scope_guard([&] {
-      rgw::op_counters::tinc(labeled_counters.get(), l_rgw_op_put_lat, s->time_elapsed());
+      rgw::op_counters::tinc(labeled_counters, l_rgw_op_put_lat, s->time_elapsed());
     });
 
   op_ret = -EINVAL;
@@ -4294,7 +4294,7 @@ void RGWPutObj::execute(optional_yield y)
   s->obj_size = ofs;
   s->object->set_obj_size(ofs);
 
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_put_b, s->obj_size);
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_put_b, s->obj_size);
 
   op_ret = do_aws4_auth_completion();
   if (op_ret < 0) {
@@ -5253,9 +5253,9 @@ void RGWDeleteObj::execute(optional_yield y)
     }
 
     auto labeled_counters = rgw::op_counters::get({{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-    rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_del_obj, 1);
-    rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_del_obj_b, obj_size);
-    rgw::op_counters::tinc(labeled_counters.get(), l_rgw_op_del_obj_lat, s->time_elapsed());
+    rgw::op_counters::inc(labeled_counters, l_rgw_op_del_obj, 1);
+    rgw::op_counters::inc(labeled_counters, l_rgw_op_del_obj_b, obj_size);
+    rgw::op_counters::tinc(labeled_counters, l_rgw_op_del_obj_lat, s->time_elapsed());
 
     // send request to notification manager
     int ret = res->publish_commit(this, obj_size, ceph::real_clock::now(), etag, version_id);
@@ -5718,9 +5718,9 @@ void RGWCopyObj::execute(optional_yield y)
   }
 
   auto labeled_counters = rgw::op_counters::get({{"Bucket", s->bucket_name}, {"User", s->user->get_id().id}});
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_copy_obj, 1);
-  rgw::op_counters::inc(labeled_counters.get(), l_rgw_op_copy_obj_b, obj_size);
-  rgw::op_counters::tinc(labeled_counters.get(), l_rgw_op_copy_obj_lat, s->time_elapsed());
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_copy_obj, 1);
+  rgw::op_counters::inc(labeled_counters, l_rgw_op_copy_obj_b, obj_size);
+  rgw::op_counters::tinc(labeled_counters, l_rgw_op_copy_obj_lat, s->time_elapsed());
 }
 
 int RGWGetACLs::verify_permission(optional_yield y)

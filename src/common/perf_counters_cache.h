@@ -49,7 +49,7 @@ private:
    *
    * See perf_counters_key.h
    */
-  void check_key(const std::string &key);
+  bool check_key(const std::string &key);
 
   // adds a new entry to the cache and returns its respective PerfCounter*
   // or returns the PerfCounter* of an existing entry in the cache

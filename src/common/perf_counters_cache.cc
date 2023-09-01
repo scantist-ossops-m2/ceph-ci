@@ -3,32 +3,42 @@
 
 namespace ceph::perf_counters {
 
-void PerfCountersCache::check_key(const std::string &key) {
+bool PerfCountersCache::check_key(const std::string &key) {
   std::string_view key_name = ceph::perf_counters::key_name(key);
   // return false for empty key name
-  ceph_assert(key_name != "");
+  if (key_name == "") {
+    return false;
+  }
 
   // if there are no labels key name is not valid
   auto key_labels = ceph::perf_counters::key_labels(key);
-  ceph_assert(key_labels.begin() != key_labels.end());
+  if (key_labels.begin() == key_labels.end()) {
+    return false;
+  }
 
   // don't accept keys where any labels have an empty label name
   for (auto key_label : key_labels) {
-    ceph_assert(key_label.first != "");
-    ceph_assert(key_label.second != "");
+    if (key_label.first == "" || key_label.second == "") {
+      return false;
+    }
   }
+
+  return true;
 }
 
 std::shared_ptr<PerfCounters> PerfCountersCache::add(const std::string &key) {
-  check_key(key);
+  bool valid_key = check_key(key);
 
-  auto [ref, key_existed] = cache.get_or_create(key);
-  if (!key_existed) {
-    ref->counters = create_counters(key, cct);
-    ceph_assert(ref->counters);
-    ref->cct = cct;
+  if (valid_key) {
+    auto [ref, key_existed] = cache.get_or_create(key);
+    if (!key_existed) {
+      ref->counters = create_counters(key, cct);
+      ceph_assert(ref->counters);
+      ref->cct = cct;
+    }
+    return ref->counters;
   }
-  return ref->counters;
+  return std::shared_ptr<PerfCounters>(nullptr);
 }
 
 
