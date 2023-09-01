@@ -15,3 +15,9 @@ tasks:
 - cephfs_test_runner:
     modules:
       - tasks.cephfs.test_nfs
+overrides:
+  ceph:
+    log-ignorelist:
+      - overall HEALTH_
+      - \(CEPHADM_STRAY_DAEMON\)
+      - ganesha conf is defaulting to empty
