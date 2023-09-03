@@ -5,6 +5,7 @@ tasks:
           set -ex
           sleep 180
           s=$(systemctl list-units | grep nvmeof.mypool | awk '{print $1}')
+          echo "nvmeof.mypool service is [2]-----> $s"
           PAGER=cat journalctl -u $s
   - cephadm.shell:
       host.a:
@@ -17,5 +18,5 @@ tasks:
         - |
           set -ex
           s=$(ceph orch ps  | grep nvmeof.mypool | awk '{print $4}')
-          echo $s
+          echo "nvmeof.mypool service is [3]-----> $s"
           [ $s = running ]

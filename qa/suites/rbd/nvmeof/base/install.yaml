@@ -25,8 +25,8 @@ tasks:
         d=$(ceph orch ps | grep nvmeof | awk '{print $1}')
         [ ! -z "$d" ] && break
       done
-      echo $d
-      ceph orch daemon redeploy $d  --image quay.io/baum/nvmeof:0.0.1
+      echo "nvmeof proccese is [1]-----> $d"
+      ceph orch daemon redeploy $d  --image quay.io/barakda1/nvmeof:v0.0.1
     # get some good info on the state of things post redeploy. Useful for debugging
     - ceph orch ps --refresh
     - ceph versions
