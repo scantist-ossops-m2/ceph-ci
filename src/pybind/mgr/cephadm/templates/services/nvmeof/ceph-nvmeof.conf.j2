@@ -1,7 +1,9 @@
 # {{ cephadm_managed }}
 [gateway]
 name = {{ name }}
+{% if spec.group is defined %}
 group = {{ spec.group }}
+{% endif %}
 addr = {{ addr }}
 port = {{ port }}
 enable_auth = {{ spec.enable_auth }}
