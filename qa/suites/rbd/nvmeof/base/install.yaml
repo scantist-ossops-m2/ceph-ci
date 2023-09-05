@@ -15,19 +15,10 @@ tasks:
     - ceph osd pool application enable mypool rbd
     - ceph osd lspools
     - ceph osd pool ls detail
-    # deploy nvmeof with redeploy
+    # deploy nvmeof
+    - ceph config set mgr mgr/cephadm/container_image_nvmeof quay.io/barakda1/nvmeof:0.0.3
     - ceph orch apply nvmeof mypool --placement="1 client.0"
-    - |
-      set -ex
-      # wait for daemon to start
-      for i in $(seq 300); do
-        sleep 5
-        d=$(ceph orch ps | grep nvmeof | awk '{print $1}')
-        [ ! -z "$d" ] && break
-      done
-      echo "nvmeof proccese is [1]-----> $d"
-      ceph orch daemon redeploy $d  --image quay.io/barakda1/nvmeof:v0.0.1
-    # get some good info on the state of things post redeploy. Useful for debugging
+    # get state after nvmeof deployment
     - ceph orch ps --refresh
     - ceph versions
     - ceph -s
