@@ -1041,8 +1041,13 @@ PG::do_osd_ops(
       ceph_tid_t rep_tid = shard_services.get_tid();
       auto last_complete = peering_state.get_info().last_complete;
       if (op_info.may_write()) {
-        // This should be executed as OrderedExclusivePhaseT
-        fut = submit_error_log(m, op_info, obc, e, rep_tid, version);
+        // todo explain
+        fut = log_error_lock.lock(
+        ).then([m, &op_info, obc, e, rep_tid, &version, this] {
+          return submit_error_log(m, op_info, obc, e, rep_tid, version);
+        }).finally([this] {
+          return log_error_lock.unlock();
+        });
       }
       return fut.then([m, e, epoch, &op_info, rep_tid, &version, last_complete,  this] {
         auto log_reply = [m, e, this] {
