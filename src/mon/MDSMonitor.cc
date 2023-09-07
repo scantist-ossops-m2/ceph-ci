@@ -2255,6 +2255,9 @@ bool MDSMonitor::check_health(FSMap& fsmap, bool* propose_osdmap)
 bool MDSMonitor::maybe_promote_standby(FSMap &fsmap, const Filesystem& fs)
 {
   auto& mds_map = fs.get_mds_map();
+  dout(20) << " is_joinable(" << fs.get_fscid() << "): "
+	   << !mds_map.test_flag(CEPH_MDSMAP_NOT_JOINABLE)
+	   << dendl;
   if (mds_map.test_flag(CEPH_MDSMAP_NOT_JOINABLE)) {
     return false;
   }
