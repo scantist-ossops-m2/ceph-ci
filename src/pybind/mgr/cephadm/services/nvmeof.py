@@ -25,6 +25,8 @@ class NvmeofService(CephService):
         assert self.TYPE == daemon_spec.daemon_type
 
         spec = cast(NvmeofServiceSpec, self.mgr.spec_store[daemon_spec.service_name].spec)
+        nvmeof_gw_group = spec.group
+        logger.info(f'Roy ==== nvneof gw group from spec is {nvmeof_gw_group}, with type of {type(nvmeof_gw_group)}')
         nvmeof_gw_id = daemon_spec.daemon_id
         host_ip = self.mgr.inventory.get_addr(daemon_spec.host)
 
