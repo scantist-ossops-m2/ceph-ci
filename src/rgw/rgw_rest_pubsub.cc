@@ -737,7 +737,23 @@ void RGWPSCreateNotifOp::execute(optional_yield y) {
     return;
   }
 
-  const RGWPubSub ps(store, s->owner.get_id().tenant);
+  rgw_pubsub_s3_notifications configurations;
+  op_ret = get_params_from_body(configurations);
+  if (op_ret < 0) {
+    return;
+  }
+
+  std::unique_ptr<rgw::sal::User> user = store->get_user(s->owner.get_id());
+  std::unique_ptr<rgw::sal::Bucket> bucket;
+  op_ret = store->get_bucket(this, user.get(), s->bucket_tenant, s->bucket_name, &bucket, y);
+  if (op_ret < 0) {
+    ldpp_dout(this, 1) << "failed to get bucket '" << 
+      (s->bucket_tenant.empty() ? s->bucket_name : s->bucket_tenant + ":" + s->bucket_name) << 
+      "' info, ret = " << op_ret << dendl;
+    return;
+  }
+
+  const RGWPubSub ps(storer, s->owner.get_id().tenant);
   const RGWPubSub::Bucket b(ps, bucket.get());
 
   if(configurations.list.empty()) {
@@ -884,6 +900,16 @@ void RGWPSDeleteNotifOp::execute(optional_yield y) {
     return;
   }
 
+  std::unique_ptr<rgw::sal::User> user = store->get_user(s->owner.get_id());
+  std::unique_ptr<rgw::sal::Bucket> bucket;
+  op_ret = store->get_bucket(this, user.get(), s->bucket_tenant, s->bucket_name, &bucket, y);
+  if (op_ret < 0) {
+    ldpp_dout(this, 1) << "failed to get bucket '" << 
+      (s->bucket_tenant.empty() ? s->bucket_name : s->bucket_tenant + ":" + s->bucket_name) << 
+      "' info, ret = " << op_ret << dendl;
+    return;
+  }
+
   const RGWPubSub ps(store, s->owner.get_id().tenant);
   const RGWPubSub::Bucket b(ps, bucket.get());
 
@@ -982,6 +1008,22 @@ private:
 };
 
 void RGWPSListNotifsOp::execute(optional_yield y) {
+  std::string notif_name;
+  op_ret = get_params(notif_name);
+  if (op_ret < 0) {
+    return;
+  }
+
+  std::unique_ptr<rgw::sal::User> user = store->get_user(s->owner.get_id());
+  std::unique_ptr<rgw::sal::Bucket> bucket;
+  op_ret = store>get_bucket(this, user.get(), s->bucket_tenant, s->bucket_name, &bucket, y);
+  if (op_ret < 0) {
+    ldpp_dout(this, 1) << "failed to get bucket '" << 
+      (s->bucket_tenant.empty() ? s->bucket_name : s->bucket_tenant + ":" + s->bucket_name) << 
+      "' info, ret = " << op_ret << dendl;
+    return;
+  }
+
   const RGWPubSub ps(store, s->owner.get_id().tenant);
   const RGWPubSub::Bucket b(ps, bucket.get());
   
