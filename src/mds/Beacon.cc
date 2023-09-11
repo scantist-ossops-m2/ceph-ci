@@ -515,6 +515,14 @@ void Beacon::notify_health(MDSRank const *mds)
                             std::cend(m));
     }
   }
+  if (mds->is_replay()){
+    CachedStackStringStream css;
+    auto estimates = mds->mdlog->get_replay_estimated_complete_time();
+    *css << "Replay: " << estimates.percent_complete << "\% complete. Estimated time remaining "\
+      << estimates.estimated_time << " seconds" ;
+    MDSHealthMetric m(MDS_HEALTH_ESTIMATED_REPLAY_TIME, HEALTH_WARN, css->strv());
+    health.metrics.push_back(m);
+  }
 }
 
 MDSMap::DaemonState Beacon::get_want_state() const

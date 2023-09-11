@@ -176,7 +176,7 @@ class FuseMount(CephFSMount):
                 except CommandFailedError as e:
                     log.info('mount command failed.')
                     if check_status:
-                        raise
+                        raise e
                     else:
                         return (e, mountcmd_stdout.getvalue(),
                                 mountcmd_stderr.getvalue())
