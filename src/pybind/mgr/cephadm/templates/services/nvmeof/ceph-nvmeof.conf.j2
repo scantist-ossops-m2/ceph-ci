@@ -1,7 +1,7 @@
 # {{ cephadm_managed }}
 [gateway]
 name = {{ name }}
-{% if spec.group is defined %}
+{% if spec.group is not none %}
 group = {{ spec.group }}
 {% endif %}
 addr = {{ addr }}
