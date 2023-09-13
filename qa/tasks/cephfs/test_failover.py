@@ -3,6 +3,7 @@ import signal
 import logging
 import operator
 from random import randint, choice
+import threading
 
 from tasks.cephfs.cephfs_test_case import CephFSTestCase
 from teuthology.exceptions import CommandFailedError
@@ -340,6 +341,24 @@ class TestClusterResize(CephFSTestCase):
 
         self.fs.wait_for_daemons(timeout=90)
 
+class TestFailoverBeaconHealth(CephFSTestCase):
+    CLIENTS_REQUIRED = 1
+    MDSS_REQUIRED = 2
+
+    def test_replay_beacon_estimated_time(self):
+        """
+        That beacon emits warning message with estimated time to complete replay
+        """
+        self.config_set("mds", "mds_tick_interval", "1")
+        original_active = self.fs.get_active_names()[0]
+        self.mounts[0].test_files = [str(x) for x in range(50000)]
+        self.mounts[0].create_files(silent=True)
+        wait = threading.Thread(target=self.wait_for_health, args=("MDS_ESTIMATED_REPLAY_TIME", 30))
+        wait.start()
+        self.fs.mds_stop(original_active)
+        wait.join()
+
+
 class TestFailover(CephFSTestCase):
     CLIENTS_REQUIRED = 1
     MDSS_REQUIRED = 2
@@ -395,6 +414,7 @@ class TestFailover(CephFSTestCase):
             lambda: original_active in self.mds_cluster.get_standby_daemons(),
             timeout=60  # Approximately long enough for MDS to start and mon to notice
         )
+
 
     def test_client_abort(self):
         """
@@ -780,6 +800,7 @@ class TestMultiFilesystems(CephFSTestCase):
         # See that the client's files went into the correct pool
         self.assertTrue(fs_a.data_objects_present(a_created_ino, 1024 * 1024))
         self.assertTrue(fs_b.data_objects_present(b_created_ino, 1024 * 1024))
+        self.assertTrue(False)
 
     def test_standby(self):
         fs_a, fs_b = self._setup_two()

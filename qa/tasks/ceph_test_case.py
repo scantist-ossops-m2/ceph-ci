@@ -221,7 +221,7 @@ class CephTestCase(unittest.TestCase, RunCephCmd):
             return False
 
         log.info(f"waiting {timeout}s for health warning matching {pattern}")
-        self.wait_until_true(seen_health_warning, timeout)
+        self.wait_until_true(seen_health_warning, timeout, period=1)
 
     def wait_for_health_clear(self, timeout):
         """
