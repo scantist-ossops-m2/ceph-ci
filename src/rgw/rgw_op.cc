@@ -2574,9 +2574,10 @@ void RGWListBuckets::execute(optional_yield y)
       handle_listing_chunk(std::move(buckets));
     }
 
-    rgw::op_counters::tinc(labeled_counters, l_rgw_op_list_buckets_lat, s->time_elapsed());
 
   } while (is_truncated && !done);
+
+  rgw::op_counters::tinc(labeled_counters, l_rgw_op_list_buckets_lat, s->time_elapsed());
 
 send_end:
   if (!started) {
