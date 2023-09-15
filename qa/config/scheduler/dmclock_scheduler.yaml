@@ -1,0 +1,7 @@
+overrides:
+  ceph:
+    conf:
+      osd:
+        osd op queue: mclock_scheduler
+        osd mclock override recovery settings: true
+        osd mclock profile: high_recovery_ops
