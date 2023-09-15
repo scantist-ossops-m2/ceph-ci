@@ -2403,6 +2403,21 @@ OSD::OSD(CephContext *cct_,
   trace_endpoint.copy_name(ss.str());
 #endif
 
+  // Determine scheduler type for this OSD
+  auto get_scheduler_type = [&conf = cct->_conf]() {
+    const std::string _type = conf.get_val<std::string>("osd_op_queue");
+    const std::string *type = &_type;
+    if (*type == "debug_random") {
+      static const std::vector<std::string> index_lookup = { "mclock_scheduler",
+                                                             "wpq" };
+      std::mt19937 random_gen(std::random_device{}());
+      auto which = random_gen() % index_lookup.size();
+      type = &index_lookup[which];
+    }
+    return *type;
+  };
+  osd_op_queue = get_scheduler_type();
+
   // initialize shards
   num_shards = get_num_op_shards();
   for (uint32_t i = 0; i < num_shards; i++) {
@@ -10819,7 +10834,7 @@ OSDShard::OSDShard(
     shard_lock{make_mutex(shard_lock_name)},
     scheduler(ceph::osd::scheduler::make_scheduler(
       cct, osd->whoami, osd->num_shards, id, osd->store->is_rotational(),
-      osd->store->get_type(), osd->monc)),
+      osd->store->get_type(), osd->osd_op_queue, osd->monc)),
     context_queue(sdata_wait_lock, sdata_cond)
 {
   dout(0) << "using op scheduler " << *scheduler << dendl;

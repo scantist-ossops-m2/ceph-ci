@@ -2032,6 +2032,9 @@ public:
   /// check if we can throw out op from a disconnected client
   static bool op_is_discardable(const MOSDOp *m);
 
+  /// the queuing scheduler type active for the OSD
+  std::string osd_op_queue;
+
 public:
   OSDService service;
   friend class OSDService;
