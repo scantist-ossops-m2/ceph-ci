@@ -576,7 +576,8 @@ void ImageWatcher<I>::schedule_request_lock(bool use_timer, int timer_delay) {
     return;
   }
 
-  if (is_registered()) {
+  std::shared_lock watch_locker{this->m_watch_lock};
+  if (this->is_registered(this->m_watch_lock)) {
     ldout(m_image_ctx.cct, 15) << this << " requesting exclusive lock" << dendl;
 
     auto ctx = new LambdaContext([this](int r) {
@@ -594,10 +595,6 @@ void ImageWatcher<I>::schedule_request_lock(bool use_timer, int timer_delay) {
     } else {
       m_task_finisher->queue(TASK_CODE_REQUEST_LOCK, ctx);
     }
-  } else if (is_blocklisted()) {
-    lderr(m_image_ctx.cct) << this << " blocklisted waiting for exclusive lock"
-                           << dendl;
-    m_image_ctx.exclusive_lock->handle_peer_notification(0);
   }
 }
 
