@@ -23,6 +23,7 @@ overrides:
         osd class default list: "*"
 tasks:
 - workunit:
+    branch: xml-scanner
     clients:
       client.0:
         - rados/test.sh

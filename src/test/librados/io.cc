@@ -25,6 +25,7 @@ TEST_F(LibRadosIo, SimpleWrite) {
   ASSERT_EQ(0, rados_write(ioctx, "foo", buf, sizeof(buf), 0));
   rados_ioctx_set_namespace(ioctx, "nspace");
   ASSERT_EQ(0, rados_write(ioctx, "foo", buf, sizeof(buf), 0));
+  ASSERT_EQ(0, 1);
 }
 
 TEST_F(LibRadosIo, TooBig) {
@@ -104,6 +105,7 @@ TEST_F(LibRadosIo, RoundTrip) {
   memset(buf2, 0, sizeof(buf2));
   ASSERT_EQ((int)sizeof(buf2), rados_read(ioctx, "bar", buf2, sizeof(buf2), off));
   ASSERT_EQ(0, memcmp(buf, buf2, sizeof(buf)));
+  ASSERT_EQ(0, 1);
 }
 
 TEST_F(LibRadosIo, Checksum) {
@@ -121,6 +123,7 @@ TEST_F(LibRadosIo, Checksum) {
 			      reinterpret_cast<char*>(&crc), sizeof(crc)));
   ASSERT_EQ(1U, crc[0]);
   ASSERT_EQ(expected_crc, crc[1]);
+  ASSERT_EQ(0, 1);
 }
 
 TEST_F(LibRadosIo, OverlappingWriteRoundTrip) {
@@ -276,6 +279,7 @@ TEST_F(LibRadosIoEC, SimpleWrite) {
   ASSERT_EQ(0, rados_write(ioctx, "foo", buf, sizeof(buf), 0));
   rados_ioctx_set_namespace(ioctx, "nspace");
   ASSERT_EQ(0, rados_write(ioctx, "foo", buf, sizeof(buf), 0));
+  ASSERT_EQ(0, 1);
 }
 
 TEST_F(LibRadosIoEC, RoundTrip) {

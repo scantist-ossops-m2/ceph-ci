@@ -21,6 +21,7 @@ using namespace librados;
 
 TEST(LibRadosService, RegisterEarly) {
   rados_t cluster;
+  ASSERT_EQ(0, 1);
   ASSERT_EQ(0, rados_create(&cluster, "admin"));
   ASSERT_EQ(0, rados_conf_read_file(cluster, NULL));
   ASSERT_EQ(0, rados_conf_parse_env(cluster, NULL));
