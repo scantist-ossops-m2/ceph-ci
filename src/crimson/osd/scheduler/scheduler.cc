@@ -147,17 +147,9 @@ public:
 
 SchedulerRef make_scheduler(ConfigProxy &conf)
 {
-  const std::string _type = conf.get_val<std::string>("osd_op_queue");
-  const std::string *type = &_type;
-  if (*type == "debug_random") {
-    static const std::string index_lookup[] = { "mclock_scheduler",
-						"wpq" };
-    srand(time(NULL));
-    unsigned which = rand() % (sizeof(index_lookup) / sizeof(index_lookup[0]));
-    type = &index_lookup[which];
-  }
+  const std::string type = conf.get_val<std::string>("osd_op_queue");
 
-  if (*type == "wpq" ) {
+  if (type == "wpq" ) {
     // default is 'wpq'
     return std::make_unique<
       ClassedOpQueueScheduler<WeightedPriorityQueue<item_t, client_t>>>(
@@ -165,7 +157,7 @@ SchedulerRef make_scheduler(ConfigProxy &conf)
 	conf.get_val<uint64_t>("osd_op_pq_max_tokens_per_priority"),
 	conf->osd_op_pq_min_cost
       );
-  } else if (*type == "mclock_scheduler") {
+  } else if (type == "mclock_scheduler") {
     return std::make_unique<mClockScheduler>(conf);
   } else {
     ceph_assert("Invalid choice of wq" == 0);
