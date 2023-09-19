@@ -156,8 +156,8 @@ class XFSTestsDev(CephFSTestCase):
         import configparser
 
         cp = configparser.ConfigParser()
-        cp.read_string(self.fs.mon_manager.raw_cluster_cmd(
-            'auth', 'get-or-create', 'client.admin'))
+        cp.read_string(self.get_ceph_cmd_stdout('auth', 'get-or-create',
+                                                'client.admin'))
 
         return cp['client.admin']['key']
 
@@ -197,9 +197,11 @@ class XFSTestsDev(CephFSTestCase):
             gawk gcc indent libtool lvm2 make psmisc quota sed \
             xfsdump xfsprogs \
             libacl-devel libattr-devel libaio-devel libuuid-devel \
-            xfsprogs-devel btrfs-progs-devel python2 sqlite""".split()
+            xfsprogs-devel btrfs-progs-devel python3 sqlite""".split()
 
             if self.install_xfsprogs:
+                if distro == 'centosstream' and major_ver_num == 8:
+                    deps += ['--enablerepo=powertools']
                 deps += ['inih-devel', 'userspace-rcu-devel', 'libblkid-devel',
                          'gettext', 'libedit-devel', 'libattr-devel',
                          'device-mapper-devel', 'libicu-devel']
@@ -287,7 +289,7 @@ class XFSTestsDev(CephFSTestCase):
             ceph_fuse_bin_path = join(os_getcwd(), 'bin', 'ceph-fuse')
 
         keyring_path = self.mount_a.client_remote.mktemp(
-            data=self.fs.mon_manager.get_keyring('client.admin')+'\n')
+            data=self.fs.mon_manager.get_keyring('client.admin'))
 
         lastline = (f'export CEPHFS_MOUNT_OPTIONS="-m {mon_sock} -k '
                     f'{keyring_path} --client_mountpoint /{self.test_dirname}')
@@ -307,7 +309,7 @@ class XFSTestsDev(CephFSTestCase):
         # These tests will fail or take too much time and will
         # make the test timedout, just skip them for now.
         xfstests_exclude_contents = dedent('''\
-            {c}/001 {g}/003 {g}/020 {g}/075 {g}/538 {g}/531
+            {c}/001 {g}/003 {g}/075 {g}/538 {g}/531
             ''').format(g="generic", c="ceph")
 
         self.mount_a.client_remote.write_file(join(self.xfstests_repo_path, 'ceph.exclude'),

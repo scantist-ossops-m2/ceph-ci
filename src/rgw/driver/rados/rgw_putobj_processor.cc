@@ -28,6 +28,41 @@ using namespace std;
 
 namespace rgw::putobj {
 
+/*
+ * For the cloudtiered objects, update the object manifest with the
+ * cloudtier config info read from the attrs.
+ * Since these attrs are used internally for only replication, do not store them
+ * in the head object.
+ */
+void read_cloudtier_info_from_attrs(rgw::sal::Attrs& attrs, RGWObjCategory& category,
+                          RGWObjManifest& manifest) {
+  auto attr_iter = attrs.find(RGW_ATTR_CLOUD_TIER_TYPE);
+  if (attr_iter != attrs.end()) {
+    auto i = attr_iter->second;
+    string m = i.to_str();
+
+    if (m == "cloud-s3") {
+      category = RGWObjCategory::CloudTiered;
+      manifest.set_tier_type("cloud-s3");
+
+      auto config_iter = attrs.find(RGW_ATTR_CLOUD_TIER_CONFIG);
+      if (config_iter != attrs.end()) {
+        auto i = config_iter->second.cbegin();
+        RGWObjTier tier_config;
+
+        try {
+          using ceph::decode;
+          decode(tier_config, i);
+          manifest.set_tier_config(tier_config);
+          attrs.erase(config_iter);
+        } catch (buffer::error& err) {
+        }
+      }
+    }
+    attrs.erase(attr_iter);
+  }
+}
+
 int HeadObjectProcessor::process(bufferlist&& data, uint64_t logical_offset)
 {
   const bool flush = (data.length() == 0);
@@ -168,7 +203,7 @@ RadosWriter::~RadosWriter()
       continue;
     }
 
-    int r = store->delete_raw_obj(dpp, obj);
+    int r = store->delete_raw_obj(dpp, obj, y);
     if (r < 0 && r != -ENOENT) {
       ldpp_dout(dpp, 0) << "WARNING: failed to remove obj (" << obj << "), leaked" << dendl;
     }
@@ -177,7 +212,7 @@ RadosWriter::~RadosWriter()
   if (need_to_remove_head) {
     std::string version_id;
     ldpp_dout(dpp, 5) << "NOTE: we are going to process the head obj (" << *raw_head << ")" << dendl;
-    int r = store->delete_obj(dpp, obj_ctx, bucket_info, head_obj, 0, 0);
+    int r = store->delete_obj(dpp, obj_ctx, bucket_info, head_obj, 0, y, 0);
     if (r < 0 && r != -ENOENT) {
       ldpp_dout(dpp, 0) << "WARNING: failed to remove obj (" << *raw_head << "), leaked" << dendl;
     }
@@ -340,6 +375,8 @@ int AtomicObjectProcessor::complete(size_t accounted_size,
   obj_op.meta.user_data = user_data;
   obj_op.meta.zones_trace = zones_trace;
   obj_op.meta.modify_tail = true;
+
+  read_cloudtier_info_from_attrs(attrs, obj_op.meta.category, manifest);
 
   r = obj_op.write_meta(dpp, actual_size, accounted_size, attrs, y);
   if (r < 0) {

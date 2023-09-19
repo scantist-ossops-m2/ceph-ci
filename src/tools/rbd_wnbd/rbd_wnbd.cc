@@ -313,8 +313,11 @@ int send_map_request(std::string arguments) {
     return -EINVAL;
   }
   if (reply.status) {
-    derr << "The ceph service failed to map the image. Error: "
-         << reply.status << dendl;
+    derr << "The ceph service failed to map the image. "
+         << "Check the log file or pass '-f' (foreground mode) "
+         << "for additional information. "
+         << "Error: " << cpp_strerror(reply.status)
+         << dendl;
   }
 
   return reply.status;
@@ -419,7 +422,7 @@ int map_device_using_suprocess(std::string arguments, int timeout_ms)
     case WAIT_OBJECT_0:
       if (!GetOverlappedResult(pipe_handle, &connect_o, &bytes_read, TRUE)) {
         err = GetLastError();
-        derr << "Couln't establish a connection with the child process. "
+        derr << "Couldn't establish a connection with the child process. "
              << "Error: " << win32_strerror(err) << dendl;
         exit_code = -ECHILD;
         goto clean_process;
@@ -479,6 +482,13 @@ int map_device_using_suprocess(std::string arguments, int timeout_ms)
   clean_process:
     if (!is_process_running(pi.dwProcessId)) {
       GetExitCodeProcess(pi.hProcess, (PDWORD)&exit_code);
+      if (!exit_code) {
+        // Child terminated unexpectedly.
+        exit_code = -ECHILD;
+      } else if (exit_code > 0) {
+        // Make sure to return a negative error code.
+        exit_code = -exit_code;
+      }
       derr << "Daemon failed with: " << cpp_strerror(exit_code) << dendl;
     } else {
       // The process closed the pipe without notifying us or exiting.
@@ -1086,13 +1096,13 @@ Unmap options:
   --soft-disconnect-timeout   Soft disconnect timeout in seconds. The soft
                               disconnect operation uses PnP to notify the
                               Windows storage stack that the device is going to
-                              be disconnectd. Storage drivers can block this
+                              be disconnected. Storage drivers can block this
                               operation if there are pending operations,
                               unflushed caches or open handles. Default: 15
 
 Service options:
   --hard-disconnect             Skip attempting a soft disconnect
-  --soft-disconnect-timeout     Cummulative soft disconnect timeout in seconds,
+  --soft-disconnect-timeout     Cumulative soft disconnect timeout in seconds,
                                 used when disconnecting existing mappings. A hard
                                 disconnect will be issued when hitting the timeout
   --service-thread-count        The number of workers used when mapping or
@@ -1194,6 +1204,28 @@ boost::intrusive_ptr<CephContext> do_global_init(
   return cct;
 }
 
+// Wait for the mapped disk to become available.
+static int wait_mapped_disk(Config *cfg)
+{
+  DWORD status = WnbdPollDiskNumber(
+    cfg->devpath.c_str(),
+    TRUE, // ExpectMapped
+    TRUE, // TryOpen
+    cfg->image_map_timeout,
+    DISK_STATUS_POLLING_INTERVAL_MS,
+    (PDWORD) &cfg->disk_number);
+  if (status) {
+    derr << "WNBD disk unavailable, error: "
+         << win32_strerror(status) << dendl;
+    return -EINVAL;
+  }
+  dout(0) << "Successfully mapped image: " << cfg->devpath
+          << ". Windows disk path: "
+          << "\\\\.\\PhysicalDrive" + std::to_string(cfg->disk_number)
+          << dendl;
+  return 0;
+}
+
 static int do_map(Config *cfg)
 {
   int r;
@@ -1207,7 +1239,12 @@ static int do_map(Config *cfg)
   int err = 0;
 
   if (g_conf()->daemonize && cfg->parent_pipe.empty()) {
-    return send_map_request(get_cli_args());
+    r = send_map_request(get_cli_args());
+    if (r < 0) {
+      return r;
+    }
+
+    return wait_mapped_disk(cfg);
   }
 
   dout(0) << "Mapping RBD image: " << cfg->devpath << dendl;
@@ -1290,6 +1327,13 @@ static int do_map(Config *cfg)
   r = handler->start();
   if (r) {
     r = r == ERROR_ALREADY_EXISTS ? -EEXIST : -EINVAL;
+    goto close_ret;
+  }
+
+  // TODO: consider substracting the time it took to perform the
+  // above operations from cfg->image_map_timeout in wait_mapped_disk().
+  r = wait_mapped_disk(cfg);
+  if (r < 0) {
     goto close_ret;
   }
 

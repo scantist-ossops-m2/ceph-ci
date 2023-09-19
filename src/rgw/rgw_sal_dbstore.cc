@@ -187,7 +187,7 @@ namespace rgw::sal {
     return 0;
   }
 
-  int DBUser::trim_usage(const DoutPrefixProvider *dpp, uint64_t start_epoch, uint64_t end_epoch)
+  int DBUser::trim_usage(const DoutPrefixProvider *dpp, uint64_t start_epoch, uint64_t end_epoch, optional_yield y)
   {
     return 0;
   }
@@ -311,12 +311,12 @@ namespace rgw::sal {
     return 0;
   }
 
-  int DBBucket::update_container_stats(const DoutPrefixProvider *dpp)
+  int DBBucket::update_container_stats(const DoutPrefixProvider *dpp, optional_yield y)
   {
     return 0;
   }
 
-  int DBBucket::check_bucket_shards(const DoutPrefixProvider *dpp)
+  int DBBucket::check_bucket_shards(const DoutPrefixProvider *dpp, optional_yield y)
   {
     return 0;
   }
@@ -329,7 +329,7 @@ namespace rgw::sal {
     return ret;
   }
 
-  int DBBucket::put_info(const DoutPrefixProvider *dpp, bool exclusive, ceph::real_time _mtime)
+  int DBBucket::put_info(const DoutPrefixProvider *dpp, bool exclusive, ceph::real_time _mtime, optional_yield y)
   {
     int ret;
 
@@ -373,7 +373,7 @@ namespace rgw::sal {
     return ret;
   }
 
-  int DBBucket::try_refresh_info(const DoutPrefixProvider *dpp, ceph::real_time *pmtime)
+  int DBBucket::try_refresh_info(const DoutPrefixProvider *dpp, ceph::real_time *pmtime, optional_yield y)
   {
     int ret = 0;
 
@@ -392,7 +392,7 @@ namespace rgw::sal {
     return 0;
   }
 
-  int DBBucket::trim_usage(const DoutPrefixProvider *dpp, uint64_t start_epoch, uint64_t end_epoch)
+  int DBBucket::trim_usage(const DoutPrefixProvider *dpp, uint64_t start_epoch, uint64_t end_epoch, optional_yield y)
   {
     return 0;
   }
@@ -424,7 +424,7 @@ namespace rgw::sal {
     return 0;
   }
 
-  int DBBucket::purge_instance(const DoutPrefixProvider *dpp)
+  int DBBucket::purge_instance(const DoutPrefixProvider *dpp, optional_yield y)
   {
     /* XXX: CHECK: for dbstore only single instance supported.
      * Remove all the objects for that instance? Anything extra needed?
@@ -499,12 +499,12 @@ namespace rgw::sal {
 				const int& max_uploads,
 				vector<std::unique_ptr<MultipartUpload>>& uploads,
 				map<string, bool> *common_prefixes,
-				bool *is_truncated) {
+				bool *is_truncated, optional_yield y) {
     return 0;
   }
 
   int DBBucket::abort_multiparts(const DoutPrefixProvider* dpp,
-				 CephContext* cct) {
+				 CephContext* cct, optional_yield y) {
     return 0;
   }
 
@@ -875,7 +875,7 @@ namespace rgw::sal {
   }
 
   int DBObject::swift_versioning_restore(bool& restored,
-      const DoutPrefixProvider* dpp)
+      const DoutPrefixProvider* dpp, optional_yield y)
   {
     return 0;
   }
@@ -886,7 +886,7 @@ namespace rgw::sal {
     return 0;
   }
 
-  int DBMultipartUpload::abort(const DoutPrefixProvider *dpp, CephContext *cct)
+  int DBMultipartUpload::abort(const DoutPrefixProvider *dpp, CephContext *cct, optional_yield y)
   {
     std::unique_ptr<rgw::sal::Object> meta_obj = get_meta_obj();
     meta_obj->set_in_extra_data(true);
@@ -955,7 +955,7 @@ namespace rgw::sal {
 
   int DBMultipartUpload::list_parts(const DoutPrefixProvider *dpp, CephContext *cct,
 				     int num_parts, int marker,
-				     int *next_marker, bool *truncated,
+				     int *next_marker, bool *truncated, optional_yield y,
 				     bool assume_unsorted)
   {
     std::list<RGWUploadPartInfo> parts_map;
@@ -1038,7 +1038,7 @@ namespace rgw::sal {
     ofs = 0;
     accounted_size = 0;
     do {
-      ret = list_parts(dpp, cct, max_parts, marker, &marker, &truncated);
+      ret = list_parts(dpp, cct, max_parts, marker, &marker, &truncated, y);
       if (ret == -ENOENT) {
         ret = -ERR_NO_SUCH_UPLOAD;
       }
@@ -1329,7 +1329,6 @@ namespace rgw::sal {
                        rgw_zone_set *zones_trace, bool *canceled,
                        optional_yield y)
   {
-    int ret = 0;
     /* XXX: same as AtomicWriter..consolidate code */
     parent_op.meta.mtime = mtime;
     parent_op.meta.delete_at = delete_at;
@@ -1341,9 +1340,6 @@ namespace rgw::sal {
     /* XXX: handle accounted size */
     accounted_size = total_data_size;
 
-    if (ret < 0)
-      return ret;
-
     RGWUploadPartInfo info;
     info.num = part_num;
     info.etag = etag;
@@ -1354,7 +1350,7 @@ namespace rgw::sal {
 
     DB::Object op_target(store->getDB(),
         meta_obj->get_bucket()->get_info(), meta_obj->get_obj());
-    ret = op_target.add_mp_part(dpp, info);
+    auto ret = op_target.add_mp_part(dpp, info);
     if (ret < 0) {
       return ret == -ENOENT ? -ERR_NO_SUCH_UPLOAD : ret;
     }
@@ -1546,7 +1542,7 @@ namespace rgw::sal {
 
   int DBStore::get_oidc_providers(const DoutPrefixProvider *dpp,
       const std::string& tenant,
-      vector<std::unique_ptr<RGWOIDCProvider>>& providers)
+      vector<std::unique_ptr<RGWOIDCProvider>>& providers, optional_yield y)
   {
     return 0;
   }
@@ -1817,7 +1813,7 @@ namespace rgw::sal {
     return lc;
   }
 
-  int DBStore::log_usage(const DoutPrefixProvider *dpp, map<rgw_user_bucket, RGWUsageBatch>& usage_info)
+  int DBStore::log_usage(const DoutPrefixProvider *dpp, map<rgw_user_bucket, RGWUsageBatch>& usage_info, optional_yield y)
   {
     return 0;
   }
@@ -1844,7 +1840,7 @@ namespace rgw::sal {
     return;
   }
 
-  int DBStore::set_buckets_enabled(const DoutPrefixProvider *dpp, vector<rgw_bucket>& buckets, bool enabled)
+  int DBStore::set_buckets_enabled(const DoutPrefixProvider *dpp, vector<rgw_bucket>& buckets, bool enabled, optional_yield y)
   {
     int ret = 0;
 
@@ -1905,7 +1901,7 @@ namespace rgw::sal {
     return 0;
   }
 
-  int DBStore::trim_all_usage(const DoutPrefixProvider *dpp, uint64_t start_epoch, uint64_t end_epoch)
+  int DBStore::trim_all_usage(const DoutPrefixProvider *dpp, uint64_t start_epoch, uint64_t end_epoch, optional_yield y)
   {
     return 0;
   }

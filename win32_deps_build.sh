@@ -20,8 +20,8 @@ sslDir="${depsToolsetDir}/openssl"
 sslSrcDir="${depsSrcDir}/openssl"
 
 # For now, we'll keep the version number within the file path when not using git.
-boostUrl="https://boostorg.jfrog.io/artifactory/main/release/1.79.0/source/boost_1_79_0.tar.gz"
-boostSrcDir="${depsSrcDir}/boost_1_79_0"
+boostUrl="https://boostorg.jfrog.io/artifactory/main/release/1.82.0/source/boost_1_82_0.tar.gz"
+boostSrcDir="${depsSrcDir}/boost_1_82_0"
 boostDir="${depsToolsetDir}/boost"
 zlibDir="${depsToolsetDir}/zlib"
 zlibSrcDir="${depsSrcDir}/zlib"
@@ -74,7 +74,6 @@ case "$OS" in
             libtool \
             ninja-build \
             zip \
-            python3-Cython \
             python3-PyYAML \
             gcc \
             diffutils \
@@ -86,15 +85,15 @@ case "$OS" in
     ubuntu)
         sudo apt-get update
         sudo env DEBIAN_FRONTEND=noninteractive apt-get -y install \
-            mingw-w64 cmake pkg-config \
-            python3-dev python3-pip python3-yaml \
-                autoconf libtool ninja-build wget zip
-        sudo python3 -m pip install cython
+            mingw-w64 g++ cmake pkg-config \
+            python3-dev python3-yaml \
+                autoconf libtool ninja-build wget zip \
+                git
         ;;
     suse)
         for PKG in mingw64-cross-gcc-c++ mingw64-libgcc_s_seh1 mingw64-libstdc++6 \
                 cmake pkgconf python3-devel autoconf libtool ninja zip \
-                python3-Cython python3-PyYAML \
+                python3-PyYAML \
                 gcc patch wget git; do
             rpm -q $PKG >/dev/null || zypper -n install $PKG
         done
@@ -158,10 +157,7 @@ echo "using gcc : mingw32 : ${MINGW_CXX} ;" > user-config.jam
 # Workaround for https://github.com/boostorg/thread/issues/156
 # Older versions of mingw provided a different pthread lib.
 sed -i 's/lib$(libname)GC2.a/lib$(libname).a/g' ./libs/thread/build/Jamfile.v2
-sed -i 's/mthreads/pthreads/g' ./tools/build/src/tools/gcc.py
 sed -i 's/mthreads/pthreads/g' ./tools/build/src/tools/gcc.jam
-
-sed -i 's/pthreads/mthreads/g' ./tools/build/src/tools/gcc.py
 sed -i 's/pthreads/mthreads/g' ./tools/build/src/tools/gcc.jam
 
 export PTW32_INCLUDE=${PTW32Include}

@@ -29,22 +29,21 @@ Premier
 
 * `Bloomberg <https://bloomberg.com>`_
 * `Clyso <https://www.clyso.com/en/>`_
-* `DigitalOcean <https://www.digitalocean.com/>`_
 * `IBM <https://ibm.com>`_
 * `Intel <http://www.intel.com/>`_
 * `OVH <https://www.ovh.com/>`_
 * `Samsung Electronics <https://samsung.com/>`_
-* `SoftIron <https://www.softiron.com/>`_
 * `Western Digital <https://www.wdc.com/>`_
-* `ZTE <https://www.zte.com.cn/global/>`_
 
 General
 -------
 
 * `42on <https://www.42on.com/>`_
+* `Akamai <https://www.akamai.com/>`_
 * `ARM <http://www.arm.com/>`_
 * `Canonical <https://www.canonical.com/>`_
 * `Cloudbase Solutions <https://cloudbase.it/>`_
+* `CloudFerro <https://cloudferro.com/>`_
 * `croit <http://www.croit.io/>`_
 * `ISS <http://iss-integration.com/>`_
 * `Koor <http://koor.tech/>`_
@@ -95,13 +94,10 @@ Members
 -------
 
 * Anjaneya "Reddy" Chagam (Intel)
-* Alex Marangone (DigitalOcean)
 * Carlos Maltzahn (UCSC) - Associate member representative
-* Dan van der Ster (CERN) - Ceph Council representative
-* James Page (Canonical)
+* Dan van der Ster (Clyso) - Ceph Council representative
 * Joachim Kraftmayer (Clyso)
 * Josh Durgin (IBM) - Ceph Council representative
-* Kenneth Van Alstyne (SoftIron)
 * Matias Bjorling (Western Digital)
 * Matthew Leonard (Bloomberg)
 * Mike Perez (IBM) - Ceph community manager
@@ -110,7 +106,6 @@ Members
 * Steven Umbehocker (OSNexus) - General member representative
 * Pawel Sadowski (OVH)
 * Vincent Hsu (IBM)
-* Xie Xingguo (ZTE)
 
 Joining
 =======

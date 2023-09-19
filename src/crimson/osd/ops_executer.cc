@@ -138,7 +138,8 @@ OpsExecuter::call_ierrorator::future<> OpsExecuter::do_op_call(OSDOp& osd_op)
 }
 
 static watch_info_t create_watch_info(const OSDOp& osd_op,
-                                      const OpsExecuter::ExecutableMessage& msg)
+                                      const OpsExecuter::ExecutableMessage& msg,
+                                      entity_addr_t peer_addr)
 {
   using crimson::common::local_conf;
   const uint32_t timeout =
@@ -147,7 +148,7 @@ static watch_info_t create_watch_info(const OSDOp& osd_op,
   return {
     osd_op.op.watch.cookie,
     timeout,
-    msg.get_connection()->get_peer_addr()
+    peer_addr
   };
 }
 
@@ -159,48 +160,47 @@ OpsExecuter::watch_ierrorator::future<> OpsExecuter::do_op_watch_subop_watch(
   logger().debug("{}", __func__);
   struct connect_ctx_t {
     ObjectContext::watch_key_t key;
-    crimson::net::ConnectionFRef conn;
+    crimson::net::ConnectionRef conn;
     watch_info_t info;
 
     connect_ctx_t(
       const OSDOp& osd_op,
       const ExecutableMessage& msg,
-      crimson::net::ConnectionFRef conn)
+      crimson::net::ConnectionRef conn)
       : key(osd_op.op.watch.cookie, msg.get_reqid().name),
-        conn(std::move(conn)),
-        info(create_watch_info(osd_op, msg)) {
+        conn(conn),
+        info(create_watch_info(osd_op, msg, conn->get_peer_addr())) {
     }
   };
-  return get_message().get_connection().copy(
-  ).then([&, this](auto &&conn) {
-    return with_effect_on_obc(
-      connect_ctx_t{ osd_op, get_message(), std::move(conn) },
-      [&] (auto& ctx) {
-	const auto& entity = ctx.key.second;
-	auto [it, emplaced] =
-	  os.oi.watchers.try_emplace(ctx.key, std::move(ctx.info));
-	if (emplaced) {
-	  logger().info("registered new watch {} by {}", it->second, entity);
-	  txn.nop();
-	} else {
-	  logger().info("found existing watch {} by {}", it->second, entity);
-	}
-	return seastar::now();
-      },
-      [] (auto&& ctx, ObjectContextRef obc, Ref<PG> pg) {
-	assert(pg);
-	auto [it, emplaced] = obc->watchers.try_emplace(ctx.key, nullptr);
-	if (emplaced) {
-	  const auto& [cookie, entity] = ctx.key;
-	  it->second = crimson::osd::Watch::create(
-	    obc, ctx.info, entity, std::move(pg));
-	  logger().info("op_effect: added new watcher: {}", ctx.key);
-	} else {
-	  logger().info("op_effect: found existing watcher: {}", ctx.key);
-	}
-	return it->second->connect(std::move(ctx.conn), true /* will_ping */);
-      });
-  });
+
+  return with_effect_on_obc(
+    connect_ctx_t{ osd_op, get_message(), conn },
+    [&](auto& ctx) {
+      const auto& entity = ctx.key.second;
+      auto [it, emplaced] =
+        os.oi.watchers.try_emplace(ctx.key, std::move(ctx.info));
+      if (emplaced) {
+        logger().info("registered new watch {} by {}", it->second, entity);
+        txn.nop();
+      } else {
+        logger().info("found existing watch {} by {}", it->second, entity);
+      }
+      return seastar::now();
+    },
+    [](auto&& ctx, ObjectContextRef obc, Ref<PG> pg) {
+      assert(pg);
+      auto [it, emplaced] = obc->watchers.try_emplace(ctx.key, nullptr);
+      if (emplaced) {
+        const auto& [cookie, entity] = ctx.key;
+        it->second = crimson::osd::Watch::create(
+          obc, ctx.info, entity, std::move(pg));
+        logger().info("op_effect: added new watcher: {}", ctx.key);
+      } else {
+        logger().info("op_effect: found existing watcher: {}", ctx.key);
+      }
+      return it->second->connect(std::move(ctx.conn), true /* will_ping */);
+    }
+  );
 }
 
 OpsExecuter::watch_ierrorator::future<> OpsExecuter::do_op_watch_subop_reconnect(
@@ -323,57 +323,56 @@ OpsExecuter::watch_ierrorator::future<> OpsExecuter::do_op_notify(
     return crimson::ct_error::enoent::make();
   }
   struct notify_ctx_t {
-    crimson::net::ConnectionFRef conn;
+    crimson::net::ConnectionRef conn;
     notify_info_t ninfo;
     const uint64_t client_gid;
     const epoch_t epoch;
 
-    notify_ctx_t(const ExecutableMessage& msg, crimson::net::ConnectionFRef conn)
-      : conn(std::move(conn)),
+    notify_ctx_t(const ExecutableMessage& msg,
+                 crimson::net::ConnectionRef conn)
+      : conn(conn),
         client_gid(msg.get_reqid().name.num()),
         epoch(msg.get_map_epoch()) {
     }
   };
-  return get_message().get_connection().copy(
-  ).then([&, this](auto &&conn) {
-    return with_effect_on_obc(
-      notify_ctx_t{ get_message(), std::move(conn) },
-      [&] (auto& ctx) {
-	try {
-	  auto bp = osd_op.indata.cbegin();
-	  uint32_t ver; // obsolete
-	  ceph::decode(ver, bp);
-	  ceph::decode(ctx.ninfo.timeout, bp);
-	  ceph::decode(ctx.ninfo.bl, bp);
-	} catch (const buffer::error&) {
-	  ctx.ninfo.timeout = 0;
-	}
-	if (!ctx.ninfo.timeout) {
-	  using crimson::common::local_conf;
-	  ctx.ninfo.timeout = local_conf()->osd_default_notify_timeout;
-	}
-	ctx.ninfo.notify_id = get_next_notify_id(ctx.epoch);
-	ctx.ninfo.cookie = osd_op.op.notify.cookie;
-	// return our unique notify id to the client
-	ceph::encode(ctx.ninfo.notify_id, osd_op.outdata);
-	return seastar::now();
-      },
-      [] (auto&& ctx, ObjectContextRef obc, Ref<PG>) {
-	auto alive_watchers = obc->watchers | boost::adaptors::map_values
-	  | boost::adaptors::filtered(
-	    [] (const auto& w) {
-	      // FIXME: filter as for the `is_ping` in `Watch::start_notify`
-	      return w->is_alive();
-	    });
-	return crimson::osd::Notify::create_n_propagate(
-	  std::begin(alive_watchers),
-	  std::end(alive_watchers),
-	  std::move(ctx.conn),
-	  ctx.ninfo,
-	  ctx.client_gid,
-	  obc->obs.oi.user_version);
-      });
-  });
+  return with_effect_on_obc(
+    notify_ctx_t{ get_message(), conn },
+    [&](auto& ctx) {
+      try {
+        auto bp = osd_op.indata.cbegin();
+        uint32_t ver; // obsolete
+        ceph::decode(ver, bp);
+        ceph::decode(ctx.ninfo.timeout, bp);
+        ceph::decode(ctx.ninfo.bl, bp);
+      } catch (const buffer::error&) {
+        ctx.ninfo.timeout = 0;
+      }
+      if (!ctx.ninfo.timeout) {
+        using crimson::common::local_conf;
+        ctx.ninfo.timeout = local_conf()->osd_default_notify_timeout;
+      }
+      ctx.ninfo.notify_id = get_next_notify_id(ctx.epoch);
+      ctx.ninfo.cookie = osd_op.op.notify.cookie;
+      // return our unique notify id to the client
+      ceph::encode(ctx.ninfo.notify_id, osd_op.outdata);
+      return seastar::now();
+    },
+    [](auto&& ctx, ObjectContextRef obc, Ref<PG>) {
+      auto alive_watchers = obc->watchers | boost::adaptors::map_values
+        | boost::adaptors::filtered(
+          [] (const auto& w) {
+            // FIXME: filter as for the `is_ping` in `Watch::start_notify`
+            return w->is_alive();
+          });
+      return crimson::osd::Notify::create_n_propagate(
+        std::begin(alive_watchers),
+        std::end(alive_watchers),
+        std::move(ctx.conn),
+        ctx.ninfo,
+        ctx.client_gid,
+        obc->obs.oi.user_version);
+    }
+  );
 }
 
 OpsExecuter::watch_ierrorator::future<> OpsExecuter::do_op_list_watchers(
@@ -951,7 +950,7 @@ std::unique_ptr<OpsExecuter::CloningContext> OpsExecuter::execute_clone(
   cloning_ctx->log_entry = {
     pg_log_entry_t::CLONE,
     coid,
-    osd_op_params->at_version,
+    snap_oi.version,
     initial_obs.oi.version,
     initial_obs.oi.user_version,
     osd_reqid_t(),
@@ -965,12 +964,10 @@ std::unique_ptr<OpsExecuter::CloningContext> OpsExecuter::execute_clone(
 }
 
 void OpsExecuter::CloningContext::apply_to(
-  const eversion_t& at_version,
   std::vector<pg_log_entry_t>& log_entries,
   ObjectContext& processed_obc) &&
 {
   log_entry.mtime = processed_obc.obs.oi.mtime;
-  log_entry.version = at_version;
   log_entries.emplace_back(std::move(log_entry));
   processed_obc.ssc->snapset = std::move(new_snapset);
 }
@@ -985,11 +982,7 @@ OpsExecuter::flush_clone_metadata(
   assert(!txn.empty());
   auto maybe_snap_mapped = interruptor::now();
   if (cloning_ctx) {
-    osd_op_params->at_version = pg->next_version();
-    std::move(*cloning_ctx).apply_to(
-      osd_op_params->at_version,
-      log_entries,
-      *obc);
+    std::move(*cloning_ctx).apply_to(log_entries, *obc);
     const auto& coid = log_entries.back().soid;
     const auto& cloned_snaps = obc->ssc->snapset.clone_snaps[coid.snap];
     maybe_snap_mapped = snap_map_clone(
@@ -1019,7 +1012,7 @@ std::pair<object_info_t, ObjectContextRef> OpsExecuter::prepare_clone(
   const hobject_t& coid)
 {
   object_info_t static_snap_oi(coid);
-  static_snap_oi.version = osd_op_params->at_version;
+  static_snap_oi.version = pg->next_version();
   static_snap_oi.prior_version = obc->obs.oi.version;
   static_snap_oi.copy_user_bits(obc->obs.oi);
   if (static_snap_oi.is_whiteout()) {
@@ -1052,11 +1045,13 @@ OpsExecuter::OpsExecuter(Ref<PG> pg,
                          ObjectContextRef _obc,
                          const OpInfo& op_info,
                          abstracted_msg_t&& msg,
+                         crimson::net::ConnectionRef conn,
                          const SnapContext& _snapc)
   : pg(std::move(pg)),
     obc(std::move(_obc)),
     op_info(op_info),
     msg(std::move(msg)),
+    conn(conn),
     snapc(_snapc)
 {
   if (op_info.may_write() && should_clone(*obc, snapc)) {

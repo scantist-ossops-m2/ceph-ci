@@ -16,7 +16,7 @@ used to rebuild the data. At scale, erasure coding saves space relative to
 replication.
 
 In this documentation, data blocks are referred to as "data chunks"
-and parity blocks are referred to as "encoding chunks".
+and parity blocks are referred to as "coding chunks".
 
 Erasure codes are also called "forward error correction codes". The
 first forward error correction code was developed in 1950 by Richard
@@ -196,6 +196,8 @@ file system creation or via `file layouts <../../../cephfs/file-layouts>`_.
 Erasure-coded pools and cache tiering
 -------------------------------------
 
+.. note:: Cache tiering is deprecated in Reef.
+
 Erasure-coded pools require more resources than replicated pools and
 lack some of the functionality supported by replicated pools (for example, omap).
 To overcome these limitations, one can set up a `cache tier <../cache-tiering>`_
@@ -234,7 +236,7 @@ mode. As a result, however, pools with lost OSDs but without complete data loss 
 unable to recover and go active without manual intervention to temporarily change
 the ``min_size`` setting.
 
-We recommend that ``min_size`` be ``K+2`` or greater to prevent loss of writes and
+We recommend that ``min_size`` be ``K+1`` or greater to prevent loss of writes and
 loss of data.
 
 

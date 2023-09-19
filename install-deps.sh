@@ -146,45 +146,77 @@ function install_pkg_on_ubuntu {
     fi
 }
 
+boost_ver=1.82
+
+function clean_boost_on_ubuntu {
+    ci_debug "Running clean_boost_on_ubuntu() in install-deps.sh"
+    # Find currently installed version. If there are multiple
+    # versions, they end up newline separated
+    local installed_ver=$(apt -qq list --installed ceph-libboost*-dev 2>/dev/null |
+                              cut -d' ' -f2 |
+                              cut -d'.' -f1,2 |
+			      sort -u)
+    # If installed_ver contains whitespace, we can't really count on it,
+    # but otherwise, bail out if the version installed is the version
+    # we want.
+    if test -n "$installed_ver" &&
+	    echo -n "$installed_ver" | tr '[:space:]' ' ' | grep -v -q ' '; then
+	if echo "$installed_ver" | grep -q "^$boost_ver"; then
+	    return
+        fi
+    fi
+
+    # Historical packages
+    $SUDO rm -f /etc/apt/sources.list.d/ceph-libboost*.list
+    # Currently used
+    $SUDO rm -f /etc/apt/sources.list.d/libboost.list
+    # Refresh package list so things aren't in the available list.
+    $SUDO env DEBIAN_FRONTEND=noninteractive apt-get update -y || true
+    # Remove all ceph-libboost packages. We have an early return if
+    # the desired version is already (and the only) version installed,
+    # so no need to spare it.
+    if test -n "$installed_ver"; then
+	$SUDO env DEBIAN_FRONTEND=noninteractive apt-get -y --fix-missing remove "ceph-libboost*"
+    fi
+}
+
 function install_boost_on_ubuntu {
     ci_debug "Running install_boost_on_ubuntu() in install-deps.sh"
-    local ver=1.79
+    # Once we get to this point, clean_boost_on_ubuntu() should ensure
+    # that there is no more than one installed version.
     local installed_ver=$(apt -qq list --installed ceph-libboost*-dev 2>/dev/null |
                               grep -e 'libboost[0-9].[0-9]\+-dev' |
                               cut -d' ' -f2 |
                               cut -d'.' -f1,2)
     if test -n "$installed_ver"; then
-        if echo "$installed_ver" | grep -q "^$ver"; then
+        if echo "$installed_ver" | grep -q "^$boost_ver"; then
             return
-        else
-            $SUDO env DEBIAN_FRONTEND=noninteractive apt-get -y remove "ceph-libboost.*${installed_ver}.*"
-            $SUDO rm -f /etc/apt/sources.list.d/ceph-libboost${installed_ver}.list
         fi
     fi
     local codename=$1
     local project=libboost
-    local sha1=892ab89e76b91b505ffbf083f6fb7f2a666d4132
+    local sha1=2804368f5b807ba8334b0ccfeb8af191edeb996f
     install_pkg_on_ubuntu \
         $project \
         $sha1 \
         $codename \
         check \
-        ceph-libboost-atomic$ver-dev \
-        ceph-libboost-chrono$ver-dev \
-        ceph-libboost-container$ver-dev \
-        ceph-libboost-context$ver-dev \
-        ceph-libboost-coroutine$ver-dev \
-        ceph-libboost-date-time$ver-dev \
-        ceph-libboost-filesystem$ver-dev \
-        ceph-libboost-iostreams$ver-dev \
-        ceph-libboost-program-options$ver-dev \
-        ceph-libboost-python$ver-dev \
-        ceph-libboost-random$ver-dev \
-        ceph-libboost-regex$ver-dev \
-        ceph-libboost-system$ver-dev \
-        ceph-libboost-test$ver-dev \
-        ceph-libboost-thread$ver-dev \
-        ceph-libboost-timer$ver-dev
+        ceph-libboost-atomic${boost_ver}-dev \
+        ceph-libboost-chrono${boost_ver}-dev \
+        ceph-libboost-container${boost_ver}-dev \
+        ceph-libboost-context${boost_ver}-dev \
+        ceph-libboost-coroutine${boost_ver}-dev \
+        ceph-libboost-date-time${boost_ver}-dev \
+        ceph-libboost-filesystem${boost_ver}-dev \
+        ceph-libboost-iostreams${boost_ver}-dev \
+        ceph-libboost-program-options${boost_ver}-dev \
+        ceph-libboost-python${boost_ver}-dev \
+        ceph-libboost-random${boost_ver}-dev \
+        ceph-libboost-regex${boost_ver}-dev \
+        ceph-libboost-system${boost_ver}-dev \
+        ceph-libboost-test${boost_ver}-dev \
+        ceph-libboost-thread${boost_ver}-dev \
+        ceph-libboost-timer${boost_ver}-dev
 }
 
 function install_libzbd_on_ubuntu {
@@ -270,10 +302,7 @@ function populate_wheelhouse() {
     pip $PIP_OPTS $install \
       'setuptools >= 0.8' 'pip >= 21.0' 'wheel >= 0.24' 'tox >= 2.9.1' || return 1
     if test $# != 0 ; then
-        # '--use-feature=fast-deps --use-deprecated=legacy-resolver' added per
-        # https://github.com/pypa/pip/issues/9818 These should be able to be
-        # removed at some point in the future.
-        pip --use-feature=fast-deps --use-deprecated=legacy-resolver $PIP_OPTS $install $@ || return 1
+        pip $PIP_OPTS $install $@ || return 1
     fi
 }
 
@@ -351,7 +380,6 @@ if [ x$(uname)x = xFreeBSDx ]; then
         devel/libtool \
         devel/google-perftools \
         lang/cython \
-        databases/leveldb \
         net/openldap24-client \
         archivers/snappy \
         archivers/liblz4 \
@@ -400,6 +428,9 @@ else
     case "$ID" in
     debian|ubuntu|devuan|elementary|softiron)
         echo "Using apt-get to install dependencies"
+	# Put this before any other invocation of apt so it can clean
+	# up in a broken case.
+        clean_boost_on_ubuntu
         if [ "$INSTALL_EXTRA_PACKAGES" ]; then
             if ! $SUDO apt-get install -y $INSTALL_EXTRA_PACKAGES ; then
                 # try again. ported over from run-make.sh (orignally e278295)
