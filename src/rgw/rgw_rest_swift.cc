@@ -955,8 +955,9 @@ int RGWPutObj_ObjStore_SWIFT::get_params(optional_yield y)
 
   if (!s->cct->_conf->rgw_swift_custom_header.empty()) {
     string custom_header = s->cct->_conf->rgw_swift_custom_header;
-    if (s->info.env->exists(custom_header.c_str())) {
-      user_data = s->info.env->get(custom_header.c_str());
+    auto data = s->info.env->get_optional(custom_header);
+    if (data) {
+      user_data = *data;
     }
   }
 
@@ -1391,12 +1392,6 @@ int RGWCopyObj_ObjStore_SWIFT::get_params(optional_yield y)
   if_unmod = s->info.env->get("HTTP_IF_UNMODIFIED_SINCE");
   if_match = s->info.env->get("HTTP_COPY_IF_MATCH");
   if_nomatch = s->info.env->get("HTTP_COPY_IF_NONE_MATCH");
-
-  src_tenant_name = s->src_tenant_name;
-  src_bucket_name = s->src_bucket_name;
-  dest_tenant_name = s->bucket_tenant;
-  dest_bucket_name = s->bucket_name;
-  dest_obj_name = s->object->get_name();
 
   const char * const fresh_meta = s->info.env->get("HTTP_X_FRESH_METADATA");
   if (fresh_meta && strcasecmp(fresh_meta, "TRUE") == 0) {
@@ -1987,7 +1982,7 @@ void RGWFormPost::init(rgw::sal::Driver* const driver,
                        RGWHandler* const dialect_handler)
 {
   if (!rgw::sal::Object::empty(s->object)) {
-    prefix = std::move(s->object->get_name());
+    prefix = s->object->get_name();
     s->object->set_key(rgw_obj_key());
   }
 
@@ -2086,6 +2081,7 @@ void RGWFormPost::get_owner_info(const req_state* const s,
   const string& bucket_name = s->init_state.url_bucket;
 
   std::unique_ptr<rgw::sal::User> user;
+  std::string bucket_tenant;
 
   /* TempURL in Formpost only requires that bucket name is specified. */
   if (bucket_name.empty()) {
@@ -2113,11 +2109,13 @@ void RGWFormPost::get_owner_info(const req_state* const s,
 	throw -EPERM;
       }
     }
+
+    bucket_tenant = user->get_tenant();
   }
 
   /* Need to get user info of bucket owner. */
   std::unique_ptr<rgw::sal::Bucket> bucket;
-  int ret = driver->get_bucket(s, user.get(), user->get_tenant(), bucket_name, &bucket, s->yield);
+  int ret = driver->get_bucket(s, user.get(), bucket_tenant, bucket_name, &bucket, s->yield);
   if (ret < 0) {
     throw ret;
   }
@@ -2557,7 +2555,7 @@ RGWOp* RGWSwiftWebsiteHandler::get_ws_listing_op()
     }
   };
 
-  std::string prefix = std::move(s->object->get_name());
+  std::string prefix = s->object->get_name();
   s->object->set_key(rgw_obj_key());
 
   return new RGWWebsiteListing(std::move(prefix));

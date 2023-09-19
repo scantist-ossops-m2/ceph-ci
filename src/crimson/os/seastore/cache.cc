@@ -85,12 +85,6 @@ Cache::retire_extent_ret Cache::retire_extent_addr(
   ext = query_cache(addr, nullptr);
   if (ext) {
     DEBUGT("retire {}~{} in cache -- {}", t, addr, length, *ext);
-    if (ext->get_type() != extent_types_t::RETIRED_PLACEHOLDER) {
-      t.add_to_read_set(ext);
-      t.add_to_retired_set(ext);
-      return retire_extent_iertr::now();
-    }
-    // the retired-placeholder exists
   } else {
     // add a new placeholder to Cache
     ext = CachedExtent::make_cached_extent_ref<
@@ -98,14 +92,13 @@ Cache::retire_extent_ret Cache::retire_extent_addr(
     ext->init(CachedExtent::extent_state_t::CLEAN,
               addr,
               PLACEMENT_HINT_NULL,
-              NULL_GENERATION);
+              NULL_GENERATION,
+	      TRANS_ID_NULL);
     DEBUGT("retire {}~{} as placeholder, add extent -- {}",
            t, addr, length, *ext);
     const auto t_src = t.get_src();
     add_extent(ext, &t_src);
   }
-
-  // add the retired-placeholder to transaction
   t.add_to_read_set(ext);
   t.add_to_retired_set(ext);
   return retire_extent_iertr::now();
@@ -145,6 +138,7 @@ void Cache::register_metrics()
     {extent_types_t::ROOT,                sm::label_instance("ext", "ROOT")},
     {extent_types_t::LADDR_INTERNAL,      sm::label_instance("ext", "LADDR_INTERNAL")},
     {extent_types_t::LADDR_LEAF,          sm::label_instance("ext", "LADDR_LEAF")},
+    {extent_types_t::DINK_LADDR_LEAF,     sm::label_instance("ext", "DINK_LADDR_LEAF")},
     {extent_types_t::OMAP_INNER,          sm::label_instance("ext", "OMAP_INNER")},
     {extent_types_t::OMAP_LEAF,           sm::label_instance("ext", "OMAP_LEAF")},
     {extent_types_t::ONODE_BLOCK_STAGED,  sm::label_instance("ext", "ONODE_BLOCK_STAGED")},
@@ -223,9 +217,9 @@ void Cache::register_metrics()
           "cache",
           {
             sm::make_counter(
-              "trans_invalidated",
+              "trans_invalidated_by_extent",
               counter,
-              sm::description("total number of transaction invalidated"),
+              sm::description("total number of transactions invalidated by extents"),
               {src_label, ext_label}
             ),
           }
@@ -293,6 +287,12 @@ void Cache::register_metrics()
       metrics.add_group(
         "cache",
         {
+          sm::make_counter(
+            "trans_invalidated",
+            efforts.total_trans_invalidated,
+            sm::description("total number of transactions invalidated"),
+            {src_label}
+          ),
           sm::make_counter(
             "invalidated_delta_bytes",
             efforts.mutate_delta_bytes,
@@ -801,6 +801,7 @@ void Cache::commit_replace_extent(
     add_to_dirty(next);
   }
 
+  next->on_replace_prior(t);
   invalidate_extent(t, *prev);
 }
 
@@ -810,7 +811,7 @@ void Cache::invalidate_extent(
 {
   if (!extent.may_conflict()) {
     assert(extent.transactions.empty());
-    extent.state = CachedExtent::extent_state_t::INVALID;
+    extent.set_invalid(t);
     return;
   }
 
@@ -827,7 +828,7 @@ void Cache::invalidate_extent(
       mark_transaction_conflicted(*i.t, extent);
     }
   }
-  extent.state = CachedExtent::extent_state_t::INVALID;
+  extent.set_invalid(t);
 }
 
 void Cache::mark_transaction_conflicted(
@@ -840,6 +841,7 @@ void Cache::mark_transaction_conflicted(
 
   auto& efforts = get_by_src(stats.invalidated_efforts_by_src,
                              t.get_src());
+  ++efforts.total_trans_invalidated;
 
   auto& counter = get_by_ext(efforts.num_trans_invalidated,
                              conflicting_extent.get_type());
@@ -967,7 +969,8 @@ CachedExtentRef Cache::alloc_new_extent_by_type(
   case extent_types_t::LADDR_INTERNAL:
     return alloc_new_extent<lba_manager::btree::LBAInternalNode>(t, length, hint, gen);
   case extent_types_t::LADDR_LEAF:
-    return alloc_new_extent<lba_manager::btree::LBALeafNode>(t, length, hint, gen);
+    return alloc_new_extent<lba_manager::btree::LBALeafNode>(
+      t, length, hint, gen);
   case extent_types_t::ONODE_BLOCK_STAGED:
     return alloc_new_extent<onode::SeastoreNodeExtent>(t, length, hint, gen);
   case extent_types_t::OMAP_INNER:
@@ -999,22 +1002,33 @@ CachedExtentRef Cache::duplicate_for_write(
   Transaction &t,
   CachedExtentRef i) {
   LOG_PREFIX(Cache::duplicate_for_write);
-  if (i->is_pending())
+  assert(i->is_fully_loaded());
+
+  if (i->is_mutable())
     return i;
 
   if (i->is_exist_clean()) {
     i->version++;
     i->state = CachedExtent::extent_state_t::EXIST_MUTATION_PENDING;
     i->last_committed_crc = i->get_crc32c();
+    // deepcopy the buffer of exist clean extent beacuse it shares
+    // buffer with original clean extent.
+    auto bp = i->get_bptr();
+    auto nbp = ceph::bufferptr(bp.c_str(), bp.length());
+    i->set_bptr(std::move(nbp));
+
     t.add_mutated_extent(i);
     DEBUGT("duplicate existing extent {}", t, *i);
     return i;
   }
 
-  auto ret = i->duplicate_for_write();
+  auto ret = i->duplicate_for_write(t);
+  ret->pending_for_transaction = t.get_trans_id();
   ret->prior_instance = i;
   // duplicate_for_write won't occur after ool write finished
   assert(!i->prior_poffset);
+  auto [iter, inserted] = i->mutation_pendings.insert(*ret);
+  ceph_assert(inserted);
   t.add_mutated_extent(ret);
   if (ret->get_type() == extent_types_t::ROOT) {
     t.root = ret->cast<RootBlock>();
@@ -1091,6 +1105,7 @@ record_t Cache::prepare_record(
 
     i->prepare_write();
     i->set_io_wait();
+    i->prepare_commit();
 
     assert(i->get_version() > 0);
     auto final_crc = i->get_crc32c();
@@ -1189,10 +1204,11 @@ record_t Cache::prepare_record(
     fresh_stat.increment(i->get_length());
     get_by_ext(efforts.fresh_inline_by_ext,
                i->get_type()).increment(i->get_length());
-    assert(i->is_inline());
+    assert(i->is_inline() || i->get_paddr().is_fake());
 
     bufferlist bl;
     i->prepare_write();
+    i->prepare_commit();
     bl.append(i->get_bptr());
     if (i->get_type() == extent_types_t::ROOT) {
       ceph_assert(0 == "ROOT never gets written as a fresh block");
@@ -1233,6 +1249,7 @@ record_t Cache::prepare_record(
     assert(!i->is_inline());
     get_by_ext(efforts.fresh_ool_by_ext,
                i->get_type()).increment(i->get_length());
+    i->prepare_commit();
     if (is_backref_mapped_extent_node(i)) {
       alloc_delta.alloc_blk_ranges.emplace_back(
 	i->get_paddr(),
@@ -1448,6 +1465,7 @@ void Cache::complete_commit(
       i->set_paddr(final_block_start.add_relative(i->get_paddr()));
     }
     i->last_committed_crc = i->get_crc32c();
+    i->pending_for_transaction = TRANS_ID_NULL;
     i->on_initial_write();
 
     i->state = CachedExtent::extent_state_t::CLEAN;
@@ -1474,7 +1492,10 @@ void Cache::complete_commit(
 	  i->get_type(),
 	  start_seq));
     } else if (is_backref_node(i->get_type())) {
-      add_backref_extent(i->get_paddr(), i->get_type());
+	add_backref_extent(
+	  i->get_paddr(),
+	  i->cast<backref::BackrefNode>()->get_node_meta().begin,
+	  i->get_type());
     } else {
       ERRORT("{}", t, *i);
       ceph_abort("not possible");
@@ -1489,6 +1510,7 @@ void Cache::complete_commit(
     assert(i->is_exist_mutation_pending() ||
 	   i->prior_instance);
     i->on_delta_write(final_block_start);
+    i->pending_for_transaction = TRANS_ID_NULL;
     i->prior_instance = CachedExtentRef();
     i->state = CachedExtent::extent_state_t::DIRTY;
     assert(i->version > 0);
@@ -1593,7 +1615,8 @@ void Cache::init()
   root->init(CachedExtent::extent_state_t::CLEAN,
              P_ADDR_ROOT,
              PLACEMENT_HINT_NULL,
-             NULL_GENERATION);
+             NULL_GENERATION,
+	     TRANS_ID_NULL);
   INFO("init root -- {}", *root);
   extents.insert(*root);
 }
@@ -1822,6 +1845,8 @@ Cache::get_next_dirty_extents_ret Cache::get_next_dirty_extents(
        i != dirty.end() && bytes_so_far < max_bytes;
        ++i) {
     auto dirty_from = i->get_dirty_from();
+    //dirty extents must be fully loaded
+    assert(i->is_fully_loaded());
     if (unlikely(dirty_from == JOURNAL_SEQ_NULL)) {
       ERRORT("got dirty extent with JOURNAL_SEQ_NULL -- {}", t, *i);
       ceph_abort();

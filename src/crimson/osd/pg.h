@@ -61,6 +61,7 @@ namespace crimson::os {
 namespace crimson::osd {
 class OpsExecuter;
 class BackfillRecovery;
+class SnapTrimEvent;
 
 class PG : public boost::intrusive_ref_counter<
   PG,
@@ -158,18 +159,6 @@ public:
     bool dirty_big_info,
     bool need_write_epoch,
     ceph::os::Transaction &t) final;
-
-  void on_info_history_change() final {
-    // Not needed yet -- mainly for scrub scheduling
-  }
-
-  /// Notify PG that Primary/Replica status has changed (to update scrub registration)
-  void on_primary_status_change(bool was_primary, bool now_primary) final {
-  }
-
-  /// Need to reschedule next scrub. Assuming no change in role
-  void reschedule_scrub() final {
-  }
 
   void scrub_requested(scrub_level_t scrub_level, scrub_type_t scrub_type) final;
 
@@ -310,9 +299,7 @@ public:
   void check_recovery_sources(const OSDMapRef& newmap) final {
     // Not needed yet
   }
-  void check_blocklisted_watchers() final {
-    // Not needed yet
-  }
+  void check_blocklisted_watchers() final;
   void clear_primary_state() final {
     // Not needed yet
   }
@@ -493,7 +480,7 @@ public:
     const PastIntervals& pim,
     ceph::os::Transaction &t);
 
-  seastar::future<> read_state(crimson::os::FuturizedStore* store);
+  seastar::future<> read_state(crimson::os::FuturizedStore::Shard* store);
 
   interruptible_future<> do_peering_event(
     PGPeeringEvent& evt, PeeringCtx &rctx);
@@ -536,7 +523,9 @@ public:
   void replica_clear_repop_obc(
     const std::vector<pg_log_entry_t> &logv);
   void handle_rep_op_reply(const MOSDRepOpReply& m);
-  interruptible_future<> do_update_log_missing(Ref<MOSDPGUpdateLogMissing> m);
+  interruptible_future<> do_update_log_missing(
+    Ref<MOSDPGUpdateLogMissing> m,
+    crimson::net::ConnectionRef conn);
   interruptible_future<> do_update_log_missing_reply(
                          Ref<MOSDPGUpdateLogMissingReply> m);
 
@@ -552,6 +541,20 @@ public:
     eversion_t &version);
 
 private:
+
+  struct SnapTrimMutex {
+    struct WaitPG : OrderedConcurrentPhaseT<WaitPG> {
+      static constexpr auto type_name = "SnapTrimEvent::wait_pg";
+    } wait_pg;
+    seastar::shared_mutex mutex;
+
+    interruptible_future<> lock(SnapTrimEvent &st_event) noexcept;
+
+    void unlock() noexcept {
+      mutex.unlock();
+    }
+  } snaptrim_mutex;
+
   using do_osd_ops_ertr = crimson::errorator<
    crimson::ct_error::eagain>;
   using do_osd_ops_iertr =
@@ -564,6 +567,7 @@ private:
                do_osd_ops_iertr::future<Ret>>;
   do_osd_ops_iertr::future<pg_rep_op_fut_t<MURef<MOSDOpReply>>> do_osd_ops(
     Ref<MOSDOp> m,
+    crimson::net::ConnectionRef conn,
     ObjectContextRef obc,
     const OpInfo &op_info,
     const SnapContext& snapc);
@@ -601,10 +605,9 @@ private:
   PG_OSDMapGate osdmap_gate;
   ShardServices &shard_services;
 
-  cached_map_t osdmap;
 
 public:
-  cached_map_t get_osdmap() { return osdmap; }
+  cached_map_t get_osdmap() { return peering_state.get_osdmap(); }
   eversion_t next_version() {
     return eversion_t(get_osdmap_epoch(),
 		      ++projected_last_update.version);
@@ -773,7 +776,7 @@ private:
 };
 
 struct PG::do_osd_ops_params_t {
-  crimson::net::ConnectionFRef &get_connection() const {
+  crimson::net::ConnectionRef &get_connection() const {
     return conn;
   }
   osd_reqid_t get_reqid() const {
@@ -794,8 +797,14 @@ struct PG::do_osd_ops_params_t {
   // Only used by InternalClientRequest, no op flags
   bool has_flag(uint32_t flag) const {
     return false;
- }
-  crimson::net::ConnectionFRef &conn;
+  }
+
+  // Only used by ExecutableMessagePimpl
+  entity_name_t get_source() const {
+    return orig_source_inst.name;
+  }
+
+  crimson::net::ConnectionRef &conn;
   osd_reqid_t reqid;
   utime_t mtime;
   epoch_t map_epoch;

@@ -41,20 +41,19 @@ struct D3nChunkDataInfo : public LRUObject {
 
 struct D3nCacheAioWriteRequest {
 	std::string oid;
-	void *data;
-	int fd;
-	struct aiocb *cb;
-	D3nDataCache *priv_data;
-	CephContext *cct;
+	void *data = nullptr;
+	int fd = -1;
+	struct aiocb *cb = nullptr;
+	D3nDataCache *priv_data = nullptr;
+	CephContext *cct = nullptr;
 
 	D3nCacheAioWriteRequest(CephContext *_cct) : cct(_cct) {}
-	int d3n_prepare_libaio_write_op(bufferlist& bl, unsigned int len, std::string oid, std::string cache_location);
+	int d3n_libaio_prepare_write_op(bufferlist& bl, unsigned int len, std::string oid, std::string cache_location);
 
   ~D3nCacheAioWriteRequest() {
     ::close(fd);
-		cb->aio_buf = nullptr;
-		free(data);
-		data = nullptr;
+    free(data);
+    cb->aio_buf = nullptr;
 		delete(cb);
   }
 };
@@ -178,6 +177,8 @@ int D3nRGWDataCache<T>::get_obj_iterate_cb(const DoutPrefixProvider *dpp, const 
     if (r < 0)
       return r;
 
+    // astate can be modified by append_atomic_test
+    // coverity[check_after_deref:SUPPRESS]
     if (astate &&
         obj_ofs < astate->data.length()) {
       unsigned chunk_len = std::min((uint64_t)astate->data.length() - obj_ofs, (uint64_t)len);

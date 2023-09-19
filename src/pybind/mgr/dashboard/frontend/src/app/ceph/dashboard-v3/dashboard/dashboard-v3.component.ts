@@ -1,14 +1,11 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
 
 import _ from 'lodash';
-import { Observable, Subscription, timer } from 'rxjs';
+import { Observable, Subscription } from 'rxjs';
 import { take } from 'rxjs/operators';
 import moment from 'moment';
 
-import { ClusterService } from '~/app/shared/api/cluster.service';
-import { ConfigurationService } from '~/app/shared/api/configuration.service';
 import { HealthService } from '~/app/shared/api/health.service';
-import { MgrModuleService } from '~/app/shared/api/mgr-module.service';
 import { OsdService } from '~/app/shared/api/osd.service';
 import { PrometheusService } from '~/app/shared/api/prometheus.service';
 import { Promqls as queries } from '~/app/shared/enum/dashboard-promqls.enum';
@@ -25,6 +22,8 @@ import { RefreshIntervalService } from '~/app/shared/services/refresh-interval.s
 import { SummaryService } from '~/app/shared/services/summary.service';
 import { PrometheusListHelper } from '~/app/shared/helpers/prometheus-list-helper';
 import { PrometheusAlertService } from '~/app/shared/services/prometheus-alert.service';
+import { OrchestratorService } from '~/app/shared/api/orchestrator.service';
+import { MgrModuleService } from '~/app/shared/api/mgr-module.service';
 
 @Component({
   selector: 'cd-dashboard-v3',
@@ -67,24 +66,26 @@ export class DashboardV3Component extends PrometheusListHelper implements OnInit
     WRITECLIENTTHROUGHPUT: '',
     RECOVERYBYTES: ''
   };
+  telemetryEnabled: boolean;
+  telemetryURL = 'https://telemetry-public.ceph.com/';
   timerGetPrometheusDataSub: Subscription;
   timerTime = 30000;
   readonly lastHourDateObject = {
     start: moment().unix() - 3600,
     end: moment().unix(),
-    step: 12
+    step: 14
   };
+  origin = window.location.origin;
 
   constructor(
     private summaryService: SummaryService,
-    private configService: ConfigurationService,
-    private mgrModuleService: MgrModuleService,
-    private clusterService: ClusterService,
+    private orchestratorService: OrchestratorService,
     private osdService: OsdService,
     private authStorageService: AuthStorageService,
     private featureToggles: FeatureTogglesService,
     private healthService: HealthService,
     public prometheusService: PrometheusService,
+    private mgrModuleService: MgrModuleService,
     private refreshIntervalService: RefreshIntervalService,
     public prometheusAlertService: PrometheusAlertService
   ) {
@@ -101,8 +102,16 @@ export class DashboardV3Component extends PrometheusListHelper implements OnInit
     });
     this.getPrometheusData(this.lastHourDateObject);
     this.getDetailsCardData();
+    this.getTelemetryReport();
   }
 
+  getTelemetryText(): string {
+    return this.telemetryEnabled
+      ? 'Cluster telemetry is active'
+      : 'Cluster telemetry is inactive. To Activate the Telemetry, \
+       click settings icon on top navigation bar and select \
+       Telemetry configration.';
+  }
   ngOnDestroy() {
     this.interval.unsubscribe();
     if (this.timerGetPrometheusDataSub) {
@@ -136,12 +145,11 @@ export class DashboardV3Component extends PrometheusListHelper implements OnInit
   }
 
   getDetailsCardData() {
-    this.configService.get('fsid').subscribe((data) => {
-      this.detailsCardData.fsid = data['value'][0]['value'];
+    this.healthService.getClusterFsid().subscribe((data: string) => {
+      this.detailsCardData.fsid = data;
     });
-    this.mgrModuleService.getConfig('orchestrator').subscribe((data) => {
-      const orchStr = data['orchestrator'];
-      this.detailsCardData.orchestrator = orchStr.charAt(0).toUpperCase() + orchStr.slice(1);
+    this.orchestratorService.getName().subscribe((data: string) => {
+      this.detailsCardData.orchestrator = data;
     });
     this.summaryService.subscribe((summary) => {
       const version = summary.version.replace('ceph version ', '').split(' ');
@@ -157,7 +165,7 @@ export class DashboardV3Component extends PrometheusListHelper implements OnInit
       .subscribe((data: any) => {
         this.osdSettings = data;
       });
-    this.capacityService = this.clusterService.getCapacity().subscribe((data: any) => {
+    this.capacityService = this.healthService.getClusterCapacity().subscribe((data: any) => {
       this.capacity = data;
     });
   }
@@ -170,54 +178,17 @@ export class DashboardV3Component extends PrometheusListHelper implements OnInit
     });
   }
 
-  getPrometheusData(selectedTime: any) {
-    this.prometheusService.ifPrometheusConfigured(() => {
-      if (this.timerGetPrometheusDataSub) {
-        this.timerGetPrometheusDataSub.unsubscribe();
-      }
-      this.timerGetPrometheusDataSub = timer(0, this.timerTime).subscribe(() => {
-        selectedTime = this.updateTimeStamp(selectedTime);
-
-        for (const queryName in queries) {
-          if (queries.hasOwnProperty(queryName)) {
-            const query = queries[queryName];
-            let interval = selectedTime.step;
-
-            if (query.includes('rate') && selectedTime.step < 20) {
-              interval = 20;
-            } else if (query.includes('rate')) {
-              interval = selectedTime.step * 2;
-            }
-
-            const intervalAdjustedQuery = query.replace(/\[(.*?)\]/g, `[${interval}s]`);
-
-            this.prometheusService
-              .getPrometheusData({
-                params: intervalAdjustedQuery,
-                start: selectedTime['start'],
-                end: selectedTime['end'],
-                step: selectedTime['step']
-              })
-              .subscribe((data: any) => {
-                if (data.result.length) {
-                  this.queriesResults[queryName] = data.result[0].values;
-                }
-              });
-          }
-        }
-      });
-    });
+  public getPrometheusData(selectedTime: any) {
+    this.queriesResults = this.prometheusService.getPrometheusQueriesData(
+      selectedTime,
+      queries,
+      this.queriesResults
+    );
   }
 
-  private updateTimeStamp(selectedTime: any): any {
-    let formattedDate = {};
-    const date: number = selectedTime['start'] + this.timerTime / 1000;
-    const dateNow: number = selectedTime['end'] + this.timerTime / 1000;
-    formattedDate = {
-      start: date,
-      end: dateNow,
-      step: selectedTime['step']
-    };
-    return formattedDate;
+  private getTelemetryReport() {
+    this.mgrModuleService.getConfig('telemetry').subscribe((resp: any) => {
+      this.telemetryEnabled = resp?.enabled;
+    });
   }
 }

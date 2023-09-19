@@ -20,6 +20,11 @@ import { CrudFormComponent } from '../forms/crud-form/crud-form.component';
 import { FormlyArrayTypeComponent } from '../forms/crud-form/formly-array-type/formly-array-type.component';
 import { FormlyInputTypeComponent } from '../forms/crud-form/formly-input-type/formly-input-type.component';
 import { FormlyObjectTypeComponent } from '../forms/crud-form/formly-object-type/formly-object-type.component';
+import { FormlyTextareaTypeComponent } from '../forms/crud-form/formly-textarea-type/formly-textarea-type.component';
+import { FormlyInputWrapperComponent } from '../forms/crud-form/formly-input-wrapper/formly-input-wrapper.component';
+import { FormlyFileTypeComponent } from '../forms/crud-form/formly-file-type/formly-file-type.component';
+import { FormlyFileValueAccessorDirective } from '../forms/crud-form/formly-file-type/formly-file-type-accessor';
+import { CheckedTableFormComponent } from './checked-table-form/checked-table-form.component';
 
 @NgModule({
   imports: [
@@ -37,9 +42,28 @@ import { FormlyObjectTypeComponent } from '../forms/crud-form/formly-object-type
       types: [
         { name: 'array', component: FormlyArrayTypeComponent },
         { name: 'object', component: FormlyObjectTypeComponent },
-        { name: 'input', component: FormlyInputTypeComponent }
+        { name: 'input', component: FormlyInputTypeComponent, wrappers: ['input-wrapper'] },
+        { name: 'textarea', component: FormlyTextareaTypeComponent, wrappers: ['input-wrapper'] },
+        { name: 'file', component: FormlyFileTypeComponent, wrappers: ['input-wrapper'] }
       ],
-      validationMessages: [{ name: 'required', message: 'This field is required' }]
+      validationMessages: [
+        { name: 'required', message: 'This field is required' },
+        { name: 'json', message: 'This field is not a valid json document' },
+        {
+          name: 'rgwRoleName',
+          message:
+            'Role name must contain letters, numbers or the ' +
+            'following valid special characters "_+=,.@-]+" (pattern: [0-9a-zA-Z_+=,.@-]+)'
+        },
+        {
+          name: 'rgwRolePath',
+          message:
+            'Role path must start and finish with a slash "/".' +
+            ' (pattern: (\u002F)|(\u002F[\u0021-\u007E]+\u002F))'
+        },
+        { name: 'file_size', message: 'File size must not exceed 4KiB' }
+      ],
+      wrappers: [{ name: 'input-wrapper', component: FormlyInputWrapperComponent }]
     }),
     FormlyBootstrapModule
   ],
@@ -52,7 +76,11 @@ import { FormlyObjectTypeComponent } from '../forms/crud-form/formly-object-type
     CrudFormComponent,
     FormlyArrayTypeComponent,
     FormlyInputTypeComponent,
-    FormlyObjectTypeComponent
+    FormlyObjectTypeComponent,
+    FormlyInputWrapperComponent,
+    FormlyFileTypeComponent,
+    FormlyFileValueAccessorDirective,
+    CheckedTableFormComponent
   ],
   exports: [
     TableComponent,
@@ -60,7 +88,8 @@ import { FormlyObjectTypeComponent } from '../forms/crud-form/formly-object-type
     TableKeyValueComponent,
     TableActionsComponent,
     CRUDTableComponent,
-    TablePaginationComponent
+    TablePaginationComponent,
+    CheckedTableFormComponent
   ]
 })
 export class DataTableModule {}

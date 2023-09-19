@@ -1,29 +1,75 @@
 <div class="container-fluid"
      *ngIf="healthData && enabledFeature$ | async as enabledFeature">
   <div class="row mx-0">
-    <cd-card title="Details"
+    <cd-card cardTitle="Details"
              i18n-title
              class="col-sm-3 px-3"
-             [ngClass]="{'d-flex': flexHeight}">
+             [ngClass]="{'d-flex': flexHeight}"
+             aria-label="Details card">
       <dl class="ms-4 me-4">
-        <dt>FSID</dt>
+        <dt>Cluster ID</dt>
         <dd>{{ detailsCardData.fsid }}</dd>
         <dt>Orchestrator</dt>
         <dd i18n>{{ detailsCardData.orchestrator || 'Orchestrator is not available' }}</dd>
         <dt>Ceph version</dt>
         <dd>{{ detailsCardData.cephVersion }}</dd>
+        <dt>Cluster API</dt>
+        <dd>
+          <a routerLink="/api-docs"
+             target="_blank">
+            {{ origin }}/api-docs
+            <i class="fa fa-external-link"></i>
+          </a>
+        </dd>
+        <ng-container>
+          <dt>Telemetry Dashboard
+            <span
+              class="badge"
+              [ngClass]="telemetryEnabled ? 'badge-success' : 'badge-secondary'"
+              [ngbTooltip]="getTelemetryText()" >
+              {{ telemetryEnabled ? 'Active' : 'Inactive' }}
+            </span>
+          </dt>
+          <dd>
+            <a target="_blank"
+               [href]="telemetryURL">
+               {{ telemetryURL }}
+              <i class="fa fa-external-link"></i>
+            </a>
+          </dd>
+        </ng-container>
       </dl>
     </cd-card>
 
-    <cd-card title="Status"
+    <cd-card cardTitle="Status"
              i18n-title
-             class="col-sm-6 px-3 d-flex">
+             class="col-sm-6 px-3 d-flex"
+             aria-label="Status card">
       <div class="d-flex ms-4 me-4 mb-5 center-content">
+        <ng-template #healthChecks>
+          <ng-container *ngTemplateOutlet="logsLink"></ng-container>
+          <ul>
+            <li *ngFor="let check of healthData.health.checks">
+              <span [ngStyle]="check.severity | healthColor"
+                    [class.health-warn-description]="check.severity === 'HEALTH_WARN'">
+              {{ check.type }}</span>: {{ check.summary.message }}
+            </li>
+          </ul>
+        </ng-template>
         <i *ngIf="healthData.health?.status"
            [ngClass]="[healthData.health.status | healthIcon, icons.large2x]"
            [ngStyle]="healthData.health.status | healthColor"
            [title]="healthData.health.status"></i>
+        <a class="ms-2 mt-n1 lead text-primary"
+           [ngbPopover]="healthChecks"
+           popoverClass="info-card-popover-cluster-status"
+           [openDelay]="300"
+           [closeDelay]="500"
+           triggers="mouseenter:mouseleave"
+           *ngIf="healthData.health?.checks?.length"
+           i18n>Cluster</a>
         <span class="ms-2 mt-n1 lead"
+              *ngIf="!healthData.health?.checks?.length"
               i18n>Cluster</span>
       </div>
       <section class="border-top mt-5"
@@ -75,10 +121,11 @@
       </section>
     </cd-card>
 
-    <cd-card title="Capacity"
+    <cd-card cardTitle="Capacity"
              i18n-title
              class="col-sm-3 px-3"
-             [ngClass]="{'d-flex': flexHeight}">
+             [ngClass]="{'d-flex': flexHeight}"
+             aria-label="Capacity card">
       <ng-container class="ms-4 me-4"
                     *ngIf="capacity && osdSettings">
         <cd-dashboard-pie [data]="{max: capacity.total_bytes, current: capacity.total_used_raw_bytes}"
@@ -91,9 +138,10 @@
   <!-- Second row -->
   <div class="row mx-0">
     <!-- Inventory Card -->
-    <cd-card title="Inventory"
+    <cd-card cardTitle="Inventory"
              i18n-title
-             class="col-sm-3 px-3 d-flex">
+             class="col-sm-3 px-3 d-flex"
+             aria-label="Inventory card">
       <hr>
       <!-- Hosts -->
       <li class="list-group-item">
@@ -117,7 +165,6 @@
       <li *ngIf="healthData.mgr_map"
           class="list-group-item">
         <cd-card-row [data]="healthData.mgr_map | mgrSummary"
-                     link="/manager"
                      title="Manager"
                      *ngIf="healthData.mgr_map"></cd-card-row>
       </li>
@@ -180,43 +227,48 @@
       </li>
     </cd-card>
 
-    <cd-card title="Cluster utilization"
+    <cd-card cardTitle="Cluster Utilization"
              i18n-title
-             class="col-sm-9 px-3 d-flex">
+             class="col-sm-9 px-3 d-flex"
+             aria-label="Cluster utilization card">
       <div class="ms-4 me-4 mt-0">
         <cd-dashboard-time-selector (selectedTime)="getPrometheusData($event)">
         </cd-dashboard-time-selector>
         <ng-container *ngIf="capacity">
-          <cd-dashboard-area-chart chartTitle="Used Capacity"
+          <cd-dashboard-area-chart chartTitle="Used Capacity (RAW)"
                                    [maxValue]="capacity.total_bytes"
-                                   dataUnits="bytes"
+                                   dataUnits="B"
                                    label="Used Capacity"
                                    [data]="queriesResults.USEDCAPACITY">
           </cd-dashboard-area-chart>
         </ng-container>
         <cd-dashboard-area-chart chartTitle="IOPS"
-                                 dataUnits="none"
-                                 label="OPS"
-                                 label2="IPS"
-                                 [data]="queriesResults.OPS"
-                                 [data2]="queriesResults.IPS">
+                                 dataUnits=""
+                                 decimals="0"
+                                 label="Reads"
+                                 label2="Writes"
+                                 [data]="queriesResults.READIOPS"
+                                 [data2]="queriesResults.WRITEIOPS">
         </cd-dashboard-area-chart>
-        <cd-dashboard-area-chart chartTitle="Latency"
+        <cd-dashboard-area-chart chartTitle="OSD Latencies"
                                  dataUnits="ms"
-                                 label="Read"
-                                 label2="Write"
+                                 decimals="2"
+                                 label="Apply"
+                                 label2="Commit"
                                  [data]="queriesResults.READLATENCY"
                                  [data2]="queriesResults.WRITELATENCY">
         </cd-dashboard-area-chart>
         <cd-dashboard-area-chart chartTitle="Client Throughput"
-                                 dataUnits="bytesPerSecond"
-                                 label="Read"
-                                 label2="Write"
+                                 dataUnits="B/s"
+                                 decimals="2"
+                                 label="Reads"
+                                 label2="Writes"
                                  [data]="queriesResults.READCLIENTTHROUGHPUT"
                                  [data2]="queriesResults.WRITECLIENTTHROUGHPUT">
         </cd-dashboard-area-chart>
         <cd-dashboard-area-chart chartTitle="Recovery Throughput"
-                                 dataUnits="bytesPerSecond"
+                                 dataUnits="B/s"
+                                 decimals="2"
                                  label="Recovery Throughput"
                                  [data]="queriesResults.RECOVERYBYTES">
         </cd-dashboard-area-chart>
@@ -253,5 +305,12 @@
       </div>
       <hr>
     </div>
+  </ng-container>
+</ng-template>
+
+<ng-template #logsLink>
+  <ng-container *ngIf="permissions.log.read">
+    <p class="logs-link"
+       i18n><i [ngClass]="[icons.infoCircle]"></i> See <a routerLink="/logs">Logs</a> for more details.</p>
   </ng-container>
 </ng-template>

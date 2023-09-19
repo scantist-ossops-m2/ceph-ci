@@ -1314,6 +1314,7 @@ SegmentCleaner::mount_ret SegmentCleaner::mount()
         if (tail.segment_nonce != header.segment_nonce) {
           return scan_no_tail_segment(header, segment_id);
         }
+        ceph_assert(header.get_type() == tail.get_type());
 
         sea_time_point modify_time = mod_to_timepoint(tail.modify_time);
         std::size_t num_extents = tail.num_extents;
@@ -1423,23 +1424,27 @@ bool SegmentCleaner::check_usage()
       t,
       [&tracker](
         paddr_t paddr,
+	paddr_t backref_key,
         extent_len_t len,
         extent_types_t type,
         laddr_t laddr)
     {
       if (paddr.get_addr_type() == paddr_types_t::SEGMENT) {
         if (is_backref_node(type)) {
-          assert(laddr == L_ADDR_NULL);
+	  assert(laddr == L_ADDR_NULL);
+	  assert(backref_key != P_ADDR_NULL);
           tracker->allocate(
             paddr.as_seg_paddr().get_segment_id(),
             paddr.as_seg_paddr().get_segment_off(),
             len);
         } else if (laddr == L_ADDR_NULL) {
+	  assert(backref_key == P_ADDR_NULL);
           tracker->release(
             paddr.as_seg_paddr().get_segment_id(),
             paddr.as_seg_paddr().get_segment_off(),
             len);
         } else {
+	  assert(backref_key == P_ADDR_NULL);
           tracker->allocate(
             paddr.as_seg_paddr().get_segment_id(),
             paddr.as_seg_paddr().get_segment_off(),
@@ -1457,6 +1462,7 @@ void SegmentCleaner::mark_space_used(
 {
   LOG_PREFIX(SegmentCleaner::mark_space_used);
   assert(background_callback->get_state() >= state_t::SCAN_SPACE);
+  assert(len);
   // TODO: drop
   if (addr.get_addr_type() != paddr_types_t::SEGMENT) {
     return;
@@ -1487,6 +1493,7 @@ void SegmentCleaner::mark_space_free(
 {
   LOG_PREFIX(SegmentCleaner::mark_space_free);
   assert(background_callback->get_state() >= state_t::SCAN_SPACE);
+  assert(len);
   // TODO: drop
   if (addr.get_addr_type() != paddr_types_t::SEGMENT) {
     return;
@@ -1723,6 +1730,7 @@ bool RBMCleaner::check_usage()
       t,
       [&tracker, &rbms](
         paddr_t paddr,
+	paddr_t backref_key,
         extent_len_t len,
         extent_types_t type,
         laddr_t laddr)
@@ -1731,14 +1739,17 @@ bool RBMCleaner::check_usage()
 	if (rbm->get_device_id() == paddr.get_device_id()) {
 	  if (is_backref_node(type)) {
 	    assert(laddr == L_ADDR_NULL);
+	    assert(backref_key != P_ADDR_NULL);
 	    tracker.allocate(
 	      paddr,
 	      len);
 	  } else if (laddr == L_ADDR_NULL) {
+	    assert(backref_key == P_ADDR_NULL);
 	    tracker.release(
 	      paddr,
 	      len);
 	  } else {
+	    assert(backref_key == P_ADDR_NULL);
 	    tracker.allocate(
 	      paddr,
 	      len);
