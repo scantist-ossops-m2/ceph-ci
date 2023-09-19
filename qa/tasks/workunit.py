@@ -421,10 +421,12 @@ def _run_tests(ctx, refspec, role, tests, env, basedir,
                         workunit=workunit,
                     ),
                 ])
-                remote.run(
+                remote.run_unit_test(
                     logger=log.getChild(role),
                     args=args + optional_args,
-                    label="workunit test {workunit}".format(workunit=workunit)
+                    label="workunit test {workunit}".format(workunit=workunit),
+                    xml_path_regex=f'{testdir}/archive/gtest_xml_report-*.xml',
+                    output_yaml=os.path.join(ctx.archive, 'unit_test_summary.yaml'),
                 )
                 if cleanup:
                     args=['sudo', 'rm', '-rf', '--', scratch_tmp]

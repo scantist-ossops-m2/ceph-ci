@@ -9,6 +9,8 @@ import logging
 import os
 import random
 import string
+import datetime
+import uuid
 
 from teuthology import misc as teuthology
 from teuthology import contextutil
@@ -365,6 +367,8 @@ def run_tests(ctx, config):
     for client, client_config in config.items():
         client_config = client_config or {}
         (remote,) = ctx.cluster.only(client).remotes.keys()
+        xmlfile_id = datetime.datetime.now().strftime("%Y-%m-%d-%H:%M:%S--") + str(uuid.uuid4())
+        xmlpath= f'{testdir}/archive/s3test-{xmlfile_id}.xml'
         args = [
             'cd', '{tdir}/s3-tests-{client}'.format(tdir=testdir, client=client), run.Raw('&&'),
             'S3TEST_CONF={tdir}/archive/s3-tests.{client}.conf'.format(tdir=testdir, client=client),
@@ -388,10 +392,17 @@ def run_tests(ctx, config):
             attrs += ['not sse_s3']
        
         attrs += client_config.get('extra_attrs', [])
-        args += ['tox', '--', '-v', '-m', ' and '.join(attrs)]
+        args += ['tox', '--', '-v', f'--junitxml={xmlpath}', '-m', ' and '.join(attrs)]
         args += client_config.get('extra_args', [])
 
-        toxvenv_sh(ctx, remote, args, label="s3 tests against rgw")
+        activate = get_toxvenv_dir(ctx) + '/bin/activate'
+        remote.run_unit_test(
+            args=['source', activate, run.Raw('&&')] + args,
+            label="s3 tests against rgw",
+            xml_path_regex=f'{testdir}/archive/s3test-*.xml',
+            output_yaml=os.path.join(ctx.archive, 'unit_test_summary.yaml'),
+        )
+
     yield
 
 @contextlib.contextmanager
