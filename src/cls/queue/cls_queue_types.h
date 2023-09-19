@@ -20,18 +20,23 @@ struct cls_queue_entry
 {
   ceph::buffer::list data;
   std::string marker;
+  bool needs_migration = false;
 
   void encode(ceph::buffer::list& bl) const {
-    ENCODE_START(1, 1, bl);
+    ENCODE_START(2, 1, bl);
     encode(data, bl);
     encode(marker, bl);
+    encode(needs_migration, bl);
     ENCODE_FINISH(bl);
   }
 
   void decode(ceph::buffer::list::const_iterator& bl) {
-    DECODE_START(1, bl);
+    DECODE_START(2, bl);
     decode(data, bl);
     decode(marker, bl);
+    if (struct_v > 1) {
+      decode(needs_migration, bl);
+    }
     DECODE_FINISH(bl);
   }
 };
