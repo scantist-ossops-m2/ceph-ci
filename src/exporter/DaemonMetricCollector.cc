@@ -147,15 +147,14 @@ void DaemonMetricCollector::dump_asok_metrics() {
           std::string counter_name = perf_group + "_" + counter_name_init;
           promethize(counter_name);
 
-          if (counters_labels.empty()) {
-            auto labels_and_name = get_labels_and_metric_name(daemon_name, counter_name);
-            if (labels_and_name.first.empty()) {
-              dout(1) << "Unable to parse instance_id from daemon_name: " << daemon_name << dendl;
-              continue;
-            }
-            labels = labels_and_name.first;
-            counter_name = labels_and_name.second;
+          auto labels_and_name = get_labels_and_metric_name(daemon_name, counter_name);
+          if (labels_and_name.first.empty()) {
+            dout(1) << "Unable to parse instance_id from daemon_name: " << daemon_name << dendl;
+            continue;
           }
+          labels = labels_and_name.first;
+          counter_name = labels_and_name.second;
+
           // For now this is only required for rgw multi-site metrics
           auto multisite_labels_and_name = add_fixed_name_metrics(counter_name);
           if (!multisite_labels_and_name.first.empty()) {
