@@ -596,15 +596,51 @@ public:
     std::atomic_int nref = {0};     ///< reference count
     int16_t id = -1;                ///< id, for spanning blobs only, >= 0
     int16_t last_encoded_id = -1;   ///< (ephemeral) used during encoding only
-    SharedBlobRef shared_blob;      ///< shared blob state (if any)
+                                    ///
+                                    ///
+    // Shared Blob State
+    bool loaded = false;
+    CollectionRef collection;
+    union {
+      uint64_t sbid_unloaded;              ///< sbid if persistent isn't loaded
+      bluestore_shared_blob_t *persistent; ///< persistent part of the shared blob if any
+    };
+    // End Shared Blob State
+
+
+    void set_shared_blob_state(const Blob& from) {
+      ceph_assert((bool)collection);
+      ceph_assert(!collection);
+      collection = from.collection;
+      loaded = from.loaded;
+      if (loaded) {
+        sbid_unloaded = from.sbid_unloaded;
+      } else {
+        persistent = from.persistent;
+      }
+      ceph_assert(collection->cache);
+      collection->cache->add_blob();
+    }
 
     void set_shared_blob(SharedBlobRef sb) {
+      // TODO: shared blob should only contain persistent member
       ceph_assert((bool)sb);
-      ceph_assert(!shared_blob);
-      shared_blob = sb;
-      ceph_assert(shared_blob->get_cache());
-      shared_blob->get_cache()->add_blob();
+      ceph_assert(!collection);
+      loaded = sb->loaded;
+      if (loaded) {
+        sbid_unloaded = sb->sbid_unloaded;
+      } else {
+        persistent = sb->persistent;
+      }
+      collection = sb->coll;
+      ceph_assert(collection->cache);
+      collection->cache->add_blob();
     }
+
+    uint64_t get_sbid() const {
+      return loaded ? persistent->sbid : sbid_unloaded;
+    }
+
     BufferSpace bc;
   private:
     mutable bluestore_blob_t blob;  ///< decoded blob metadata
@@ -640,7 +676,7 @@ public:
     }
 
     bool can_split() const {
-      std::lock_guard l(shared_blob->get_cache()->lock);
+      std::lock_guard l(collection->cache->lock);
       // splitting a BufferSpace writing list is too hard; don't try.
       return get_bc().writing.empty() &&
              used_in_blob.can_split() &&
@@ -661,7 +697,7 @@ public:
 			uint32_t *length0);
 
     void dup(Blob& o) {
-      o.set_shared_blob(shared_blob);
+      o.set_shared_blob_state(*this);
       o.blob = blob;
 #ifdef CACHE_BLOB_BL
       o.blob_bl = blob_bl;
@@ -713,6 +749,7 @@ public:
       if (--nref == 0)
 	delete this;
     }
+    void shared_blob_get_ref(uint64_t offset, uint32_t length);
     ~Blob();
 
 #ifdef CACHE_BLOB_BL
@@ -815,7 +852,7 @@ public:
     }
     ~Extent() {
       if (blob) {
-	blob->shared_blob->get_cache()->rm_extent();
+	blob->collection->cache->rm_extent();
       }
     }
 
@@ -824,7 +861,7 @@ public:
     void assign_blob(const BlobRef& b) {
       ceph_assert(!blob);
       blob = b;
-      blob->shared_blob->get_cache()->add_extent();
+      blob->collection->cache->add_extent();
     }
 
     // comparators for intrusive_set
@@ -1606,7 +1643,7 @@ private:
     //  shared = blob_t shared flag is std::set; SharedBlob is hashed.
     //  loaded = SharedBlob::shared_blob_t is loaded from kv store
     void open_shared_blob(uint64_t sbid, BlobRef b);
-    void load_shared_blob(SharedBlobRef sb);
+    void load_shared_blob(Blob& sb);
     void make_blob_shared(uint64_t sbid, BlobRef b);
     uint64_t make_blob_unshared(SharedBlob *sb);
 
@@ -2884,7 +2921,7 @@ private:
     uint64_t offset,
     ceph::buffer::list& bl,
     unsigned flags) {
-    b->dirty_bc().write(b->shared_blob->get_cache(), txc->seq, offset, bl,
+    b->dirty_bc().write(b->collection->cache, txc->seq, offset, bl,
 			     flags);
     txc->blobs_written.insert(b);
   }
