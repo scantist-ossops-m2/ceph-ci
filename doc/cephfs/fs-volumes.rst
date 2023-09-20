@@ -573,11 +573,26 @@ The commands being deprecated are:
 
 .. note:: Use the ``subvolume info`` command to fetch subvolume metadata regarding supported ``features`` to help decide if protect/unprotect of snapshots is required, based on the availability of the ``snapshot-autoprotect`` feature.
 
+Configure the snapshot_clone_no_wait option :
+
+.. prompt:: bash #
+
+   ``snapshot_clone_no_wait`` config option is used to reject the clone creation request when the cloner threads are not available.
+   It is enabled by default i.e. the value set is True, whereas it can be configured by using below command.
+
+   ceph config set mgr mgr/volumes/snapshot_clone_no_wait <bool>
+
+   The current value of ``snapshot_clone_no_wait`` can be fetched by using below command.
+
+   ceph config get mgr mgr/volumes/snapshot_clone_no_wait
+
 To initiate a clone operation use:
 
 .. prompt:: bash #
 
    ceph fs subvolume snapshot clone <vol_name> <subvol_name> <snap_name> <target_subvol_name>
+
+.. note:: ``subvolume snapshot clone`` command depends upon the above mentioned config option ``snapshot_clone_no_wait``
 
 If a snapshot (source subvolume) is a part of non-default group, the group name needs to be specified:
 
