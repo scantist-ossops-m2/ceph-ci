@@ -3263,7 +3263,8 @@ void BlueStore::ExtentMap::dup(BlueStore* b, TransContext* txc,
           e.blob->shared_blob_get_ref(p.offset, p.length);
         }
       }
-      txc->write_shared_blob(e.blob->shared_blob);
+      SharedBlobRef sb = e.blob->collection->shared_blob_set.lookup(e.blob->get_sbid());
+      txc->write_shared_blob(sb);
       dout(20) << __func__ << "    new " << *cb << dendl;
     }
 
@@ -3384,7 +3385,8 @@ void BlueStore::ExtentMap::dup_esb(BlueStore* b, TransContext* txc,
 	txc->blobs_written.insert(cb);
       }
 
-      txc->write_shared_blob(e.blob->shared_blob);
+      SharedBlobRef sb = e.blob->collection->shared_blob_set.lookup(e.blob->get_sbid());
+      txc->write_shared_blob(sb);
       dout(20) << __func__ << "    new " << *cb << dendl;
     }
 
