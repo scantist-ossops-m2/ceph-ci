@@ -63,7 +63,8 @@ using OpSchedulerRef = std::unique_ptr<OpScheduler>;
 
 OpSchedulerRef make_scheduler(
   CephContext *cct, int whoami, uint32_t num_shards, int shard_id,
-  bool is_rotational, std::string_view osd_objectstore, MonClient *monc);
+  bool is_rotational, std::string_view osd_objectstore,
+  std::string_view osd_scheduler, MonClient *monc);
 
 /**
  * Implements OpScheduler in terms of OpQueue
