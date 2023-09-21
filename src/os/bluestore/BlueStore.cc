@@ -4525,8 +4525,8 @@ BlueStore::ExtentMap::debug_list_disk_layout()
 
     bluestore_extent_ref_map_t* ref_map = nullptr;
     if (bblob.is_shared()) {
-      ceph_assert(ep->blob->shared_blob->is_loaded());
-      bluestore_shared_blob_t* bsblob = ep->blob->shared_blob->persistent;
+      ceph_assert(ep->blob->loaded);
+      bluestore_shared_blob_t* bsblob = ep->blob->persistent;
       ref_map = &bsblob->ref_map;
     }
 
@@ -4993,7 +4993,7 @@ void BlueStore::Collection::flush_all_but_last()
 
 void BlueStore::Collection::open_shared_blob(uint64_t sbid, BlobRef b)
 {
-  ceph_assert(!b->shared_blob);
+  ceph_assert(!b->collection);
   const bluestore_blob_t& blob = b->get_blob();
   if (!blob.is_shared()) {
     b->set_shared_blob(new SharedBlob(this));
@@ -5004,12 +5004,13 @@ void BlueStore::Collection::open_shared_blob(uint64_t sbid, BlobRef b)
   if (sb) {
     b->set_shared_blob(sb);
     ldout(store->cct, 10) << __func__ << " sbid 0x" << std::hex << sbid
-			  << std::dec << " had " << *b->shared_blob << dendl;
+			  << std::dec << " had " << *b << dendl;
   } else {
-    b->set_shared_blob(new SharedBlob(sbid, this));
-    shared_blob_set.add(this, b->shared_blob.get());
+    sb = new SharedBlob(sbid, this);
+    b->set_shared_blob(sb);
+    shared_blob_set.add(this, sb.get());
     ldout(store->cct, 10) << __func__ << " sbid 0x" << std::hex << sbid
-			  << std::dec << " opened " << *b->shared_blob
+			  << std::dec << " opened " << sb
 			  << dendl;
   }
 }
@@ -5042,7 +5043,7 @@ void BlueStore::Collection::load_shared_blob(Blob &b)
 void BlueStore::Collection::make_blob_shared(uint64_t sbid, BlobRef b)
 {
   ldout(store->cct, 10) << __func__ << " " << *b << dendl;
-  ceph_assert(!b->is_loaded());
+  ceph_assert(!b->loaded);
 
   // update blob
   bluestore_blob_t& blob = b->dirty_blob();
@@ -5055,7 +5056,7 @@ void BlueStore::Collection::make_blob_shared(uint64_t sbid, BlobRef b)
   shared_blob_set.add(this, b->shared_blob.get());
   for (auto p : blob.get_extents()) {
     if (p.is_valid()) {
-      b->shared_blob->get_ref(
+      b->shared_blob_get_ref(
 	p.offset,
 	p.length);
     }
@@ -5184,6 +5185,7 @@ void BlueStore::Collection::split_cache(
 	cache->rm_blob();
 	dest->cache->add_blob();
 	SharedBlob* sb = b->shared_blob.get();
+        shared_blob_set.lookup(b->get_sbid());
 	if (sb->coll == dest) {
 	  ldout(store->cct, 20) << __func__ << "  already moved " << *sb
 				<< dendl;
