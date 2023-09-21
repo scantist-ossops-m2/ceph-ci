@@ -3050,7 +3050,7 @@ void BlueStore::ExtentMap::scan_shared_blobs(
       const bluestore_blob_t& blob = ep->blob->get_blob();
       if (blob.is_shared()) {
 	// excellent time to load the blob
-	c->load_shared_blob(ep->blob->shared_blob);
+	c->load_shared_blob(*ep->blob);
 	if (!blob.is_compressed()) {
 	  // Restrict elastic shared blobs to non-compressed blobs.
 	  // Fsck cannot handle case when one shared blob contains refs to
@@ -3180,7 +3180,7 @@ void BlueStore::ExtentMap::make_range_shared_maybe_merge(
 	++ep;
       }
     } else {
-      c->load_shared_blob(e.blob->shared_blob);
+      c->load_shared_blob(*e.blob);
       ++ep;
     }
   }
@@ -3241,7 +3241,7 @@ void BlueStore::ExtentMap::dup(BlueStore* b, TransContext* txc,
         // -1 to exclude next potential shard
         dirty_range_end = e.logical_end() - 1;
       } else {
-        c->load_shared_blob(e.blob->shared_blob);
+        c->load_shared_blob(*e.blob);
       }
       cb = new Blob();
       e.blob->last_encoded_id = n;
@@ -5035,7 +5035,7 @@ void BlueStore::Collection::load_shared_blob(Blob &b)
     auto p = v.cbegin();
     decode(*(b.persistent), p);
     ldout(store->cct, 10) << __func__ << " sbid 0x" << std::hex << sbid
-			  << std::dec << " loaded shared_blob " << *sb << dendl;
+			  << std::dec << " loaded shared_blob " << b << dendl;
   }
 }
 
@@ -16943,7 +16943,7 @@ void BlueStore::_wctx_finish(
       dout(20) << __func__ << "  blob " << *b << " release " << r << dendl;
       if (blob.is_shared()) {
 	PExtentVector final;
-        c->load_shared_blob(b->shared_blob);
+        c->load_shared_blob(*b);
 	bool unshare = false;
 	bool* unshare_ptr =
 	  !maybe_unshared_blobs || b->is_referenced() ? nullptr : &unshare;
