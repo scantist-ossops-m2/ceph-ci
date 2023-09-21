@@ -152,7 +152,7 @@ void DaemonMetricCollector::dump_asok_metrics() {
             dout(1) << "Unable to parse instance_id from daemon_name: " << daemon_name << dendl;
             continue;
           }
-          labels = labels.insert(labels_and_name.first.begin(), labels_and_name.first.end());
+          labels.insert(labels_and_name.first.begin(), labels_and_name.first.end());
           counter_name = labels_and_name.second;
 
           // For now this is only required for rgw multi-site metrics
