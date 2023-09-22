@@ -1,4 +1,6 @@
 tasks:
+  - install:
+  - cephadm:
   - cephfs_test_runner:
       modules:
         - tasks.cephfs.test_nfs
