@@ -4,11 +4,14 @@
 #pragma once
 
 #include "include/common_fwd.h"
+#include "rgw_common.h"
+#include "rgw_sal.h"
 #include "common/perf_counters_cache.h"
 #include "common/perf_counters_key.h"
 
 extern PerfCounters *perfcounter;
-extern ceph::perf_counters::PerfCountersCache *perf_counters_cache;
+extern ceph::perf_counters::PerfCountersCache *user_counters_cache;
+extern ceph::perf_counters::PerfCountersCache *bucket_counters_cache;
 extern std::string rgw_op_counters_key;
 
 extern int rgw_perf_start(CephContext *cct);
@@ -89,24 +92,18 @@ enum {
 
 namespace rgw::op_counters {
 
+typedef std::pair<std::shared_ptr<PerfCounters>,std::shared_ptr<PerfCounters>> CountersPair;
+
 extern PerfCounters *global_op_counters;
 
 void global_op_counters_init(CephContext *cct);
 
-template <std::size_t Count>
-std::shared_ptr<PerfCounters> get(ceph::perf_counters::label_pair (&&labels)[Count]) {
-  if (perf_counters_cache) {
-    std::string key = ceph::perf_counters::key_create(rgw_op_counters_key, std::move(labels));
-    return perf_counters_cache->get(key);
-  } else {
-    return std::shared_ptr<PerfCounters>(nullptr);
-  }
-}
+CountersPair get(req_state *s);
 
-void inc(std::shared_ptr<PerfCounters> labeled_counters, int idx, uint64_t v);
+void inc(CountersPair user_bucket_counters, int idx, uint64_t v);
 
-void tinc(std::shared_ptr<PerfCounters> labeled_counters, int idx, utime_t);
+void tinc(CountersPair user_bucket_counters, int idx, utime_t);
 
-void tinc(std::shared_ptr<PerfCounters> labeled_counters, int idx, ceph::timespan amt);
+void tinc(CountersPair user_bucket_counters, int idx, ceph::timespan amt);
 
 } // namespace rgw::op_counters
