@@ -92,18 +92,21 @@ enum {
 
 namespace rgw::op_counters {
 
-typedef std::pair<std::shared_ptr<PerfCounters>,std::shared_ptr<PerfCounters>> CountersPair;
+struct CountersContainer {
+  std::shared_ptr<PerfCounters> user_counters;
+  std::shared_ptr<PerfCounters> bucket_counters;
+};
 
 extern PerfCounters *global_op_counters;
 
 void global_op_counters_init(CephContext *cct);
 
-CountersPair get(req_state *s);
+CountersContainer get(req_state *s);
 
-void inc(CountersPair user_bucket_counters, int idx, uint64_t v);
+void inc(CountersContainer user_bucket_counters, int idx, uint64_t v);
 
-void tinc(CountersPair user_bucket_counters, int idx, utime_t);
+void tinc(CountersContainer user_bucket_counters, int idx, utime_t);
 
-void tinc(CountersPair user_bucket_counters, int idx, ceph::timespan amt);
+void tinc(CountersContainer user_bucket_counters, int idx, ceph::timespan amt);
 
 } // namespace rgw::op_counters

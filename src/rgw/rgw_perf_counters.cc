@@ -126,31 +126,35 @@ void global_op_counters_init(CephContext *cct) {
   global_op_counters = new_counters;
 }
 
-CountersPair get(req_state *s) {
-  CountersPair user_bucket_counters = std::make_pair(std::shared_ptr<PerfCounters>(nullptr), std::shared_ptr<PerfCounters>(nullptr));
+CountersContainer get(req_state *s) {
+  CountersContainer user_bucket_counters;
 
   if (user_counters_cache && !s->user->get_id().id.empty()) {
     std::string key = ceph::perf_counters::key_create(rgw_op_counters_key, {{"User", s->user->get_id().id}});
     auto user_counters = user_counters_cache->get(key);
-    user_bucket_counters.first = user_counters;
+    user_bucket_counters.user_counters = user_counters;
+  } else {
+    user_bucket_counters.user_counters = std::shared_ptr<PerfCounters>(nullptr);
   }
 
   if (bucket_counters_cache && !s->bucket_name.empty()) {
     std::string key = ceph::perf_counters::key_create(rgw_op_counters_key, {{"Bucket", s->bucket_name}});
     auto bucket_counters = bucket_counters_cache->get(key);
-    user_bucket_counters.second = bucket_counters;
+    user_bucket_counters.bucket_counters = bucket_counters;
+  } else {
+    user_bucket_counters.bucket_counters = std::shared_ptr<PerfCounters>(nullptr);
   }
 
   return user_bucket_counters;
 }
 
-void inc(CountersPair user_bucket_counters, int idx, uint64_t v) {
-  if (user_bucket_counters.first) {
-    PerfCounters *user_counters = user_bucket_counters.first.get();
+void inc(CountersContainer user_bucket_counters, int idx, uint64_t v) {
+  if (user_bucket_counters.user_counters) {
+    PerfCounters *user_counters = user_bucket_counters.user_counters.get();
     user_counters->inc(idx, v);
   }
-  if (user_bucket_counters.second) {
-    PerfCounters *bucket_counters = user_bucket_counters.second.get();
+  if (user_bucket_counters.bucket_counters) {
+    PerfCounters *bucket_counters = user_bucket_counters.bucket_counters.get();
     bucket_counters->inc(idx, v);
   }
   if (global_op_counters) {
@@ -158,13 +162,13 @@ void inc(CountersPair user_bucket_counters, int idx, uint64_t v) {
   }
 }
 
-void tinc(CountersPair user_bucket_counters, int idx, utime_t amt) {
-  if (user_bucket_counters.first) {
-    PerfCounters *user_counters = user_bucket_counters.first.get();
+void tinc(CountersContainer user_bucket_counters, int idx, utime_t amt) {
+  if (user_bucket_counters.user_counters) {
+    PerfCounters *user_counters = user_bucket_counters.user_counters.get();
     user_counters->tinc(idx, amt);
   }
-  if (user_bucket_counters.second) {
-    PerfCounters *bucket_counters = user_bucket_counters.second.get();
+  if (user_bucket_counters.bucket_counters) {
+    PerfCounters *bucket_counters = user_bucket_counters.bucket_counters.get();
     bucket_counters->tinc(idx, amt);
   }
   if (global_op_counters) {
@@ -172,13 +176,13 @@ void tinc(CountersPair user_bucket_counters, int idx, utime_t amt) {
   }
 }
 
-void tinc(CountersPair user_bucket_counters, int idx, ceph::timespan amt) {
-  if (user_bucket_counters.first) {
-    PerfCounters *user_counters = user_bucket_counters.first.get();
+void tinc(CountersContainer user_bucket_counters, int idx, ceph::timespan amt) {
+  if (user_bucket_counters.user_counters) {
+    PerfCounters *user_counters = user_bucket_counters.user_counters.get();
     user_counters->tinc(idx, amt);
   }
-  if (user_bucket_counters.second) {
-    PerfCounters *bucket_counters = user_bucket_counters.second.get();
+  if (user_bucket_counters.bucket_counters) {
+    PerfCounters *bucket_counters = user_bucket_counters.bucket_counters.get();
     bucket_counters->tinc(idx, amt);
   }
   if (global_op_counters) {
