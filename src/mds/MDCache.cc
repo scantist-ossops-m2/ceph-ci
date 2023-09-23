@@ -11830,6 +11830,9 @@ void MDCache::fragment_mark_and_complete(MDRequestRef& mdr)
     if (!dir->is_frozen_dir()) {
       ceph_assert(dir->is_freezing_dir());
       dir->add_waiter(CDir::WAIT_FROZEN, gather.new_sub());
+      dout(20) << __func__
+	       << " waiting until frozen " << *dir
+	       << dendl;
     }
   }
   if (gather.has_subs()) {
@@ -11840,6 +11843,10 @@ void MDCache::fragment_mark_and_complete(MDRequestRef& mdr)
     return;
   }
 
+  dout(20) << __func__
+	   << " directly calling fragment_frozen for "
+	   << mdr
+	   << dendl;
   fragment_frozen(mdr, 0);
 }
 
