@@ -320,7 +320,7 @@ void ScrubStack::scrub_dir_inode(CInode *in, bool *added_children, bool *done)
 
   frag_vec_t frags;
   in->dirfragtree.get_leaves(frags);
-  dout(20) << __func__ << "recursive mode, frags " << frags << dendl;
+  dout(20) << __func__ << " recursive mode, frags " << frags << dendl;
   for (auto &fg : frags) {
     if (queued.contains(fg))
       continue;

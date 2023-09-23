@@ -12187,6 +12187,18 @@ void MDCache::_fragment_stored(MDRequestRef& mdr)
        */
       notify->mark_ack_wanted();
       info.notify_ack_waiting.insert(p.first);
+      dout(20) << __func__
+               << " fragment notify ack requested for "
+	       << basedirfrag << " with bits " << info.bits
+	       << " from " << p.first
+	       << dendl;
+    } else {
+      dout(20) << __func__
+               << " fragment nofity ack not requested for "
+	       << basedirfrag << " with bits " << info.bits
+	       << " diri_auth " << diri_auth
+	       << " p.first " << p.first
+	       << dendl;
     }
 
     // freshly replicate new dirs to peers
