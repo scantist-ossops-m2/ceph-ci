@@ -10,7 +10,7 @@
 PerfCounters *perfcounter = NULL;
 const std::string rgw_op_counters_key = "rgw_op";
 
-static void add_rgw_frontend_counters(PerfCountersBuilder *pcb) {
+void add_rgw_frontend_counters(PerfCountersBuilder *pcb) {
   // RGW emits comparatively few metrics, so let's be generous
   // and mark them all USEFUL to get transmission to ceph-mgr by default.
   pcb->set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
@@ -58,7 +58,7 @@ static void add_rgw_frontend_counters(PerfCountersBuilder *pcb) {
   pcb->add_u64(l_rgw_lua_current_vms, "lua_current_vms", "Number of Lua VMs currently being executed");
 }
 
-static void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
+void add_rgw_op_counters(PerfCountersBuilder *lpcb) {
   // description must match general rgw counters description above
   lpcb->set_prio_default(PerfCountersBuilder::PRIO_USEFUL);
 
