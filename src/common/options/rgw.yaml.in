@@ -3829,6 +3829,8 @@ options:
     other form of policies that Amazon does, so if you are mirroring
     policies between RGW and AWS, you may wish to set this to false.
   default: true
+  services:
+  - rgw
 - name: rgw_d4n_host
   type: str
   level: advanced

@@ -5,19 +5,13 @@
 
 #include "include/common_fwd.h"
 #include "rgw_common.h"
-#include "rgw_sal.h"
 #include "common/perf_counters_cache.h"
 #include "common/perf_counters_key.h"
 
 extern PerfCounters *perfcounter;
-extern ceph::perf_counters::PerfCountersCache *user_counters_cache;
-extern ceph::perf_counters::PerfCountersCache *bucket_counters_cache;
-extern std::string rgw_op_counters_key;
-
 extern int rgw_perf_start(CephContext *cct);
 extern void rgw_perf_stop(CephContext *cct);
-extern void frontend_counters_init(CephContext *cct);
-extern std::shared_ptr<PerfCounters> create_rgw_counters(const std::string& name, CephContext *cct);
+extern const std::string rgw_op_counters_key;
 
 enum {
   l_rgw_first = 15000,
@@ -92,21 +86,19 @@ enum {
 
 namespace rgw::op_counters {
 
+extern PerfCounters *global_op_counters;
+
 struct CountersContainer {
   std::shared_ptr<PerfCounters> user_counters;
   std::shared_ptr<PerfCounters> bucket_counters;
 };
 
-extern PerfCounters *global_op_counters;
-
-void global_op_counters_init(CephContext *cct);
-
 CountersContainer get(req_state *s);
 
-void inc(CountersContainer user_bucket_counters, int idx, uint64_t v);
+void inc(const CountersContainer &counters, int idx, uint64_t v);
 
-void tinc(CountersContainer user_bucket_counters, int idx, utime_t);
+void tinc(const CountersContainer &counters, int idx, utime_t);
 
-void tinc(CountersContainer user_bucket_counters, int idx, ceph::timespan amt);
+void tinc(const CountersContainer &counters, int idx, ceph::timespan amt);
 
 } // namespace rgw::op_counters
