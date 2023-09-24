@@ -11,7 +11,6 @@
 extern PerfCounters *perfcounter;
 extern int rgw_perf_start(CephContext *cct);
 extern void rgw_perf_stop(CephContext *cct);
-extern const std::string rgw_op_counters_key;
 
 enum {
   l_rgw_first = 15000,
