@@ -335,6 +335,10 @@ void ScrubStack::scrub_dir_inode(CInode *in, bool *added_children, bool *done)
       } else {
 	mds_rank_t auth = dir->authority().first;
 	scrub_remote[auth].insert_raw(fg);
+	dout(20) << __func__
+		 << " collected remote frag " << fg
+		 << " for mds." << auth
+		 << dendl;
       }
     } else if (!dir->can_auth_pin()) {
       dout(20) << __func__ << " freezing/frozen " << *dir  << dendl;
