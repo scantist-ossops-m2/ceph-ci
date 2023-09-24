@@ -353,7 +353,7 @@ void ScrubStack::scrub_dir_inode(CInode *in, bool *added_children, bool *done)
     }
   }
 
-  queued.simplify();
+  // queued.simplify();
 
   if (gather.has_subs()) {
     gather.set_finisher(new C_RetryScrub(this, in));
@@ -370,7 +370,7 @@ void ScrubStack::scrub_dir_inode(CInode *in, bool *added_children, bool *done)
     scrub_r.tag = header->get_tag();
 
     for (auto& p : scrub_remote) {
-      p.second.simplify();
+      // p.second.simplify();
       dout(20) << __func__ << " forward " << p.second  << " to mds." << p.first << dendl;
       auto r = make_message<MMDSScrub>(MMDSScrub::OP_QUEUEDIR, in->ino(),
 				       std::move(p.second), header->get_tag(),
