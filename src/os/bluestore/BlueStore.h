@@ -490,13 +490,13 @@ public:
     std::atomic_int nref = {0}; ///< reference count
     bool loaded = false;
 
-    CollectionRef coll;
+    CollectionRef collection;
     union {
       uint64_t sbid_unloaded;              ///< sbid if persistent isn't loaded
       bluestore_shared_blob_t *persistent; ///< persistent part of the shared blob if any
     };
 
-    SharedBlob(Collection *_coll) : coll(_coll), sbid_unloaded(0) {
+    SharedBlob(Collection *_coll) : collection(_coll), sbid_unloaded(0) {
     }
     SharedBlob(uint64_t i, Collection *_coll);
     ~SharedBlob();
@@ -526,10 +526,10 @@ public:
       return l.get_sbid() == r.get_sbid();
     }
     inline BufferCacheShard* get_cache() {
-      return coll ? coll->cache : nullptr;
+      return collection ? collection->cache : nullptr;
     }
     inline SharedBlobSet* get_parent() {
-      return coll ? &(coll->shared_blob_set) : nullptr;
+      return collection ? &(collection->shared_blob_set) : nullptr;
     }
     inline bool is_loaded() const {
       return loaded;
@@ -560,7 +560,7 @@ public:
     void add(Collection* coll, SharedBlob *sb) {
       std::lock_guard l(lock);
       sb_map[sb->get_sbid()] = sb;
-      sb->coll = coll;
+      sb->collection = coll;
     }
 
     bool remove(SharedBlob *sb, bool verify_nref_is_zero=false) {
@@ -606,7 +606,7 @@ public:
       ceph_assert(!shared_blob);
       sbid_unloaded = sb->get_sbid();
       shared_blob = sb;
-      collection = sb->coll;
+      collection = sb->collection;
       ceph_assert(get_cache());
     }
     BufferSpace bc;
@@ -727,7 +727,7 @@ public:
       return shared_blob ? shared_blob->get_sbid() : sbid_unloaded;
     }
     CollectionRef get_collection() const {
-      return shared_blob ? shared_blob->coll : collection;
+      return shared_blob ? shared_blob->collection : collection;
     }
 
     ~Blob();
