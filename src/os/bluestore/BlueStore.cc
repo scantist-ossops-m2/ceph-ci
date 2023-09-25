@@ -2214,10 +2214,10 @@ BlueStore::Blob::~Blob()
     return;
   }
  again:
-  auto coll_cache = sb->get_cache();
+  auto coll_cache = get_cache();
   if (coll_cache) {
     std::lock_guard l(coll_cache->lock);
-    if (coll_cache != sb->get_cache()) {
+    if (coll_cache != get_cache()) {
       goto again;
     }
     bc._clear(coll_cache);
@@ -3962,7 +3962,6 @@ bool BlueStore::ExtentMap::encode_some(
       denc_varint(0, bound); // len
       denc_varint(0, bound); // blob_offset
 
-      dout(1) << "Pere blob " << p->blob << dendl;
       p->blob->bound_encode(
         bound,
         struct_v,
@@ -5028,6 +5027,7 @@ void BlueStore::Collection::open_shared_blob(uint64_t sbid, BlobRef b)
   const bluestore_blob_t& blob = b->get_blob();
   if (!blob.is_shared()) {
     b->collection = this;
+    b->get_cache()->add_blob();
     return;
   }
 
