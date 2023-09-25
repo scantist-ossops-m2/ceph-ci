@@ -240,6 +240,8 @@ function standard_scrub_cluster() {
             --osd_scrub_backoff_ratio=0.0 \
             --osd_pool_default_pg_autoscale_mode=off \
             --osd_pg_stat_report_interval_max=1 \
+            --osd_stats_update_period_not_scrubbing=3 \
+            --osd_stats_update_period_scrubbing=2 \
             $extra_pars"
 
     for osd in $(seq 0 $(expr $OSDS - 1))
@@ -248,12 +250,61 @@ function standard_scrub_cluster() {
     done
 
     create_pool $poolname $pg_num $pg_num
+    ceph osd pool set $poolname pg_autoscale_mode off
     wait_for_clean || return 1
 
     # update the in/out 'args' with the ID of the new pool
     sleep 1
     name_n_id=`ceph osd dump | awk '/^pool.*'$poolname'/ { gsub(/'"'"'/," ",$3); print $3," ", $2}'`
     echo "standard_scrub_cluster: $debug_msg: test pool is $name_n_id"
+    args['pool_id']="${name_n_id##* }"
+    args['osd_args']=$ceph_osd_args
+    if [[ -n "$saved_echo_flag" ]]; then set -x; fi
+}
+
+function ec_scrub_cluster() {
+    local dir=$1
+    local -n args=$2
+
+    local OSDS=${args['osds_num']:-"3"}
+    local pg_num=${args['pgs_in_pool']:-"8"}
+    local poolname="${args['pool_name']:-test}"
+    args['pool_name']=$poolname
+    local extra_pars=${args['extras']}
+    local debug_msg=${args['msg']:-"dbg"}
+    local k=${args['erasure_k']:-"4"}
+    local m=${args['erasure_m']:-"2"}
+
+    # turn off '-x' (but remember previous state)
+    local saved_echo_flag=${-//[^x]/}
+    set +x
+
+    run_mon $dir a --osd_pool_default_size=3 || return 1
+    run_mgr $dir x || return 1
+
+    local ceph_osd_args="--osd_deep_scrub_randomize_ratio=0 \
+            --osd_scrub_interval_randomize_ratio=0 \
+            --osd_scrub_backoff_ratio=0.0 \
+            --osd_pool_default_pg_autoscale_mode=off \
+            --osd_pg_stat_report_interval_max=1 \
+            --osd_stats_update_period_not_scrubbing=3 \
+            --osd_stats_update_period_scrubbing=2 \
+            $extra_pars"
+
+    for osd in $(seq 0 $(expr $OSDS - 1))
+    do
+      run_osd $dir $osd $(echo $ceph_osd_args) || return 1
+    done
+
+    ceph osd erasure-code-profile set myprofile crush-failure-domain=osd k=$k m=$m || return 1
+    ceph osd pool create $poolname $pg_num $pg_num erasure myprofile || return 1
+    ceph osd pool set $poolname pg_autoscale_mode off
+    wait_for_clean || return 1
+
+    # update the in/out 'args' with the ID of the new pool
+    sleep 1
+    name_n_id=`ceph osd dump | awk '/^pool.*'$poolname'/ { gsub(/'"'"'/," ",$3); print $3," ", $2}'`
+    echo "ec_scrub_cluster: $debug_msg: test pool is $name_n_id"
     args['pool_id']="${name_n_id##* }"
     args['osd_args']=$ceph_osd_args
     if [[ -n "$saved_echo_flag" ]]; then set -x; fi
