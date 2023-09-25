@@ -597,14 +597,11 @@ public:
     int16_t id = -1;                ///< id, for spanning blobs only, >= 0
     int16_t last_encoded_id = -1;   ///< (ephemeral) used during encoding only
     SharedBlobRef shared_blob;      ///< shared blob state (if any)
-    bool loaded = false;
     CollectionRef collection;
-    uint64_t sbid_unloaded = 0;
 
     void set_shared_blob(SharedBlobRef sb) {
       ceph_assert((bool)sb);
       ceph_assert(!shared_blob);
-      sbid_unloaded = sb->get_sbid();
       shared_blob = sb;
       collection = sb->collection;
       ceph_assert(get_cache());
@@ -724,7 +721,7 @@ public:
       return shared_blob ? shared_blob->get_cache() : collection->cache;
     }
     uint64_t get_sbid() const {
-      return shared_blob ? shared_blob->get_sbid() : sbid_unloaded;
+      return shared_blob ? shared_blob->get_sbid() : 0;
     }
     CollectionRef get_collection() const {
       return shared_blob ? shared_blob->collection : collection;

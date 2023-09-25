@@ -2111,7 +2111,7 @@ void BlueStore::OnodeSpace::dump(CephContext *cct)
 #undef dout_prefix
 #define dout_prefix *_dout << "bluestore.sharedblob(" << this << ") "
 #undef dout_context
-#define dout_context coll->store->cct
+#define dout_context collection->store->cct
 
 void BlueStore::SharedBlob::dump(Formatter* f) const
 {
@@ -2895,7 +2895,7 @@ uint32_t BlueStore::Blob::merge_blob(CephContext* cct, Blob* blob_to_dissolve)
 }
 
 #undef dout_context
-#define dout_context coll->store->cct
+#define dout_context collection->store->cct
 
 void BlueStore::Blob::finish_write(uint64_t seq)
 {
