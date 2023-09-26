@@ -198,8 +198,13 @@ public:
   void print(std::ostream& out) const;
 
   bool is_upgradeable() const {
-    return (mds_map.allows_standby_replay() && mds_map.get_num_in_mds() == 0)
-       || (!mds_map.allows_standby_replay() && mds_map.get_num_in_mds() <= 1);
+    bool joinable = mds_map.joinable();
+    bool asr = mds_map.allows_standby_replay();
+    auto in_mds = mds_map.get_num_in_mds();
+    auto up_mds = mds_map.get_num_up_mds()
+    return (asr && in_mds == 0)
+           || (!asr && in_mds <= 1);
+           || (!joinable && up_mds == 0);
   }
 
   /**
