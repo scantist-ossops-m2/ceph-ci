@@ -110,7 +110,9 @@ from cephadmlib.data_utils import (
     with_units_to_int,
 )
 from cephadmlib.file_utils import (
+    get_file_timestamp,
     makedirs,
+    pathify,
     populate_files,
     read_file,
     recursive_chown,
@@ -1400,23 +1402,6 @@ def is_available(ctx, what, func):
 
         num += 1
         time.sleep(2)
-
-
-def pathify(p):
-    # type: (str) -> str
-    p = os.path.expanduser(p)
-    return os.path.abspath(p)
-
-
-def get_file_timestamp(fn):
-    # type: (str) -> Optional[str]
-    try:
-        mt = os.path.getmtime(fn)
-        return datetime.datetime.fromtimestamp(
-            mt, tz=datetime.timezone.utc
-        ).strftime(DATEFMT)
-    except Exception:
-        return None
 
 
 def generate_service_id():
