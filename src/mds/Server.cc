@@ -5900,6 +5900,7 @@ int Server::check_layout_vxattr(MDRequestRef& mdr,
                                 file_layout_t *layout)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
+  bool is_rmxattr = (req->get_op() == CEPH_MDS_OP_RMXATTR);
   epoch_t epoch;
   int r;
 
@@ -5909,7 +5910,12 @@ int Server::check_layout_vxattr(MDRequestRef& mdr,
     });
 
   if (r == -CEPHFS_ENOENT) {
+    if (is_rmxattr) {
+      r = -CEPHFS_EINVAL;
 
+      respond_to_request(mdr, r);
+      return r;
+    }
     // we don't have the specified pool, make sure our map
     // is newer than or as new as the client.
     epoch_t req_epoch = req->get_osdmap_epoch();
@@ -5949,6 +5955,7 @@ int Server::check_layout_vxattr(MDRequestRef& mdr,
 void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
 {
   const cref_t<MClientRequest> &req = mdr->client_request;
+  bool is_rmxattr = (req->get_op() == CEPH_MDS_OP_RMXATTR);
   MutationImpl::LockOpVec lov;
   string name(req->get_path2());
   bufferlist bl = req->get_data();
@@ -6040,6 +6047,9 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
     }
 
     quota_info_t quota = cur->get_projected_inode()->quota;
+    if (is_rmxattr) {
+      value = "0";
+    }
 
     rest = name.substr(name.find("quota"));
     int r = parse_quota_vxattr(rest, value, &quota);
@@ -6078,6 +6088,9 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
 
     bool val;
     try {
+      if (is_rmxattr) {
+        value = "0";
+      }
       val = boost::lexical_cast<bool>(value);
     } catch (boost::bad_lexical_cast const&) {
       dout(10) << "bad vxattr value, unable to parse bool for " << name << dendl;
@@ -6148,6 +6161,9 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
 
     mds_rank_t rank;
     try {
+      if (is_rmxattr) {
+        value = "-1";
+      }
       rank = boost::lexical_cast<mds_rank_t>(value);
       if (rank < 0) rank = MDS_RANK_NONE;
       else if (rank >= MAX_MDS) {
@@ -6174,6 +6190,9 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
 
     double val;
     try {
+      if (is_rmxattr) {
+        value = "0";
+      }
       val = boost::lexical_cast<double>(value);
     } catch (boost::bad_lexical_cast const&) {
       dout(10) << "bad vxattr value, unable to parse float for " << name << dendl;
@@ -6203,6 +6222,9 @@ void Server::handle_set_vxattr(MDRequestRef& mdr, CInode *cur)
 
     bool val;
     try {
+      if (is_rmxattr) {
+        value = "0";
+      }
       val = boost::lexical_cast<bool>(value);
     } catch (boost::bad_lexical_cast const&) {
       dout(10) << "bad vxattr value, unable to parse bool for " << name << dendl;
@@ -6286,12 +6308,11 @@ void Server::handle_remove_vxattr(MDRequestRef& mdr, CInode *cur)
     mdr->no_early_reply = true;
     journal_and_reply(mdr, cur, 0, le, new C_MDS_inode_update_finish(this, mdr, cur));
     return;
-  } else if (name == "ceph.dir.layout.pool_namespace"
-          || name == "ceph.file.layout.pool_namespace") {
-    // Namespace is the only layout field that has a meaningful
-    // null/none value (empty string, means default layout).  Is equivalent
-    // to a setxattr with empty string: pass through the empty payload of
-    // the rmxattr request to do this.
+  } else if (name.find("ceph.") == 0) {
+    if (req->get_data().length()) {
+      respond_to_request(mdr, -CEPHFS_EINVAL);
+      return;
+    }
     handle_set_vxattr(mdr, cur);
     return;
   }
