@@ -39,7 +39,8 @@ from cephadm.http_server import CephadmHttpServer
 from cephadm.agent import CephadmAgentHelpers
 
 
-from mgr_module import MgrModule, HandleCommandResult, Option, NotifyType
+from mgr_module import MgrModule, HandleCommandResult, Option, \
+    NotifyType, MonCommandFailed
 from mgr_util import build_url
 import orchestrator
 from orchestrator.module import to_format, Format
@@ -1630,7 +1631,7 @@ Then run the following:
         return self._add_host(spec)
 
     @handle_orch_error
-    def remove_host(self, host: str, force: bool = False, offline: bool = False) -> str:
+    def remove_host(self, host: str, force: bool = False, offline: bool = False, rm_crush_entry: bool = False) -> str:
         """
         Remove a host from orchestrator management.
 
@@ -1716,6 +1717,16 @@ Then run the following:
         # if host was in offline host list, we should remove it now.
         self.offline_hosts_remove(host)
         self.event.set()  # refresh stray health check
+        if rm_crush_entry:
+            try:
+                self.check_mon_command({
+                    'prefix': 'osd crush remove',
+                    'name': host,
+                })
+            except MonCommandFailed as e:
+                self.log.error(f'Couldn\'t remove host {host} from CRUSH map: {str(e)}')
+                return (f'Host {host} was removed from cephadm control '
+                        f'but cephadm failed to remove it from the CRUSH map: {str(e)}')
         self.log.info('Removed host %s' % host)
         return "Removed {} host '{}'".format('offline' if offline else '', host)
 
