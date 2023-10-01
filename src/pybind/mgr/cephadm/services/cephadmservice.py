@@ -1030,6 +1030,37 @@ class RgwService(CephService):
             'value': frontend
         })
 
+        if spec.rgw_user_counters_cache:
+            ret, out, err = self.mgr.check_mon_command({
+                'prefix': 'config set',
+                'who': utils.name_to_config_section(daemon_spec.name()),
+                'name': 'rgw_user_counters_cache',
+                'value': str(spec.rgw_user_counters_cache).lower(),
+            })
+        if spec.rgw_bucket_counters_cache:
+            ret, out, err = self.mgr.check_mon_command({
+                'prefix': 'config set',
+                'who': utils.name_to_config_section(daemon_spec.name()),
+                'name': 'rgw_bucket_counters_cache',
+                'value': str(spec.rgw_bucket_counters_cache).lower(),
+            })
+
+        if spec.rgw_user_counters_cache_size:
+            ret, out, err = self.mgr.check_mon_command({
+                'prefix': 'config set',
+                'who': utils.name_to_config_section(daemon_spec.name()),
+                'name': 'rgw_user_counters_cache_size',
+                'value': spec.rgw_user_counters_cache_size,
+            })
+
+        if spec.rgw_bucket_counters_cache_size:
+            ret, out, err = self.mgr.check_mon_command({
+                'prefix': 'config set',
+                'who': utils.name_to_config_section(daemon_spec.name()),
+                'name': 'rgw_bucket_counters_cache_size',
+                'value': spec.rgw_bucket_counters_cache_size,
+            })
+
         daemon_spec.keyring = keyring
         daemon_spec.final_config, daemon_spec.deps = self.generate_config(daemon_spec)
 
