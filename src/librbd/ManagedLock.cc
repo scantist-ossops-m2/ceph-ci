@@ -211,7 +211,8 @@ void ManagedLock<I>::reacquire_lock(Context *on_reacquired) {
     std::lock_guard locker{m_lock};
     ldout(m_cct, 10) << " m_state=" << m_state << dendl;
 
-    if (m_state == STATE_WAITING_FOR_REGISTER) {
+    if (m_state == STATE_WAITING_FOR_REGISTER ||
+        m_state == STATE_WAITING_FOR_LOCK) {
       // restart the acquire lock process now that watch is valid
       ldout(m_cct, 10) << "woke up waiting (re)acquire" << dendl;
       Action active_action = get_active_action();
@@ -221,8 +222,7 @@ void ManagedLock<I>::reacquire_lock(Context *on_reacquired) {
     } else if (!is_state_shutdown() &&
                (m_state == STATE_LOCKED ||
                 m_state == STATE_ACQUIRING ||
-                m_state == STATE_POST_ACQUIRING ||
-                m_state == STATE_WAITING_FOR_LOCK)) {
+                m_state == STATE_POST_ACQUIRING)) {
       // interlock the lock operation with other state ops
       ldout(m_cct, 10) << dendl;
       execute_action(ACTION_REACQUIRE_LOCK, on_reacquired);
@@ -499,6 +499,9 @@ void ManagedLock<I>::send_acquire_lock() {
   uint64_t watch_handle = m_watcher->get_watch_handle();
   if (watch_handle == 0) {
     if (m_watcher->is_blocklisted()) {
+      if (m_state == STATE_WAITING_FOR_LOCK) {
+        lderr(m_cct) << "blocklisted waiting for exclusive lock" << dendl;
+      }
       lderr(m_cct) << "watcher not registered - client blocklisted" << dendl;
       complete_active_action(STATE_UNLOCKED, -EBLOCKLISTED);
     } else {
