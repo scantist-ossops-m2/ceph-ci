@@ -5,3 +5,11 @@ tasks:
       mgr:
         debug ms: 1
         debug mgr: 20
+overrides:
+  ceph:
+    log-ignorelist:
+      - overall HEALTH_
+      - \(MON_DOWN\)
+      - \(CEPHADM_STRAY_DAEMON\)
+      - \(POOL_APP_NOT_ENABLED\)
+      - mons down, quorum
