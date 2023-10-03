@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <tuple>
 #include <functional>
+#include <queue>
 
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string.hpp>
@@ -513,7 +514,7 @@ struct op_env {
   rgw::sal::RGWBucket* bucket;
   LCObjsLister& ol;
 
-  op_env(lc_op& _op, rgw::sal::RGWRadosStore *_store, LCWorker* _worker,
+  op_env(const lc_op& _op, rgw::sal::RGWRadosStore *_store, LCWorker* _worker,
 	 rgw::sal::RGWBucket* _bucket, LCObjsLister& _ol)
     : op(_op), store(_store), worker(_worker), bucket(_bucket),
       ol(_ol) {}
@@ -1439,6 +1440,19 @@ int LCOpRule::process(rgw_bucket_dir_entry& o,
 
 }
 
+struct SortableRule {
+  string prefix;
+  lc_op op;
+  
+  SortableRule(const string& prefix, const lc_op& op) : prefix(prefix), op(op) {}
+  
+  bool operator>(const SortableRule& other) const
+  {
+    return prefix > other.prefix ||
+      (prefix == other.prefix && op.dm_expiration && !other.op.dm_expiration);
+  }
+};
+
 int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
 			     time_t stop_at, bool once)
 {
@@ -1451,6 +1465,9 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
   string bucket_tenant = result[0];
   string bucket_name = result[1];
   string bucket_marker = result[2];
+
+  ldpp_dout(this, 0) << "in bucket_lc_process bucket:" << bucket_name
+		       << dendl;
   int ret = store->get_bucket(this, nullptr, bucket_tenant, bucket_name, &bucket, null_yield);
   if (ret < 0) {
     ldpp_dout(this, 0) << "LC:get_bucket for " << bucket_name
@@ -1521,11 +1538,17 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
 		      << prefix_map.size()
 		      << dendl;
 
-  rgw_obj_key pre_marker;
-  rgw_obj_key next_marker;
-  for(auto prefix_iter = prefix_map.begin(); prefix_iter != prefix_map.end();
-      ++prefix_iter) {
+  std::priority_queue<SortableRule, std::vector<SortableRule>, std::greater<SortableRule>> sorted_rules;
+  for (const auto & rule : prefix_map) {
+    ldpp_dout(this, 1) << "og_rule_ordering: bucket_name=" << bucket_name
+      << " prefix=" << rule.first
+      << " dm_expiration=" << rule.second.dm_expiration
+			<< dendl;
+    sorted_rules.emplace(rule.first, rule.second); 
+  }
 
+  for(; !sorted_rules.empty(); sorted_rules.pop()) {
+    const SortableRule& rule = sorted_rules.top();
     if (worker_should_stop(stop_at, once)) {
       ldout(cct, 5) << __func__ << " interval budget EXPIRED worker "
 		     << worker->ix
@@ -1533,22 +1556,17 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
       return 0;
     }
 
-    auto& op = prefix_iter->second;
+    const lc_op& op = rule.op;
     if (!is_valid_op(op)) {
       continue;
     }
-    ldpp_dout(this, 20) << __func__ << "(): prefix=" << prefix_iter->first
+    ldpp_dout(this, 1) << __func__ << "(): bucket_name=" << bucket_name
+      << " prefix=" << rule.prefix
+      << " dm_expiration=" << op.dm_expiration
 			<< dendl;
-    if (prefix_iter != prefix_map.begin() && 
-        (prefix_iter->first.compare(0, prev(prefix_iter)->first.length(),
-				    prev(prefix_iter)->first) == 0)) {
-      next_marker = pre_marker;
-    } else {
-      pre_marker = next_marker;
-    }
 
     LCObjsLister ol(store, bucket.get());
-    ol.set_prefix(prefix_iter->first);
+    ol.set_prefix(rule.prefix);
 
     ret = ol.init(this);
     if (ret < 0) {
