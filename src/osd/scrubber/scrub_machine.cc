@@ -140,6 +140,16 @@ Session::~Session()
   scrbr->clear_pgscrub_state();
 }
 
+sc::result Session::react(const IntervalChanged&)
+{
+  DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
+  dout(10) << "Session::react(const IntervalChanged&)" << dendl;
+
+  /// \todo (future commit): the reservations will be local to this state
+  scrbr->discard_replica_reservations();
+  return discard_event();
+}
+
 
 // ----------------------- ReservingReplicas ---------------------------------
 
