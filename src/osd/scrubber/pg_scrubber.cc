@@ -1551,24 +1551,48 @@ void PgScrubber::map_from_replica(OpRequestRef op)
   }
 }
 
-void PgScrubber::handle_scrub_reserve_request(OpRequestRef op)
+/**
+ * route incoming replica-reservations requests/responses to the
+ * appropriate handler.
+ * As the ReplicaReservations object is to be owned by the ScrubMachine, we
+ * send all relevant messages to the ScrubMachine.
+ */
+void PgScrubber::handle_scrub_reserve_msgs(OpRequestRef op)
 {
-  dout(10) << __func__ << " " << *op->get_req() << dendl;
+  dout(10) << fmt::format("{}: {}", __func__, *op->get_req()) << dendl;
   op->mark_started();
-  auto request_ep = op->sent_epoch;
-  dout(20) << fmt::format("{}: request_ep:{} recovery:{}",
-			  __func__,
-			  request_ep,
-			  m_osds->is_recovery_active())
-	   << dendl;
-
   if (should_drop_message(op)) {
     return;
   }
+  auto m = op->get_req<MOSDScrubReserve>();
+  switch (m->type) {
+    case MOSDScrubReserve::REQUEST:
+      handle_scrub_reserve_request(op);
+      break;
+    case MOSDScrubReserve::GRANT:
+      m_fsm->process_event(ReplicaGrant{op, m->from});
+      break;
+    case MOSDScrubReserve::REJECT:
+      m_fsm->process_event(ReplicaReject{op, m->from});
+      break;
+    case MOSDScrubReserve::RELEASE:
+      handle_scrub_reserve_release(op);
+      break;
+  }
+}
 
-  /* The primary may unilaterally restart the scrub process without notifying
-   * replicas.  Unconditionally clear any existing state prior to handling
-   * the new reservation. */
+
+void PgScrubber::handle_scrub_reserve_request(OpRequestRef op)
+{
+  auto request_ep = op->sent_epoch;
+  dout(10) << fmt::format(
+		  "{}: request_ep:{} recovery:{}", __func__, request_ep,
+		  m_osds->is_recovery_active())
+	   << dendl;
+
+  // The primary may unilaterally restart the scrub process without notifying
+  // replicas. Unconditionally clear any existing state prior to handling
+  // the new reservation.
   m_fsm->process_event(FullReset{});
 
   bool granted{false};
@@ -1588,58 +1612,42 @@ void PgScrubber::handle_scrub_reserve_request(OpRequestRef op)
   dout(10) << __func__ << " reserved? " << (granted ? "yes" : "no") << dendl;
 
   Message* reply = new MOSDScrubReserve(
-    spg_t(m_pg->info.pgid.pgid, m_pg->get_primary().shard),
-    request_ep,
-    granted ? MOSDScrubReserve::GRANT : MOSDScrubReserve::REJECT,
-    m_pg_whoami);
-
+      spg_t(m_pg->info.pgid.pgid, m_pg->get_primary().shard), request_ep,
+      granted ? MOSDScrubReserve::GRANT : MOSDScrubReserve::REJECT,
+      m_pg_whoami);
   m_osds->send_message_osd_cluster(reply, op->get_req()->get_connection());
 }
 
-void PgScrubber::handle_scrub_reserve_grant(OpRequestRef op, pg_shard_t from)
-{
-  dout(10) << __func__ << " " << *op->get_req() << dendl;
-  op->mark_started();
 
-  if (should_drop_message(op)) {
-    return;
-  }
-  if (m_reservations.has_value()) {
-    m_reservations->handle_reserve_grant(op, from);
-  } else {
-    dout(20) << __func__ << ": late/unsolicited reservation grant from osd "
-	 << from << " (" << op << ")" << dendl;
-  }
+/// temporary
+void PgScrubber::grant_from_replica(OpRequestRef op, pg_shard_t from)
+{
+  dout(10) << fmt::format("{}: {}", __func__, *op->get_req()) << dendl;
+  ceph_assert(m_reservations.has_value()); // the FSM should know
+  m_reservations->handle_reserve_grant(op, from);
 }
 
-void PgScrubber::handle_scrub_reserve_reject(OpRequestRef op, pg_shard_t from)
-{
-  dout(10) << __func__ << " " << *op->get_req() << dendl;
-  op->mark_started();
 
-  if (should_drop_message(op)) {
-    return;
-  }
-  if (m_reservations.has_value()) {
-    // there is an active reservation process. No action is required otherwise.
-    m_reservations->handle_reserve_reject(op, from);
-  }
+/// temporary
+void PgScrubber::reject_from_replica(OpRequestRef op, pg_shard_t from)
+{
+  dout(10) << fmt::format("{}: {}", __func__, *op->get_req()) << dendl;
+  ceph_assert(m_reservations.has_value()); // the FSM should know
+  m_reservations->handle_reserve_reject(op, from);
 }
+
 
 void PgScrubber::handle_scrub_reserve_release(OpRequestRef op)
 {
   dout(10) << __func__ << " " << *op->get_req() << dendl;
-  op->mark_started();
   if (should_drop_message(op)) {
     // we might have turned into a Primary in the meantime. The interval
     // change should have been noticed already, and caused us to reset.
     return;
   }
 
-  /*
-   * this specific scrub session has terminated. All incoming events carrying
-   *  the old tag will be discarded.
-   */
+  // this specific scrub session has terminated. All incoming events carrying
+  // the old tag will be discarded.
   m_fsm->process_event(FullReset{});
 }
 
@@ -1656,34 +1664,6 @@ void PgScrubber::clear_scrub_reservations()
   dout(10) << __func__ << dendl;
   m_reservations.reset();	  // the remote reservations
   m_local_osd_resource.reset();	  // the local reservation
-}
-
-void PgScrubber::message_all_replicas(int32_t opcode, std::string_view op_text)
-{
-  ceph_assert(m_pg->recovery_state.get_backfill_targets().empty());
-
-  std::vector<pair<int, Message*>> messages;
-  messages.reserve(m_pg->get_actingset().size());
-
-  epoch_t epch = get_osdmap_epoch();
-
-  for (auto& p : m_pg->get_actingset()) {
-
-    if (p == m_pg_whoami)
-      continue;
-
-    dout(10) << "scrub requesting " << op_text << " from osd." << p
-	     << " Epoch: " << epch << dendl;
-    Message* m = new MOSDScrubReserve(spg_t(m_pg->info.pgid.pgid, p.shard),
-				      epch,
-				      opcode,
-				      m_pg_whoami);
-    messages.push_back(std::make_pair(p.osd, m));
-  }
-
-  if (!messages.empty()) {
-    m_osds->send_message_osd_cluster(messages, epch);
-  }
 }
 
 void PgScrubber::unreserve_replicas()
