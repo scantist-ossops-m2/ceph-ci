@@ -140,17 +140,111 @@ class HostPlacementSpec(NamedTuple):
         assert_valid_host(self.hostname)
 
 
+HostPatternType = Union[str, None, Dict[str, Union[str, bool, None]], "HostPattern"]
+
+
+class HostPattern():
+    def __init__(self, pattern: Optional[str] = None, is_regex: bool = False) -> None:
+        self.pattern = pattern
+        self.is_regex = is_regex
+
+    def filter_hosts(self, hosts: List[str]) -> List[str]:
+        if not self.pattern:
+            return []
+        if not self.is_regex:
+            return fnmatch.filter(hosts, self.pattern)
+        else:
+            return [h for h in hosts if re.match(self.pattern, h)]
+
+    @classmethod
+    def to_host_pattern(cls, arg: HostPatternType) -> "HostPattern":
+        if arg is None:
+            return cls()
+        elif isinstance(arg, str):
+            return cls(arg)
+        elif isinstance(arg, cls):
+            return arg
+        elif isinstance(arg, dict):
+            if 'pattern' not in arg:
+                raise SpecValidationError(f"Got dict for host pattern missing pattern field: {arg}")
+            pattern = arg['pattern']
+            if not pattern:
+                raise SpecValidationError(f"Got dict for host pattern with empty pattern: {arg}")
+            assert isinstance(pattern, str)
+            if 'is_regex' in arg:
+                is_regex = arg['is_regex']
+                if not is_regex and not isinstance(is_regex, bool):
+                    raise SpecValidationError(("Got dict for host pattern with is_regex "
+                                               f"not of type bool: {arg}"))
+                # At this point is_regex must be None or bool. Both None and false bools will
+                # pass the "if not is_regex" check
+                if not is_regex:
+                    return cls(pattern, is_regex=False)
+                # so if we get here, we must have a bool that is True
+                return cls(pattern, is_regex=True)
+            return cls(pattern)
+        raise SpecValidationError(f"Cannot convert {type(arg)} object to HostPattern")
+
+    def __eq__(self, other: Any) -> bool:
+        try:
+            other_hp = self.to_host_pattern(other)
+        except SpecValidationError:
+            return False
+        else:
+            return self.pattern == other_hp.pattern and self.is_regex == other_hp.is_regex
+
+    def pretty_str(self) -> str:
+        # Placement specs must be able to be converted between the Python object
+        # representation and a pretty str both ways. So we need a corresponding
+        # function for HostPattern to convert it to a pretty str that we can
+        # convert back later.
+        res = self.pattern if self.pattern else ''
+        if self.is_regex:
+            res = 'regex:' + res
+        return res
+
+    @classmethod
+    def from_pretty_str(cls, val: str) -> "HostPattern":
+        if 'regex:' in val:
+            return cls(val[6:], is_regex=True)
+        else:
+            return cls(val)
+
+    # def __str__(self) -> str:
+    #     return f'HostPattern(pattern={self.pattern}, is_regex={self.is_regex})'
+
+    def __repr__(self) -> str:
+        return f'HostPattern(pattern=\'{self.pattern}\', is_regex={self.is_regex})'
+
+    def to_json(self) -> Union[str, Dict[str, Any], None]:
+        if self.is_regex:
+            return {
+                'pattern': self.pattern,
+                'is_regex': self.is_regex
+            }
+        return self.pattern
+
+    @classmethod
+    def from_json(self, val: Dict[str, Any]) -> "HostPattern":
+        return self.to_host_pattern(val)
+
+    def __bool__(self) -> bool:
+        if self.pattern:
+            return True
+        return False
+
+
 class PlacementSpec(object):
     """
     For APIs that need to specify a host subset
     """
 
     def __init__(self,
-                 label=None,  # type: Optional[str]
-                 hosts=None,  # type: Union[List[str],List[HostPlacementSpec], None]
-                 count=None,  # type: Optional[int]
-                 count_per_host=None,  # type: Optional[int]
-                 host_pattern=None,  # type: Optional[str]
+                 label: Optional[str] = None,
+                 hosts: Union[List[str], List[HostPlacementSpec], None] = None,
+                 count: Optional[int] = None,
+                 count_per_host: Optional[int] = None,
+                 host_pattern: HostPatternType = None,
                  ):
         # type: (...) -> None
         self.label = label
@@ -163,7 +257,7 @@ class PlacementSpec(object):
         self.count_per_host = count_per_host   # type: Optional[int]
 
         #: fnmatch patterns to select hosts. Can also be a single host.
-        self.host_pattern = host_pattern  # type: Optional[str]
+        self.host_pattern: HostPattern = HostPattern.to_host_pattern(host_pattern)
 
         self.validate()
 
@@ -206,7 +300,7 @@ class PlacementSpec(object):
             return [hs.hostname for hs in hostspecs if self.label in hs.labels]
         all_hosts = [hs.hostname for hs in hostspecs]
         if self.host_pattern:
-            return fnmatch.filter(all_hosts, self.host_pattern)
+            return self.host_pattern.filter_hosts(all_hosts)
         return all_hosts
 
     def get_target_count(self, hostspecs: Iterable[HostSpec]) -> int:
@@ -230,7 +324,7 @@ class PlacementSpec(object):
         if self.label:
             kv.append('label:%s' % self.label)
         if self.host_pattern:
-            kv.append(self.host_pattern)
+            kv.append(self.host_pattern.pretty_str())
         return ';'.join(kv)
 
     def __repr__(self) -> str:
@@ -271,7 +365,7 @@ class PlacementSpec(object):
         if self.count_per_host:
             r['count_per_host'] = self.count_per_host
         if self.host_pattern:
-            r['host_pattern'] = self.host_pattern
+            r['host_pattern'] = self.host_pattern.to_json()
         return r
 
     def validate(self) -> None:
@@ -315,8 +409,9 @@ class PlacementSpec(object):
                 "count-per-host cannot be combined explicit placement with names or networks"
             )
         if self.host_pattern:
-            if not isinstance(self.host_pattern, str):
-                raise SpecValidationError('host_pattern must be of type string')
+            # if we got an invalid type for the host_pattern, it would have
+            # triggered a SpecValidationError when attemptying to convert it
+            # to a HostPattern type, so no type checking is needed here.
             if self.hosts:
                 raise SpecValidationError('cannot combine host patterns and hosts')
 
@@ -354,10 +449,15 @@ tPlacementSpec(hostname='host2', network='', name='')])
         >>> PlacementSpec.from_string('3 label:mon')
         PlacementSpec(count=3, label='mon')
 
-        fnmatch is also supported:
+        You can specify a regex to match with `regex:<regex>`
+
+        >>> PlacementSpec.from_string('regex:Foo[0-9]|Bar[0-9]')
+        PlacementSpec(host_pattern=HostPattern(pattern='Foo[0-9]|Bar[0-9]', is_regex=True))
+
+        fnmatch is the default for a single string if "regex:" is not provided:
 
         >>> PlacementSpec.from_string('data[1-3]')
-        PlacementSpec(host_pattern='data[1-3]')
+        PlacementSpec(host_pattern=HostPattern(pattern='data[1-3]', is_regex=False))
 
         >>> PlacementSpec.from_string(None)
         PlacementSpec()
@@ -407,7 +507,8 @@ tPlacementSpec(hostname='host2', network='', name='')])
 
         advanced_hostspecs = [h for h in strings if
                               (':' in h or '=' in h or not any(c in '[]?*:=' for c in h)) and
-                              'label:' not in h]
+                              'label:' not in h and
+                              'regex:' not in h]
         for a_h in advanced_hostspecs:
             strings.remove(a_h)
 
@@ -419,15 +520,20 @@ tPlacementSpec(hostname='host2', network='', name='')])
         label = labels[0][6:] if labels else None
 
         host_patterns = strings
+        host_pattern: Optional[HostPattern] = None
         if len(host_patterns) > 1:
             raise SpecValidationError(
                 'more than one host pattern provided: {}'.format(host_patterns))
+        if host_patterns:
+            # host_patterns is a list not > 1, and not empty, so we should
+            # be guaranteed just a single string here
+            host_pattern = HostPattern.from_pretty_str(host_patterns[0])
 
         ps = PlacementSpec(count=count,
                            count_per_host=count_per_host,
                            hosts=advanced_hostspecs,
                            label=label,
-                           host_pattern=host_patterns[0] if host_patterns else None)
+                           host_pattern=host_pattern)
         return ps
 
 
