@@ -469,7 +469,7 @@ unsigned int PgScrubber::scrub_requeue_priority(
 
 /* on_new_interval
  *
- * Responsible for restting any scrub state and releasing any resources.
+ * Responsible for resetting any scrub state and releasing any resources.
  * Any inflight events will be ignored via check_interval/should_drop_message
  * or canceled.
  */
@@ -481,6 +481,7 @@ void PgScrubber::on_new_interval()
 		  is_scrub_active(), is_queued_or_active())
 	   << dendl;
 
+  m_fsm->process_event(IntervalChanged{});
   m_fsm->process_event(FullReset{});
   // we may be the primary
   if (is_queued_or_active()) {

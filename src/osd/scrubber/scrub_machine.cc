@@ -131,7 +131,18 @@ Session::Session(my_context ctx)
 Session::~Session()
 {
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
+  scrbr->unreserve_replicas();
   scrbr->clear_queued_or_active();
+}
+
+sc::result Session::react(const IntervalChanged&)
+{
+  DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
+  dout(10) << "Session::react(const IntervalChanged&)" << dendl;
+
+  /// \todo (future commit): the reservations will be local to this state
+  scrbr->discard_replica_reservations();
+  return discard_event();
 }
 
 
@@ -215,7 +226,6 @@ ActiveScrubbing::~ActiveScrubbing()
 {
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(15) << __func__ << dendl;
-  scrbr->unreserve_replicas();
 }
 
 /*

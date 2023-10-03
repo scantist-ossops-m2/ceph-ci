@@ -72,9 +72,9 @@ struct ScrubMachineListener {
   /**
    * cancel_callback
    *
-   * Attempts to cancel the callback to whcih the passed token is associated.
+   * Attempts to cancel the callback to which the passed token is associated.
    * cancel_callback is best effort, the callback may still fire.
-   * cancel_callback guarrantees that exactly one of the two things will happen:
+   * cancel_callback guarantees that exactly one of the two things will happen:
    * - the callback is destroyed and will not be invoked
    * - the callback will be invoked
    */
@@ -178,6 +178,9 @@ struct ScrubMachineListener {
   virtual void reserve_replicas() = 0;
 
   virtual void unreserve_replicas() = 0;
+
+  /// discard replica reservations without sending a message (on interval)
+  virtual void discard_replica_reservations() = 0;
 
   virtual void on_replica_reservation_timeout() = 0;
 

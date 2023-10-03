@@ -127,6 +127,11 @@ MEV(SchedReplica)
 /// that is in-flight to the local ObjectStore
 MEV(ReplicaPushesUpd)
 
+/// a new interval has dawned.
+/// For a Primary: Discards replica reservations, so that the FullReset that would
+/// follow it would not attempt to release them.
+MEV(IntervalChanged)
+
 /// guarantee that the FSM is in the quiescent state (i.e. NotActive)
 MEV(FullReset)
 
@@ -332,18 +337,22 @@ struct NotActive : sc::state<NotActive, ScrubMachine>, NamedSimply {
  *  'Session' is the owner of all the resources that are allocated for a
  *  scrub session.
  *
- *  Exit from this state is either following an interval change, or with
+ *  Exit from this state is either following an interval change (with two
+ *  events expected - interval-changed & full-reset, or with
  *  'FullReset' (that would cover all other completion/termination paths).
  *  Note that if terminating the session following an interval change - no
  *  reservations are released. This is because we know that the replicas are
  *  also resetting their reservations.
  */
-struct Session : sc::state<Session, ScrubMachine, ReservingReplicas>, NamedSimply {
+struct Session : sc::state<Session, ScrubMachine, ReservingReplicas>,
+                 NamedSimply {
   explicit Session(my_context ctx);
   ~Session();
 
-  using reactions = mpl::list<sc::transition<FullReset, NotActive>>;
-  /// \todo handle interval change
+  using reactions = mpl::list<sc::transition<FullReset, NotActive>,
+                              sc::custom_reaction<IntervalChanged>>;
+
+  sc::result react(const IntervalChanged&);
 };
 
 struct ReservingReplicas : sc::state<ReservingReplicas, Session>,
