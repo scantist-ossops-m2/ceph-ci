@@ -85,8 +85,6 @@ enum {
 
 namespace rgw::op_counters {
 
-extern PerfCounters *global_op_counters;
-
 struct CountersContainer {
   std::shared_ptr<PerfCounters> user_counters;
   std::shared_ptr<PerfCounters> bucket_counters;

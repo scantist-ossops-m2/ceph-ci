@@ -1766,7 +1766,8 @@ static int iterate_user_manifest_parts(const DoutPrefixProvider *dpp,
 	found_end = true;
       }
 
-      rgw::op_counters::global_op_counters->tinc(l_rgw_op_get_lat, 
+      rgw::op_counters::CountersContainer counters;
+      rgw::op_counters::tinc(counters, l_rgw_op_get_lat, 
                             (ceph_clock_now() - start_time));
 
       if (found_start && !handled_end) {
@@ -1862,8 +1863,9 @@ static int iterate_slo_parts(const DoutPrefixProvider *dpp,
       found_end = true;
     }
 
-    rgw::op_counters::global_op_counters->tinc(l_rgw_op_get_lat, 
-                      (ceph_clock_now() - start_time));
+    rgw::op_counters::CountersContainer counters;
+    rgw::op_counters::tinc(counters, l_rgw_op_get_lat, 
+                          (ceph_clock_now() - start_time));
 
     if (found_start) {
       if (cb) {
