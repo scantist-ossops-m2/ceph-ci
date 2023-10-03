@@ -358,14 +358,20 @@ class PgScrubber : public ScrubPgIF,
 			      const hobject_t& end) final;
 
   /**
+   * route incoming replica-reservations requests/responses to the
+   * appropriate handler.
+   * As the ReplicaReservations object is to be owned by the ScrubMachine, we
+   * send all relevant messages to the ScrubMachine.
+   */
+  void handle_scrub_reserve_msgs(OpRequestRef op) final;
+
+  /**
    *  we are a replica being asked by the Primary to reserve OSD resources for
    *  scrubbing
    */
-  void handle_scrub_reserve_request(OpRequestRef op) final;
+  void handle_scrub_reserve_request(OpRequestRef op) ;
 
-  void handle_scrub_reserve_grant(OpRequestRef op, pg_shard_t from) final;
-  void handle_scrub_reserve_reject(OpRequestRef op, pg_shard_t from) final;
-  void handle_scrub_reserve_release(OpRequestRef op) final;
+  void handle_scrub_reserve_release(OpRequestRef op);
   void discard_replica_reservations() final;
   void clear_scrub_reservations() final;  // PG::clear... fwds to here
   void unreserve_replicas() final;
@@ -600,6 +606,10 @@ class PgScrubber : public ScrubPgIF,
   }
 
   void log_cluster_warning(const std::string& warning) const final;
+
+  // temporary interface to handle forwarded reservation messages:
+  void grant_from_replica(OpRequestRef op, pg_shard_t from) final;
+  void reject_from_replica(OpRequestRef op, pg_shard_t from) final;
 
  protected:
   bool state_test(uint64_t m) const { return m_pg->state_test(m); }
@@ -890,14 +900,6 @@ class PgScrubber : public ScrubPgIF,
   bool select_range();
 
   std::list<Context*> m_callbacks;
-
-  /**
-   * send a replica (un)reservation request to the acting set
-   *
-   * @param opcode - one of MOSDScrubReserve::REQUEST
-   *                  or MOSDScrubReserve::RELEASE
-   */
-  void message_all_replicas(int32_t opcode, std::string_view op_text);
 
   hobject_t m_max_end;	///< Largest end that may have been sent to replicas
   ScrubMapBuilder m_primary_scrubmap_pos;
