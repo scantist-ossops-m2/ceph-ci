@@ -1838,8 +1838,8 @@ namespace rgw {
     ceph_assert(! dlo_manifest);
     ceph_assert(! slo_info);
 
-    auto counters = rgw::op_counters::get(state);
-    rgw::op_counters::inc(counters, l_rgw_op_put, 1);
+    //auto counters = rgw::op_counters::get(state);
+    //rgw::op_counters::inc(counters, l_rgw_op_put, 1);
     op_ret = -EINVAL;
 
     if (state->object->empty()) {
@@ -1945,8 +1945,8 @@ namespace rgw {
     real_time appx_t = real_clock::now();
 
     state->obj_size = bytes_written;
-    auto counters = rgw::op_counters::get(state);
-    rgw::op_counters::inc(counters, l_rgw_op_put_b, state->obj_size);
+    //auto counters = rgw::op_counters::get(state);
+    //rgw::op_counters::inc(counters, l_rgw_op_put_b, state->obj_size);
 
     // flush data in filters
     op_ret = filter->process({}, state->obj_size);
@@ -2029,8 +2029,8 @@ namespace rgw {
     }
 
   done:
-    counters = rgw::op_counters::get(state);
-    rgw::op_counters::tinc(counters, l_rgw_op_put_lat, state->time_elapsed());
+    //counters = rgw::op_counters::get(state);
+    //rgw::op_counters::tinc(counters, l_rgw_op_put_lat, state->time_elapsed());
     return op_ret;
   } /* exec_finish */
 
