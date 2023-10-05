@@ -25,7 +25,6 @@ namespace Scrub {
  * reservation request to the next replica.
  * A rejection triggers a "couldn't acquire the replicas' scrub resources"
  * event. All granted reservations are released.
- * released.
  *
  * Reserved replicas should be released at the end of the scrub session. The
  * one exception is if the scrub terminates upon an interval change. In that
@@ -50,20 +49,23 @@ class ReplicaReservations {
   using tpoint_t = std::chrono::time_point<clock>;
   using replica_subset_t = std::span<const pg_shard_t>;
 
+  ScrubMachineListener& m_scrubber;
   PG* m_pg;
+  CephContext* m_cct;
+
+  const pg_shard_t m_whoami;
+  const spg_t m_pgid;
+
+  /// used to send both internal and inter-OSD messages
+  OSDService* m_osds;
+
+  const ConfigProxy& m_conf;
 
   /// the acting set (not including myself), sorted by OSD id
   std::vector<pg_shard_t> m_sorted_secondaries;
 
   /// the next replica to which we will send a reservation request
   std::vector<pg_shard_t>::const_iterator m_next_to_request;
-
-  /// used to send both internal and inter-OSD messages
-  OSDService* m_osds;
-
-  //const pg_info_t& m_pg_info;
-  Scrub::ScrubJobRef m_scrub_job;	///< a ref to this PG's scrub job
-  const ConfigProxy& m_conf;
 
   /// the number of secondaries
   size_t m_total_needeed{0};
@@ -76,11 +78,7 @@ class ReplicaReservations {
   std::string m_log_msg_prefix;
 
  public:
-  ReplicaReservations(
-      PG* pg,
-      pg_shard_t whoami,
-      Scrub::ScrubJobRef scrubjob,
-      const ConfigProxy& conf);
+  ReplicaReservations(ScrubMachineListener& scrubber);
 
   ~ReplicaReservations();
 

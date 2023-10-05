@@ -266,10 +266,6 @@ class PgScrubber : public ScrubPgIF,
   void handle_scrub_reserve_request(OpRequestRef op) ;
 
   void handle_scrub_reserve_release(OpRequestRef op);
-  void discard_replica_reservations() final;
-  void clear_scrub_reservations() final;  // PG::clear... fwds to here
-  void unreserve_replicas() final;
-  void on_replica_reservation_timeout() final;
 
 
   // managing scrub op registration
@@ -373,10 +369,14 @@ class PgScrubber : public ScrubPgIF,
   // the I/F used by the state-machine (i.e. the implementation of
   // ScrubMachineListener)
 
-  CephContext* get_cct() const final { return m_pg->cct; }
   LogChannelRef &get_clog() const final;
   int get_whoami() const final;
   spg_t get_spgid() const final { return m_pg->get_pgid(); }
+  PG* get_pg() const final { return m_pg; }
+
+  // temporary interface (to be discarded in a follow-up PR)
+  /// set the 'resources_failure' flag in the scrub-job object
+  void flag_reservations_failure();
 
   scrubber_callback_cancel_token_t schedule_callback_after(
     ceph::timespan duration, scrubber_callback_t &&cb);
@@ -465,8 +465,6 @@ class PgScrubber : public ScrubPgIF,
 
   int build_replica_map_chunk() final;
 
-  void reserve_replicas() final;
-
   bool set_reserving_now() final;
   void clear_reserving_now() final;
 
@@ -500,10 +498,6 @@ class PgScrubber : public ScrubPgIF,
   }
 
   void log_cluster_warning(const std::string& warning) const final;
-
-  // temporary interface to handle forwarded reservation messages:
-  void grant_from_replica(OpRequestRef op, pg_shard_t from) final;
-  void reject_from_replica(OpRequestRef op, pg_shard_t from) final;
 
  protected:
   bool state_test(uint64_t m) const { return m_pg->state_test(m); }
@@ -633,9 +627,8 @@ class PgScrubber : public ScrubPgIF,
 
   epoch_t m_last_aborted{};  // last time we've noticed a request to abort
 
-  // 'optional', as 'ReplicaReservations' & 'LocalReservation' are
+  // 'optional', as 'LocalReservation' is
   // 'RAII-designed' to guarantee un-reserving when deleted.
-  std::optional<Scrub::ReplicaReservations> m_reservations;
   std::optional<Scrub::LocalReservation> m_local_osd_resource;
 
   void cleanup_on_finish();  // scrub_clear_state() as called for a Primary when

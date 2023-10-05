@@ -145,8 +145,7 @@ sc::result Session::react(const IntervalChanged&)
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(10) << "Session::react(const IntervalChanged&)" << dendl;
 
-  /// \todo (future commit): the reservations will be local to this state
-  scrbr->discard_replica_reservations();
+  m_reservations->discard_all();
   return discard_event();
 }
 
@@ -160,15 +159,16 @@ ReservingReplicas::ReservingReplicas(my_context ctx)
   dout(10) << "-- state -->> ReservingReplicas" << dendl;
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
 
-  scrbr->reserve_replicas();
+  // initiate the reservation process
+  context<Session>().m_reservations.emplace(*scrbr);
 
-  auto timeout = scrbr->get_cct()->_conf.get_val<
-    std::chrono::milliseconds>("osd_scrub_reservation_timeout");
+  auto timeout = scrbr->get_pg_cct()->_conf.get_val<milliseconds>(
+      "osd_scrub_reservation_timeout");
   if (timeout.count() > 0) {
     // Start a timer to handle case where the replicas take a long time to
     // ack the reservation.  See ReservationTimeout handler below.
-    m_timeout_token = machine.schedule_timer_event_after<ReservationTimeout>(
-      timeout);
+    m_timeout_token =
+	machine.schedule_timer_event_after<ReservationTimeout>(timeout);
   }
 }
 
@@ -187,7 +187,7 @@ sc::result ReservingReplicas::react(const ReplicaGrant& ev)
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(10) << "ReservingReplicas::react(const ReplicaGrant&)" << dendl;
 
-  scrbr->grant_from_replica(ev.m_op, ev.m_from);
+  context<Session>().m_reservations->handle_reserve_grant(ev.m_op, ev.m_from);
   return discard_event();
 }
 
@@ -198,7 +198,7 @@ sc::result ReservingReplicas::react(const ReplicaReject& ev)
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(10) << "ReservingReplicas::react(const ReplicaReject&)" << dendl;
 
-  scrbr->reject_from_replica(ev.m_op, ev.m_from);
+  context<Session>().m_reservations->handle_reserve_reject(ev.m_op, ev.m_from);
   return discard_event();
 }
 
@@ -212,7 +212,7 @@ sc::result ReservingReplicas::react(const ReservationTimeout&)
       scrbr->get_spgid(), entered_at);
   dout(5) << msg << dendl;
   scrbr->get_clog()->warn() << "osd." << scrbr->get_whoami() << " " << msg;
-  scrbr->on_replica_reservation_timeout();
+  context<Session>().m_reservations->handle_no_reply_timeout();
   return discard_event();
 }
 

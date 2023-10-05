@@ -383,25 +383,6 @@ struct ScrubPgIF {
   // --------------- reservations -----------------------------------
 
   /**
-   *  message all replicas with a request to "unreserve" scrub
-   */
-  virtual void unreserve_replicas() = 0;
-
-  /**
-   *  "forget" all replica reservations. No messages are sent to the
-   *  previously-reserved.
-   *
-   *  Used upon interval change. The replicas' state is guaranteed to
-   *  be reset separately by the interval-change event.
-   */
-  virtual void discard_replica_reservations() = 0;
-
-  /**
-   * clear both local and OSD-managed resource reservation flags
-   */
-  virtual void clear_scrub_reservations() = 0;
-
-  /**
    * Reserve local scrub resources (managed by the OSD)
    *
    * Fails if OSD's local-scrubs budget was exhausted

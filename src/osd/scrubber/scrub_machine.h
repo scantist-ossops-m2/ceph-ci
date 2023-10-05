@@ -24,6 +24,7 @@
 #include "osd/scrubber_common.h"
 
 #include "scrub_machine_lstnr.h"
+#include "scrub_reservations.h"
 
 /// a wrapper that sets the FSM state description used by the
 /// PgScrubber
@@ -392,6 +393,10 @@ struct Session : sc::state<Session, ScrubMachine, ReservingReplicas>,
                               sc::custom_reaction<IntervalChanged>>;
 
   sc::result react(const IntervalChanged&);
+
+  /// managing the scrub session's reservations (optiona, as
+  /// it's an RAII wrapper around the state of 'holding reservations')
+  std::optional<ReplicaReservations> m_reservations{std::nullopt};
 };
 
 struct ReservingReplicas : sc::state<ReservingReplicas, Session>,
