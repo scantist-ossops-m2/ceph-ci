@@ -2696,3 +2696,14 @@ Traceback (most recent call last):
             assert osd.cpu_percentage == '6.54%'
             assert osd.memory_usage == 73410805
             assert osd.created == str_to_datetime('2023-09-22T22:41:03.615080Z')
+
+    @mock.patch("cephadm.CephadmOrchestrator.remove_osds")
+    @mock.patch("cephadm.CephadmOrchestrator.add_host_label", lambda *a, **kw: None)
+    @mock.patch("cephadm.inventory.HostCache.get_daemons_by_host", lambda *a, **kw: [])
+    def test_host_drain_zap(self, _rm_osds, cephadm_module):
+        # pass force=true in these tests to bypass _admin label check
+        cephadm_module.drain_host('host1', force=True, zap_osd_devices=False)
+        assert _rm_osds.called_with([], zap=False)
+
+        cephadm_module.drain_host('host1', force=True, zap_osd_devices=True)
+        assert _rm_osds.called_with([], zap=True)
