@@ -132,6 +132,36 @@ class TestSubvolume(CephFSTestCase):
             self.mount_a.run_shell(['ln', 'group/subvol2/file1',
                                     'group/subvol3/file1'])
 
+    def test_subvolume_setfattr_empty_value(self):
+        """
+        To verify that an empty value fails on subvolume xattr
+        """
+
+        # create subvol
+        self.mount_a.run_shell(['mkdir', 'group/subvol4'])
+
+        try:
+            self.mount_a.run_shell(['setfattr', '-n', 'ceph.dir.subvolume',
+                                    'group/subvol4'])
+        except CommandFailedError:
+            pass
+        else:
+            self.fail("run_shell should raise CommandFailedError")
+
+    def test_subvolume_rmattr(self):
+        """
+        To verify that rmattr can be used to reset subvolume xattr
+        """
+
+        # create subvol
+        self.mount_a.run_shell(['mkdir', 'group/subvol4'])
+        self.mount_a.run_shell(['setfattr', '-n', 'ceph.dir.subvolume',
+                                '-v', '1', 'group/subvol4'])
+
+        # clear subvolume flag
+        self.mount_a.run_shell(['setfattr', '-x', 'ceph.dir.subvolume',
+                                'group/subvol4'])
+
     def test_subvolume_create_subvolume_inside_subvolume(self):
         """
         To verify that subvolume can't be created inside a subvolume
