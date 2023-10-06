@@ -182,9 +182,7 @@ from cephadmlib.daemons import (
 
 FuncT = TypeVar('FuncT', bound=Callable)
 
-
 logger = logging.getLogger()
-
 
 ##################################
 
