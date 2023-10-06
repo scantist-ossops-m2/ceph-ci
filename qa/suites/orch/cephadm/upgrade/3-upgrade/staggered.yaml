@@ -130,3 +130,13 @@ tasks:
       - ceph health detail
       # run upgrade one more time with no filter parameters to make sure anything left gets upgraded
       - ceph orch upgrade start --image quay.ceph.io/ceph-ci/ceph:$sha1
+overrides:
+  ceph:
+    log-ignorelist:
+      - overall HEALTH_
+      - \(MON_DOWN\)
+      - mons down, quorum
+      - is down (out of quorum)
+      - \(CEPHADM_FAILED_DAEMON\)
+      - \(PG_AVAILABILITY\)
+      - failed to encode map
