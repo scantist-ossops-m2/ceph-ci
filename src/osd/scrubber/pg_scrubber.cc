@@ -2419,7 +2419,7 @@ void ReplicaReservations::send_request_to_replica(
   m_request_sent_at = clock::now();
   dout(10) << fmt::format(
 		  "{}: reserving {} ({} of {})", __func__, *m_next_to_request,
-		  m_requests_sent, m_total_needeed)
+		  m_requests_sent, m_sorted_secondaries.size())
 	   << dendl;
 }
 
@@ -2518,7 +2518,8 @@ void ReplicaReservations::handle_reserve_grant(OpRequestRef op, pg_shard_t from)
   // \todo: was this response late?
   dout(10) << fmt::format(
 		  "{}: granted by {} ({} of {}) in {}ms", __func__,
-		  *m_next_to_request, m_requests_sent, m_total_needeed,
+		  *m_next_to_request, m_requests_sent,
+		  m_sorted_secondaries.size(),
 		  duration_cast<milliseconds>(elapsed).count())
 	   << dendl;
 

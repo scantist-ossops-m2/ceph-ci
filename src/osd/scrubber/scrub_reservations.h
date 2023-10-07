@@ -67,9 +67,6 @@ class ReplicaReservations {
   /// the next replica to which we will send a reservation request
   std::vector<pg_shard_t>::const_iterator m_next_to_request;
 
-  /// the number of secondaries
-  size_t m_total_needeed{0};
-
   /// always <= m_total_needed
   size_t m_requests_sent{0};
 
