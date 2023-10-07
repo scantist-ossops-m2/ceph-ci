@@ -2437,22 +2437,16 @@ ReplicaReservations::ReplicaReservations(ScrubMachineListener& scrbr)
       "osd.{} ep: {} scrubber::ReplicaReservations pg[{}]: ", m_whoami.osd,
       epoch, m_pgid);
 
-  // sort the acting set, so that we send the requests in a consistent order
-  // (reducing the chance of having two PGs that share some of their acting-set
-  // OSDs, consistently interfering with each other's reservation process)
+  // the acting set is sorted by pg_shard_t. The reservations are to be issued
+  // in this order, so that the OSDs will receive the requests in a consistent
+  // order. This is done to reduce the chance of having two PGs that share some
+  // of their acting-set OSDs, consistently interfering with each other's
+  // reservation process.
   auto acting = m_pg->get_actingset();
   m_sorted_secondaries.reserve(acting.size());
   std::copy_if(
       acting.cbegin(), acting.cend(), std::back_inserter(m_sorted_secondaries),
       [whoami=m_whoami](const pg_shard_t& shard) { return shard != whoami; });
-
-  // sorted by OSD number
-  std::sort(
-      m_sorted_secondaries.begin(), m_sorted_secondaries.end(),
-      [](const pg_shard_t& a, const pg_shard_t& b) { return a.osd < b.osd; });
-  m_total_needeed = m_sorted_secondaries.size();
-  dout(10) << fmt::format("{}: acting: {}", __func__, m_sorted_secondaries)
-	   << dendl;
 
   m_next_to_request = m_sorted_secondaries.cbegin();
   if (m_next_to_request == m_sorted_secondaries.cend()) {
@@ -2487,7 +2481,7 @@ void ReplicaReservations::release_all(replica_subset_t replicas)
   }
 }
 
-void ReplicaReservations::discard_all()
+void ReplicaReservations::discard_remote_reservations()
 {
   dout(10) << fmt::format("{}: reset w/o issuing messages", __func__) << dendl;
   m_requests_sent = 0;

@@ -140,7 +140,7 @@ sc::result Session::react(const IntervalChanged&)
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(10) << "Session::react(const IntervalChanged&)" << dendl;
 
-  m_reservations->discard_all();
+  m_reservations->discard_remote_reservations();
   return discard_event();
 }
 

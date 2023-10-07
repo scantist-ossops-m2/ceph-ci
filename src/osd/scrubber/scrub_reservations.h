@@ -94,13 +94,16 @@ class ReplicaReservations {
   void handle_no_reply_timeout();
 
   /**
-   *  quietly discard all knowledge about existing reservations. No messages
-   *  are sent to peers.
-   *  To be used upon interval change, as we know that the running scrub is no
-   *  longer relevant, and that the replicas had reset the reservations on
-   *  their side.
+   * Notifies implementation that it is no longer responsible for releasing
+   * tracked remote reservations.
+   *
+   * The intended usage is upon interval change.  In general, replicas are
+   * responsible for releasing their own resources upon interval change without
+   * coordination from the primary.
+   *
+   * Sends no messages.
    */
-  void discard_all();
+  void discard_remote_reservations();
 
   // note: 'public', as accessed via the 'standard' dout_prefix() macro
   std::ostream& gen_prefix(std::ostream& out) const;
