@@ -62,8 +62,8 @@ class ReplicaReservations {
   /// the next replica to which we will send a reservation request
   std::vector<pg_shard_t>::const_iterator m_next_to_request;
 
-  /// for detecting slow peers
-  std::chrono::time_point<clock> m_request_sent_at;
+  /// for logs, and for detecting slow peers
+  std::chrono::time_point<clock> m_last_request_sent_at;
 
   std::string m_log_msg_prefix;
 

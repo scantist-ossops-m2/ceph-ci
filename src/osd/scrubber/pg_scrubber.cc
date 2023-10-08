@@ -2480,7 +2480,7 @@ void ReplicaReservations::handle_reserve_grant(OpRequestRef op, pg_shard_t from)
     return;
   }
 
-  auto elapsed = clock::now() - m_request_sent_at;
+  auto elapsed = clock::now() - m_last_request_sent_at;
   // \todo: was this response late?
   dout(10) << fmt::format(
 		  "{}: granted by {} ({} of {}) in {}ms", __func__,
@@ -2508,7 +2508,7 @@ void ReplicaReservations::send_next_reservation_or_complete()
 	spg_t{m_pgid.pgid, peer.shard}, epoch, MOSDScrubReserve::REQUEST,
 	m_whoami);
     m_pg->send_cluster_message(peer.osd, m, epoch, false);
-    m_request_sent_at = clock::now();
+    m_last_request_sent_at = clock::now();
     dout(10) << fmt::format(
 		    "{}: reserving {} ({} of {})", __func__, *m_next_to_request,
 		    active_requests_cnt(), m_sorted_secondaries.size())
