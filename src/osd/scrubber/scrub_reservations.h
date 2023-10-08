@@ -46,19 +46,15 @@ namespace Scrub {
  */
 class ReplicaReservations {
   using clock = std::chrono::system_clock;
-  using tpoint_t = std::chrono::time_point<clock>;
 
   ScrubMachineListener& m_scrubber;
   PG* m_pg;
-  CephContext* m_cct;
 
   const pg_shard_t m_whoami;
   const spg_t m_pgid;
 
-  /// used to send both internal and inter-OSD messages
+  /// used when queueing messages to the FSM
   OSDService* m_osds;
-
-  const ConfigProxy& m_conf;
 
   /// the acting set (not including myself), sorted by OSD id
   std::vector<pg_shard_t> m_sorted_secondaries;
@@ -66,7 +62,8 @@ class ReplicaReservations {
   /// the next replica to which we will send a reservation request
   std::vector<pg_shard_t>::const_iterator m_next_to_request;
 
-  tpoint_t m_request_sent_at;  ///< for detecting slow peers
+  /// for detecting slow peers
+  std::chrono::time_point<clock> m_request_sent_at;
 
   std::string m_log_msg_prefix;
 
@@ -75,13 +72,20 @@ class ReplicaReservations {
 
   ~ReplicaReservations();
 
+  /**
+   * The received OK from the replica (after verifying that it is indeed
+   * the replica we are expecting a reply from) is noted, and triggers
+   * one of two: either sending a reservation request to the next replica,
+   * or notifying the scrubber that we have reserved them all.
+   */
   void handle_reserve_grant(OpRequestRef op, pg_shard_t from);
 
   void handle_reserve_reject(OpRequestRef op, pg_shard_t from);
 
   /**
-   * if timing out on receiving replies from our replicas:
-   * All reserved replicas are released.
+   * if timing out on receiving replies from a replica:
+   * All reserved replicas are released (including the one
+   * that has not replied yet).
    * A failure notification is sent to the scrubber.
    */
   void handle_no_reply_timeout();

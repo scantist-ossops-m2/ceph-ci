@@ -2402,11 +2402,9 @@ namespace Scrub {
 ReplicaReservations::ReplicaReservations(ScrubMachineListener& scrbr)
     : m_scrubber{scrbr}
     , m_pg{m_scrubber.get_pg()}
-    , m_cct{m_scrubber.get_pg_cct()}
     , m_whoami{m_pg->pg_whoami}
     , m_pgid{m_scrubber.get_spgid()}
     , m_osds{m_pg->get_pg_osd(ScrubberPasskey())}
-    , m_conf{m_cct->_conf}
 {
   const epoch_t epoch = m_pg->get_osdmap_epoch();
   m_log_msg_prefix = fmt::format(
@@ -2447,13 +2445,13 @@ void ReplicaReservations::release_all()
   for (const auto& p : replicas) {
     release_replica(p, epoch);
   }
+  m_sorted_secondaries.clear();
+  m_next_to_request = m_sorted_secondaries.cbegin();
 }
 
 void ReplicaReservations::send_reject()
 {
   m_scrubber.flag_reservations_failure();
-  m_sorted_secondaries.clear();
-  m_next_to_request = m_sorted_secondaries.cbegin();
   m_osds->queue_for_scrub_denied(m_pg, scrub_prio_t::low_priority);
 }
 
