@@ -2399,30 +2399,6 @@ void PgScrubber::preemption_data_t::reset()
 // ///////////////////// ReplicaReservations //////////////////////////////////
 namespace Scrub {
 
-void ReplicaReservations::release_replica(pg_shard_t peer, epoch_t epoch)
-{
-  auto m = make_message<MOSDScrubReserve>(
-      spg_t{m_pgid.pgid, peer.shard}, epoch, MOSDScrubReserve::RELEASE,
-      m_whoami);
-  m_pg->send_cluster_message(peer.osd, m, epoch, false);
-}
-
-void ReplicaReservations::send_request_to_replica(
-    pg_shard_t peer,
-    epoch_t epoch)
-{
-  auto m = make_message<MOSDScrubReserve>(
-      spg_t{m_pgid.pgid, peer.shard}, epoch, MOSDScrubReserve::REQUEST,
-      m_whoami);
-  m_pg->send_cluster_message(peer.osd, m, epoch, false);
-  m_requests_sent++;
-  m_request_sent_at = clock::now();
-  dout(10) << fmt::format(
-		  "{}: reserving {} ({} of {})", __func__, *m_next_to_request,
-		  m_requests_sent, m_sorted_secondaries.size())
-	   << dendl;
-}
-
 ReplicaReservations::ReplicaReservations(ScrubMachineListener& scrbr)
     : m_scrubber{scrbr}
     , m_pg{m_scrubber.get_pg()}
@@ -2449,30 +2425,22 @@ ReplicaReservations::ReplicaReservations(ScrubMachineListener& scrbr)
       [whoami=m_whoami](const pg_shard_t& shard) { return shard != whoami; });
 
   m_next_to_request = m_sorted_secondaries.cbegin();
-  if (m_next_to_request == m_sorted_secondaries.cend()) {
-    // A special case of no replicas.
-    // just signal the scrub state-machine to continue
-    send_all_done();
-
-  } else {
-    // send the first reservation requests
-    send_request_to_replica(*m_next_to_request, epoch);
-  }
+  // send out the 1'st request (unless we have no replicas)
+  send_next_reservation_or_complete();
 }
 
-void ReplicaReservations::send_all_done()
+void ReplicaReservations::release_replica(pg_shard_t peer, epoch_t epoch)
 {
-  m_osds->queue_for_scrub_granted(m_pg, scrub_prio_t::low_priority);
+  auto m = make_message<MOSDScrubReserve>(
+      spg_t{m_pgid.pgid, peer.shard}, epoch, MOSDScrubReserve::RELEASE,
+      m_whoami);
+  m_pg->send_cluster_message(peer.osd, m, epoch, false);
 }
 
-void ReplicaReservations::send_reject()
+void ReplicaReservations::release_all()
 {
-  m_scrubber.flag_reservations_failure();
-  m_osds->queue_for_scrub_denied(m_pg, scrub_prio_t::low_priority);
-}
-
-void ReplicaReservations::release_all(replica_subset_t replicas)
-{
+  std::span<const pg_shard_t> replicas{
+      m_sorted_secondaries.cbegin(), m_next_to_request};
   dout(10) << fmt::format("{}: releasing {}", __func__, replicas) << dendl;
   epoch_t epoch = m_pg->get_osdmap_epoch();
   // send 'release' messages to all replicas we have managed to reserve
@@ -2481,57 +2449,73 @@ void ReplicaReservations::release_all(replica_subset_t replicas)
   }
 }
 
+void ReplicaReservations::send_reject()
+{
+  m_scrubber.flag_reservations_failure();
+  m_sorted_secondaries.clear();
+  m_next_to_request = m_sorted_secondaries.cbegin();
+  m_osds->queue_for_scrub_denied(m_pg, scrub_prio_t::low_priority);
+}
+
 void ReplicaReservations::discard_remote_reservations()
 {
   dout(10) << fmt::format("{}: reset w/o issuing messages", __func__) << dendl;
-  m_requests_sent = 0;
   m_sorted_secondaries.clear();
   m_next_to_request = m_sorted_secondaries.cbegin();
 }
 
 ReplicaReservations::~ReplicaReservations()
 {
-  auto reserved_by_us =
-      replica_subset_t{m_sorted_secondaries.cbegin(), m_requests_sent};
-  release_all(reserved_by_us);
+  release_all();
 }
 
-/**
- *  @ATTN we would not reach here if the ReplicaReservation object managed by
- * the scrubber was reset.
- */
 void ReplicaReservations::handle_reserve_grant(OpRequestRef op, pg_shard_t from)
 {
   // verify that the grant is from the peer we expected. If not?
   // for now - abort the OSD. \todo reconsider the reaction.
-  if (from != *m_next_to_request) {
+  if (!get_last_sent().has_value() || from != *get_last_sent()) {
     dout(1) << fmt::format(
 		   "{}: unexpected grant from {} (expected {})", __func__, from,
-		   *m_next_to_request)
+		   get_last_sent().value_or(pg_shard_t{}))
 	    << dendl;
-    ceph_assert(from == *m_next_to_request);
+    ceph_assert(from == get_last_sent());
     return;
   }
 
-  auto now_is = clock::now();
-  auto elapsed = now_is - m_request_sent_at;
+  auto elapsed = clock::now() - m_request_sent_at;
   // \todo: was this response late?
   dout(10) << fmt::format(
 		  "{}: granted by {} ({} of {}) in {}ms", __func__,
-		  *m_next_to_request, m_requests_sent,
+		  from, active_requests_cnt(),
 		  m_sorted_secondaries.size(),
 		  duration_cast<milliseconds>(elapsed).count())
 	   << dendl;
+  send_next_reservation_or_complete();
+}
 
-  if (++m_next_to_request == m_sorted_secondaries.cend()) {
-    // we have received all the reservations we asked for.
+void ReplicaReservations::send_next_reservation_or_complete()
+{
+  if (m_next_to_request == m_sorted_secondaries.cend()) {
+    // granted by all replicas
     dout(10) << fmt::format(
-		    "{}: osd.{} scrub reserve = success", __func__, from)
-	     << dendl;
-    send_all_done();
+		  "{}: remote reservation complete", __func__)
+	   << dendl;
+    m_osds->queue_for_scrub_granted(m_pg, scrub_prio_t::low_priority);
+
   } else {
     // send the next reservation request
-    send_request_to_replica(*m_next_to_request, m_pg->get_osdmap_epoch());
+    const auto peer = *m_next_to_request;
+    const auto epoch = m_pg->get_osdmap_epoch();
+    auto m = make_message<MOSDScrubReserve>(
+	spg_t{m_pgid.pgid, peer.shard}, epoch, MOSDScrubReserve::REQUEST,
+	m_whoami);
+    m_pg->send_cluster_message(peer.osd, m, epoch, false);
+    m_request_sent_at = clock::now();
+    dout(10) << fmt::format(
+		    "{}: reserving {} ({} of {})", __func__, *m_next_to_request,
+		    active_requests_cnt(), m_sorted_secondaries.size())
+	     << dendl;
+    m_next_to_request++;
   }
 }
 
@@ -2539,33 +2523,41 @@ void ReplicaReservations::handle_reserve_reject(
     OpRequestRef op,
     pg_shard_t from)
 {
-  // is this message relevant to our interval?
-  dout(10) << fmt::format(
-		  "{}: rejected by {} ({})", __func__, from, *op->get_req())
-	   << dendl;
-
   // a convenient log message for the reservation process conclusion
-  dout(10) << fmt::format("{}: osd.{} scrub reserve = fail", __func__, from)
+  // (matches the one in send_next_reservation_or_complete())
+  dout(10) << fmt::format(
+		  "{}: remote reservation failure. Rejected by {} ({})",
+		  __func__, from, *op->get_req())
 	   << dendl;
 
   // verify that the denial is from the peer we expected. If not?
   // we should treat it as though the *correct* peer has rejected the request,
   // but remember to release that peer, too.
-  replica_subset_t reserved_by_us;
-  if (from != *m_next_to_request) {
-    dout(1) << fmt::format(
-		   "{}: unexpected rejection from {} (expected {})", __func__,
-		   from, *m_next_to_request)
-	    << dendl;
-    reserved_by_us =
-	replica_subset_t{m_sorted_secondaries.cbegin(), m_requests_sent};
+
+  if (get_last_sent().has_value()) {
+    const auto expected = *get_last_sent();
+    if (from != expected) {
+      dout(1) << fmt::format(
+		     "{}: unexpected rejection from {} (expected {})", __func__,
+		     from, expected)
+	      << dendl;
+    } else {
+      // correct peer, wrong answer...
+      m_next_to_request--; // no need to release this one
+    }
   } else {
-    // correct peer, wrong answer...
-    ceph_assert(m_requests_sent > 0);
-    reserved_by_us =
-	replica_subset_t{m_sorted_secondaries.cbegin(), m_requests_sent - 1};
+    // we might have received multiple rejections, and had not yet switched
+    // state. In this case, we should ignore the message. Note - no change
+    // to the 'next' iterator in this case.
+    dout(20) << fmt::format(
+		   "{}: unexpected rejection from {} when none was expected", __func__,
+		   from)
+	    << dendl;
   }
-  release_all(reserved_by_us);
+
+  // at this point - the range [cbegin(), m_next_to_request) is reserved by us,
+  // and should be released.
+  release_all();
   send_reject();
 }
 
@@ -2576,12 +2568,23 @@ void ReplicaReservations::handle_no_reply_timeout()
 		 m_next_to_request->osd, m_next_to_request->shard)
 	  << dendl;
 
-  // note: we do send the 'release' message to that peer, just to be on
-  // the safe side.
-  auto requested =
-      replica_subset_t{m_sorted_secondaries.cbegin(), m_requests_sent};
-  release_all(requested);
+  // note: we do send the 'release' message to that peer that never replied,
+  // just to be on the safe side.
+  release_all();
   send_reject();
+}
+
+std::optional<pg_shard_t> ReplicaReservations::get_last_sent() const
+{
+  if (m_next_to_request == m_sorted_secondaries.cbegin()) {
+    return std::nullopt;
+  }
+  return *(m_next_to_request - 1);
+}
+
+size_t ReplicaReservations::active_requests_cnt() const
+{
+  return m_next_to_request - m_sorted_secondaries.cbegin();
 }
 
 std::ostream& ReplicaReservations::gen_prefix(std::ostream& out) const

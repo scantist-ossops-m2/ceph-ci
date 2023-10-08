@@ -47,7 +47,6 @@ namespace Scrub {
 class ReplicaReservations {
   using clock = std::chrono::system_clock;
   using tpoint_t = std::chrono::time_point<clock>;
-  using replica_subset_t = std::span<const pg_shard_t>;
 
   ScrubMachineListener& m_scrubber;
   PG* m_pg;
@@ -66,9 +65,6 @@ class ReplicaReservations {
 
   /// the next replica to which we will send a reservation request
   std::vector<pg_shard_t>::const_iterator m_next_to_request;
-
-  /// always <= m_total_needed
-  size_t m_requests_sent{0};
 
   tpoint_t m_request_sent_at;  ///< for detecting slow peers
 
@@ -106,20 +102,26 @@ class ReplicaReservations {
   std::ostream& gen_prefix(std::ostream& out) const;
 
  private:
-  /// send a reservation request to a replica's OSD
-  void send_request_to_replica(pg_shard_t peer, epoch_t epoch);
-
   /// send a release message to that shard's OSD
   void release_replica(pg_shard_t peer, epoch_t epoch);
-
-  /// let the scrubber know that we have reserved all the replicas
-  void send_all_done();
 
   /// notify the scrubber that we have failed to reserve replicas' resources
   void send_reject();
 
   /// send 'release' messages to all replicas we have managed to reserve
-  void release_all(replica_subset_t replicas);
+  void release_all();
+
+  /// the only replica we are expecting a reply from
+  std::optional<pg_shard_t> get_last_sent() const;
+
+  /// The number of requests that have been sent (and not rejected) so far.
+  size_t active_requests_cnt() const;
+
+  /**
+   * Either send a reservation request to the next replica, or notify the
+   * scrubber that we have reserved all the replicas.
+   */
+  void send_next_reservation_or_complete();
 };
 
 }  // namespace Scrub
