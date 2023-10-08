@@ -65,8 +65,6 @@ class ReplicaReservations {
   /// for logs, and for detecting slow peers
   std::chrono::time_point<clock> m_last_request_sent_at;
 
-  std::string m_log_msg_prefix;
-
  public:
   ReplicaReservations(ScrubMachineListener& scrubber);
 

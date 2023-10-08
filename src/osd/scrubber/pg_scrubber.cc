@@ -2406,11 +2406,6 @@ ReplicaReservations::ReplicaReservations(ScrubMachineListener& scrbr)
     , m_pgid{m_scrubber.get_spgid()}
     , m_osds{m_pg->get_pg_osd(ScrubberPasskey())}
 {
-  const epoch_t epoch = m_pg->get_osdmap_epoch();
-  m_log_msg_prefix = fmt::format(
-      "osd.{} ep: {} scrubber::ReplicaReservations pg[{}]: ", m_whoami.osd,
-      epoch, m_pgid);
-
   // the acting set is sorted by pg_shard_t. The reservations are to be issued
   // in this order, so that the OSDs will receive the requests in a consistent
   // order. This is done to reduce the chance of having two PGs that share some
@@ -2587,7 +2582,7 @@ size_t ReplicaReservations::active_requests_cnt() const
 
 std::ostream& ReplicaReservations::gen_prefix(std::ostream& out) const
 {
-  return out << m_log_msg_prefix;
+  return m_pg->gen_prefix(out) << "scrubber::ReplicaReservations: ";
 }
 
 
