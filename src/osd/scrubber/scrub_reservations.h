@@ -4,7 +4,6 @@
 
 #include <cassert>
 #include <chrono>
-#include <memory>
 #include <optional>
 #include <set>
 #include <span>
@@ -53,7 +52,7 @@ class ReplicaReservations {
   const pg_shard_t m_whoami;
   const spg_t m_pgid;
 
-  /// used when queueing messages to the FSM
+  /// for dout && when queueing messages to the FSM
   OSDService* m_osds;
 
   /// the acting set (not including myself), sorted by OSD id
@@ -104,9 +103,6 @@ class ReplicaReservations {
   std::ostream& gen_prefix(std::ostream& out) const;
 
  private:
-  /// send a release message to that shard's OSD
-  void release_replica(pg_shard_t peer, epoch_t epoch);
-
   /// notify the scrubber that we have failed to reserve replicas' resources
   void send_reject();
 

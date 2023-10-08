@@ -2422,24 +2422,21 @@ ReplicaReservations::ReplicaReservations(ScrubMachineListener& scrbr)
   send_next_reservation_or_complete();
 }
 
-void ReplicaReservations::release_replica(pg_shard_t peer, epoch_t epoch)
-{
-  auto m = make_message<MOSDScrubReserve>(
-      spg_t{m_pgid.pgid, peer.shard}, epoch, MOSDScrubReserve::RELEASE,
-      m_whoami);
-  m_pg->send_cluster_message(peer.osd, m, epoch, false);
-}
-
 void ReplicaReservations::release_all()
 {
   std::span<const pg_shard_t> replicas{
       m_sorted_secondaries.cbegin(), m_next_to_request};
   dout(10) << fmt::format("{}: releasing {}", __func__, replicas) << dendl;
   epoch_t epoch = m_pg->get_osdmap_epoch();
+
   // send 'release' messages to all replicas we have managed to reserve
-  for (const auto& p : replicas) {
-    release_replica(p, epoch);
+  for (const auto& peer : replicas) {
+    auto m = make_message<MOSDScrubReserve>(
+	spg_t{m_pgid.pgid, peer.shard}, epoch, MOSDScrubReserve::RELEASE,
+	m_whoami);
+    m_pg->send_cluster_message(peer.osd, m, epoch, false);
   }
+
   m_sorted_secondaries.clear();
   m_next_to_request = m_sorted_secondaries.cbegin();
 }
