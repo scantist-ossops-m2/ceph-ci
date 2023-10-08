@@ -149,7 +149,7 @@ sc::result Session::react(const IntervalChanged&)
 
 ReservingReplicas::ReservingReplicas(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/ReservingReplicas")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/ReservingReplicas")
 {
   dout(10) << "-- state -->> ReservingReplicas" << dendl;
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
@@ -234,7 +234,7 @@ sc::result ReservingReplicas::react(const FullReset&)
 
 ActiveScrubbing::ActiveScrubbing(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/ActiveScrubbing")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/ActiveScrubbing")
 {
   dout(10) << "-- state -->> ActiveScrubbing" << dendl;
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
@@ -284,9 +284,9 @@ sc::result ActiveScrubbing::react(const FullReset&)
  */
 RangeBlocked::RangeBlocked(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/Act/RangeBlocked")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/Act/RangeBlocked")
 {
-  dout(10) << "-- state -->> Act/RangeBlocked" << dendl;
+  dout(10) << "-- state -->> Session/Act/RangeBlocked" << dendl;
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
 
   auto grace = scrbr->get_range_blocked_grace();
@@ -334,9 +334,9 @@ sc::result RangeBlocked::react(const RangeBlockedAlarm&)
  */
 PendingTimer::PendingTimer(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/Act/PendingTimer")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/Act/PendingTimer")
 {
-  dout(10) << "-- state -->> Act/PendingTimer" << dendl;
+  dout(10) << "-- state -->> Session/Act/PendingTimer" << dendl;
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
 
   auto sleep_time = scrbr->get_scrub_sleep_time();
@@ -375,9 +375,9 @@ sc::result PendingTimer::react(const SleepComplete&)
  */
 NewChunk::NewChunk(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/Act/NewChunk")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/Act/NewChunk")
 {
-  dout(10) << "-- state -->> Act/NewChunk" << dendl;
+  dout(10) << "-- state -->> Session/Act/NewChunk" << dendl;
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
 
   scrbr->get_preemptor().adjust_parameters();
@@ -402,9 +402,9 @@ sc::result NewChunk::react(const SelectedChunkFree&)
 
 WaitPushes::WaitPushes(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/Act/WaitPushes")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/Act/WaitPushes")
 {
-  dout(10) << " -- state -->> Act/WaitPushes" << dendl;
+  dout(10) << " -- state -->> Session/Act/WaitPushes" << dendl;
   post_event(ActivePushesUpd{});
 }
 
@@ -430,9 +430,9 @@ sc::result WaitPushes::react(const ActivePushesUpd&)
 
 WaitLastUpdate::WaitLastUpdate(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/Act/WaitLastUpdate")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/Act/WaitLastUpdate")
 {
-  dout(10) << " -- state -->> Act/WaitLastUpdate" << dendl;
+  dout(10) << " -- state -->> Session/Act/WaitLastUpdate" << dendl;
   post_event(UpdatesApplied{});
 }
 
@@ -474,9 +474,9 @@ sc::result WaitLastUpdate::react(const InternalAllUpdates&)
 
 BuildMap::BuildMap(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/Act/BuildMap")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/Act/BuildMap")
 {
-  dout(10) << " -- state -->> Act/BuildMap" << dendl;
+  dout(10) << " -- state -->> Session/Act/BuildMap" << dendl;
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
 
   // no need to check for an epoch change, as all possible flows that brought
@@ -524,9 +524,9 @@ sc::result BuildMap::react(const IntLocalMapDone&)
 
 DrainReplMaps::DrainReplMaps(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/Act/DrainReplMaps")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/Act/DrainReplMaps")
 {
-  dout(10) << "-- state -->> Act/DrainReplMaps" << dendl;
+  dout(10) << "-- state -->> Session/Act/DrainReplMaps" << dendl;
   // we may have got all maps already. Send the event that will make us check.
   post_event(GotReplicas{});
 }
@@ -551,9 +551,9 @@ sc::result DrainReplMaps::react(const GotReplicas&)
 
 WaitReplicas::WaitReplicas(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/Act/WaitReplicas")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/Act/WaitReplicas")
 {
-  dout(10) << "-- state -->> Act/WaitReplicas" << dendl;
+  dout(10) << "-- state -->> Session/Act/WaitReplicas" << dendl;
   post_event(GotReplicas{});
 }
 
@@ -611,10 +611,10 @@ sc::result WaitReplicas::react(const DigestUpdate&)
 
 WaitDigestUpdate::WaitDigestUpdate(my_context ctx)
     : my_base(ctx)
-    , NamedSimply(context<ScrubMachine>().m_scrbr, "Ses/Act/WaitDigestUpdate")
+    , NamedSimply(context<ScrubMachine>().m_scrbr, "Session/Act/WaitDigestUpdate")
 {
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
-  dout(10) << "-- state -->> Act/WaitDigestUpdate" << dendl;
+  dout(10) << "-- state -->> Session/Act/WaitDigestUpdate" << dendl;
 
   // perform an initial check: maybe we already
   // have all the updates we need:
