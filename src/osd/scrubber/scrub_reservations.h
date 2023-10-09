@@ -77,7 +77,16 @@ class ReplicaReservations {
    */
   void handle_reserve_grant(OpRequestRef op, pg_shard_t from);
 
-  void handle_reserve_reject(OpRequestRef op, pg_shard_t from);
+  /**
+   * Verify that the sender of the received rejection is the replica we
+   * were expecting a reply from.
+   * If this is so - just mark the fact that the specific peer need not
+   * be released.
+   *
+   * Note - the actual handling of scrub session termination and of
+   * releasing the reserved replicas is done by the caller (the FSM).
+   */
+  void verify_rejections_source(OpRequestRef op, pg_shard_t from);
 
   /**
    * Notify the scrubber that replica reservation has failed. Then,

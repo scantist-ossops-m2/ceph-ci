@@ -193,7 +193,8 @@ sc::result ReservingReplicas::react(const ReplicaReject& ev)
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(10) << "ReservingReplicas::react(const ReplicaReject&)" << dendl;
 
-  context<Session>().m_reservations->handle_reserve_reject(ev.m_op, ev.m_from);
+  context<Session>().m_reservations->verify_rejections_source(
+      ev.m_op, ev.m_from);
 
   // cause the scrubber to stop the scrub session, marking 'reservation
   // failure' as the cause

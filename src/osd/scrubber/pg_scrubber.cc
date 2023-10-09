@@ -2504,7 +2504,7 @@ void ReplicaReservations::send_next_reservation_or_complete()
   }
 }
 
-void ReplicaReservations::handle_reserve_reject(
+void ReplicaReservations::verify_rejections_source(
     OpRequestRef op,
     pg_shard_t from)
 {
@@ -2519,25 +2519,16 @@ void ReplicaReservations::handle_reserve_reject(
   // we should treat it as though the *correct* peer has rejected the request,
   // but remember to release that peer, too.
 
-  if (get_last_sent().has_value()) {
-    const auto expected = *get_last_sent();
-    if (from != expected) {
-      dout(1) << fmt::format(
-		     "{}: unexpected rejection from {} (expected {})", __func__,
-		     from, expected)
-	      << dendl;
-    } else {
-      // correct peer, wrong answer...
-      m_next_to_request--; // no need to release this one
-    }
-  } else {
-    // we might have received multiple rejections, and had not yet switched
-    // state. In this case, we should ignore the message. Note - no change
-    // to the 'next' iterator in this case.
-    dout(20) << fmt::format(
-		   "{}: rejection from {} when none was expected", __func__,
-		   from)
+  ceph_assert(get_last_sent().has_value());
+  const auto expected = *get_last_sent();
+  if (from != expected) {
+    dout(1) << fmt::format(
+		   "{}: unexpected rejection from {} (expected {})", __func__,
+		   from, expected)
 	    << dendl;
+  } else {
+    // correct peer, wrong answer...
+    m_next_to_request--;  // no need to release this one
   }
 }
 
