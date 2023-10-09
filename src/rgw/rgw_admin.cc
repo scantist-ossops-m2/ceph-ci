@@ -10595,7 +10595,7 @@ next:
 
     rgw::notify::rgw_topic_stats stats;
     ret = rgw::notify::get_persistent_queue_stats_by_topic_name(
-        dpp(), static_cast<rgw::sal::RadosStore *>(store)->getRados()->get_notif_pool_ctx(), topic_name,
+        dpp(), static_cast<rgw::sal::RadosStore *>(driver)->getRados()->get_notif_pool_ctx(), topic_name,
         stats, null_yield);
     if (ret < 0) {
       cerr << "ERROR: could not get persistent queue: " << cpp_strerror(-ret) << std::endl;

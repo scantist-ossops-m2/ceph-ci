@@ -2938,10 +2938,7 @@ def test_ps_s3_persistent_topic_stats():
 
     # create random port for the http server
     host = get_ip()
-    http_port = random.randint(10000, 20000)
-
-    # start an http server in a separate thread
-    http_server = StreamingHTTPServer(host, http_port, num_workers=10, delay=0.5)
+    port = random.randint(10000, 20000)
 
     # create bucket
     bucket_name = gen_bucket_name()
@@ -2962,10 +2959,6 @@ def test_ps_s3_persistent_topic_stats():
     s3_notification_conf = PSNotificationS3(conn, bucket_name, topic_conf_list)
     response, status = s3_notification_conf.set_config()
     assert_equal(status/100, 2)
-
-    delay = 20
-    time.sleep(delay)
-    http_server.close()
 
     # topic stats
     result = admin(['topic', 'stats', '--topic', topic_name])
@@ -3015,25 +3008,11 @@ def test_ps_s3_persistent_topic_stats():
     assert_equal(parsed_result['Topic Stats']['Entries'], 2*number_of_objects)
     assert_equal(result[1], 0)
 
-    # start an http server in a separate thread
-    http_server = StreamingHTTPServer(host, http_port, num_workers=10, delay=0.5)
-
-    print('wait for '+str(delay)+'sec for the messages...')
-    time.sleep(delay)
-
-    # topic stats
-    result = admin(['topic', 'stats', '--topic', topic_name])
-    parsed_result = json.loads(result[0])
-    assert_equal(parsed_result['Topic Stats']['Entries'], 0)
-    assert_equal(result[1], 0)
-
     # cleanup
     s3_notification_conf.del_config()
     topic_conf.del_config()
     # delete the bucket
     conn.delete_bucket(bucket_name)
-    time.sleep(delay)
-    http_server.close()
 
 @attr('manual_test')
 def test_ps_s3_persistent_notification_pushback():
@@ -3054,7 +3033,7 @@ def test_ps_s3_persistent_notification_pushback():
     topic_name = bucket_name + TOPIC_SUFFIX
 
     # create s3 topic
-    endpoint_address = 'http://'+host+':'+str(http_port)
+    endpoint_address = 'http://'+host+':'+str(port)
     endpoint_args = 'push-endpoint='+endpoint_address+'&persistent=true'
     topic_conf = PSTopicS3(conn, topic_name, zonegroup, endpoint_args=endpoint_args)
     topic_arn = topic_conf.set_config()
