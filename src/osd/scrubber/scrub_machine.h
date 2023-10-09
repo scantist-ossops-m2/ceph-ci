@@ -391,7 +391,7 @@ struct Session : sc::state<Session, ScrubMachine, ReservingReplicas>,
 
   sc::result react(const IntervalChanged&);
 
-  /// managing the scrub session's reservations (optiona, as
+  /// managing the scrub session's reservations (optional, as
   /// it's an RAII wrapper around the state of 'holding reservations')
   std::optional<ReplicaReservations> m_reservations{std::nullopt};
 };
@@ -400,8 +400,7 @@ struct ReservingReplicas : sc::state<ReservingReplicas, Session>,
 			   NamedSimply {
   explicit ReservingReplicas(my_context ctx);
   ~ReservingReplicas();
-  using reactions = mpl::list<sc::custom_reaction<FullReset>,
-			      sc::custom_reaction<ReplicaGrant>,
+  using reactions = mpl::list<sc::custom_reaction<ReplicaGrant>,
 			      sc::custom_reaction<ReplicaReject>,
 			      sc::transition<RemotesReserved, ActiveScrubbing>,
 			      sc::custom_reaction<ReservationTimeout>>;
@@ -415,8 +414,6 @@ struct ReservingReplicas : sc::state<ReservingReplicas, Session>,
 
   /// a "raw" event carrying a peer's denial response
   sc::result react(const ReplicaReject&);
-
-  sc::result react(const FullReset&);
 
   sc::result react(const ReservationTimeout&);
 };
@@ -451,10 +448,8 @@ struct ActiveScrubbing
   explicit ActiveScrubbing(my_context ctx);
   ~ActiveScrubbing();
 
-  using reactions = mpl::list<sc::custom_reaction<InternalError>,
-			      sc::custom_reaction<FullReset>>;
+  using reactions = mpl::list<sc::custom_reaction<InternalError>>;
 
-  sc::result react(const FullReset&);
   sc::result react(const InternalError&);
 };
 

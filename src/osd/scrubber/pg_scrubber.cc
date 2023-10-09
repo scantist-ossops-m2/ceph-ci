@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <span>
 #include <vector>
 
 #include <fmt/ranges.h>
@@ -471,12 +472,13 @@ void PgScrubber::on_new_interval()
 		  is_scrub_active(), is_queued_or_active())
 	   << dendl;
 
+  // If in active session - the IntervalChanged handler takes care of
+  // discarding the remote reservations, and transitioning out of Session.
+  // That resets both the scrubber and the FSM.
+  // The next line (FullReset) is only relevant for the
+  // case where we are not an active Primary.
   m_fsm->process_event(IntervalChanged{});
   m_fsm->process_event(FullReset{});
-  // we may be the primary
-  if (is_queued_or_active()) {
-    clear_pgscrub_state();
-  }
   rm_from_osd_scrubbing();
 }
 

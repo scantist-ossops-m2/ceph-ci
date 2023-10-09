@@ -132,7 +132,13 @@ Session::~Session()
 {
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   m_reservations.reset();
-  scrbr->clear_queued_or_active();
+
+  // note the interaction between clearing the 'queued' flag and two
+  // other states: the snap-mapper and the scrubber internal state.
+  // All of these must be cleared in the correct order, and the snap mapper
+  // (re-triggered by resetting the 'queued' flag) must not resume before
+  // the scrubber is reset.
+  scrbr->clear_pgscrub_state();
 }
 
 sc::result Session::react(const IntervalChanged&)
@@ -142,7 +148,6 @@ sc::result Session::react(const IntervalChanged&)
 
   m_reservations->discard_remote_reservations();
   return transit<NotActive>();
-  // who stops the scrub? RRR
 }
 
 
@@ -197,7 +202,7 @@ sc::result ReservingReplicas::react(const ReplicaReject& ev)
       ev.m_op, ev.m_from);
 
   // cause the scrubber to stop the scrub session, marking 'reservation
-  // failure' as the cause
+  // failure' as the cause (affecting future scheduling)
   context<Session>().m_reservations->mark_failure("reservation denied");
   return transit<NotActive>();
 }
@@ -214,17 +219,8 @@ sc::result ReservingReplicas::react(const ReservationTimeout&)
   scrbr->get_clog()->warn() << msg;
 
   // cause the scrubber to stop the scrub session, marking 'reservation
-  // failure' as the cause
+  // failure' as the cause (affecting future scheduling)
   context<Session>().m_reservations->mark_failure("timeout");
-  return transit<NotActive>();
-}
-
-/**
- * note: the event poster is handling the scrubber reset
- */
-sc::result ReservingReplicas::react(const FullReset&)
-{
-  dout(10) << "ReservingReplicas::react(const FullReset&)" << dendl;
   return transit<NotActive>();
 }
 
@@ -257,14 +253,7 @@ sc::result ActiveScrubbing::react(const InternalError&)
 {
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(10) << __func__ << dendl;
-  scrbr->clear_pgscrub_state();
-  return transit<NotActive>();
-}
-
-sc::result ActiveScrubbing::react(const FullReset&)
-{
-  dout(10) << "ActiveScrubbing::react(const FullReset&)" << dendl;
-  // caller takes care of clearing the scrubber & FSM states
+  //scrbr->clear_pgscrub_state();
   return transit<NotActive>();
 }
 
