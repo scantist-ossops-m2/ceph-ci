@@ -102,9 +102,6 @@ struct ReplicaReject : sc::event<ReplicaReject> {
 /// all replicas have granted our reserve request
 MEV(RemotesReserved)
 
-/// a reservation request has failed
-MEV(ReservationFailure)
-
 /// reservations have timed out
 MEV(ReservationTimeout)
 
@@ -247,7 +244,7 @@ public:
    * from being delivered.  The intended usage is to invoke
    * schedule_timer_event_after in the constructor of the state machine state
    * intended to handle the event and assign the returned timer_event_token_t
-   * to a member of that state. That way, exiting the state will implicitely
+   * to a member of that state. That way, exiting the state will implicitly
    * cancel the event.  See RangedBlocked::m_timeout_token and
    * RangeBlockedAlarm for an example usage.
    */
@@ -404,30 +401,24 @@ struct ReservingReplicas : sc::state<ReservingReplicas, Session>,
   explicit ReservingReplicas(my_context ctx);
   ~ReservingReplicas();
   using reactions = mpl::list<sc::custom_reaction<FullReset>,
-			      // all replicas granted our resources request
 			      sc::custom_reaction<ReplicaGrant>,
 			      sc::custom_reaction<ReplicaReject>,
 			      sc::transition<RemotesReserved, ActiveScrubbing>,
-			      sc::custom_reaction<ReservationTimeout>,
-			      sc::custom_reaction<ReservationFailure>>;
+			      sc::custom_reaction<ReservationTimeout>>;
 
   ceph::coarse_real_clock::time_point entered_at =
     ceph::coarse_real_clock::now();
   ScrubMachine::timer_event_token_t m_timeout_token;
 
-
-  /// a "raw" event carrying the peer's grant response
+  /// a "raw" event carrying a peer's grant response
   sc::result react(const ReplicaGrant&);
 
-  /// a "raw" event carrying the peer's denial response
+  /// a "raw" event carrying a peer's denial response
   sc::result react(const ReplicaReject&);
 
   sc::result react(const FullReset&);
 
   sc::result react(const ReservationTimeout&);
-
-  /// at least one replica denied us the scrub resources we've requested
-  sc::result react(const ReservationFailure&);
 };
 
 

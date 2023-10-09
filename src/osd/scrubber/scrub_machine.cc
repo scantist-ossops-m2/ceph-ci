@@ -141,7 +141,8 @@ sc::result Session::react(const IntervalChanged&)
   dout(10) << "Session::react(const IntervalChanged&)" << dendl;
 
   m_reservations->discard_remote_reservations();
-  return discard_event();
+  return transit<NotActive>();
+  // who stops the scrub? RRR
 }
 
 
@@ -165,6 +166,9 @@ ReservingReplicas::ReservingReplicas(my_context ctx)
     m_timeout_token =
 	machine.schedule_timer_event_after<ReservationTimeout>(timeout);
   }
+
+  /// \todo start a second timer to warn about slow-to-reply replicas
+  /// using "osd_scrub_slow_reservation_response" conf val
 }
 
 ReservingReplicas::~ReservingReplicas()
@@ -177,8 +181,6 @@ ReservingReplicas::~ReservingReplicas()
 
 sc::result ReservingReplicas::react(const ReplicaGrant& ev)
 {
-  // for now - route the message back to the scrubber, as it holds the
-  // ReplicaReservations object
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(10) << "ReservingReplicas::react(const ReplicaGrant&)" << dendl;
 
@@ -188,13 +190,15 @@ sc::result ReservingReplicas::react(const ReplicaGrant& ev)
 
 sc::result ReservingReplicas::react(const ReplicaReject& ev)
 {
-  // for now - route the message back to the scrubber, as it holds the
-  // ReplicaReservations object
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(10) << "ReservingReplicas::react(const ReplicaReject&)" << dendl;
 
   context<Session>().m_reservations->handle_reserve_reject(ev.m_op, ev.m_from);
-  return discard_event();
+
+  // cause the scrubber to stop the scrub session, marking 'reservation
+  // failure' as the cause
+  context<Session>().m_reservations->mark_failure("reservation denied");
+  return transit<NotActive>();
 }
 
 sc::result ReservingReplicas::react(const ReservationTimeout&)
@@ -203,21 +207,14 @@ sc::result ReservingReplicas::react(const ReservationTimeout&)
   dout(10) << "ReservingReplicas::react(const ReservationTimeout&)" << dendl;
 
   const auto msg = fmt::format(
-      "PgScrubber: {} timeout on reserving replicas (since {})",
-      scrbr->get_spgid(), entered_at);
-  dout(5) << msg << dendl;
-  scrbr->get_clog()->warn() << "osd." << scrbr->get_whoami() << " " << msg;
-  context<Session>().m_reservations->handle_no_reply_timeout();
-  return discard_event();
-}
+      "osd.{} PgScrubber: {} timeout on reserving replicas (since {})",
+      scrbr->get_whoami(), scrbr->get_spgid(), entered_at);
+  dout(1) << msg << dendl;
+  scrbr->get_clog()->warn() << msg;
 
-sc::result ReservingReplicas::react(const ReservationFailure&)
-{
-  DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
-  dout(10) << "ReservingReplicas::react(const ReservationFailure&)" << dendl;
-
-  // the Scrubber must release all resources and abort the scrubbing
-  scrbr->clear_pgscrub_state(); // RRR why only here?
+  // cause the scrubber to stop the scrub session, marking 'reservation
+  // failure' as the cause
+  context<Session>().m_reservations->mark_failure("timeout");
   return transit<NotActive>();
 }
 

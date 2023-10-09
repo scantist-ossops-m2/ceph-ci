@@ -369,16 +369,6 @@ void PgScrubber::send_remotes_reserved(epoch_t epoch_queued)
   dout(10) << "scrubber event --<< " << __func__ << dendl;
 }
 
-void PgScrubber::send_reservation_failure(epoch_t epoch_queued)
-{
-  dout(10) << "scrubber event -->> " << __func__ << " epoch: " << epoch_queued
-	   << dendl;
-  if (check_interval(epoch_queued)) {  // do not check for 'active'!
-    m_fsm->process_event(ReservationFailure{});
-  }
-  dout(10) << "scrubber event --<< " << __func__ << dendl;
-}
-
 void PgScrubber::send_chunk_free(epoch_t epoch_queued)
 {
   dout(10) << "scrubber event -->> " << __func__ << " epoch: " << epoch_queued
@@ -2441,10 +2431,15 @@ void ReplicaReservations::release_all()
   m_next_to_request = m_sorted_secondaries.cbegin();
 }
 
-void ReplicaReservations::send_reject()
+void ReplicaReservations::mark_failure(std::string_view msg_txt)
 {
+  dout(10) << fmt::format(
+		  "{}: failure ({}) while awaiting reply from {}", __func__,
+		  msg_txt, get_last_sent().value_or(pg_shard_t{}))
+	   << dendl;
   m_scrubber.flag_reservations_failure();
-  m_osds->queue_for_scrub_denied(m_pg, scrub_prio_t::low_priority);
+  // the Scrubber must release all resources and abort the scrubbing
+  m_scrubber.clear_pgscrub_state();
 }
 
 void ReplicaReservations::discard_remote_reservations()
@@ -2540,29 +2535,12 @@ void ReplicaReservations::handle_reserve_reject(
     // state. In this case, we should ignore the message. Note - no change
     // to the 'next' iterator in this case.
     dout(20) << fmt::format(
-		   "{}: unexpected rejection from {} when none was expected", __func__,
+		   "{}: rejection from {} when none was expected", __func__,
 		   from)
 	    << dendl;
   }
-
-  // at this point - the range [cbegin(), m_next_to_request) is reserved by us,
-  // and should be released.
-  release_all();
-  send_reject();
 }
 
-void ReplicaReservations::handle_no_reply_timeout()
-{
-  dout(1) << fmt::format(
-		 "{}: timeout! no reply from osd.{} (shard {})", __func__,
-		 m_next_to_request->osd, m_next_to_request->shard)
-	  << dendl;
-
-  // note: we do send the 'release' message to that peer that never replied,
-  // just to be on the safe side.
-  release_all();
-  send_reject();
-}
 
 std::optional<pg_shard_t> ReplicaReservations::get_last_sent() const
 {

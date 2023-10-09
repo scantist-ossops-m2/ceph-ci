@@ -80,12 +80,10 @@ class ReplicaReservations {
   void handle_reserve_reject(OpRequestRef op, pg_shard_t from);
 
   /**
-   * if timing out on receiving replies from a replica:
-   * All reserved replicas are released (including the one
-   * that has not replied yet).
-   * A failure notification is sent to the scrubber.
-   */
-  void handle_no_reply_timeout();
+   * Notify the scrubber that replica reservation has failed. Then,
+   * cause the termination of the scrubbing session.
+  */
+  void mark_failure(std::string_view msg_txt);
 
   /**
    * Notifies implementation that it is no longer responsible for releasing
@@ -103,9 +101,6 @@ class ReplicaReservations {
   std::ostream& gen_prefix(std::ostream& out) const;
 
  private:
-  /// notify the scrubber that we have failed to reserve replicas' resources
-  void send_reject();
-
   /// send 'release' messages to all replicas we have managed to reserve
   void release_all();
 

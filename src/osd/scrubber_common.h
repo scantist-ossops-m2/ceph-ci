@@ -362,12 +362,6 @@ struct ScrubPgIF {
    */
   virtual void send_remotes_reserved(epoch_t epoch_queued) = 0;
 
-  /**
-   * triggers the 'ReservationFailure' (at least one replica denied us the
-   * requested resources) state-machine event
-   */
-  virtual void send_reservation_failure(epoch_t epoch_queued) = 0;
-
   virtual void cleanup_store(ObjectStore::Transaction* t) = 0;
 
   virtual bool get_store_errors(const scrub_ls_arg_t& arg,
