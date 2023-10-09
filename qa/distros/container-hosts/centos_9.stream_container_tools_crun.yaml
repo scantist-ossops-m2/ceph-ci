@@ -1,5 +1,5 @@
 os_type: centos
-os_version: "8.stream"
+os_version: "9.stream"
 overrides:
   selinux:
     whitelist:
@@ -12,3 +12,5 @@ tasks:
     - sudo dnf -y  module reset container-tools
     - sudo dnf -y  module install container-tools --allowerasing --nobest
     - sudo cp /etc/containers/registries.conf.backup /etc/containers/registries.conf
+    - sudo sed -i 's/runtime = "runc"/#runtime = "runc"/g' /usr/share/containers/containers.conf
+    - sudo sed -i 's/#runtime = "crun"/runtime = "crun"/g' /usr/share/containers/containers.conf
