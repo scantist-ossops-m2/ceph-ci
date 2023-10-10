@@ -253,6 +253,17 @@ set(HAVE_LIBURING ${WITH_LIBURING})
 CMAKE_DEPENDENT_OPTION(WITH_SYSTEM_LIBURING "Require and build with system liburing" OFF
   "HAVE_LIBAIO;WITH_BLUESTORE" OFF)
 
+if(WITH_LIBURING)
+  if(WITH_SYSTEM_LIBURING)
+    find_package(uring REQUIRED)
+  else()
+    include(Builduring)
+    build_uring()
+  endif()
+  # enable uring in boost::asio
+  add_compile_definitions("BOOST_ASIO_HAS_IO_URING")
+endif()
+
 CMAKE_DEPENDENT_OPTION(WITH_BLUESTORE_PMEM "Enable PMDK libraries" OFF
   "WITH_BLUESTORE" OFF)
 if(WITH_BLUESTORE_PMEM)

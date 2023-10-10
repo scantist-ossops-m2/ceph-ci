@@ -17,6 +17,11 @@
 #include <bitset>
 #include <netdb.h>
 #include <netinet/in.h>
+#ifdef _WIN32
+#include <ws2ipdef.h> // IFF_UP
+#else
+#include <net/if.h>
+#endif
 #include <string>
 #include <string.h>
 #include <vector>
