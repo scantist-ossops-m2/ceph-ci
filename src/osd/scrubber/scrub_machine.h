@@ -372,10 +372,9 @@ struct NotActive : sc::state<NotActive, ScrubMachine>, NamedSimply {
  *  This state encompasses the two main "active" states: ReservingReplicas and
  *  ActiveScrubbing.
  *  'Session' is the owner of all the resources that are allocated for a
- *  scrub session.
+ *  scrub session performed as a Primary.
  *
- *  Exit from this state is either following an interval change (with two
- *  events expected - interval-changed & full-reset, or with
+ *  Exit from this state is either following an interval change, or with
  *  'FullReset' (that would cover all other completion/termination paths).
  *  Note that if terminating the session following an interval change - no
  *  reservations are released. This is because we know that the replicas are

@@ -253,7 +253,6 @@ sc::result ActiveScrubbing::react(const InternalError&)
 {
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
   dout(10) << __func__ << dendl;
-  //scrbr->clear_pgscrub_state();
   return transit<NotActive>();
 }
 

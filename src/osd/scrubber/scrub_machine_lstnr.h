@@ -5,11 +5,13 @@
 /**
  * \file the PgScrubber interface used by the scrub FSM
  */
+#include "common/LogClient.h"
 #include "common/version.h"
 #include "include/Context.h"
 #include "osd/osd_types.h"
+#include "osd/scrubber_common.h"
 
-struct ScrubMachineListener;
+class PG;
 
 namespace Scrub {
 

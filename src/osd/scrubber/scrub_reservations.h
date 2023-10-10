@@ -8,6 +8,8 @@
 #include <string_view>
 #include <vector>
 
+#include "osd/scrubber_common.h"
+#include "scrub_machine_lstnr.h"
 #include "osd_scrub_sched.h"
 
 namespace Scrub {
@@ -41,7 +43,7 @@ namespace Scrub {
  *  lost - either due to a bug or due to a network issue.)
  */
 class ReplicaReservations {
-  using clock = std::chrono::system_clock;
+  using clock = ceph::coarse_real_clock;
 
   ScrubMachineListener& m_scrubber;
   PG* m_pg;
@@ -59,7 +61,7 @@ class ReplicaReservations {
   std::vector<pg_shard_t>::const_iterator m_next_to_request;
 
   /// for logs, and for detecting slow peers
-  std::chrono::time_point<clock> m_last_request_sent_at;
+  clock::time_point m_last_request_sent_at;
 
  public:
   ReplicaReservations(ScrubMachineListener& scrubber);
@@ -104,7 +106,7 @@ class ReplicaReservations {
   void discard_remote_reservations();
 
   // note: 'public', as accessed via the 'standard' dout_prefix() macro
-  std::ostream& gen_prefix(std::ostream& out) const;
+  std::ostream& gen_prefix(std::ostream& out, std::string fn) const;
 
  private:
   /// send 'release' messages to all replicas we have managed to reserve
