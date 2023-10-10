@@ -201,9 +201,11 @@ sc::result ReservingReplicas::react(const ReplicaReject& ev)
   context<Session>().m_reservations->verify_rejections_source(
       ev.m_op, ev.m_from);
 
-  // cause the scrubber to stop the scrub session, marking 'reservation
-  // failure' as the cause (affecting future scheduling)
-  context<Session>().m_reservations->mark_failure("reservation denied");
+  // set 'reservation failure' as the scrub termination cause (affecting
+  // the rescheduling of this PG)
+  scrbr->flag_reservations_failure();
+
+  // 'Session' state dtor stops the scrubber
   return transit<NotActive>();
 }
 
@@ -220,7 +222,7 @@ sc::result ReservingReplicas::react(const ReservationTimeout&)
 
   // cause the scrubber to stop the scrub session, marking 'reservation
   // failure' as the cause (affecting future scheduling)
-  context<Session>().m_reservations->mark_failure("timeout");
+  scrbr->flag_reservations_failure();
   return transit<NotActive>();
 }
 

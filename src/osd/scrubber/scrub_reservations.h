@@ -69,7 +69,7 @@ class ReplicaReservations {
   ~ReplicaReservations();
 
   /**
-   * The received OK from the replica (after verifying that it is indeed
+   * The OK received from the replica (after verifying that it is indeed
    * the replica we are expecting a reply from) is noted, and triggers
    * one of two: either sending a reservation request to the next replica,
    * or notifying the scrubber that we have reserved them all.
@@ -86,12 +86,6 @@ class ReplicaReservations {
    * releasing the reserved replicas is done by the caller (the FSM).
    */
   void verify_rejections_source(OpRequestRef op, pg_shard_t from);
-
-  /**
-   * Notify the scrubber that replica reservation has failed. Then,
-   * cause the termination of the scrubbing session.
-  */
-  void mark_failure(std::string_view msg_txt);
 
   /**
    * Notifies implementation that it is no longer responsible for releasing

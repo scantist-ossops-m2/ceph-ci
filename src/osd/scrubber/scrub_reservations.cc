@@ -70,17 +70,6 @@ void ReplicaReservations::release_all()
   m_next_to_request = m_sorted_secondaries.cbegin();
 }
 
-void ReplicaReservations::mark_failure(std::string_view msg_txt)
-{
-  dout(10) << fmt::format(
-		  "failure ({}) while awaiting reply from {}",
-		  msg_txt, get_last_sent().value_or(pg_shard_t{}))
-	   << dendl;
-  m_scrubber.flag_reservations_failure();
-  // the Scrubber must release all resources and abort the scrubbing
-  m_scrubber.clear_pgscrub_state();
-}
-
 void ReplicaReservations::discard_remote_reservations()
 {
   dout(10) << "reset w/o issuing messages" << dendl;
