@@ -579,6 +579,7 @@ public:
   }
   void insert(frag_t f) {
     _set.insert(f);
+    simplify();
   }
 
   void simplify() {

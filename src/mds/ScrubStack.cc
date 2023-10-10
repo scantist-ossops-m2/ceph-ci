@@ -349,6 +349,8 @@ void ScrubStack::scrub_dir_inode(CInode *in, bool *added_children, bool *done)
     }
   }
 
+  queued.simplify();
+
   if (gather.has_subs()) {
     gather.set_finisher(new C_RetryScrub(this, in));
     gather.activate();
