@@ -177,6 +177,45 @@ done
 
         self._check_task_status_na()
 
+    def test_scrub_when_mds_is_inactive(self):
+        test_dir = "scrub_control_test_path"
+        abs_test_path = f"/{test_dir}"
+
+        self.create_scrub_data(test_dir)
+
+        out_json = self.fs.run_scrub(["start", abs_test_path, "recursive"])
+        self.assertNotEqual(out_json, None)
+
+        # allow standby-replay
+        self.fs.set_max_mds(1)
+        self.fs.fail()
+        self.fs.set_allow_standby_replay(True)
+        status = self.fs.wait_for_daemons()
+        replay = self.fs.get_replay(status=status)['name']
+
+        # start the scrub and verify
+        with self.assertRaises(CommandFailedError) as ce:
+            #self.fs.run_scrub(["start", abs_test_path, "recursive"])
+            self.run_ceph_cmd('tell', f'mds.{replay}', 'scrub', 
+                              'start', 'abs_test_path', 'recursive')
+        self.assertEqual(ce.exception.exitstatus, errno.EINVAL)
+
+        # pause and verify
+        with self.assertRaises(CommandFailedError) as ce:
+            self.run_ceph_cmd('tell', f'mds.{replay}', 'scrub', 'pause')
+        self.assertEqual(ce.exception.exitstatus, errno.EINVAL)
+        
+        # abort and verify
+        with self.assertRaises(CommandFailedError) as ce:
+            self.run_ceph_cmd('tell', f'mds.{replay}', 'scrub', 'abort')
+        self.assertEqual(ce.exception.exitstatus, errno.EINVAL)
+        
+        # resume and verify
+        with self.assertRaises(CommandFailedError) as ce:
+            self.run_ceph_cmd('tell', f'mds.{replay}', 'scrub', 'resume')
+        self.assertEqual(ce.exception.exitstatus, errno.EINVAL)
+
+
 class TestScrubChecks(CephFSTestCase):
     """
     Run flush and scrub commands on the specified files in the filesystem. This
