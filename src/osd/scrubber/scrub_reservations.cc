@@ -96,7 +96,18 @@ void ReplicaReservations::handle_reserve_grant(OpRequestRef op, pg_shard_t from)
   }
 
   auto elapsed = clock::now() - m_last_request_sent_at;
-  // \todo: was this response late?
+
+  // log a warning if the response was late
+  auto warn_timeout = m_scrubber.get_pg_cct()->_conf.get_val<milliseconds>(
+       "osd_scrub_slow_reservation_response");
+  if (!m_slow_response_warned && (elapsed > warn_timeout)) {
+    dout(1) << fmt::format(
+		   "slow reservation response from {} ({}ms)",
+		   from, duration_cast<milliseconds>(elapsed).count())
+	    << dendl;
+    // prevent additional warnings
+    m_slow_response_warned = true;
+  }
   dout(10) << fmt::format(
 		  "granted by {} ({} of {}) in {}ms",
 		  from, active_requests_cnt(),

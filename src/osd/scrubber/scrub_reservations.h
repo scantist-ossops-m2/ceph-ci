@@ -63,6 +63,9 @@ class ReplicaReservations {
   /// for logs, and for detecting slow peers
   clock::time_point m_last_request_sent_at;
 
+  /// used to prevent multiple "slow response" warnings
+  bool m_slow_response_warned{false};
+
  public:
   ReplicaReservations(ScrubMachineListener& scrubber);
 
