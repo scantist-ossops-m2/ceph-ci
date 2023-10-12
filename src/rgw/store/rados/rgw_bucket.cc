@@ -13,6 +13,7 @@
 #include "services/svc_user.h"
 
 #include "rgw_reshard.h"
+#include "rgw_pubsub.h"
 
 // stolen from src/cls/version/cls_version.cc
 #define VERSION_ATTR "ceph.objclass.version"
@@ -926,6 +927,17 @@ static int bucket_stats(rgw::sal::Store* store,
       cerr << "ERROR: caught buffer:error, couldn't decode TagSet" << std::endl;
     }
   }
+
+  // bucket notifications
+  RGWPubSub ps(store, tenant_name);
+  rgw_pubsub_bucket_topics result;
+  const RGWPubSub::Bucket b(ps, bucket.get());
+  ret = b.get_topics(dpp, result, null_yield);
+  if (ret < 0 && ret != -ENOENT) {
+    cerr << "ERROR: could not get topics: " << cpp_strerror(-ret) << std::endl;
+    return -ret;
+  }
+  result.dump(formatter);
 
   // TODO: bucket CORS
   // TODO: bucket LC

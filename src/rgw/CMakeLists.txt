@@ -78,7 +78,6 @@ set(librgw_common_srcs
   rgw_multipart_meta_filter.cc
   rgw_obj_manifest.cc
   rgw_period.cc
-  rgw_pubsub.cc
   rgw_realm.cc
   rgw_sync.cc
   rgw_sync_policy.cc
@@ -87,6 +86,7 @@ set(librgw_common_srcs
   rgw_period_history.cc
   rgw_period_puller.cc
   rgw_reshard.cc
+  rgw_pubsub.cc
   rgw_coroutine.cc
   rgw_cr_rest.cc
   rgw_op.cc
@@ -107,6 +107,7 @@ set(librgw_common_srcs
   rgw_rest_ratelimit.cc
   rgw_rest_role.cc
   rgw_rest_s3.cc
+  rgw_rest_pubsub.cc
   rgw_s3select.cc
   rgw_role.cc
   rgw_sal.cc
@@ -162,7 +163,6 @@ set(librgw_common_srcs
   store/rados/rgw_object_expirer_core.cc
   store/rados/rgw_otp.cc
   store/rados/rgw_period.cc
-  store/rados/rgw_rest_pubsub.cc
   store/rados/rgw_rest_realm.cc
   store/rados/rgw_rest_user.cc
   store/rados/rgw_sal_rados.cc
