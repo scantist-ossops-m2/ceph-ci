@@ -2358,6 +2358,10 @@ void Client::handle_client_session(const MConstRef<MClientSession>& m)
       if (!session->seq && m->get_seq())
         session->seq = m->get_seq();
 
+      ldout(cct, 10) << __func__ << ": (1) open feat=" << hex << m->supported_features << dec << dendl;
+      ldout(cct, 10) << __func__ << ": (1) supp=" << m->supported_features.test(CEPHFS_FEATURE_NEW_SNAPREALM_INFO)
+		     << dendl;
+      
       feature_bitset_t missing_features(CEPHFS_FEATURES_CLIENT_REQUIRED);
       missing_features -= m->supported_features;
       if (!missing_features.empty()) {
@@ -2369,6 +2373,10 @@ void Client::handle_client_session(const MConstRef<MClientSession>& m)
       }
       session->mds_features = std::move(m->supported_features);
       session->mds_metric_flags = std::move(m->metric_spec.metric_flags);
+
+      ldout(cct, 10) << __func__ << ": (2) open feat=" << hex << session->mds_features << dec << dendl;
+      ldout(cct, 10) << __func__ << ": (2) supp=" << session->mds_features.test(CEPHFS_FEATURE_NEW_SNAPREALM_INFO)
+		     << dendl;
 
       renew_caps(session.get());
       session->state = MetaSession::STATE_OPEN;
@@ -5067,6 +5075,9 @@ void Client::update_snap_trace(MetaSession *session, const bufferlist& bl, SnapR
 
   auto p = bl.cbegin();
   while (!p.end()) {
+    ldout(cct, 10) << __func__ << ": feat=" << hex << session->mds_features << dec << dendl;
+    ldout(cct, 10) << __func__ << ": supp=" << session->mds_features.test(CEPHFS_FEATURE_NEW_SNAPREALM_INFO)
+		   << dendl;
     auto [info, realm_info_meta] = get_snap_realm_info(session, p);
     SnapRealm *realm = get_snap_realm(info.ino());
 
