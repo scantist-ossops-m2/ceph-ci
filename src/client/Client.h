@@ -1106,6 +1106,8 @@ protected:
    */
   void _finish_init();
 
+  bool reinit_mds_features(MetaSession *session, const MConstRef<MClientSession>& m);
+
   // global client lock
   //  - protects Client and buffer cache both!
   ceph::mutex client_lock = ceph::make_mutex("Client::client_lock");

@@ -11400,8 +11400,10 @@ const bufferlist& Server::get_snap_trace(Session *session, SnapRealm *realm) con
   ceph_assert(session);
   ceph_assert(realm);
   if (session->info.has_feature(CEPHFS_FEATURE_NEW_SNAPREALM_INFO)) {
+    dout(20) << __func__ << ": session=" << session->get_client() << " supports new snaprealm" << dendl;
     return realm->get_snap_trace_new();
   } else {
+    dout(20) << __func__ << ": session=" << session->get_client() << " supports new old snaprealm" << dendl;
     return realm->get_snap_trace();
   }
 }
