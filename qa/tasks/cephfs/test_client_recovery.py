@@ -13,6 +13,7 @@ import re
 import string
 import os
 
+from teuthology import contextutil
 from teuthology.orchestra import run
 from teuthology.exceptions import CommandFailedError
 from tasks.cephfs.fuse_mount import FuseMount
@@ -808,24 +809,35 @@ class TestClientOnLaggyOSD(CephFSTestCase):
             # it takes time to have laggy clients entries in cluster log,
             # wait for 6 minutes to see if it is visible, finally restart
             # the client
-            tries = 6
-            while True:
-                try:
-                    with self.assert_cluster_log("1 client(s) laggy due to laggy OSDs",
-                                                 timeout=55):
-                        # make sure clients weren't evicted
-                        self.assert_session_count(2)
-                        break
-                except AssertionError:
-                    tries -= 1
-                    if tries:
-                        continue
-                    raise
+            with contextutil.safe_while(sleep=1, tries=6) as proceed:
+                while proceed():
+                    try:
+                        with self.assert_cluster_log("1 client(s) laggy due to"
+                                                     " laggy OSDs",
+                                                     timeout=55):
+                            # make sure clients weren't evicted
+                            self.assert_session_count(2)
+                            break
+                    except (AssertionError, CommandFailedError) as e:
+                        log.warning(f'{e}, retrying')
+
+            # clear lagginess and expect to get the warning cleared
+            self.clear_laggy_params(osd)
+            with contextutil.safe_while(sleep=1, tries=6) as proceed:
+                while proceed():
+                    try:
+                        with self.assert_cluster_log("Health check cleared: "
+                                                     "MDS_CLIENTS_LAGGY",
+                                                     timeout=55):
+                            # client should be evicted
+                            self.assert_session_count(1)
+                            break
+                    except (AssertionError, CommandFailedError) as e:
+                        log.warning(f"{e}, retrying")
         finally:
             self.mount_a.kill_cleanup()
             self.mount_a.mount_wait()
             self.mount_a.create_destroy()
-            self.clear_laggy_params(osd)
 
     def test_client_eviction_if_config_is_unset(self):
         """
@@ -857,6 +869,11 @@ class TestClientOnLaggyOSD(CephFSTestCase):
 
             time.sleep(session_timeout)
             self.assert_session_count(1)
+
+            # make sure warning wasn't seen in cluster log
+            with self.assert_cluster_log("laggy due to laggy OSDs",
+                                         timeout=120, present=False):
+                pass
         finally:
             self.mount_a.kill_cleanup()
             self.mount_a.mount_wait()
