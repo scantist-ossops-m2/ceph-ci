@@ -4000,7 +4000,7 @@ TEST_F(TestLibRBD, TestCompareAndWriteMismatch)
   ASSERT_EQ(cmp_buffer.length(), written);
 
   // Compare should fail because of mismatch
-  uint64_t mismatch_off = 0;
+  uint64_t mismatch_off = -2;
   written = rbd_compare_and_write(image, off, write_buffer.length(),
                                   mismatch_buffer.data(), write_buffer.data(),
                                   &mismatch_off, 0);
