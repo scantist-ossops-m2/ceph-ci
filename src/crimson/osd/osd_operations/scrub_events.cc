@@ -165,7 +165,7 @@ ScrubScan::ifut<> ScrubScan::run(PG &pg)
   }).then_interruptible([FNAME, this, &pg] {
     if (local) {
       DEBUGDPP("complete, submitting local event", pg);
-      pg.scrubber.machine.process_event(
+      pg.scrubber.handle_event(
 	scrub::ScrubContext::scan_range_complete_t(
 	  pg.get_pg_whoami(),
 	  std::move(ret)));
@@ -177,7 +177,7 @@ ScrubScan::ifut<> ScrubScan::run(PG &pg)
 	pg.get_osdmap_epoch(),
 	pg.get_pg_whoami());
       encode(ret, m->get_data());
-      pg.scrubber.machine.process_event(
+      pg.scrubber.handle_event(
 	scrub::ScrubContext::generate_and_submit_chunk_result_complete_t{});
       return pg.shard_services.send_to_osd(
 	pg.get_primary().osd,

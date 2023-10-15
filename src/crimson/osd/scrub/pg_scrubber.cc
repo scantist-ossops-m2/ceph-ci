@@ -14,14 +14,6 @@ SET_SUBSYS(osd);
 
 namespace crimson::osd::scrub {
 
-template <typename E>
-void PGScrubber::handle_event(E &&e)
-{
-  LOG_PREFIX(PGScrubber::handle_event);
-  SUBDEBUGDPP(osd, "handle_event: {}", pg, e);
-  machine.process_event(std::forward<E>(e));
-}
-
 void PGScrubber::dump_detail(Formatter *f) const
 {
   f->dump_stream("pgid") << pg.get_pgid();

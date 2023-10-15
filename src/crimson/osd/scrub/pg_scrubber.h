@@ -45,7 +45,12 @@ class PGScrubber : public crimson::BlockerT<PGScrubber>, ScrubContext {
   std::optional<eversion_t> waiting_for_update;
 
   template <typename E>
-  void handle_event(E &&e);
+  void handle_event(E &&e)
+  {
+    LOG_PREFIX(PGScrubber::handle_event);
+    SUBDEBUGDPP(osd, "handle_event: {}", dpp, e);
+    machine.process_event(std::forward<E>(e));
+  }
 
 public:
   static constexpr const char *type_name = "PGScrubber";
