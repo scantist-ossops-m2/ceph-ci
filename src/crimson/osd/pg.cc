@@ -1263,8 +1263,9 @@ void PG::log_operation(
   if (!is_primary()) { // && !is_ec_pg()
     replica_clear_repop_obc(logv);
   }
-  ceph_assert(!logv.empty());
-  scrubber.on_log_update(logv.rbegin()->version);
+  if (!logv.empty()) {
+    scrubber.on_log_update(logv.rbegin()->version);
+  }
   peering_state.append_log(std::move(logv),
                            trim_to,
                            roll_forward_to,
