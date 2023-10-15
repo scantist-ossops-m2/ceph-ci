@@ -172,8 +172,10 @@ public:
     std::unique_ptr<Formatter> f{
       Formatter::create(format, "json-pretty", "json-pretty")
     };
+    f->open_object_section("scrub");
     f->dump_bool("deep", deep);
     f->dump_stream("stamp") << ceph_clock_now();
+    f->close_section();
     return seastar::make_ready_future<tell_result_t>(std::move(f));
   }
 };
