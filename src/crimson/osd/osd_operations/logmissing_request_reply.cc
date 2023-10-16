@@ -27,10 +27,14 @@ LogMissingRequestReply::LogMissingRequestReply(
 
 void LogMissingRequestReply::print(std::ostream& os) const
 {
-  os << "LogMissingRequestReply("
-     << "from=" << req->from
-     << " req=" << *req
-     << ")";
+  if (req) {
+    os << "LogMissingRequestReply("
+       << "from=" << req->from
+       << " req=" << *req
+       << ")";
+  } else {
+    os << "LogMissingRequestReply(req is empty)";
+  }
 }
 
 void LogMissingRequestReply::dump_detail(Formatter *f) const
