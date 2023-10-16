@@ -208,7 +208,11 @@ ScrubScan::ifut<> ScrubScan::scan_object(
     DEBUGDPP("obj: {}, got {} attrs", pg, obj, attrs.size());
     for (auto &i : attrs) {
       i.second.rebuild();
-      entry.attrs.emplace(i.first, i.second.front());
+      if (i.second.length() == 0) {
+	entry.attrs[i.first];
+      } else {
+	entry.attrs.emplace(i.first, i.second.front());
+      }
     }
   }).handle_error_interruptible(
     ct_error::all_same_way([FNAME, this, &pg, &obj, &entry](auto e) {
