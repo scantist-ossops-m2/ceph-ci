@@ -193,28 +193,28 @@ ScrubScan::ifut<> ScrubScan::scan_object(
 {
   LOG_PREFIX(ScrubScan::scan_object);
   DEBUGDPP("obj: {}", pg, obj);
+  auto &entry = ret.objects[obj.hobj];
   return interruptor::make_interruptible(
     pg.shard_services.get_store().stat(
       pg.get_collection_ref(),
       obj)
-  ).then_interruptible([FNAME, this, &pg, &obj](struct stat obj_stat) {
+  ).then_interruptible([FNAME, this, &pg, &obj, &entry](struct stat obj_stat) {
     DEBUGDPP("obj: {}, stat complete, size {}", pg, obj, obj_stat.st_size);
-    ret.objects[obj.hobj].size = obj_stat.st_size;
+    entry.size = obj_stat.st_size;
     return pg.shard_services.get_store().get_attrs(
       pg.get_collection_ref(),
       obj);
-  }).safe_then_interruptible([FNAME, this, &pg, &obj](auto attrs) {
+  }).safe_then_interruptible([FNAME, this, &pg, &obj, &entry](auto attrs) {
     DEBUGDPP("obj: {}, got {} attrs", pg, obj, attrs.size());
-    auto &entry = ret.objects[obj.hobj];
     for (const auto &i : attrs) {
       bufferlist attrbl = i.second;
       attrbl.rebuild();
       entry.attrs[i.first] =  attrbl.front();
     }
   }).handle_error_interruptible(
-    ct_error::all_same_way([FNAME, this, &pg, &obj](auto e) {
+    ct_error::all_same_way([FNAME, this, &pg, &obj, &entry](auto e) {
       DEBUGDPP("obj: {} stat error", pg, obj);
-      ret.objects[obj.hobj].stat_error = true;
+      entry.stat_error = true;
     })
   ).then_interruptible([FNAME, this, &pg, &obj] {
     if (deep) {
