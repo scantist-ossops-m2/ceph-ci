@@ -145,6 +145,7 @@ struct so_builder_t {
     });
 
     so_set_attr_len(so, "extra-non-sys-attr", 10);
+    so_set_attr_len(so, "extra-empty-non-sys-attr", 0);
 
     so.digest_present = true;
     so.digest = 1;
