@@ -204,12 +204,11 @@ ScrubScan::ifut<> ScrubScan::scan_object(
     return pg.shard_services.get_store().get_attrs(
       pg.get_collection_ref(),
       obj);
-  }).safe_then_interruptible([FNAME, this, &pg, &obj, &entry](auto attrs) {
+  }).safe_then_interruptible([FNAME, this, &pg, &obj, &entry](auto &&attrs) {
     DEBUGDPP("obj: {}, got {} attrs", pg, obj, attrs.size());
     for (auto &i : attrs) {
-      bufferlist attrbl = i.second;
-      attrbl.rebuild();
-      entry.attrs.emplace(i.first, attrbl.front());
+      i.second.rebuild();
+      entry.attrs.emplace(i.first, i.second.front());
     }
   }).handle_error_interruptible(
     ct_error::all_same_way([FNAME, this, &pg, &obj, &entry](auto e) {
