@@ -206,10 +206,10 @@ ScrubScan::ifut<> ScrubScan::scan_object(
       obj);
   }).safe_then_interruptible([FNAME, this, &pg, &obj, &entry](auto attrs) {
     DEBUGDPP("obj: {}, got {} attrs", pg, obj, attrs.size());
-    for (auto &i : attrs) {
+    for (const auto &i : attrs) {
       bufferlist attrbl = i.second;
       attrbl.rebuild();
-      entry.attrs.emplace(i.first, attrbl.front());
+      entry.attrs[i.first] =  attrbl.front();
     }
   }).handle_error_interruptible(
     ct_error::all_same_way([FNAME, this, &pg, &obj, &entry](auto e) {
