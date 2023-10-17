@@ -339,6 +339,7 @@ ScrubScan::ifut<> ScrubScan::deep_scan_object(
 	  }
 	}).handle_error(
 	  ct_error::all_same_way([this, &progress, &entry](auto e) {
+	    progress.keys_done = true;
 	    entry.read_error = true;
 	  })
 	).then([] {
