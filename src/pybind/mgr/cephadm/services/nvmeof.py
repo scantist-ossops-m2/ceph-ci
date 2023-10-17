@@ -19,6 +19,9 @@ class NvmeofService(CephService):
     def config(self, spec: NvmeofServiceSpec) -> None:  # type: ignore
         assert self.TYPE == spec.service_type
         assert spec.pool
+        self.pool = spec.pool
+        assert spec.group is not None
+        self.group = spec.group
         self.mgr._check_pool_exists(spec.pool, spec.service_name())
 
     def prepare_create(self, daemon_spec: CephadmDaemonDeploySpec) -> CephadmDaemonDeploySpec:
@@ -34,11 +37,11 @@ class NvmeofService(CephService):
 
         # TODO: check if we can force jinja2 to generate dicts with double quotes instead of using json.dumps
         transport_tcp_options = json.dumps(spec.transport_tcp_options) if spec.transport_tcp_options else None
-        name = '{}.{}'.format(utils.name_to_config_section('nvmeof'), nvmeof_gw_id)
-        rados_id = name[len('client.'):] if name.startswith('client.') else name
+        self.name = '{}.{}'.format(utils.name_to_config_section('nvmeof'), nvmeof_gw_id)
+        rados_id = self.name[len('client.'):] if self.name.startswith('client.') else self.name
         context = {
             'spec': spec,
-            'name': name,
+            'name': self.name,
             'addr': host_ip,
             'port': spec.port,
             'log_level': 'WARN',
@@ -52,6 +55,16 @@ class NvmeofService(CephService):
         daemon_spec.extra_files = {'ceph-nvmeof.conf': gw_conf}
         daemon_spec.final_config, daemon_spec.deps = self.generate_config(daemon_spec)
         daemon_spec.deps = []
+        # Notify monitor about this gateway creation
+        cmd = {
+            'prefix': 'nvme-gw create',
+            'id': self.name,
+            'group': spec.group,
+            'pool': spec.pool
+        }
+        _, _, err = self.mgr.mon_command(cmd)
+        # if send command failed, raise assertion exception, failing the daemon creation
+        assert not err, f"Unable to send monitor command {cmd}, error {err}"
         return daemon_spec
 
     def config_dashboard(self, daemon_descrs: List[DaemonDescription]) -> None:
@@ -83,8 +96,28 @@ class NvmeofService(CephService):
         Called after the daemon is removed.
         """
         logger.debug(f'Post remove daemon {self.TYPE}.{daemon.daemon_id}')
-        # TODO: remove config for dashboard nvmeof gateways if any
-        # and any certificates being used for mTLS
+        # remove config for dashboard nvmeof gateways if any
+        ret, out, err = self.mgr.mon_command({
+            'prefix': 'dashboard nvmeof-gateway-rm',
+            'name': daemon.hostname,
+        })
+        if not ret:
+            logger.info(f'{daemon.hostname} removed from nvmeof gateways dashboard config')
+
+        # Assert configured
+        assert self.name
+        assert self.pool
+        assert self.group is not None
+        # Notify monitor about this gateway deletion
+        cmd = {
+            'prefix': 'nvme-gw delete',
+            'id': self.name,
+            'group': self.group,
+            'pool': self.pool
+        }
+        _, _, err = self.mgr.mon_command(cmd)
+        if err:
+            self.mgr.log.error(f"Unable to send monitor command {cmd}, error {err}")
 
     def purge(self, service_name: str) -> None:
         """Removes configuration
