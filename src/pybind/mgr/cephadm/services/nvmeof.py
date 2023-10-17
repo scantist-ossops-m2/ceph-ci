@@ -21,6 +21,9 @@ class NvmeofService(CephService):
     def config(self, spec: NvmeofServiceSpec) -> None:  # type: ignore
         assert self.TYPE == spec.service_type
         assert spec.pool
+        self.pool = spec.pool
+        assert spec.group is not None
+        self.group = spec.group
         self.mgr._check_pool_exists(spec.pool, spec.service_name())
 
     def prepare_create(self, daemon_spec: CephadmDaemonDeploySpec) -> CephadmDaemonDeploySpec:
@@ -54,6 +57,16 @@ class NvmeofService(CephService):
         daemon_spec.extra_files = {'ceph-nvmeof.conf': gw_conf}
         daemon_spec.final_config, daemon_spec.deps = self.generate_config(daemon_spec)
         daemon_spec.deps = []
+        # Notify monitor about this gateway creation
+        cmd = {
+            'prefix': 'nvme-gw create',
+            'id': name,
+            'group': spec.group,
+            'pool': spec.pool
+        }
+        _, _, err = self.mgr.mon_command(cmd)
+        # if send command failed, raise assertion exception, failing the daemon creation
+        assert not err, f"Unable to send monitor command {cmd}, error {err}"
         return daemon_spec
 
     def config_dashboard(self, daemon_descrs: List[DaemonDescription]) -> None:
@@ -124,7 +137,19 @@ class NvmeofService(CephService):
         if not ret:
             logger.info(f'{daemon.hostname} removed from nvmeof gateways dashboard config')
 
-        # and any certificates being used for mTLS
+        # Assert configured
+        assert self.pool
+        assert self.group is not None
+        # Notify monitor about this gateway deletion
+        cmd = {
+            'prefix': 'nvme-gw delete',
+            'id': daemon.hostname,
+            'group': self.group,
+            'pool': self.pool
+        }
+        _, _, err = self.mgr.mon_command(cmd)
+        if err:
+            self.mgr.log.error(f"Unable to send monitor command {cmd}, error {err}")
 
     def purge(self, service_name: str) -> None:
         """Removes configuration
