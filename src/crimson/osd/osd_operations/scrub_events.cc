@@ -308,8 +308,10 @@ ScrubScan::ifut<> ScrubScan::deep_scan_object(
 	  pg.get_collection_ref(),
 	  obj,
 	  progress.next_key
-	).safe_then([this, &progress, &entry](auto result) {
+	).safe_then([FNAME, this, &obj, &progress, &entry, &pg](auto result) {
 	  const auto &[done, omap] = result;
+	  DEBUGDPP("op: {}, obj: {}, progress: {} got {} keys",
+		   pg, *this, obj, progress, omap.size());
 	  for (const auto &p : omap) {
 	    bufferlist bl;
 	    encode(p.first, bl);
@@ -319,6 +321,8 @@ ScrubScan::ifut<> ScrubScan::deep_scan_object(
 	    entry.object_omap_bytes += p.second.length();
 	  }
 	  if (done) {
+	    DEBUGDPP("op: {}, obj: {}, progress: {} omap done",
+		     pg, *this, obj, progress);
 	    progress.keys_done = true;
 	    entry.omap_digest = progress.omap_hash.digest();
 	    entry.omap_digest_present = true;
@@ -335,10 +339,15 @@ ScrubScan::ifut<> ScrubScan::deep_scan_object(
 	    }
 	  } else {
 	    ceph_assert(!omap.empty()); // omap_get_values invariant
+	    DEBUGDPP("op: {}, obj: {}, progress: {} omap not done, next {}",
+		     pg, *this, obj, progress, omap.crbegin()->first);
 	    progress.next_key = omap.crbegin()->first;
 	  }
 	}).handle_error(
-	  ct_error::all_same_way([this, &progress, &entry](auto e) {
+	  ct_error::all_same_way([FNAME, this, &obj, &progress, &entry, &pg]
+				 (auto e) {
+	    DEBUGDPP("op: {}, obj: {}, progress: {} error reading omap {}",
+		     pg, *this, obj, progress, e);
 	    progress.keys_done = true;
 	    entry.read_error = true;
 	  })
