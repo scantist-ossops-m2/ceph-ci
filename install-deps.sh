@@ -517,6 +517,8 @@ else
                 $SUDO rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-$MAJOR_VERSION
                 $SUDO rm -f /etc/yum.repos.d/dl.fedoraproject.org*
                 if test $ID = centos -a $MAJOR_VERSION = 8 ; then
+                    # Enable yum config for CentOS Cloud SIG
+                    $SUDO dnf -y install centos-release-openstack-wallaby # for grpc-devel
                     # Enable 'powertools' or 'PowerTools' repo
                     $SUDO dnf config-manager --set-enabled $(dnf repolist --all 2>/dev/null|gawk 'tolower($0) ~ /^powertools\s/{print $1}')
                     dts_ver=11
