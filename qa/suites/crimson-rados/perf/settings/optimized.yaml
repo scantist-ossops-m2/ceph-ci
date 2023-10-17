@@ -8,8 +8,6 @@ overrides:
       osd:
         debug filestore: "0/0"
         debug journal: "0/0"
-        debug ms: "0/0"
-        debug osd: "0/0"
       global:
         auth client required: none
         auth cluster required: none
