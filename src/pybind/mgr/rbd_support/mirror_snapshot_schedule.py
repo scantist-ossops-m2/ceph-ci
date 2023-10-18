@@ -79,6 +79,8 @@ class CreateSnapshotRequests:
                 return
 
         self.open_image(image_spec)
+        self.log.debug("exiting CreateSnapshotRequests.add: {}/{}/{}".format(
+            pool_id, namespace, image_id))
 
     def open_image(self, image_spec: ImageSpec) -> None:
         pool_id, namespace, image_id = image_spec
@@ -92,7 +94,11 @@ class CreateSnapshotRequests:
             def cb(comp: rados.Completion, image: rbd.Image) -> None:
                 self.handle_open_image(image_spec, comp, image)
 
+            self.log.debug("calling aio_open_image CreateSnapshotRequests.open_image: {}/{}/{}".format(
+                pool_id, namespace, image_id))
             rbd.RBD().aio_open_image(cb, ioctx, image_id=image_id)
+            self.log.debug("exiting CreateSnapshotRequests.open_image: {}/{}/{}".format(
+                pool_id, namespace, image_id))
         except Exception as e:
             self.log.error(
                 "exception when opening {}/{}/{}: {}".format(
@@ -293,24 +299,38 @@ class CreateSnapshotRequests:
             self.pending.remove(image_spec)
             self.condition.notify()
             if not self.queue:
+                self.log.debug("exiting CreateSnapshotRequests.finish: {}/{}/{}".format(
+                    pool_id, namespace, image_id))
                 return
             image_spec = self.queue.pop(0)
 
         self.open_image(image_spec)
+        self.log.debug("exiting CreateSnapshotRequests.finish: {}/{}/{}".format(
+            pool_id, namespace, image_id))
 
     def get_ioctx(self, image_spec: ImageSpec) -> rados.Ioctx:
         pool_id, namespace, image_id = image_spec
         nspec = (pool_id, namespace)
+        self.log.debug("entering CreateSnapshotRequests.get_ioctx: {}/{}/{}".format(
+            pool_id, namespace, image_id))
 
         with self.lock:
+            self.log.debug("entering CreateSnapshotRequests.get_ioctx acquired lock: {}/{}/{}".format(
+                pool_id, namespace, image_id))
             ioctx, images = self.ioctxs.get(nspec, (None, None))
             if not ioctx:
+                self.log.debug("entering CreateSnapshotRequests.get_ioctx opening ioctx: {}/{}/{}".format(
+                    pool_id, namespace, image_id))
                 ioctx = self.rados.open_ioctx2(int(pool_id))
+                self.log.debug("entering CreateSnapshotRequests.get_ioctx setting namespace: {}/{}/{}".format(
+                    pool_id, namespace, image_id))
                 ioctx.set_namespace(namespace)
                 images = set()
                 self.ioctxs[nspec] = (ioctx, images)
             assert images is not None
             images.add(image_spec)
+        self.log.debug("exiting CreateSnapshotRequests.get_ioctx: {}/{}/{}".format(
+            pool_id, namespace, image_id))
 
         return ioctx
 
@@ -353,6 +373,7 @@ class MirrorSnapshotScheduleHandler:
         if self.thread.is_alive():
             self.log.debug("MirrorSnapshotScheduleHandler: joining thread")
             self.thread.join()
+        self.log.debug("MirrorSnapshotScheduleHandler: calling wait_for_pending")
         self.create_snapshot_requests.wait_for_pending()
         self.log.info("MirrorSnapshotScheduleHandler: shut down")
 
@@ -392,11 +413,11 @@ class MirrorSnapshotScheduleHandler:
         self.schedules.load(namespace_validator, image_validator)
 
     def refresh_images(self) -> float:
+        self.log.debug("entering MirrorSnapshotScheduleHandler.refresh_images")
         elapsed = (datetime.now() - self.last_refresh_images).total_seconds()
         if elapsed < self.REFRESH_DELAY_SECONDS:
+            self.log.debug("exiting MirrorSnapshotScheduleHandler.refresh_images elapsed time less")
             return self.REFRESH_DELAY_SECONDS - elapsed
-
-        self.log.debug("MirrorSnapshotScheduleHandler: refresh_images")
 
         with self.lock:
             self.load_schedules()
@@ -421,6 +442,7 @@ class MirrorSnapshotScheduleHandler:
             self.images = images
 
         self.last_refresh_images = datetime.now()
+        self.log.debug("exiting MirrorSnapshotScheduleHandler.refresh_images")
         return self.REFRESH_DELAY_SECONDS
 
     def load_pool_images(self,
@@ -514,11 +536,13 @@ class MirrorSnapshotScheduleHandler:
         self.condition.notify()
 
     def enqueue(self, now: datetime, pool_id: str, namespace: str, image_id: str) -> None:
+        self.log.debug("entering MirrorSnapshotScheduleHandler.enqueue")
         schedule = self.schedules.find(pool_id, namespace, image_id)
         if not schedule:
             self.log.debug(
                 "MirrorSnapshotScheduleHandler: no schedule for {}/{}/{}".format(
                     pool_id, namespace, image_id))
+            self.log.debug("exiting MirrorSnapshotScheduleHandler.enqueue no schedule")
             return
 
         schedule_time = schedule.next_run(now)
@@ -530,9 +554,12 @@ class MirrorSnapshotScheduleHandler:
         image_spec = ImageSpec(pool_id, namespace, image_id)
         if image_spec not in self.queue[schedule_time]:
             self.queue[schedule_time].append(image_spec)
+        self.log.debug("exiting MirrorSnapshotScheduleHandler.enqueue")
 
     def dequeue(self) -> Tuple[Optional[ImageSpec], float]:
+        self.log.debug("entering MirrorSnapshotScheduleHandler.dequeue")
         if not self.queue:
+            self.log.debug("exiting MirrorSnapshotScheduleHandler.dequeue None,1000")
             return None, 1000.0
 
         now = datetime.now()
@@ -541,12 +568,14 @@ class MirrorSnapshotScheduleHandler:
         if datetime.strftime(now, "%Y-%m-%d %H:%M:%S") < schedule_time:
             wait_time = (datetime.strptime(schedule_time,
                                            "%Y-%m-%d %H:%M:%S") - now)
+            self.log.debug("exiting MirrorSnapshotScheduleHandler.dequeue None, wait_time")
             return None, wait_time.total_seconds()
 
         images = self.queue[schedule_time]
         image = images.pop(0)
         if not images:
             del self.queue[schedule_time]
+        self.log.debug("exiting MirrorSnapshotScheduleHandler.dequeue image, 0")
         return image, 0.0
 
     def remove_from_queue(self, pool_id: str, namespace: str, image_id: str) -> None:
