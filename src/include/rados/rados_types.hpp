@@ -137,6 +137,9 @@ struct err_t {
   bool has_snapset_corrupted() const {
     return errors & SNAPSET_CORRUPTED;
   }
+  bool has_errors() const {
+    return errors;
+  }
   bool has_shallow_errors() const {
     return errors & SHALLOW_ERRORS;
   }
@@ -166,6 +169,7 @@ struct shard_info_t : err_t {
   uint32_t data_digest = 0;
   bool selected_oi = false;
   bool primary = false;
+  bool authoritative = false;
 };
 
 struct osd_shard_t {

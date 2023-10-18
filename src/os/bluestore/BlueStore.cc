@@ -13252,6 +13252,8 @@ int BlueStore::omap_get_values(
   map<string, bufferlist> *output ///< [out] Returned keys and values
   )
 {
+  /* TODO: add paging.  This, the ObjectStore interface, and the FuturizedStore
+   * interface should have arguments for limiting total bytes returned. */
   Collection *c = static_cast<Collection *>(c_.get());
   dout(15) << __func__ << " " << c->get_cid() << " oid " << oid << dendl;
   if (!c->exists)
@@ -13273,7 +13275,11 @@ int BlueStore::omap_get_values(
       r = -ENOENT;
       goto out;
     }
-    iter->upper_bound(*start_after);
+    if (start_after) {
+      iter->upper_bound(*start_after);
+    } else {
+      iter->seek_to_first();
+    }
     for (; iter->valid(); iter->next()) {
       output->insert(make_pair(iter->key(), iter->value()));
     }
