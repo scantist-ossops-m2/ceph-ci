@@ -84,6 +84,9 @@
       environment:
         CEPH_VOLUME_DEBUG: 1
 
+    - name: debug
+      shell: sleep 365d
+
     - name: zap /dev/vdc1
       command: "ceph-volume --cluster {{ cluster }} lvm zap /dev/vdc1 --destroy"
       environment:
