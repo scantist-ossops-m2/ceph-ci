@@ -312,23 +312,25 @@ ClientRequest::do_process(
     }
   }
   return pg->do_osd_ops(m, conn, obc, op_info, snapc).safe_then_unpack_interruptible(
-    [this, pg, &ihref](auto submitted, auto all_completed) mutable {
-      return submitted.then_interruptible([this, pg, &ihref] {
-	return ihref.enter_stage<interruptor>(client_pp(*pg).wait_repop, *this);
+    [this, pg, &ihref](auto submitted, auto error_log, auto all_completed) mutable {
+      return submitted.then_interruptible([this, pg, &ihref, error_log = std::move(error_log)] () mutable {
+        return error_log.then([this, pg, &ihref] {
+          return ihref.enter_stage<interruptor>(client_pp(*pg).wait_repop, *this);
+        });
       }).then_interruptible(
-	[this, pg, all_completed=std::move(all_completed), &ihref]() mutable {
-	  return all_completed.safe_then_interruptible(
-	    [this, pg, &ihref](MURef<MOSDOpReply> reply) {
-	      return ihref.enter_stage<interruptor>(client_pp(*pg).send_reply, *this
-	      ).then_interruptible(
-		[this, reply=std::move(reply)]() mutable {
-		  logger().debug("{}: sending response", *this);
-		  return conn->send(std::move(reply));
-		});
-	    }, crimson::ct_error::eagain::handle([this, pg, &ihref]() mutable {
-	      return process_op(ihref, pg);
-	    }));
-	});
+        [this, pg, all_completed=std::move(all_completed), &ihref]() mutable {
+          return all_completed.safe_then_interruptible(
+            [this, pg, &ihref](MURef<MOSDOpReply> reply) {
+              return ihref.enter_stage<interruptor>(client_pp(*pg).send_reply, *this
+              ).then_interruptible(
+                [this, reply=std::move(reply)]() mutable {
+                  logger().debug("{}: sending response", *this);
+                  return conn->send(std::move(reply));
+                });
+            }, crimson::ct_error::eagain::handle([this, pg, &ihref]() mutable {
+              return process_op(ihref, pg);
+            }));
+        });
     }, crimson::ct_error::eagain::handle([this, pg, &ihref]() mutable {
       return process_op(ihref, pg);
     }));
