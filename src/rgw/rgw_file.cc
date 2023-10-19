@@ -1840,6 +1840,7 @@ namespace rgw {
 
     counters = rgw::op_counters::get(state);
     rgw::op_counters::inc(counters, l_rgw_op_put_obj, 1);
+    perfcounter->inc(l_rgw_put);
     op_ret = -EINVAL;
 
     if (state->object->empty()) {
@@ -1946,6 +1947,7 @@ namespace rgw {
 
     state->obj_size = bytes_written;
     rgw::op_counters::inc(counters, l_rgw_op_put_obj_b, state->obj_size);
+    perfcounter->inc(l_rgw_put_b, state->obj_size);
 
     // flush data in filters
     op_ret = filter->process({}, state->obj_size);
@@ -2029,6 +2031,7 @@ namespace rgw {
 
   done:
     rgw::op_counters::tinc(counters, l_rgw_op_put_obj_lat, state->time_elapsed());
+    perfcounter->tinc(l_rgw_put_lat, state->time_elapsed());
     return op_ret;
   } /* exec_finish */
 
