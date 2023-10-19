@@ -106,8 +106,7 @@ public:
  * particular snap will group under up to 8 prefixes.
  */
 class SnapMapper : public Scrub::SnapMapReaderI {
-  friend class MapperVerifier; // unit-test support
-  friend class DirectMapper; // unit-test support
+  friend class MapperVerifier;
 public:
   CephContext* cct;
   struct object_snaps {
