@@ -51,6 +51,8 @@ struct SnapMapReaderI {
   virtual ~SnapMapReaderI() = default;
 };
 
+}  // namespace Scrub
+
 enum class snap_mapper_op_t {
   add,
   update,
@@ -64,5 +66,3 @@ struct snap_mapper_fix_t {
   std::set<snapid_t> snaps;
   std::set<snapid_t> wrong_snaps;  // only collected & returned for logging sake
 };
-
-}  // namespace Scrub
