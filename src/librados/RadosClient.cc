@@ -158,10 +158,14 @@ int librados::RadosClient::pool_required_alignment2(int64_t pool_id,
 
 int librados::RadosClient::pool_get_name(uint64_t pool_id, std::string *s, bool wait_latest_map)
 {
+  ldout(cct, 10) << __func__ << " calling wait_for_osdmap()" << dendl;
   int r = wait_for_osdmap();
-  if (r < 0)
+  if (r < 0) {
+    ldout(cct, 10) << __func__ << " exiting with r=" << r << dendl;
     return r;
+  }
   retry:
+  ldout(cct, 10) << __func__ << " calling objecter->with_osdmap()" << dendl;
   objecter->with_osdmap([&](const OSDMap& o) {
       if (!o.have_pg_pool(pool_id)) {
 	r = -ENOENT;
@@ -171,13 +175,17 @@ int librados::RadosClient::pool_get_name(uint64_t pool_id, std::string *s, bool 
       }
     });
   if (r == -ENOENT && wait_latest_map) {
+    ldout(cct, 10) << __func__ << " calling wait_for_latest_osdmap()" << dendl;
     r = wait_for_latest_osdmap();
-    if (r < 0)
+    if (r < 0) {
+      ldout(cct, 10) << __func__ << " exiting with r=" << r << dendl;
       return r;
+    }
     wait_latest_map = false;
     goto retry;
   }
 
+  ldout(cct, 10) << __func__ << " exiting with r=" << r << dendl;
   return r;
 }
 
@@ -484,6 +492,7 @@ int librados::RadosClient::create_ioctx(const char *name, IoCtxImpl **io)
 int librados::RadosClient::create_ioctx(int64_t pool_id, IoCtxImpl **io)
 {
   std::string pool_name;
+  ldout(cct, 10) << __func__ << " calling pool_get_name() " << dendl;
   int r = pool_get_name(pool_id, &pool_name, true);
   if (r < 0)
     return r;
@@ -554,6 +563,7 @@ int librados::RadosClient::wait_for_osdmap()
 {
   ceph_assert(ceph_mutex_is_not_locked_by_me(lock));
 
+  ldout(cct, 10) << __func__ << " entering " << dendl;
   if (state != CONNECTED) {
     return -ENOTCONN;
   }
@@ -584,8 +594,10 @@ int librados::RadosClient::wait_for_osdmap()
       }
       ldout(cct, 10) << __func__ << " done waiting" << dendl;
     }
+    ldout(cct, 10) << __func__ << " exiting after needing map " << dendl;
     return 0;
   } else {
+    ldout(cct, 10) << __func__ << " exiting without needing map " << dendl;
     return 0;
   }
 }
@@ -594,7 +606,9 @@ int librados::RadosClient::wait_for_osdmap()
 int librados::RadosClient::wait_for_latest_osdmap()
 {
   bs::error_code ec;
+  ldout(cct, 10) << __func__ << " entering " << dendl;
   objecter->wait_for_latest_osdmap(ca::use_blocked[ec]);
+  ldout(cct, 10) << __func__ << " exiting " << dendl;
   return ceph::from_error_code(ec);
 }
 
