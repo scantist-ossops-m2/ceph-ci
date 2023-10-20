@@ -990,6 +990,20 @@ PGBackend::remove(ObjectState& os, ceph::os::Transaction& txn,
   txn.remove(coll->get_cid(),
 	     ghobject_t{os.oi.soid, ghobject_t::NO_GEN, shard});
   delta_stats.num_bytes -= os.oi.size;
+
+  // todo: update watchers
+  if (os.oi.is_whiteout()) {
+    os.oi.clear_flag(object_info_t::FLAG_WHITEOUT);
+    delta_stats.num_whiteouts--;
+  }
+
+  if (os.oi.is_omap()) {
+    os.oi.clear_flag(object_info_t::FLAG_OMAP);
+    delta_stats.num_objects_omap--;
+  }
+
+  delta_stats.num_objects--;
+
   os.oi.size = 0;
   os.oi.new_object();
 
@@ -1002,12 +1016,6 @@ PGBackend::remove(ObjectState& os, ceph::os::Transaction& txn,
                ghobject_t{os.oi.soid, ghobject_t::NO_GEN, shard});
     return seastar::now();
   }
-  // todo: update watchers
-  if (os.oi.is_whiteout()) {
-    os.oi.clear_flag(object_info_t::FLAG_WHITEOUT);
-    delta_stats.num_whiteouts--;
-  }
-  delta_stats.num_objects--;
   os.exists = false;
   return seastar::now();
 }
@@ -1599,7 +1607,10 @@ PGBackend::omap_set_vals(
   osd_op_params.clean_regions.mark_omap_dirty();
   delta_stats.num_wr++;
   delta_stats.num_wr_kb += shift_round_up(to_set_bl.length(), 10);
-  os.oi.set_flag(object_info_t::FLAG_OMAP);
+  if (!os.oi.is_omap()) {
+    os.oi.set_flag(object_info_t::FLAG_OMAP);
+    delta_stats.num_objects_omap++;
+  }
   os.oi.clear_omap_digest();
   return seastar::now();
 }
@@ -1616,7 +1627,10 @@ PGBackend::omap_set_header(
   txn.omap_setheader(coll->get_cid(), ghobject_t{os.oi.soid}, osd_op.indata);
   osd_op_params.clean_regions.mark_omap_dirty();
   delta_stats.num_wr++;
-  os.oi.set_flag(object_info_t::FLAG_OMAP);
+  if (!os.oi.is_omap()) {
+    os.oi.set_flag(object_info_t::FLAG_OMAP);
+    delta_stats.num_objects_omap++;
+  }
   os.oi.clear_omap_digest();
   return seastar::now();
 }
