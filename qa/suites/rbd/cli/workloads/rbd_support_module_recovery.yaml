@@ -3,6 +3,10 @@ overrides:
     conf:
       mgr:
         debug rbd: 20
+        debug rados: 20
+        debug objecter: 20
+        debug monc: 20
+        debug ms: 1
 tasks:
 - install:
     extra_system_packages:
