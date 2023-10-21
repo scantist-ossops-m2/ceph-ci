@@ -70,7 +70,6 @@ from cephadmlib.constants import (
     LOGROTATE_DIR,
     LOG_DIR,
     LOG_DIR_MODE,
-    PIDS_LIMIT_UNLIMITED_PODMAN_VERSION,
     SYSCTL_DIR,
     UNIT_DIR,
 )
@@ -2677,13 +2676,7 @@ def set_pids_limit_unlimited(ctx: CephadmContext, container_args: List[str]) -> 
     # Useful for daemons like iscsi where the default pids-limit limits the number of luns
     # per iscsi target or rgw where increasing the rgw_thread_pool_size to a value near
     # the default pids-limit may cause the container to crash.
-    if (
-        isinstance(ctx.container_engine, Podman)
-        and ctx.container_engine.version >= PIDS_LIMIT_UNLIMITED_PODMAN_VERSION
-    ):
-        container_args.append('--pids-limit=-1')
-    else:
-        container_args.append('--pids-limit=0')
+    container_args.append(ctx.container_engine.unlimited_pids_option)
 
 
 def get_container(
