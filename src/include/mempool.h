@@ -26,7 +26,8 @@
 #include <boost/container/flat_set.hpp>
 #include <boost/container/flat_map.hpp>
 
-#ifdef _GNU_SOURCE
+#if !defined(_GNU_SOURCE) && defined(WITH_SEASTAR) && !defined(WITH_ALIEN)
+#else
 #  include <sched.h>
 #endif
 
@@ -206,7 +207,7 @@ enum {
 };
 
 static size_t pick_a_shard_int() {
-#ifndef _GNU_SOURCE
+#if !defined(_GNU_SOURCE) && defined(WITH_SEASTAR) && !defined(WITH_ALIEN)
   // Dirt cheap, see:
   //   https://fossies.org/dox/glibc-2.32/pthread__self_8c_source.html
   size_t me = (size_t)pthread_self();
