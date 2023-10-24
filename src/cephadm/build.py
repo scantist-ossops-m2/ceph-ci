@@ -126,10 +126,22 @@ def _install_deps(tempdir):
     env = os.environ.copy()
     env['CC'] = '/bin/false'
     env['CXX'] = '/bin/false'
+
+    executable = sys.executable
+    venv = None
+    res = subprocess.run(
+        [sys.executable, '-m', 'pip', '--help'], stdout=subprocess.DEVNULL
+    )
+    if res.returncode != 0:
+        log.warning("No pip module found. Attempting to create a virtualenv.")
+        venv = tempdir / "_venv_"
+        subprocess.run([sys.executable, '-m', 'venv', str(venv)])
+        executable = str(venv / "bin" / pathlib.Path(executable).name)
+
     # apparently pip doesn't have an API, just a cli.
     subprocess.check_call(
         [
-            sys.executable,
+            executable,
             "-m",
             "pip",
             "install",
@@ -142,6 +154,8 @@ def _install_deps(tempdir):
         ],
         env=env,
     )
+    if venv:
+        shutil.rmtree(venv)
 
 
 def generate_version_file(versioning_vars, dest):
