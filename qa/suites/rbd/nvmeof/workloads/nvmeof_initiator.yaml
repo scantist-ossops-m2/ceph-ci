@@ -1,0 +1,6 @@
+tasks:
+- workunit:
+    no_coverage_and_limits: true
+    clients:
+      client.1:
+        - cephadm/nvme_initiator.sh

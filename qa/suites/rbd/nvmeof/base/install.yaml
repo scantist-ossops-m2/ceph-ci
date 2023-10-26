@@ -1,0 +1,37 @@
+use_shaman: True
+tasks:
+- cephadm:
+- cephadm.shell:
+    host.a:
+    # get state before nvmeof deployment
+    - ceph orch status
+    - ceph orch ps
+    - ceph orch ls
+    - ceph orch host ls
+    - ceph orch device ls
+    - ceph osd lspools
+    # create pool
+    - ceph osd pool create mypool
+    - rbd pool init -p mypool
+    - ceph osd pool ls detail
+    # deploy nvmeof
+    ## Uncomment to test specific nvmeof images
+    ## - ceph config set mgr mgr/cephadm/container_image_nvmeof quay.io/ceph/nvmeof:latest
+    - ceph orch apply nvmeof mypool --placement="1 $(hostname)"
+    - ceph orch ps --refresh
+    - ceph versions
+    - ceph -s
+    - ceph orch ls
+    - rbd create mypool/myimage --size 8Gi
+
+- cephadm.nvmeof_gateway_cfg:
+    source: host.a 
+    target: client.1
+    service: nvmeof.mypool
+
+- cephadm.wait_for_service:
+    service: nvmeof.mypool
+
+- exec:
+    client.0:
+      - journalctl -u $(systemctl list-units | grep nvmeof.mypool | awk '{print $1}')
