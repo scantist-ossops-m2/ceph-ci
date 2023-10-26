@@ -45,6 +45,7 @@ class CreateSnapshotRequests:
         self.ioctxs: Dict[Tuple[str, str], Tuple[rados.Ioctx, Set[ImageSpec]]] = {}
 
     def __del__(self) -> None:
+        self.log.debug("{} CreateSnapshotRequests.wait_for_pending: __del__".format(repr(self)))
         self.wait_for_pending()
 
     def wait_for_pending(self) -> None:
@@ -320,44 +321,44 @@ class CreateSnapshotRequests:
     def get_ioctx(self, image_spec: ImageSpec) -> rados.Ioctx:
         pool_id, namespace, image_id = image_spec
         nspec = (pool_id, namespace)
-        self.log.debug("entering CreateSnapshotRequests.get_ioctx: {}/{}/{}".format(
-            pool_id, namespace, image_id))
+        self.log.debug("{} entering CreateSnapshotRequests.get_ioctx: {}/{}/{}".format(
+            repr(self), pool_id, namespace, image_id))
 
         with self.lock:
-            self.log.debug("CreateSnapshotRequests.get_ioctx acquired lock: {}/{}/{}".format(
-                pool_id, namespace, image_id))
+            self.log.debug("{} CreateSnapshotRequests.get_ioctx acquired lock: {}/{}/{}".format(
+                repr(self), pool_id, namespace, image_id))
             ioctx, images = self.ioctxs.get(nspec, (None, None))
             if not ioctx:
-                self.log.debug("CreateSnapshotRequests.get_ioctx opening ioctx: {}/{}/{}".format(
-                    pool_id, namespace, image_id))
+                self.log.debug("{} CreateSnapshotRequests.get_ioctx opening ioctx: {}/{}/{}".format(
+                    repr(self), pool_id, namespace, image_id))
                 ioctx = self.rados.open_ioctx2(int(pool_id))
-                self.log.debug("CreateSnapshotRequests.get_ioctx setting namespace: {}/{}/{}".format(
-                    pool_id, namespace, image_id))
+                self.log.debug("{} CreateSnapshotRequests.get_ioctx setting namespace: {}/{}/{}".format(
+                    repr(self), pool_id, namespace, image_id))
                 ioctx.set_namespace(namespace)
                 images = set()
                 self.ioctxs[nspec] = (ioctx, images)
             assert images is not None
             images.add(image_spec)
-        self.log.debug("exiting CreateSnapshotRequests.get_ioctx: {}/{}/{} and released lock".format(
-            pool_id, namespace, image_id))
+        self.log.debug("{} exiting CreateSnapshotRequests.get_ioctx: {}/{}/{} and released lock".format(
+            repr(self), pool_id, namespace, image_id))
 
         return ioctx
 
     def put_ioctx(self, image_spec: ImageSpec) -> None:
         pool_id, namespace, image_id = image_spec
         nspec = (pool_id, namespace)
-        self.log.debug("entering CreateSnapshotRequests.put_ioctx: {}/{}/{}".format(
-            pool_id, namespace, image_id))
+        self.log.debug("{} entering CreateSnapshotRequests.put_ioctx: {}/{}/{}".format(
+            repr(self), pool_id, namespace, image_id))
 
         with self.lock:
-            self.log.debug("CreateSnapshotRequests.put_ioctx acquired lock: {}/{}/{}".format(
-                pool_id, namespace, image_id))
+            self.log.debug("{} CreateSnapshotRequests.put_ioctx acquired lock: {}/{}/{}".format(
+                repr(self), pool_id, namespace, image_id))
             ioctx, images = self.ioctxs[nspec]
             images.remove(image_spec)
             if not images:
                 del self.ioctxs[nspec]
-        self.log.debug("exiting CreateSnapshotRequests.put_ioctx and released lock: {}/{}/{}".format(
-            pool_id, namespace, image_id))
+        self.log.debug("{} exiting CreateSnapshotRequests.put_ioctx and released lock: {}/{}/{}".format(
+            repr(self), pool_id, namespace, image_id))
 
 
 class MirrorSnapshotScheduleHandler:
