@@ -44,9 +44,6 @@ class CreateSnapshotRequests:
         self.queue: List[ImageSpec] = []
         self.ioctxs: Dict[Tuple[str, str], Tuple[rados.Ioctx, Set[ImageSpec]]] = {}
 
-    def __del__(self) -> None:
-        self.wait_for_pending()
-
     def wait_for_pending(self) -> None:
         with self.lock:
             self.log.debug("CreateSnapshotRequests.wait_for_pending: acquired lock")
@@ -74,11 +71,15 @@ class CreateSnapshotRequests:
                     "CreateSnapshotRequests.add: {}/{}/{}: {}".format(
                         pool_id, namespace, image_id,
                         "previous request is still in progress"))
+                self.log.debug("CreateSnapshotRequests.add: {}/{}/{} released lock".format(
+                    pool_id, namespace, image_id))
                 return
             self.pending.add(image_spec)
 
             if len(self.pending) > max_concurrent:
                 self.queue.append(image_spec)
+                self.log.debug("CreateSnapshotRequests.add: {}/{}/{} released lock pending > max".format(
+                    pool_id, namespace, image_id))
                 return
 
         self.log.debug("CreateSnapshotRequests.add: {}/{}/{} released lock".format(
@@ -306,7 +307,7 @@ class CreateSnapshotRequests:
             self.pending.remove(image_spec)
             self.condition.notify()
             if not self.queue:
-                self.log.debug("exiting CreateSnapshotRequests.finish queue empty: {}/{}/{}".format(
+                self.log.debug("exiting CreateSnapshotRequests.finish queue empty and released lock: {}/{}/{}".format(
                     pool_id, namespace, image_id))
                 return
             image_spec = self.queue.pop(0)
