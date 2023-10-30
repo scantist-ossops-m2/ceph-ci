@@ -27,6 +27,7 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 
+_ZIPAPP_REQS = "zipapp-reqs.txt"
 _VALID_VERS_VARS = [
     "CEPH_GIT_VER",
     "CEPH_GIT_NICE_VER",
@@ -60,7 +61,7 @@ def _build(dest, src, versioning_vars=None):
     tempdir = pathlib.Path(tempfile.mkdtemp(suffix=".cephadm.build"))
     log.debug("working in %s", tempdir)
     try:
-        if os.path.isfile("requirements.txt"):
+        if os.path.isfile(_ZIPAPP_REQS):
             _install_deps(tempdir)
         log.info("Copying contents")
         # cephadmlib is cephadm's private library of modules
@@ -120,19 +121,41 @@ def _install_deps(tempdir):
     """Install dependencies with pip."""
     # TODO we could explicitly pass a python version here
     log.info("Installing dependencies")
+    # best effort to disable compilers, packages in the zipapp
+    # must be pure python.
+    env = os.environ.copy()
+    env['CC'] = '/bin/false'
+    env['CXX'] = '/bin/false'
+
+    executable = sys.executable
+    venv = None
+    res = subprocess.run(
+        [sys.executable, '-m', 'pip', '--help'], stdout=subprocess.DEVNULL
+    )
+    if res.returncode != 0:
+        log.warning("No pip module found. Attempting to create a virtualenv.")
+        venv = tempdir / "_venv_"
+        subprocess.run([sys.executable, '-m', 'venv', str(venv)])
+        executable = str(venv / "bin" / pathlib.Path(executable).name)
+
     # apparently pip doesn't have an API, just a cli.
     subprocess.check_call(
         [
-            sys.executable,
+            executable,
             "-m",
             "pip",
             "install",
+            "--no-binary",
+            ":all:",
             "--requirement",
-            "requirements.txt",
+            _ZIPAPP_REQS,
             "--target",
             tempdir,
-        ]
+        ],
+        env=env,
     )
+    if venv:
+        shutil.rmtree(venv)
 
 
 def generate_version_file(versioning_vars, dest):
