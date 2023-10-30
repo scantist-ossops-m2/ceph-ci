@@ -117,7 +117,7 @@ def _compile(dest, tempdir):
         log.info("Zipapp created without compression")
 
 
-def _install_deps(tempdir):
+def _install_deps(tempdir, use_venv=False):
     """Install dependencies with pip."""
     # TODO we could explicitly pass a python version here
     log.info("Installing dependencies")
@@ -128,15 +128,19 @@ def _install_deps(tempdir):
     env['CXX'] = '/bin/false'
 
     executable = sys.executable
-    venv = None
-    res = subprocess.run(
-        [sys.executable, '-m', 'pip', '--help'], stdout=subprocess.DEVNULL
-    )
-    if res.returncode != 0:
+    if not use_venv:
+        venv = None
+        res = subprocess.run(
+            [sys.executable, '-m', 'pip', '--help'], stdout=subprocess.DEVNULL
+        )
+        use_venv = res.returncode != 0
+    if use_venv:
         log.warning("No pip module found. Attempting to create a virtualenv.")
         venv = tempdir / "_venv_"
         subprocess.run([sys.executable, '-m', 'venv', str(venv)])
         executable = str(venv / "bin" / pathlib.Path(executable).name)
+        # try to upgrade pip in the virtualenv. if it fails ignore the error
+        subprocess.run([executable, '-m', 'pip', 'install', '-U', 'pip'])
 
     # apparently pip doesn't have an API, just a cli.
     subprocess.check_call(
