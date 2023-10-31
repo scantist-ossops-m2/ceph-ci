@@ -578,6 +578,17 @@ static int cls_2pc_queue_list_entries(cls_method_context_t hctx, bufferlist *in,
   return 0;
 }
 
+static uint64_t cls_2pc_queue_count_entries(cls_method_context_t hctx, cls_queue_list_op& op, cls_queue_head& head)
+{
+  cls_queue_list_ret op_ret;
+  auto ret = queue_list_entries(hctx, op, op_ret, head);
+  if (ret < 0) {
+    return ret;
+  }
+
+  return op_ret.entries.size();
+}
+
 static int cls_2pc_queue_remove_entries(cls_method_context_t hctx, bufferlist *in, bufferlist *out)
 {
   auto in_iter = in->cbegin();
@@ -594,6 +605,17 @@ static int cls_2pc_queue_remove_entries(cls_method_context_t hctx, bufferlist *i
   if (ret < 0) {
     return ret;
   }
+
+  // Old RGW is running, and it sent cls_queue_remove_op instead of cls_2pc_queue_remove_op
+  if (rem_2pc_op.entries_to_remove == 0) {
+    CLS_LOG(10, "INFO: cls_2pc_queue_remove_entries: incompatible RGW with rados, counting entries to remove...");
+    cls_queue_list_op list_op;
+    list_op.max = std::numeric_limits<uint64_t>::max(); // max length because endmarker is the stopping condition.
+    list_op.end_marker = rem_2pc_op.end_marker;
+    rem_2pc_op.entries_to_remove = cls_2pc_queue_count_entries(hctx, list_op, head);
+    CLS_LOG(10, "INFO: cls_2pc_queue_count_entries: returned: %u", rem_2pc_op.entries_to_remove);
+  }
+
   cls_queue_remove_op rem_op;
   rem_op.end_marker = std::move(rem_2pc_op.end_marker);
   ret = queue_remove_entries(hctx, rem_op, head);

@@ -54,13 +54,15 @@ WRITE_CLASS_ENCODER(cls_queue_enqueue_op)
 struct cls_queue_list_op {
   uint64_t max;
   std::string start_marker;
+  std::string end_marker;
 
   cls_queue_list_op() {}
 
   void encode(ceph::buffer::list& bl) const {
-    ENCODE_START(1, 1, bl);
+    ENCODE_START(2, 1, bl);
     encode(max, bl);
     encode(start_marker, bl);
+    encode(end_marker, bl);
     ENCODE_FINISH(bl);
   }
 
@@ -68,6 +70,9 @@ struct cls_queue_list_op {
     DECODE_START(1, bl);
     decode(max, bl);
     decode(start_marker, bl);
+    if (struct_v > 1) {
+      decode(end_marker, bl);
+    }
     DECODE_FINISH(bl);
   }
 };
