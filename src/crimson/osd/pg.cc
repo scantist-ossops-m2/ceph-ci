@@ -799,12 +799,13 @@ PG::interruptible_future<> PG::repair_object(
   return std::move(fut);
 }
 
-template <class Ret, class SuccessFunc, class FailureFunc>
+template <class Ret, class SuccessFunc, class TestFunc, class FailureFunc>
 PG::do_osd_ops_iertr::future<PG::pg_rep_op_fut_t<Ret>>
 PG::do_osd_ops_execute(
   seastar::lw_shared_ptr<OpsExecuter> ox,
   std::vector<OSDOp>& ops,
   SuccessFunc&& success_func,
+  TestFunc&& test_func,
   FailureFunc&& failure_func)
 {
   assert(ox);
@@ -812,6 +813,7 @@ PG::do_osd_ops_execute(
     return obc_loader.reload_obc(obc).handle_error_interruptible(
       load_obc_ertr::assert_all{"can't live with object state messed up"});
   });
+  auto test_func_ptr = seastar::make_lw_shared(std::move(test_func));
   auto failure_func_ptr = seastar::make_lw_shared(std::move(failure_func));
   return interruptor::do_for_each(ops, [ox](OSDOp& osd_op) {
     logger().debug(
@@ -871,7 +873,7 @@ PG::do_osd_ops_execute(
           std::move(log_entries));
     });
   }).safe_then_unpack_interruptible(
-    [success_func=std::move(success_func), rollbacker, this, failure_func_ptr]
+    [success_func=std::move(success_func), rollbacker, this, test_func_ptr, failure_func_ptr]
     (auto submitted_fut, auto _pre_all_completed_fut) mutable {
 
     auto pre_all_completed_fut = _pre_all_completed_fut.safe_then_interruptible_tuple(
@@ -892,14 +894,9 @@ PG::do_osd_ops_execute(
           return all_completed_fut;
         });
       });
-    }), OpsExecuter::osd_op_errorator::all_same_way(
-        [rollbacker, failure_func_ptr]
-        (const std::error_code& e) mutable {
-          return rollbacker.rollback_obc_if_modified(e).then_interruptible(
-          [e, failure_func_ptr] {
-            return (*failure_func_ptr)(e);
-          });
-    }));
+    }), crimson::ct_error::assert_all{
+      "Invalid error"}
+    );
 
     return PG::do_osd_ops_iertr::make_ready_future<pg_rep_op_fut_t<Ret>>(
       std::move(submitted_fut),        // submitted_fut
@@ -907,21 +904,23 @@ PG::do_osd_ops_execute(
       std::move(pre_all_completed_fut) // all_completed_fut
     );
   }, OpsExecuter::osd_op_errorator::all_same_way(
-    [rollbacker, failure_func_ptr]
+    [rollbacker, test_func_ptr, failure_func_ptr]
     (const std::error_code& e) mutable {
 
-    auto pre_all_completed_fut = e.value() == ENOENT ?
-      (*failure_func_ptr)(e) :
-      rollbacker.rollback_obc_if_modified(e).then_interruptible(
-      [e, failure_func_ptr] {
-          return (*failure_func_ptr)(e);
-      });
+    OpsExecuter::interruptible_future<> maybe_rollback_fut = seastar::now();
 
-    return PG::do_osd_ops_iertr::make_ready_future<pg_rep_op_fut_t<Ret>>(
-      std::move(seastar::now()),       // submitted_fut
-      std::move(seastar::now()),       // error_log_fut
-      std::move(pre_all_completed_fut) // all_completed_fut
-    );
+    if (e.value() == ENOENT) {
+      maybe_rollback_fut = rollbacker.rollback_obc_if_modified(e);
+    }
+
+    // failure_func_ptr returns a pair of `error_log_fut` and `all_completed_fut`
+    return maybe_rollback_fut.then_interruptible([e, failure_func_ptr, test_func_ptr] {
+        return PG::do_osd_ops_iertr::make_ready_future<pg_rep_op_fut_t<Ret>>(
+          std::move(seastar::now()),        // submitted_fut
+          std::move((*test_func_ptr)(e)),   // error_log_fut
+          std::move((*failure_func_ptr)(e)) // all_completed_fut
+        );
+    });
   }));
 }
 seastar::future<> PG::submit_error_log(
@@ -1036,6 +1035,17 @@ PG::do_osd_ops(
       return do_osd_ops_iertr::make_ready_future<MURef<MOSDOpReply>>(
         std::move(reply));
     },
+    // test_func
+    [m, &op_info, obc, this] (const std::error_code& e) {
+    return seastar::do_with(eversion_t(), [m, &op_info, obc, e, this](auto &version) {
+      auto error_log_fut = seastar::now();
+      ceph_tid_t rep_tid = shard_services.get_tid();
+      if (op_info.may_write()) {
+        error_log_fut = submit_error_log(m, op_info, obc, e, rep_tid, version);
+      }
+      return error_log_fut;
+    });
+    },
     // failure_func
     [m, &op_info, obc, this] (const std::error_code& e) {
     return seastar::do_with(eversion_t(), [m, &op_info, obc, e, this](auto &version) {
@@ -1043,13 +1053,7 @@ PG::do_osd_ops(
       epoch_t epoch = get_osdmap_epoch();
       ceph_tid_t rep_tid = shard_services.get_tid();
       auto last_complete = peering_state.get_info().last_complete;
-      if (op_info.may_write()) {
-        // This should be executed as OrderedExclusivePhaseT so that
-        // successive ops will not reorder.
-        // TODO: https://tracker.ceph.com/issues/61651
-        error_log_fut = submit_error_log(m, op_info, obc, e, rep_tid, version);
-      }
-      return error_log_fut.then([m, e, epoch, &op_info, rep_tid, &version, last_complete, this] {
+
         auto fut = seastar::now();
         if (!peering_state.pg_has_reset_since(epoch) && op_info.may_write()) {
           auto it = log_entry_update_waiting_on.find(rep_tid);
@@ -1075,7 +1079,6 @@ PG::do_osd_ops(
         return fut.then([this, m, e] {
           return log_reply(m, e);
         });
-      });
     });
   });
 }
@@ -1135,6 +1138,10 @@ PG::do_osd_ops(
       // success_func
       [] {
         return do_osd_ops_iertr::now();
+      },
+      // test_func
+      [] (const std::error_code& e) {
+        return seastar::now();
       },
       // failure_func
       [] (const std::error_code& e) {
