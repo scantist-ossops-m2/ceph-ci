@@ -294,10 +294,7 @@ private:
   snapid_t                        prefix_itr_snap;
 
   // reset the prefix iterator to the first prefix hash
-  void reset_prefix_itr(snapid_t snap) {
-    prefix_itr_snap = snap;
-    prefix_itr      = prefixes.begin();
-  }
+  void reset_prefix_itr(snapid_t snap, const char *s);
 
  public:
   static std::string make_shard_prefix(shard_id_t shard) {
@@ -308,6 +305,7 @@ private:
     ceph_assert(r < (int)sizeof(buf));
     return std::string(buf, r) + '_';
   }
+  spg_t    pg_id;
   uint32_t mask_bits;
   const uint32_t match;
   std::string last_key_checked;
@@ -315,6 +313,7 @@ private:
   const shard_id_t shard;
   const std::string shard_prefix;
   SnapMapper(
+    spg_t pg_id,
     CephContext* cct,
     MapCacher::StoreDriver<std::string, ceph::buffer::list> *driver,
     uint32_t match,  ///< [in] pgid
@@ -322,7 +321,7 @@ private:
     int64_t pool,    ///< [in] pool
     shard_id_t shard ///< [in] shard
     )
-    : cct(cct), backend(driver), mask_bits(bits), match(match), pool(pool),
+    : cct(cct), backend(driver), pg_id(pg_id), mask_bits(bits), match(match), pool(pool),
       shard(shard), shard_prefix(make_shard_prefix(shard)) {
     update_bits(mask_bits);
   }
@@ -341,7 +340,7 @@ private:
       prefixes.insert(shard_prefix + *i);
     }
 
-    reset_prefix_itr(CEPH_NOSNAP);
+    reset_prefix_itr(CEPH_NOSNAP, "update_bits");
   }
 
   const std::set<std::string>::iterator get_prefix_itr() {

@@ -460,7 +460,7 @@ public:
     uint32_t mask,
     uint32_t bits)
     : driver(driver),
-      mapper(new SnapMapper(g_ceph_context, driver, mask, bits, 0, shard_id_t(1))),
+      mapper(new SnapMapper(spg_t(), g_ceph_context, driver, mask, bits, 0, shard_id_t(1))),
 	     mask(mask), bits(bits) {}
 
   hobject_t create_hobject(
@@ -1068,7 +1068,7 @@ public:
   DirectMapper(
     uint32_t mask,
     uint32_t bits)
-   : mapper(new SnapMapper(g_ceph_context, driver.get(), mask, bits, 0, shard_id_t(1))), 
+    : mapper(new SnapMapper(spg_t(), g_ceph_context, driver.get(), mask, bits, 0, shard_id_t(1))), 
              mask(mask), bits(bits) {}
 
   hobject_t random_hobject() {
