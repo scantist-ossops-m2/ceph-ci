@@ -432,13 +432,13 @@ void SnapMapper::clear_snaps(
   const hobject_t &oid,
   MapCacher::Transaction<std::string, ceph::buffer::list> *t)
 {
-  dout(20) << __func__ << " " << oid << dendl;
+  dout(20) << __func__ << "::" << pg_id << "::" << oid << dendl;
   ceph_assert(check(oid));
   set<string> to_remove;
   to_remove.insert(to_object_key(oid));
   if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
     for (auto& i : to_remove) {
-      dout(20) << __func__ << " rm " << i << dendl;
+      dout(20) << __func__ << "::" << pg_id << "::rm " << i << dendl;
     }
   }
   backend.remove_keys(to_remove, t);
@@ -457,7 +457,7 @@ void SnapMapper::set_snaps(
   dout(20) << __func__ << " " << oid << " " << in.snaps << dendl;
   if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
     for (auto& i : to_set) {
-      dout(20) << __func__ << " set " << i.first << dendl;
+      dout(20) << __func__ << "::" << pg_id << "::set " << i.first << dendl;
     }
   }
   backend.set_keys(to_set, t);
@@ -469,7 +469,7 @@ int SnapMapper::update_snaps(
   const set<snapid_t> *old_snaps_check,
   MapCacher::Transaction<std::string, ceph::buffer::list> *t)
 {
-  dout(20) << __func__ << " " << oid << " " << new_snaps
+  dout(20) << __func__ << "::" << pg_id << "::" << oid << " " << new_snaps
 	   << " was " << (old_snaps_check ? *old_snaps_check : set<snapid_t>())
 	   << dendl;
   ceph_assert(check(oid));
@@ -509,7 +509,7 @@ void SnapMapper::add_oid(
   const set<snapid_t>& snaps,
   MapCacher::Transaction<std::string, ceph::buffer::list> *t)
 {
-  dout(20) << __func__ << " " << oid << " " << snaps << dendl;
+  dout(20) << __func__ << "::" << pg_id << "::" << oid << " " << snaps << dendl;
   ceph_assert(!snaps.empty());
   ceph_assert(check(oid));
   {
@@ -540,6 +540,26 @@ void SnapMapper::add_oid(
   backend.set_keys(to_add, t);
 }
 
+// reset the prefix iterator to the first prefix hash
+void SnapMapper::reset_prefix_itr(snapid_t snap, const char *s)
+{
+  if (prefix_itr_snap == CEPH_NOSNAP) {
+    dout(10) << __func__ << "::" << pg_id << "::from <CEPH_NOSNAP> to <" << snap << "> ::" << s << dendl;
+  }
+  else if (snap == CEPH_NOSNAP) {
+    dout(10) << __func__ << "::" << pg_id << "::from <"<< prefix_itr_snap << "> to <CEPH_NOSNAP> ::" << s << dendl;
+  }
+  else if (prefix_itr_snap == snap) {
+    dout(10) << __func__ << "::" << pg_id << "::with the same snapid <" << snap << "> ::" << s << dendl;
+  }
+  else {
+    // This is unexpcted!!
+    dout(10) << __func__ << "::" << pg_id << "::from <"<< prefix_itr_snap << "> to <" << snap << "> ::" << s << dendl;
+  }
+  prefix_itr_snap = snap;
+  prefix_itr      = prefixes.begin();
+}
+
 void SnapMapper::get_objects_by_prefixes(
   snapid_t snap,
   unsigned max,
@@ -553,7 +573,7 @@ void SnapMapper::get_objects_by_prefixes(
       pair<string, ceph::buffer::list> next;
       // access RocksDB (an expensive operation!)
       int r = backend.get_next(pos, &next);
-      dout(20) << __func__ << " get_next(" << pos << ") returns " << r
+      dout(20) << __func__ << "::" << pg_id << "::get_next(" << pos << ") returns " << r
 	       << " " << next << dendl;
       if (r != 0) {
 	return; // Done
@@ -561,13 +581,15 @@ void SnapMapper::get_objects_by_prefixes(
 
       if (next.first.substr(0, prefix.size()) !=
 	  prefix) {
+	dout(20) << __func__ << "::" << pg_id << "::prefix mismatch! " <<
+	  ((prefix_itr != prefixes.end()) ? "move to the next prefix" : "done") << dendl;
 	// TBD: we access the DB twice for the first object of each iterator...
 	break; // Done with this prefix
       }
 
       ceph_assert(is_mapping(next.first));
 
-      dout(20) << __func__ << " " << next.first << dendl;
+      dout(20) << __func__ << "::" << pg_id << "::Assigned Obj::" << next.first << dendl;
       pair<snapid_t, hobject_t> next_decoded(from_raw(next));
       ceph_assert(next_decoded.first == snap);
       ceph_assert(check(next_decoded.second));
@@ -587,6 +609,7 @@ int SnapMapper::get_next_objects_to_trim(
   unsigned max,
   vector<hobject_t> *out)
 {
+  dout(20) << __func__ << "::" << pg_id << "::snapid=" << snap << dendl;
   ceph_assert(out);
   ceph_assert(out->empty());
 
@@ -597,9 +620,12 @@ int SnapMapper::get_next_objects_to_trim(
   // The prefix_itr is bound to a prefix_itr_snap so if we trim another snap
   // we must reset the prefix_itr (should not happen normally)
   if (prefix_itr_snap != snap) {
-    dout(10) << __func__ << "::Reset prefix_itr(unexpcted) snap was changed from <"
-	     << prefix_itr_snap << "> to <" << snap << ">" << dendl;
-    reset_prefix_itr(snap);
+    if (prefix_itr_snap == CEPH_NOSNAP) {
+      reset_prefix_itr(snap, "Trim begins");
+    }
+    else {
+      reset_prefix_itr(snap, "Unexpected snap change");
+    }
   }
 
   // when reaching the end of the DB reset the prefix_ptr and verify
@@ -611,19 +637,27 @@ int SnapMapper::get_next_objects_to_trim(
   // We still like to be extra careful and run one extra loop over all prefixes
   get_objects_by_prefixes(snap, max, out);
   if (out->size() == 0) {
-    dout(10) << __func__ << "::Reset prefix_itr after a complete trim!" << dendl;
-    reset_prefix_itr(snap);
+    reset_prefix_itr(snap, "Second pass trim");
     get_objects_by_prefixes(snap, max, out);
 
-    bool osd_debug_trim_objects = cct->_conf.get_val<bool>("osd_debug_trim_objects");
-    if (osd_debug_trim_objects) {
-      ceph_assert(out->size() == 0);
+
+    if (unlikely(out->size() > 0)) {
+      derr << __func__ << "New Clone-Objects were added to Snap " << snap
+	   << " after trimming was started" << dendl;
+      derr << out << dendl;
+      bool osd_debug_trim_objects = cct->_conf.get_val<bool>("osd_debug_trim_objects");
+      if (osd_debug_trim_objects) {	
+	ceph_abort_msg("Clone-Objects were added to a trimmed snap");
+      }
     }
+    reset_prefix_itr(CEPH_NOSNAP, "Trim was completed successfully");
   }
 
   if (out->size() == 0) {
+    dout(20) << __func__ << "::" << pg_id << "::ENOENT!! snapid=" << snap << dendl;
     return -ENOENT;
   } else {
+    dout(20) << __func__ << "::" << pg_id << "::" << out->size() << " objects were found for snapid=" << snap << dendl;
     return 0;
   }
 }
@@ -632,7 +666,7 @@ int SnapMapper::remove_oid(
   const hobject_t &oid,
   MapCacher::Transaction<std::string, ceph::buffer::list> *t)
 {
-  dout(20) << __func__ << " " << oid << dendl;
+  dout(20) << __func__ << "::" << pg_id << "::" << oid << dendl;
   ceph_assert(check(oid));
   return _remove_oid(oid, t);
 }
@@ -641,7 +675,7 @@ int SnapMapper::_remove_oid(
   const hobject_t &oid,
   MapCacher::Transaction<std::string, ceph::buffer::list> *t)
 {
-  dout(20) << __func__ << " " << oid << dendl;
+  dout(20) << __func__ << "::" << pg_id << "::" << oid << dendl;
   object_snaps out;
   int r = get_snaps(oid, &out);
   if (r < 0)
@@ -657,7 +691,7 @@ int SnapMapper::_remove_oid(
   }
   if (g_conf()->subsys.should_gather<ceph_subsys_osd, 20>()) {
     for (auto& i : to_remove) {
-      dout(20) << __func__ << " rm " << i << dendl;
+      dout(20) << __func__ << "::" << pg_id << "::rm " << i << dendl;
     }
   }
   backend.remove_keys(to_remove, t);
