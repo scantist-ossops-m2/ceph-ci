@@ -8,7 +8,7 @@ cdef nogil:
         _LIBRADOS_SNAP_HEAD "LIBRADOS_SNAP_HEAD"
 
 cdef:
-    ctypedef int (*librbd_progress_fn_t)(uint64_t offset, uint64_t total, void* ptr)
+    ctypedef int (*librbd_progress_fn_t)(uint64_t offset, uint64_t total, void* ptr) except? 0
 
 cdef nogil:
     enum:
@@ -262,7 +262,7 @@ cdef nogil:
         _RBD_POOL_STAT_OPTION_TRASH_MAX_PROVISIONED_BYTES "RBD_POOL_STAT_OPTION_TRASH_MAX_PROVISIONED_BYTES"
         _RBD_POOL_STAT_OPTION_TRASH_SNAPSHOTS "RBD_POOL_STAT_OPTION_TRASH_SNAPSHOTS"
 
-    ctypedef void (*rbd_callback_t)(rbd_completion_t cb, void *arg)
+    ctypedef void (*rbd_callback_t)(rbd_completion_t cb, void *arg) except *
 
     ctypedef enum rbd_encryption_format_t:
         _RBD_ENCRYPTION_FORMAT_LUKS1 "RBD_ENCRYPTION_FORMAT_LUKS1"

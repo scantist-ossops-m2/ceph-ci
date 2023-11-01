@@ -8,7 +8,7 @@ cdef extern from "rados/librados.h":
         _LIBRADOS_SNAP_HEAD "LIBRADOS_SNAP_HEAD"
 
 cdef extern from "rbd/librbd.h":
-    ctypedef int (*librbd_progress_fn_t)(uint64_t offset, uint64_t total, void* ptr)
+    ctypedef int (*librbd_progress_fn_t)(uint64_t offset, uint64_t total, void* ptr) except? 0
 
 cdef extern from "rbd/librbd.h" nogil:
     enum:
@@ -292,7 +292,7 @@ cdef extern from "rbd/librbd.h" nogil:
         rbd_encryption_options_t opts
         size_t opts_size
 
-    ctypedef void (*rbd_callback_t)(rbd_completion_t cb, void *arg)
+    ctypedef void (*rbd_callback_t)(rbd_completion_t cb, void *arg) except *
 
     void rbd_version(int *major, int *minor, int *extra)
 
