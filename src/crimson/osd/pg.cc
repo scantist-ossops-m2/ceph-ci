@@ -892,14 +892,8 @@ PG::do_osd_ops_execute(
           return all_completed_fut;
         });
       });
-    }), OpsExecuter::osd_op_errorator::all_same_way(
-        [rollbacker, failure_func_ptr]
-        (const std::error_code& e) mutable {
-          return rollbacker.rollback_obc_if_modified(e).then_interruptible(
-          [e, failure_func_ptr] {
-            return (*failure_func_ptr)(e);
-          });
-    }));
+    }), crimson::ct_error::assert_all{"do_osd_ops_execute: Invalid error"}
+    );
 
     return PG::do_osd_ops_iertr::make_ready_future<pg_rep_op_fut_t<Ret>>(
       std::move(submitted_fut),        // submitted_fut
