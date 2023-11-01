@@ -553,7 +553,7 @@ void SnapMapper::reset_prefix_itr(snapid_t snap, const char *s)
     dout(10) << __func__ << "::" << pg_id << "::with the same snapid <" << snap << "> ::" << s << dendl;
   }
   else {
-    // This is unexpcted!!
+    // This is unexpected!!
     dout(10) << __func__ << "::" << pg_id << "::from <"<< prefix_itr_snap << "> to <" << snap << "> ::" << s << dendl;
   }
   prefix_itr_snap = snap;
@@ -639,7 +639,6 @@ int SnapMapper::get_next_objects_to_trim(
   if (out->size() == 0) {
     reset_prefix_itr(snap, "Second pass trim");
     get_objects_by_prefixes(snap, max, out);
-
 
     if (unlikely(out->size() > 0)) {
       derr << __func__ << "New Clone-Objects were added to Snap " << snap
