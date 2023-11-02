@@ -11431,42 +11431,44 @@ void MDCache::adjust_dir_fragments(CInode *diri,
   if (bits > 0) {
     // SPLIT
     ceph_assert(srcfrags.size() == 1);
-    CDir *dir = srcfrags.front();
+    // CDir *dir = srcfrags.front();
+    for (auto dir : srcfrags) {
 
-    dir->split(bits, resultfrags, waiters, replay);
+      dir->split(bits, resultfrags, waiters, replay);
 
-    // did i change the subtree map?
-    if (dir->is_subtree_root()) {
-      // new frags are now separate subtrees
-      for (const auto& dir : *resultfrags) {
-	subtrees[dir].clear();   // new frag is now its own subtree
-      }
-      
-      // was i a bound?
-      if (parent_subtree) {
-	ceph_assert(subtrees[parent_subtree].count(dir));
-	subtrees[parent_subtree].erase(dir);
+      // did i change the subtree map?
+      if (dir->is_subtree_root()) {
+	// new frags are now separate subtrees
 	for (const auto& dir : *resultfrags) {
-	  ceph_assert(dir->is_subtree_root());
-	  subtrees[parent_subtree].insert(dir);
+	  subtrees[dir].clear();   // new frag is now its own subtree
 	}
-      }
-      
-      // adjust my bounds.
-      set<CDir*> bounds;
-      bounds.swap(subtrees[dir]);
-      subtrees.erase(dir);
-      for (set<CDir*>::iterator p = bounds.begin();
-	   p != bounds.end();
-	   ++p) {
-	CDir *frag = get_subtree_root((*p)->get_parent_dir());
-	subtrees[frag].insert(*p);
+
+	// was i a bound?
+	if (parent_subtree) {
+	  ceph_assert(subtrees[parent_subtree].count(dir));
+	  subtrees[parent_subtree].erase(dir);
+	  for (const auto& dir : *resultfrags) {
+	    ceph_assert(dir->is_subtree_root());
+	    subtrees[parent_subtree].insert(dir);
+	  }
+	}
+
+	// adjust my bounds.
+	set<CDir*> bounds;
+	bounds.swap(subtrees[dir]);
+	subtrees.erase(dir);
+	for (set<CDir*>::iterator p = bounds.begin();
+	    p != bounds.end();
+	    ++p) {
+	  CDir *frag = get_subtree_root((*p)->get_parent_dir());
+	  subtrees[frag].insert(*p);
+	}
+
+	show_subtrees(10);
       }
 
-      show_subtrees(10);
+      diri->close_dirfrag(dir->get_frag());
     }
-    
-    diri->close_dirfrag(dir->get_frag());
     
   } else {
     // MERGE
