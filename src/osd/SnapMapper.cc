@@ -632,6 +632,11 @@ int SnapMapper::get_next_objects_to_trim(
     }
   }
 
+  if (unlikely(prefix_itr == prefixes.end())) {
+    dout(5) << __func__ << ":2:" << pg_id << "::snapid=" << snap << "Illegal prefix_itr -> reset it!" << dendl;
+    reset_prefix_itr(snap, "Illegal prefix_itr ");
+  }
+
   // when reaching the end of the DB reset the prefix_ptr and verify
   // we didn't miss objects which were added after we started trimming
   // This should never happen in reality because the snap was logically deleted
@@ -640,7 +645,7 @@ int SnapMapper::get_next_objects_to_trim(
   //
   // We still like to be extra careful and run one extra loop over all prefixes
   get_objects_by_prefixes(snap, max, out);
-  dout(20) << __func__ << ":2:" << pg_id << "::snapid=" << snap << "::out->size()=" << out->size()
+  dout(20) << __func__ << ":3:" << pg_id << "::snapid=" << snap << "::out->size()=" << out->size()
 	   << "::prefix_itr=" << (prefix_itr != prefixes.end() ? *prefix_itr : "null-prefix-itr") << dendl;
 
   if (out->size() == 0) {
