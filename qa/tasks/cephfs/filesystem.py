@@ -20,7 +20,7 @@ from teuthology import contextutil
 
 from tasks.ceph_manager import write_conf
 from tasks.ceph_manager import CephManager
-from tasks.cephfs.cephfs_test_case import RunCephCmd
+from tasks.ceph_test_case import RunCephCmd
 
 
 log = logging.getLogger(__name__)
@@ -629,6 +629,9 @@ class Filesystem(MDSCluster):
 
     def set_refuse_client_session(self, yes):
         self.set_var("refuse_client_session", yes)
+
+    def set_refuse_standby_for_another_fs(self, yes):
+        self.set_var("refuse_standby_for_another_fs", yes)
 
     def compat(self, *args):
         a = map(lambda x: str(x).lower(), args)
