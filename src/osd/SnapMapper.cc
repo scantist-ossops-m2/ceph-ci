@@ -565,10 +565,13 @@ void SnapMapper::get_objects_by_prefixes(
   unsigned max,
   vector<hobject_t> *out)
 {
+  dout(20) << __func__ << "::" << pg_id << "::snapid=" << snap
+	   << "::prefix_itr=" << (prefix_itr != prefixes.end() ? *prefix_itr : "null-prefix-itr") << dendl;
   /// maintain the prefix_itr between calls to avoid searching depleted prefixes
   for ( ; prefix_itr != prefixes.end(); prefix_itr++) {
     string prefix(get_prefix(pool, snap) + *prefix_itr);
     string pos = prefix;
+    dout(20) << __func__ << "::" << pg_id << "::snapid=" << snap << "::prefix=" << *prefix_itr << dendl;
     while (out->size() < max) {
       pair<string, ceph::buffer::list> next;
       // access RocksDB (an expensive operation!)
@@ -609,7 +612,8 @@ int SnapMapper::get_next_objects_to_trim(
   unsigned max,
   vector<hobject_t> *out)
 {
-  dout(20) << __func__ << "::" << pg_id << "::snapid=" << snap << dendl;
+  dout(20) << __func__ << ":1:" << pg_id << "::snapid=" << snap
+	   << "::prefix_itr=" << (prefix_itr != prefixes.end() ? *prefix_itr : "null-prefix-itr") << dendl;
   ceph_assert(out);
   ceph_assert(out->empty());
 
@@ -636,12 +640,15 @@ int SnapMapper::get_next_objects_to_trim(
   //
   // We still like to be extra careful and run one extra loop over all prefixes
   get_objects_by_prefixes(snap, max, out);
+  dout(20) << __func__ << ":2:" << pg_id << "::snapid=" << snap << "::out->size()=" << out->size()
+	   << "::prefix_itr=" << (prefix_itr != prefixes.end() ? *prefix_itr : "null-prefix-itr") << dendl;
+
   if (out->size() == 0) {
     reset_prefix_itr(snap, "Second pass trim");
     get_objects_by_prefixes(snap, max, out);
 
     if (unlikely(out->size() > 0)) {
-      derr << __func__ << "New Clone-Objects were added to Snap " << snap
+      derr << __func__ << "::" << pg_id << "::New Clone-Objects were added to Snap " << snap
 	   << " after trimming was started" << dendl;
       derr << out << dendl;
       bool osd_debug_trim_objects = cct->_conf.get_val<bool>("osd_debug_trim_objects");
