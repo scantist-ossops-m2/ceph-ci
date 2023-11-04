@@ -942,9 +942,15 @@ class CephadmOrchestrator(orchestrator.Orchestrator, MgrModule,
         ) if d.daemon_type in RESCHEDULE_FROM_OFFLINE_HOSTS_TYPES]
         self.offline_watcher.set_hosts(list(set([h for h in hosts_to_watch if h is not None])))
 
+    def mark_host_offline(self, host: str) -> None:
+        if host not in self.offline_hosts:
+            self.offline_hosts.add(host)
+        self.to_remove_osds.mark_osd_host_offline(host)
+
     def offline_hosts_remove(self, host: str) -> None:
         if host in self.offline_hosts:
             self.offline_hosts.remove(host)
+        self.to_remove_osds.mark_osd_host_online(host)
 
     def update_failed_daemon_health_check(self) -> None:
         failed_daemons = []
@@ -3343,6 +3349,7 @@ Then run the following:
                                                 zap=zap,
                                                 no_destroy=no_destroy,
                                                 hostname=daemon.hostname,
+                                                host_offline=(daemon.hostname in self.offline_hosts),
                                                 process_started_at=datetime_now(),
                                                 remove_util=self.to_remove_osds.rm_util))
             except NotFoundError:
