@@ -1,0 +1,12 @@
+roles:
+- - host.a
+  - mon.a
+  - mgr.a
+  - client.0
+tasks:
+- install:
+- cephadm:
+- workunit:
+    clients:
+      client.0:
+        - cephadm/test_cephadm_timeout.py
