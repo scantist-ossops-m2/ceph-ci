@@ -1071,7 +1071,9 @@ PG::do_osd_ops(
         } else {
           fut = it->second.all_committed.get_shared_future().then(
             [this, last_complete, rep_tid] {
+            logger().debug("do_osd_ops_execute::failure_func awaited {}", rep_tid);
             peering_state.complete_write(log_entry_version[rep_tid], last_complete);
+            ceph_assert(!log_entry_update_waiting_on.contains(rep_tid));
             return seastar::now();
           });
         }
@@ -1411,7 +1413,10 @@ PG::interruptible_future<> PG::do_update_log_missing_reply(
     if (it->second.waiting_on.empty()) {
       it->second.all_committed.set_value();
       it->second.all_committed = {};
+      logger().debug("{}: erasing rep_tid {}",
+                     __func__, m->get_tid());
       log_entry_update_waiting_on.erase(it);
+      log_entry_version.erase(m->get_tid());
     }
   } else {
     logger().error("{} : {} got reply {} on unknown tid {}",
