@@ -313,12 +313,16 @@ ClientRequest::do_process(
   }
   return pg->do_osd_ops(m, conn, obc, op_info, snapc).safe_then_unpack_interruptible(
     [this, pg, &ihref](auto submitted, auto error_log, auto all_completed) mutable {
+      logger().debug("do_process::{} in submitted", *this);
       return submitted.then_interruptible([this, pg, &ihref, error_log = std::move(error_log)] () mutable {
+        logger().debug("do_process::{} in error_log", *this);
         return error_log.then([this, pg, &ihref] {
+          logger().debug("do_process::{} in enter_stage wait_repop", *this);
           return ihref.enter_stage<interruptor>(client_pp(*pg).wait_repop, *this);
         });
       }).then_interruptible(
         [this, pg, all_completed=std::move(all_completed), &ihref]() mutable {
+          logger().debug("do_process::{} in all_completed", *this);
           return all_completed.safe_then_interruptible(
             [this, pg, &ihref](MURef<MOSDOpReply> reply) {
               return ihref.enter_stage<interruptor>(client_pp(*pg).send_reply, *this
