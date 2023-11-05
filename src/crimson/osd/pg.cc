@@ -904,18 +904,22 @@ PG::do_osd_ops_execute(
     [rollbacker, failure_func_ptr]
     (const std::error_code& e) mutable {
 
-    auto pre_all_completed_fut = e.value() == ENOENT ?
-      (*failure_func_ptr)(e) :
-      rollbacker.rollback_obc_if_modified(e).then_interruptible(
-      [e, failure_func_ptr] {
-          return (*failure_func_ptr)(e);
-      });
+    OpsExecuter::interruptible_future<> maybe_rollback_fut = seastar::now();
 
-    return PG::do_osd_ops_iertr::make_ready_future<pg_rep_op_fut_t<Ret>>(
-      std::move(seastar::now()),       // submitted_fut
-      std::move(seastar::now()),       // error_log_fut
-      std::move(pre_all_completed_fut) // all_completed_fut
-    );
+    if (e.value() == ENOENT) {
+      maybe_rollback_fut = rollbacker.rollback_obc_if_modified(e);
+    }
+
+    return maybe_rollback_fut.then_interruptible([e, failure_func_ptr] {
+      // failure_func_ptr returns a pair of `error_log_fut` and `all_completed_fut`
+      return (*failure_func_ptr)(e).then([] (auto fut_pair) {
+        return PG::do_osd_ops_iertr::make_ready_future<pg_rep_op_fut_t<Ret>>(
+          std::move(seastar::now()), // submitted_fut
+          std::move(fut_pair.first), // error_log_fut
+          std::move(fut_pair.second) // all_completed_fut
+        );
+      });
+    });
   }));
 }
 
@@ -1043,12 +1047,11 @@ PG::do_osd_ops(
     ceph_tid_t rep_tid = shard_services.get_tid();
     auto last_complete = peering_state.get_info().last_complete;
     if (op_info.may_write()) {
-      // This should be executed as OrderedExclusivePhaseT so that
-      // successive ops will not reorder.
-      // TODO: https://tracker.ceph.com/issues/61651
       error_log_fut = submit_error_log(m, op_info, obc, e, rep_tid);
     }
-    return error_log_fut.then([m, e, epoch, &op_info, rep_tid, last_complete, this] {
+
+    auto all_completed =
+      [m, e, epoch, &op_info, rep_tid, last_complete, this] {
       auto fut = seastar::now();
       if (!peering_state.pg_has_reset_since(epoch) && op_info.may_write()) {
         logger().debug("do_osd_ops_execute::failure_func finding rep_tid {}",
@@ -1063,7 +1066,7 @@ PG::do_osd_ops(
           log_entry_update_waiting_on.erase(it);
           peering_state.complete_write(log_entry_version[rep_tid], last_complete);
           log_entry_version.erase(rep_tid);
-          logger().debug("do_osd_ops_execute::failure_func rep_tid {}",
+          logger().debug("do_osd_ops_execute::failure_func erasing rep_tid {}",
                          rep_tid);
         } else {
           fut = it->second.all_committed.get_shared_future().then(
@@ -1076,7 +1079,13 @@ PG::do_osd_ops(
       return fut.then([this, m, e] {
         return log_reply(m, e);
       });
-    });
+    };
+      return seastar::make_ready_future<
+        std::pair<seastar::future<>,
+                  do_osd_ops_iertr::future<MURef<MOSDOpReply>>>>(
+        std::make_pair(
+          std::move(error_log_fut),  // error_log_fut
+          all_completed()));         // all_completed_fut
   });
 }
 
@@ -1138,9 +1147,15 @@ PG::do_osd_ops(
       },
       // failure_func
       [] (const std::error_code& e) {
-        return do_osd_ops_iertr::now();
+        return seastar::make_ready_future<
+          std::pair<seastar::future<>,
+                    do_osd_ops_iertr::future<void>>>(
+          std::make_pair(
+            std::move(seastar::now()),              // error_log_fut
+            std::move(PG::do_osd_ops_iertr::now())) // all_completed_fut
+        );
       });
-  });
+    });
 }
 
 PG::interruptible_future<MURef<MOSDOpReply>> PG::do_pg_ops(Ref<MOSDOp> m)
