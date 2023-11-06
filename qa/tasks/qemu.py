@@ -523,9 +523,10 @@ def run_qemu(ctx, config):
             ]
 
         cachemode = 'none'
-        ceph_config = ctx.ceph['ceph'].conf.get('global', {})
-        ceph_config.update(ctx.ceph['ceph'].conf.get('client', {}))
-        ceph_config.update(ctx.ceph['ceph'].conf.get(client, {}))
+        cluster_name = config['cluster']
+        ceph_config = ctx.ceph[cluster_name].conf.get('global', {})
+        ceph_config.update(ctx.ceph[cluster_name].conf.get('client', {}))
+        ceph_config.update(ctx.ceph[cluster_name].conf.get(client, {}))
         if ceph_config.get('rbd cache', True):
             if ceph_config.get('rbd cache max dirty', 1) > 0:
                 cachemode = 'writeback'
