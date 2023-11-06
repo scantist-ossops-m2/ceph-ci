@@ -46,6 +46,16 @@ tasks:
           printf "Expected to see $HOST_C in CRUSH map. Saw:\n\n$CRUSH_MAP"
           exit 1
         fi
+        # One last thing to worry about before removing the host
+        # is that the teuthology test tends to put the explicit
+        # hostnames in the placement for the mon service.
+        # We want to make sure we can remove without providing
+        # --force and there is a check for the host being removed
+        # being listed explicitly in the placements. Therefore,
+        # we should remove it from the mon placement.
+        ceph orch ls mon --export > mon.yaml
+        sed /"$HOST_C"/d mon.yaml > mon_adjusted.yaml
+        ceph orch apply -i mon_adjusted.yaml
         # If the drain was successful, we should be able to remove the
         # host without force with no issues. If there are still daemons
         # we will get a response telling us to drain the host and a
