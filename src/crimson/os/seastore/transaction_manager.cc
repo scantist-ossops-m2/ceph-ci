@@ -178,7 +178,6 @@ TransactionManager::close_ertr::future<> TransactionManager::close() {
   });
 }
 
-#ifdef UNIT_TESTS_BUILT
 TransactionManager::ref_ret TransactionManager::inc_ref(
   Transaction &t,
   LogicalCachedExtentRef &ref)
@@ -210,7 +209,6 @@ TransactionManager::ref_ret TransactionManager::inc_ref(
     return result.refcount;
   });
 }
-#endif
 
 TransactionManager::ref_ret TransactionManager::remove(
   Transaction &t,
