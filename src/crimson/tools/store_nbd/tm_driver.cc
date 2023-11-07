@@ -27,12 +27,12 @@ seastar::future<> TMDriver::write(
         "write",
         [this, offset, &ptr](auto& t)
       {
-        return tm->dec_ref(t, offset
+        return tm->remove(t, offset
         ).si_then([](auto){}).handle_error_interruptible(
           crimson::ct_error::enoent::handle([](auto) { return seastar::now(); }),
           crimson::ct_error::pass_further_all{}
         ).si_then([this, offset, &t, &ptr] {
-          logger().debug("dec_ref complete");
+          logger().debug("remove complete");
           return tm->alloc_extent<TestBlock>(t, offset, ptr.length());
         }).si_then([this, offset, &t, &ptr](auto ext) {
           boost::ignore_unused(offset);  // avoid clang warning;
