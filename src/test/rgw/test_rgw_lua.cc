@@ -344,7 +344,6 @@ TEST(TestRGWLua, Bucket)
   b.marker = "mymarker";
   b.bucket_id = "myid"; 
   s.bucket.reset(new sal::RadosBucket(nullptr, b));
-  s.bucket->set_owner(new sal::RadosUser(nullptr, rgw_user("mytenant", "myuser")));
 
   const auto rc = lua::request::execute(nullptr, nullptr, nullptr, &s, nullptr, script);
   ASSERT_EQ(rc, 0);
@@ -1561,7 +1560,6 @@ TEST(TestRGWLua, DifferentContextUser)
   rgw_bucket b;
   b.name = "bucket1";
   s.bucket.reset(new sal::RadosBucket(nullptr, b));
-  s.bucket->set_owner(new sal::RadosUser(nullptr, rgw_user("tenant2", "user2")));
 
   const auto rc = lua::request::execute(nullptr, nullptr, nullptr, &s, nullptr, script);
   ASSERT_EQ(rc, 0);
