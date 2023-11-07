@@ -357,7 +357,8 @@ Or in YAML:
 Placement by pattern matching
 -----------------------------
 
-Daemons can be placed on hosts as well:
+Daemons can be placed on hosts using a host pattern as well.
+By default, the host pattern is matched using fnmatch:
 
    .. prompt:: bash #
 
@@ -385,6 +386,26 @@ Or in YAML:
     placement:
       host_pattern: "*"
 
+The host pattern also has support for using a regex rather than fnmatch.
+To use a regex, you must either add "regex: " to the start of the pattern
+if using the command line, or specify a ``pattern_type`` field to be "regex"
+if using YAML.
+
+On the command line:
+
+.. prompt:: bash #
+
+ ceph orch apply prometheus --placement='regex:FOO[0-9]|BAR[0-9]'
+
+In the YAML:
+
+.. code-block:: yaml
+
+    service_type: prometheus
+    placement:
+      host_pattern:
+        pattern: 'FOO[0-9]|BAR[0-9]'
+        pattern_type: regex
 
 Changing the number of daemons
 ------------------------------
