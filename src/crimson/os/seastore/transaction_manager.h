@@ -235,7 +235,6 @@ public:
   using ref_iertr = LBAManager::ref_iertr;
   using ref_ret = ref_iertr::future<unsigned>;
 
-#ifdef UNIT_TESTS_BUILT
   /// Add refcount for ref
   ref_ret inc_ref(
     Transaction &t,
@@ -245,7 +244,6 @@ public:
   ref_ret inc_ref(
     Transaction &t,
     laddr_t offset);
-#endif
 
   /** 
    * remove
