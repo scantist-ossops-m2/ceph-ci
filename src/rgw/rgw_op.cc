@@ -7708,6 +7708,8 @@ int RGWBulkUploadOp::handle_dir(const std::string_view path, optional_yield y)
   createparams.placement_rule.storage_class = s->info.storage_class;
   op_ret = select_bucket_placement(this, zonegroup, s->user->get_info(),
                                    createparams.placement_rule);
+  createparams.zone_placement = rgw::find_zone_placement(
+      this, s->penv.site->get_zone_params(), createparams.placement_rule);
 
   {
     // create a default acl
