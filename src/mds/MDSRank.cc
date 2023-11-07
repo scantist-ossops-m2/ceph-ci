@@ -2974,7 +2974,7 @@ void MDSRankDispatcher::evict_clients(
   dout(20) << __func__ << " matched " << victims.size() << " sessions" << dendl;
 
   if (victims.empty()) {
-    on_finish(0, {}, outbl);
+    on_finish(-CEPHFS_EINVAL, "Invalid value", outbl);
     return;
   }
 
