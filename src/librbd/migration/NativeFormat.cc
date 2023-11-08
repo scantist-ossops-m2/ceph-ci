@@ -213,7 +213,7 @@ void NativeFormat<I>::open(Context* on_finish) {
   }
 
   librados::IoCtx io_ctx;
-  int r = rados.ioctx_create2(m_pool_id, io_ctx);
+  int r = rados_ptr->ioctx_create2(m_pool_id, io_ctx);
   if (r < 0) {
     if (r == -ENOENT) {
       lderr(m_cct) << "source image pool " << m_pool_id << " does not exist"

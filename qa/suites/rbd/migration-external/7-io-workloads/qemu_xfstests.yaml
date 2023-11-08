@@ -1,7 +1,7 @@
 io_workload:
   sequential:
     - qemu:
-        client.0:
+        cluster1.client.0:
           clone: true
           type: block
           disks:

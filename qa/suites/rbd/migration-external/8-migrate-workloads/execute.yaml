@@ -5,8 +5,8 @@ tasks:
 migrate_workload:
   sequential:
     - exec:
-        client.0:
+        cluster1.client.0:
           - sleep 60
-          - rbd migration execute client.0.0
+          - rbd --cluster cluster1 migration execute client.0.0
           - sleep 60
-          - rbd migration commit client.0.0
+          - rbd --cluster cluster1 migration commit client.0.0

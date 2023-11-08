@@ -7,5 +7,5 @@ tasks:
         - rbd --cluster cluster2 snap create client.0.0@snap
   - exec:
       cluster1.client.0:
-        - echo '{"type":"native","cluster_name":"cluster2","client_name":"client.admin","pool_name":"rbd","image_name":"client.0.0","snap_name":"snap"}' | rbd migration prepare --import-only --source-spec-path - client.0.0
+        - echo '{"type":"native","cluster_name":"cluster2","client_name":"client.admin","pool_name":"rbd","image_name":"client.0.0","snap_name":"snap"}' | rbd --cluster cluster1 migration prepare --import-only --source-spec-path - client.0.0
 
