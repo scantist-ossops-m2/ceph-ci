@@ -815,7 +815,7 @@ PG::do_osd_ops_execute(
     return obc_loader.reload_obc(obc).handle_error_interruptible(
       load_obc_ertr::assert_all{"can't live with object state messed up"});
   });
-  auto maybe_submit_error_log = [this, op_info, m, obc]
+  auto maybe_submit_error_log = [&, op_info, m, obc]
     (const std::error_code& e, const ceph_tid_t& rep_tid) {
     // call submit_error_log only for non-internal clients
     if constexpr (!std::is_same_v<Ret, void>) {
