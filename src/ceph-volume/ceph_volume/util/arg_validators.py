@@ -4,10 +4,26 @@ import math
 from ceph_volume import terminal, decorators, process
 from ceph_volume.util.device import Device
 from ceph_volume.util import disk
-
+from ceph_volume import process, conf
+from packaging import version
 
 def valid_osd_id(val):
     return str(int(val))
+
+class DmcryptAction(argparse._StoreTrueAction):
+    def __init__(self, *args, **kwargs):
+        super(DmcryptAction, self).__init__(*args, **kwargs)
+
+    def __call__(self, *args, **kwargs):
+        command = ["cryptsetup", "--version"]
+        out, err, rc = process.call(command)
+        try:
+            if version.parse(out[0]) >= version.parse("cryptsetup 2.3.4")
+                conf.dmcrypt_no_workqueue = True
+        except IndexError:
+            # TODO(guits): Handle error
+            pass
+        super(DmcryptAction, self).__call__(*args, **kwargs)
 
 class ValidDevice(object):
 

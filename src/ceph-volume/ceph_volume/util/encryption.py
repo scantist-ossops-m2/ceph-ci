@@ -10,6 +10,9 @@ from .disk import lsblk, device_family, get_part_entry_type
 logger = logging.getLogger(__name__)
 mlogger = terminal.MultiLogger(__name__)
 
+def bypass_workqueue(device: str) -> bool:
+    return device.Device(device).rotational and conf.dmcrypt_no_workqueue
+
 def get_key_size_from_conf():
     """
     Return the osd dmcrypt key size from config file.
@@ -79,6 +82,10 @@ def plain_open(key, device, mapping):
         '--key-size', '256',
     ]
 
+    if bypass_workqueue(device):
+        command.extend(['--perf-no_read_workqueue',
+                        '--perf-no_write_workqueue'])
+
     process.call(command, stdin=key, terminal_verbose=True, show_command=True)
 
 
@@ -103,6 +110,11 @@ def luks_open(key, device, mapping):
         device,
         mapping,
     ]
+
+    if bypass_workqueue(device):
+        command.extend(['--perf-no_read_workqueue',
+                        '--perf-no_write_workqueue'])
+
     process.call(command, stdin=key, terminal_verbose=True, show_command=True)
 
 
