@@ -68,7 +68,8 @@ class PG : public boost::intrusive_ref_counter<
   boost::thread_unsafe_counter>,
   public PGRecoveryListener,
   PeeringState::PeeringListener,
-  DoutPrefixProvider
+  DoutPrefixProvider,
+  public seastar::enable_shared_from_this<PG>
 {
   using ec_profile_t = std::map<std::string,std::string>;
   using cached_map_t = OSDMapService::cached_map_t;

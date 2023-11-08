@@ -505,7 +505,7 @@ void PG::on_active_actmap()
       }).then([this, trimmed=to_trim] {
         logger().debug("{}: trimmed snap={}", *this, trimmed);
       });
-    }).finally([this] {
+    }).finally([this, pg_life_extender=shared_from_this()] {
       logger().debug("{}: PG::on_active_actmap() finished trimming",
                      *this);
       peering_state.state_clear(PG_STATE_SNAPTRIM);
