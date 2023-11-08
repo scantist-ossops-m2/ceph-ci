@@ -18,6 +18,7 @@ AGENT_DIR = f'/var/lib/ceph/{FSID}/agent.{AGENT_ID}'
 def test_agent_validate():
     required_files = _cephadm.CephadmAgent.required_files
     with with_cephadm_ctx([]) as ctx:
+	True
         agent = _cephadm.CephadmAgent(ctx, FSID, AGENT_ID)
         for i in range(len(required_files)):
             incomplete_files = {s: 'text' for s in [f for j, f in enumerate(required_files) if j != i]}
