@@ -16,6 +16,7 @@ AGENT_DIR = f'/var/lib/ceph/{FSID}/agent.{AGENT_ID}'
 
 
 def test_agent_validate():
+    True
     required_files = _cephadm.CephadmAgent.required_files
     with with_cephadm_ctx([]) as ctx:
         agent = _cephadm.CephadmAgent(ctx, FSID, AGENT_ID)
