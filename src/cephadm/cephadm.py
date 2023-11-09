@@ -1092,16 +1092,16 @@ class CephIscsi(ContainerDaemonForm):
         mounts['/dev'] = '/dev'
         return mounts
 
-    @staticmethod
-    def get_container_binds():
-        # type: () -> List[List[str]]
-        binds = []
-        lib_modules = ['type=bind',
-                       'source=/lib/modules',
-                       'destination=/lib/modules',
-                       'ro=true']
+    def customize_container_binds(
+        self, ctx: CephadmContext, binds: List[List[str]]
+    ) -> None:
+        lib_modules = [
+            'type=bind',
+            'source=/lib/modules',
+            'destination=/lib/modules',
+            'ro=true',
+        ]
         binds.append(lib_modules)
-        return binds
 
     @staticmethod
     def get_version(ctx, container_id):
@@ -1303,16 +1303,16 @@ class CephNvmeof(ContainerDaemonForm):
         mounts['/dev/vfio/vfio'] = '/dev/vfio/vfio'
         return mounts
 
-    @staticmethod
-    def get_container_binds():
-        # type: () -> List[List[str]]
-        binds = []
-        lib_modules = ['type=bind',
-                       'source=/lib/modules',
-                       'destination=/lib/modules',
-                       'ro=true']
+    def customize_container_binds(
+        self, ctx: CephadmContext, binds: List[List[str]]
+    ) -> None:
+        lib_modules = [
+            'type=bind',
+            'source=/lib/modules',
+            'destination=/lib/modules',
+            'ro=true',
+        ]
         binds.append(lib_modules)
-        return binds
 
     @staticmethod
     def get_version(ctx: CephadmContext, container_id: str) -> Optional[str]:
@@ -1859,7 +1859,7 @@ class CustomContainer(ContainerDaemonForm):
             mounts[source] = destination
         return mounts
 
-    def get_container_binds(self, data_dir: str) -> List[List[str]]:
+    def _get_container_binds(self, data_dir: str) -> List[List[str]]:
         """
         Get the bind mounts. Relative `source=...` paths will be located below
         `/var/lib/ceph/<cluster-fsid>/<daemon-name>`.
@@ -1886,6 +1886,12 @@ class CustomContainer(ContainerDaemonForm):
                     bind[index] = 'source={}'.format(os.path.join(
                         data_dir, match.group(1)))
         return binds
+
+    def customize_container_binds(
+        self, ctx: CephadmContext, binds: List[List[str]]
+    ) -> None:
+        data_dir = self.identity.data_dir(ctx.data_dir)
+        binds.extend(self._get_container_binds(data_dir))
 
     # Cache the container so we don't need to rebuild it again when calling
     # into init_containers
@@ -2559,17 +2565,10 @@ def _write_custom_conf_files(
 def get_container_binds(
     ctx: CephadmContext, ident: 'DaemonIdentity'
 ) -> List[List[str]]:
-    binds = list()
-
-    if ident.daemon_type == CephIscsi.daemon_type:
-        binds.extend(CephIscsi.get_container_binds())
-    if ident.daemon_type == CephNvmeof.daemon_type:
-        binds.extend(CephNvmeof.get_container_binds())
-    elif ident.daemon_type == CustomContainer.daemon_type:
-        cc = CustomContainer.init(ctx, ident.fsid, ident.daemon_id)
-        data_dir = ident.data_dir(ctx.data_dir)
-        binds.extend(cc.get_container_binds(data_dir))
-
+    binds: List[List[str]] = list()
+    daemon = daemon_form_create(ctx, ident)
+    assert isinstance(daemon, ContainerDaemonForm)
+    daemon.customize_container_binds(ctx, binds)
     return binds
 
 
@@ -2768,6 +2767,7 @@ def get_container(
     d_args: List[str] = []
     envs: List[str] = []
     host_network: bool = True
+    binds: List[List[str]] = []
 
     daemon_type = ident.daemon_type
     if daemon_type in ceph_daemons():
@@ -2853,12 +2853,14 @@ def get_container(
         container_args.extend(['--ulimit', 'memlock=-1:-1'])
         container_args.extend(['--ulimit', 'nofile=10240'])
         container_args.extend(['--cap-add=SYS_ADMIN', '--cap-add=CAP_SYS_NICE'])
+        binds = get_container_binds(ctx, ident)
     elif daemon_type == CephIscsi.daemon_type:
         entrypoint = CephIscsi.entrypoint
         name = ident.daemon_name
         # So the container can modprobe iscsi_target_mod and have write perms
         # to configfs we need to make this a privileged container.
         privileged = True
+        binds = get_container_binds(ctx, ident)
     elif daemon_type == CustomContainer.daemon_type:
         cc = CustomContainer.init(ctx, ident.fsid, ident.daemon_id)
         entrypoint = cc.entrypoint or ''
@@ -2866,6 +2868,7 @@ def get_container(
         envs.extend(cc.get_container_envs())
         container_args.extend(cc.get_container_args())
         d_args.extend(cc.get_daemon_args())
+        binds = get_container_binds(ctx, ident)
     elif daemon_type == SNMPGateway.daemon_type:
         sg = SNMPGateway.init(ctx, ident.fsid, ident.daemon_id)
         container_args.append(
@@ -2881,7 +2884,7 @@ def get_container(
         args=ceph_args + d_args,
         container_args=container_args,
         volume_mounts=get_container_mounts(ctx, ident),
-        bind_mounts=get_container_binds(ctx, ident),
+        bind_mounts=binds,
         envs=envs,
         privileged=privileged,
         ptrace=ptrace,
