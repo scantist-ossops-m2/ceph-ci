@@ -686,9 +686,6 @@ enum class OPT {
   BUCKET_OBJECT_SHARD,
   BUCKET_RESYNC_ENCRYPTED_MULTIPART,
   POLICY,
-  POOL_ADD,
-  POOL_RM,
-  POOLS_LIST,
   LOG_LIST,
   LOG_SHOW,
   LOG_RM,
@@ -910,10 +907,6 @@ static SimpleCmd::Commands all_cmds = {
   { "bucket object shard", OPT::BUCKET_OBJECT_SHARD },
   { "bucket resync encrypted multipart", OPT::BUCKET_RESYNC_ENCRYPTED_MULTIPART },
   { "policy", OPT::POLICY },
-  { "pool add", OPT::POOL_ADD },
-  { "pool rm", OPT::POOL_RM },
-  { "pool list", OPT::POOLS_LIST },
-  { "pools list", OPT::POOLS_LIST },
   { "log list", OPT::LOG_LIST },
   { "log show", OPT::LOG_SHOW },
   { "log rm", OPT::LOG_RM },
@@ -1199,7 +1192,7 @@ public:
 static int init_bucket(rgw::sal::User* user, const rgw_bucket& b,
                        std::unique_ptr<rgw::sal::Bucket>* bucket)
 {
-  return driver->get_bucket(dpp(), user, b, bucket, null_yield);
+  return driver->load_bucket(dpp(), user, b, bucket, null_yield);
 }
 
 static int init_bucket(rgw::sal::User* user,
@@ -1414,7 +1407,9 @@ int set_bucket_quota(rgw::sal::Driver* driver, OPT opt_cmd,
                      bool have_max_size, bool have_max_objects)
 {
   std::unique_ptr<rgw::sal::Bucket> bucket;
-  int r = driver->get_bucket(dpp(), nullptr, tenant_name, bucket_name, &bucket, null_yield);
+  int r = driver->load_bucket(dpp(), nullptr,
+                              rgw_bucket(tenant_name, bucket_name),
+                              &bucket, null_yield);
   if (r < 0) {
     cerr << "could not get bucket info for bucket=" << bucket_name << ": " << cpp_strerror(-r) << std::endl;
     return -r;
@@ -1438,7 +1433,9 @@ int set_bucket_ratelimit(rgw::sal::Driver* driver, OPT opt_cmd,
                      bool have_max_read_bytes, bool have_max_write_bytes)
 {
   std::unique_ptr<rgw::sal::Bucket> bucket;
-  int r = driver->get_bucket(dpp(), nullptr, tenant_name, bucket_name, &bucket, null_yield);
+  int r = driver->load_bucket(dpp(), nullptr,
+                              rgw_bucket(tenant_name, bucket_name),
+                              &bucket, null_yield);
   if (r < 0) {
     cerr << "could not get bucket info for bucket=" << bucket_name << ": " << cpp_strerror(-r) << std::endl;
     return -r;
@@ -1541,7 +1538,9 @@ int show_bucket_ratelimit(rgw::sal::Driver* driver, const string& tenant_name,
                           const string& bucket_name, Formatter *formatter)
 {
   std::unique_ptr<rgw::sal::Bucket> bucket;
-  int r = driver->get_bucket(dpp(), nullptr, tenant_name, bucket_name, &bucket, null_yield);
+  int r = driver->load_bucket(dpp(), nullptr,
+                              rgw_bucket(tenant_name, bucket_name),
+                              &bucket, null_yield);
   if (r < 0) {
     cerr << "could not get bucket info for bucket=" << bucket_name << ": " << cpp_strerror(-r) << std::endl;
     return -r;
@@ -3039,19 +3038,20 @@ static int scan_totp(CephContext *cct, ceph::real_time& now, rados::cls::otp::ot
   uint32_t max_skew = MAX_TOTP_SKEW_HOURS * 3600;
 
   while (time_ofs_abs < max_skew) {
+    // coverity supression: oath_totp_validate2 is an external library function, cannot fix internally
+    // Further, step_size is a small number and unlikely to overflow
     int rc = oath_totp_validate2(totp.seed_bin.c_str(), totp.seed_bin.length(),
                              start_time, 
+                             // coverity[store_truncates_time_t:SUPPRESS]
                              step_size,
                              time_ofs,
                              1,
                              nullptr,
                              pins[0].c_str());
     if (rc != OATH_INVALID_OTP) {
-      // oath_totp_validate2 is an external library function, cannot fix internally
-      // Further, step_size is a small number and unlikely to overflow
-      // coverity[store_truncates_time_t:SUPPRESS]
       rc = oath_totp_validate2(totp.seed_bin.c_str(), totp.seed_bin.length(),
                                start_time, 
+                               // coverity[store_truncates_time_t:SUPPRESS]
                                step_size,
                                time_ofs - step_size, /* smaller time_ofs moves time forward */
                                1,
@@ -6711,7 +6711,8 @@ int main(int argc, const char **argv)
         cerr << "failed to parse policy: " << e.what() << std::endl;
         return -EINVAL;
       }
-      std::unique_ptr<rgw::sal::RGWRole> role = driver->get_role(role_name, tenant, path, assume_role_doc);
+      std::unique_ptr<rgw::sal::RGWRole> role = driver->get_role(role_name, tenant, path,
+                                                                 assume_role_doc, max_session_duration);
       ret = role->create(dpp(), true, "", null_yield);
       if (ret < 0) {
         return -ret;
@@ -6921,11 +6922,11 @@ int main(int argc, const char **argv)
       if (ret < 0) {
         return -ret;
       }
+      role->update_max_session_duration(max_session_duration);
       if (!role->validate_max_session_duration(dpp())) {
         ret = -EINVAL;
         return ret;
       }
-      role->update_max_session_duration(max_session_duration);
       ret = role->update(dpp(), null_yield);
       if (ret < 0) {
         return -ret;
@@ -7411,47 +7412,6 @@ next:
     }
   }
 
-  if (opt_cmd == OPT::POOL_ADD) {
-    if (pool_name.empty()) {
-      cerr << "need to specify pool to add!" << std::endl;
-      exit(1);
-    }
-
-    int ret = static_cast<rgw::sal::RadosStore*>(driver)->svc()->zone->add_bucket_placement(dpp(), pool, null_yield);
-    if (ret < 0)
-      cerr << "failed to add bucket placement: " << cpp_strerror(-ret) << std::endl;
-  }
-
-  if (opt_cmd == OPT::POOL_RM) {
-    if (pool_name.empty()) {
-      cerr << "need to specify pool to remove!" << std::endl;
-      exit(1);
-    }
-
-    int ret = static_cast<rgw::sal::RadosStore*>(driver)->svc()->zone->remove_bucket_placement(dpp(), pool, null_yield);
-    if (ret < 0)
-      cerr << "failed to remove bucket placement: " << cpp_strerror(-ret) << std::endl;
-  }
-
-  if (opt_cmd == OPT::POOLS_LIST) {
-    set<rgw_pool> pools;
-    int ret = static_cast<rgw::sal::RadosStore*>(driver)->svc()->zone->list_placement_set(dpp(), pools, null_yield);
-    if (ret < 0) {
-      cerr << "could not list placement set: " << cpp_strerror(-ret) << std::endl;
-      return -ret;
-    }
-    formatter->reset();
-    formatter->open_array_section("pools");
-    for (auto siter = pools.begin(); siter != pools.end(); ++siter) {
-      formatter->open_object_section("pool");
-      formatter->dump_string("name",  siter->to_str());
-      formatter->close_section();
-    }
-    formatter->close_section();
-    formatter->flush(cout);
-    cout << std::endl;
-  }
-
   if (opt_cmd == OPT::USAGE_SHOW) {
     uint64_t start_epoch = 0;
     uint64_t end_epoch = (uint64_t)-1;
@@ -7669,7 +7629,8 @@ next:
 
     int ret = init_bucket(user.get(), tenant, bucket_name, bucket_id, &bucket);
     if (ret < 0) {
-      cerr << "ERROR: could not init bucket: " << cpp_strerror(-ret) << std::endl;
+      ldpp_dout(dpp(), 0) << "ERROR: could not init bucket: " << cpp_strerror(-ret) <<
+	dendl;
       return -ret;
     }
 
@@ -7689,13 +7650,13 @@ next:
     int i = (specified_shard_id ? shard_id : 0);
     for (; i < max_shards; i++) {
       ldpp_dout(dpp(), 20) << "INFO: " << __func__ << ": starting shard=" << i << dendl;
+      marker.clear();
 
       RGWRados::BucketShard bs(static_cast<rgw::sal::RadosStore*>(driver)->getRados());
       int ret = bs.init(dpp(), bucket->get_info(), index, i, null_yield);
-      marker.clear();
-
       if (ret < 0) {
-        cerr << "ERROR: bs.init(bucket=" << bucket << ", shard=" << i << "): " << cpp_strerror(-ret) << std::endl;
+	ldpp_dout(dpp(), 0) << "ERROR: bs.init(bucket=" << bucket << ", shard=" << i <<
+	  "): " << cpp_strerror(-ret) << dendl;
         return -ret;
       }
 
@@ -7704,7 +7665,7 @@ next:
 	// if object is specified, we use that as a filter to only retrieve some some entries
         ret = static_cast<rgw::sal::RadosStore*>(driver)->getRados()->bi_list(bs, object, marker, max_entries, &entries, &is_truncated, null_yield);
         if (ret < 0) {
-          cerr << "ERROR: bi_list(): " << cpp_strerror(-ret) << std::endl;
+          ldpp_dout(dpp(), 0) << "ERROR: bi_list(): " << cpp_strerror(-ret) << dendl;
           return -ret;
         }
 	ldpp_dout(dpp(), 20) << "INFO: " << __func__ <<
@@ -9578,12 +9539,15 @@ next:
       return -EINVAL;
     }
     if (!start_marker.empty()) {
-      std::cerr << "end-date not allowed." << std::endl;
+      std::cerr << "start-marker not allowed." << std::endl;
       return -EINVAL;
     }
     if (!end_marker.empty()) {
-      std::cerr << "end-date not allowed." << std::endl;
+      std::cerr << "end_marker not allowed." << std::endl;
       return -EINVAL;
+    }
+    if (marker.empty()) {
+      marker = "9"; // trims everything
     }
 
     if (shard_id < 0) {

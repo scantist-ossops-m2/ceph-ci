@@ -687,14 +687,14 @@ static void get_rmattrs_from_headers(const req_state * const s,
 
 static int get_swift_versioning_settings(
   req_state * const s,
-  boost::optional<std::string>& swift_ver_location)
+  std::optional<std::string>& swift_ver_location)
 {
   /* Removing the Swift's versions location has lower priority than setting
    * a new one. That's the reason why we're handling it first. */
   const std::string vlocdel =
     s->info.env->get("HTTP_X_REMOVE_VERSIONS_LOCATION", "");
   if (vlocdel.size()) {
-    swift_ver_location = boost::in_place(std::string());
+    swift_ver_location.emplace();
   }
 
   if (s->info.env->exists("HTTP_X_VERSIONS_LOCATION")) {
@@ -729,9 +729,10 @@ int RGWCreateBucket_ObjStore_SWIFT::get_params(optional_yield y)
   location_constraint = driver->get_zone()->get_zonegroup().get_api_name();
   get_rmattrs_from_headers(s, CONT_PUT_ATTR_PREFIX,
                            CONT_REMOVE_ATTR_PREFIX, rmattr_names);
-  placement_rule.init(s->info.env->get("HTTP_X_STORAGE_POLICY", ""), s->info.storage_class);
+  createparams.placement_rule.init(s->info.env->get("HTTP_X_STORAGE_POLICY", ""),
+                                   s->info.storage_class);
 
-  return get_swift_versioning_settings(s, swift_ver_location);
+  return get_swift_versioning_settings(s, createparams.swift_ver_location);
 }
 
 static inline int handle_metadata_errors(req_state* const s, const int op_ret)
@@ -862,7 +863,9 @@ int RGWPutObj_ObjStore_SWIFT::update_slo_segment_size(rgw_slo_entry& entry) {
   std::unique_ptr<rgw::sal::Bucket> bucket;
 
   if (bucket_name.compare(s->bucket->get_name()) != 0) {
-    r = driver->get_bucket(s, s->user.get(), s->user->get_id().tenant, bucket_name, &bucket, s->yield);
+    r = driver->load_bucket(s, s->user.get(),
+                            rgw_bucket(s->user->get_id().tenant, bucket_name),
+                            &bucket, s->yield);
     if (r < 0) {
       ldpp_dout(this, 0) << "could not get bucket info for bucket="
 			 << bucket_name << dendl;
@@ -1823,7 +1826,7 @@ void RGWGetHealthCheck_ObjStore_SWIFT::send_response()
 
 const vector<pair<string, RGWInfo_ObjStore_SWIFT::info>> RGWInfo_ObjStore_SWIFT::swift_info =
 {
-    {"bulk_delete", {false, nullptr}},
+    {"bulk_delete", {false, RGWInfo_ObjStore_SWIFT::list_bulk_delete}},
     {"container_quotas", {false, nullptr}},
     {"swift", {false, RGWInfo_ObjStore_SWIFT::list_swift_data}},
     {"tempurl", { false, RGWInfo_ObjStore_SWIFT::list_tempurl_data}},
@@ -1873,6 +1876,16 @@ void RGWInfo_ObjStore_SWIFT::send_response()
   dump_errno(s);
   end_header(s, this);
   rgw_flush_formatter_and_reset(s, s->formatter);
+}
+
+void RGWInfo_ObjStore_SWIFT::list_bulk_delete(Formatter& formatter,
+                                                const ConfigProxy& config,
+                                                rgw::sal::Driver* driver)
+{
+  formatter.open_object_section("bulk_delete");
+  formatter.dump_int("max_deletes_per_request", config->rgw_delete_multi_obj_max_num); 
+  formatter.close_section();
+
 }
 
 void RGWInfo_ObjStore_SWIFT::list_swift_data(Formatter& formatter,
@@ -2115,7 +2128,9 @@ void RGWFormPost::get_owner_info(const req_state* const s,
 
   /* Need to get user info of bucket owner. */
   std::unique_ptr<rgw::sal::Bucket> bucket;
-  int ret = driver->get_bucket(s, user.get(), bucket_tenant, bucket_name, &bucket, s->yield);
+  int ret = driver->load_bucket(s, user.get(),
+                                rgw_bucket(bucket_tenant, bucket_name),
+                                &bucket, s->yield);
   if (ret < 0) {
     throw ret;
   }

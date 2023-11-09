@@ -132,8 +132,6 @@ map<uint64_t, EstimateResult> dedup_estimates;  // chunk size -> result
 
 using namespace librados;
 unsigned default_op_size = 1 << 26;
-unsigned default_max_thread = 2;
-int32_t default_report_period = 10;
 ceph::mutex glock = ceph::make_mutex("glock");
 
 po::options_description make_usage() {
@@ -169,8 +167,8 @@ po::options_description make_usage() {
     ("chunk-algorithm", po::value<std::string>(), ": <fixed|fastcdc>, set chunk-algorithm")
     ("fingerprint-algorithm", po::value<std::string>(), ": <sha1|sha256|sha512>, set fingerprint-algorithm")
     ("chunk-pool", po::value<std::string>(), ": set chunk pool name")
-    ("max-thread", po::value<int>(), ": set max thread")
-    ("report-period", po::value<int>(), ": set report-period")
+    ("max-thread", po::value<int>()->default_value(2), ": set max thread")
+    ("report-period", po::value<int>()->default_value(10), ": set report-period")
     ("max-seconds", po::value<int>(), ": set max runtime")
     ("max-read-size", po::value<int>(), ": set max read size")
     ("pool", po::value<std::string>(), ": set pool name")
@@ -433,6 +431,7 @@ void EstimateDedupRatio::estimate_dedup_ratio()
   }
 }
 
+static void print_chunk_scrub();
 void ChunkScrub::chunk_scrub_common()
 {
   ObjectCursor shard_start;
@@ -459,6 +458,13 @@ void ChunkScrub::chunk_scrub_common()
     &shard_start,
     &shard_end);
 
+  const utime_t start = ceph_clock_now();
+  utime_t next_report;
+  if (report_period) {
+    next_report = start;
+    next_report += report_period;
+  }
+
   ObjectCursor c(shard_start);
   while(c < shard_end)
   {
@@ -477,8 +483,21 @@ void ChunkScrub::chunk_scrub_common()
 	delete formatter;
 	return;
       }
+
+      utime_t now = ceph_clock_now();
+      if (n == 0 && // first thread only
+	  next_report != utime_t() && now > next_report) {
+	cerr << (int)(now - start) << "s, interim findings is : "
+	     << std::endl;
+	print_chunk_scrub();
+	next_report = now;
+	next_report += report_period;
+      }
+
       auto oid = i.oid;
-      cout << oid << std::endl;
+      if (debug) {
+	cout << oid << std::endl;
+      }
       chunk_refs_t refs;
       {
 	bufferlist t;
@@ -551,6 +570,17 @@ public:
   public:
     using dup_count_t = ssize_t;
 
+    void maybe_print_status() {
+      utime_t now = ceph_clock_now();
+      if (next_report != utime_t() && now > next_report) {
+	cerr << (int)(now - start) << "s : read "
+	     << total_bytes << " bytes so far..."
+	     << std::endl;
+	next_report = now;
+	next_report += report_period;
+      }
+    }
+
     bool find(string& fp) {
       std::shared_lock lock(fingerprint_lock);
       auto found_item = fp_map.find(fp);
@@ -562,6 +592,8 @@ public:
       std::unique_lock lock(fingerprint_lock);
       auto found_iter = fp_map.find(chunk.fingerprint);
       ssize_t cur_reference = 1;
+      total_bytes += chunk.size;
+      maybe_print_status();
       if (found_iter == fp_map.end()) {
         fp_map.insert({chunk.fingerprint, 1});
       } else {
@@ -570,17 +602,20 @@ public:
       return cur_reference >= dedup_threshold && dedup_threshold != -1;
     }
 
-    void init(size_t dedup_threshold_) {
-      std::unique_lock lock(fingerprint_lock);
-      fp_map.clear();
-      dedup_threshold = dedup_threshold_;
+    FpStore(size_t chunk_threshold, uint32_t report_period) :
+      dedup_threshold(chunk_threshold), report_period(report_period) {
+      next_report = start;
+      next_report += report_period;
     }
-    FpStore(size_t chunk_threshold) : dedup_threshold(chunk_threshold) { }
 
   private:
     ssize_t dedup_threshold = -1;
     std::unordered_map<std::string, dup_count_t> fp_map;
     std::shared_mutex fingerprint_lock;
+    const utime_t start = ceph_clock_now();
+    utime_t next_report;
+    const uint32_t report_period;
+    size_t total_bytes = 0;
   };
 
   struct SampleDedupGlobal {
@@ -588,8 +623,9 @@ public:
     const double sampling_ratio = -1;
     SampleDedupGlobal(
       int chunk_threshold,
-      int sampling_ratio) :
-      fp_store(chunk_threshold),
+      int sampling_ratio,
+      uint32_t report_period) :
+      fp_store(chunk_threshold, report_period),
       sampling_ratio(static_cast<double>(sampling_ratio) / 100) { }
   };
 
@@ -601,17 +637,28 @@ public:
     size_t chunk_size,
     std::string &fp_algo,
     std::string &chunk_algo,
-    SampleDedupGlobal &sample_dedup_global) :
-    io_ctx(io_ctx),
+    SampleDedupGlobal &sample_dedup_global,
+    bool snap) :
     chunk_io_ctx(chunk_io_ctx),
     chunk_size(chunk_size),
     fp_type(pg_pool_t::get_fingerprint_from_str(fp_algo)),
     chunk_algo(chunk_algo),
     sample_dedup_global(sample_dedup_global),
     begin(begin),
-    end(end) { }
+    end(end),
+    snap(snap) {
+      this->io_ctx.dup(io_ctx);
+    }
 
   ~SampleDedupWorkerThread() { };
+
+  size_t get_total_duplicated_size() const {
+    return total_duplicated_size;
+  }
+
+  size_t get_total_object_size() const {
+    return total_object_size;
+  }
 
 protected:
   void* entry() override {
@@ -626,9 +673,9 @@ private:
     ObjectCursor end,
     size_t max_object_count);
   std::vector<size_t> sample_object(size_t count);
-  void try_dedup_and_accumulate_result(ObjectItem &object);
+  void try_dedup_and_accumulate_result(ObjectItem &object, snap_t snap = 0);
   bool ok_to_dedup_all();
-  int do_chunk_dedup(chunk_t &chunk);
+  int do_chunk_dedup(chunk_t &chunk, snap_t snap);
   bufferlist read_object(ObjectItem &object);
   std::vector<std::tuple<bufferlist, pair<uint64_t, uint64_t>>> do_cdc(
     ObjectItem &object,
@@ -641,13 +688,14 @@ private:
   size_t total_duplicated_size = 0;
   size_t total_object_size = 0;
 
-  std::set<std::string> oid_for_evict;
+  std::set<std::pair<std::string, snap_t>> oid_for_evict;
   const size_t chunk_size = 0;
   pg_pool_t::fingerprint_t fp_type = pg_pool_t::TYPE_FINGERPRINT_NONE;
   std::string chunk_algo;
   SampleDedupGlobal &sample_dedup_global;
   ObjectCursor begin;
   ObjectCursor end;
+  bool snap;
 };
 
 void SampleDedupWorkerThread::crawl()
@@ -666,14 +714,33 @@ void SampleDedupWorkerThread::crawl()
     auto sampled_indexes = sample_object(objects.size());
     for (size_t index : sampled_indexes) {
       ObjectItem target = objects[index];
-      try_dedup_and_accumulate_result(target);
+      if (snap) {
+	io_ctx.snap_set_read(librados::SNAP_DIR);
+	snap_set_t snap_set;
+	int snap_ret;
+	ObjectReadOperation op;
+	op.list_snaps(&snap_set, &snap_ret);
+	io_ctx.operate(target.oid, &op, NULL);
+
+	for (vector<librados::clone_info_t>::const_iterator r = snap_set.clones.begin();
+	  r != snap_set.clones.end();
+	  ++r) {
+	  io_ctx.snap_set_read(r->cloneid);
+	  try_dedup_and_accumulate_result(target, r->cloneid);
+	}
+      } else {
+	try_dedup_and_accumulate_result(target);
+      }
     }
   }
 
   vector<AioCompRef> evict_completions(oid_for_evict.size());
   int i = 0;
   for (auto &oid : oid_for_evict) {
-    evict_completions[i] = do_async_evict(oid);
+    if (snap) {
+      io_ctx.snap_set_read(oid.second);
+    }
+    evict_completions[i] = do_async_evict(oid.first);
     i++;
   }
   for (auto &completion : evict_completions) {
@@ -731,7 +798,8 @@ std::vector<size_t> SampleDedupWorkerThread::sample_object(size_t count)
   return indexes;
 }
 
-void SampleDedupWorkerThread::try_dedup_and_accumulate_result(ObjectItem &object)
+void SampleDedupWorkerThread::try_dedup_and_accumulate_result(
+  ObjectItem &object, snap_t snap)
 {
   bufferlist data = read_object(object);
   if (data.length() == 0) {
@@ -780,7 +848,7 @@ void SampleDedupWorkerThread::try_dedup_and_accumulate_result(ObjectItem &object
 
   // perform chunk-dedup
   for (auto &p : redundant_chunks) {
-    do_chunk_dedup(p);
+    do_chunk_dedup(p, snap);
   }
   total_duplicated_size += duplicated_size;
   total_object_size += object_size;
@@ -848,7 +916,7 @@ std::string SampleDedupWorkerThread::generate_fingerprint(bufferlist chunk_data)
   return ret;
 }
 
-int SampleDedupWorkerThread::do_chunk_dedup(chunk_t &chunk)
+int SampleDedupWorkerThread::do_chunk_dedup(chunk_t &chunk, snap_t snap)
 {
   uint64_t size;
   time_t mtime;
@@ -874,7 +942,7 @@ int SampleDedupWorkerThread::do_chunk_dedup(chunk_t &chunk)
       0,
       CEPH_OSD_OP_FLAG_WITH_REFERENCE);
   ret = io_ctx.operate(chunk.oid, &op, nullptr);
-  oid_for_evict.insert(chunk.oid);
+  oid_for_evict.insert(make_pair(chunk.oid, snap));
   return ret;
 }
 
@@ -983,8 +1051,8 @@ int estimate_dedup_ratio(const po::variables_map &opts)
   uint64_t chunk_size = 8192;
   uint64_t min_chunk_size = 8192;
   uint64_t max_chunk_size = 4*1024*1024;
-  unsigned max_thread = default_max_thread;
-  uint32_t report_period = default_report_period;
+  unsigned max_thread = get_opts_max_thread(opts);
+  uint32_t report_period = get_opts_report_period(opts);
   uint64_t max_read_size = default_op_size;
   uint64_t max_seconds = 0;
   int ret;
@@ -1023,8 +1091,6 @@ int estimate_dedup_ratio(const po::variables_map &opts)
   } else {
     cout << "4MB is set as max chunk size by default" << std::endl;
   }
-  max_thread = get_opts_max_thread(opts);
-  report_period = get_opts_report_period(opts);
   if (opts.count("max-seconds")) {
     max_seconds = opts["max-seconds"].as<int>();
   } else {
@@ -1142,9 +1208,9 @@ int chunk_scrub_common(const po::variables_map &opts)
   std::string object_name, target_object_name;
   string chunk_pool_name, op_name;
   int ret;
-  unsigned max_thread = default_max_thread;
+  unsigned max_thread = get_opts_max_thread(opts);
   std::map<std::string, std::string>::const_iterator i;
-  uint32_t report_period = default_report_period;
+  uint32_t report_period = get_opts_report_period(opts);
   ObjectCursor begin;
   ObjectCursor end;
   librados::pool_stat_t s; 
@@ -1295,8 +1361,6 @@ int chunk_scrub_common(const po::variables_map &opts)
     return 0;
   }
 
-  max_thread = get_opts_max_thread(opts);
-  report_period = get_opts_report_period(opts);
   glock.lock();
   begin = chunk_io_ctx.object_list_begin();
   end = chunk_io_ctx.object_list_end();
@@ -1532,6 +1596,7 @@ int make_crawling_daemon(const po::variables_map &opts)
   string base_pool_name = get_opts_pool_name(opts);
   string chunk_pool_name = get_opts_chunk_pool(opts);
   unsigned max_thread = get_opts_max_thread(opts);
+  uint32_t report_period = get_opts_report_period(opts);
 
   bool loop = false;
   if (opts.count("loop")) {
@@ -1547,6 +1612,10 @@ int make_crawling_daemon(const po::variables_map &opts)
     chunk_size = opts["chunk-size"].as<int>();
   } else {
     cout << "8192 is set as chunk size by default" << std::endl;
+  }
+  bool snap = false;
+  if (opts.count("snap")) {
+    snap = true;
   }
 
   uint32_t chunk_dedup_threshold = -1;
@@ -1645,9 +1714,11 @@ int make_crawling_daemon(const po::variables_map &opts)
     }
 
     SampleDedupWorkerThread::SampleDedupGlobal sample_dedup_global(
-      chunk_dedup_threshold, sampling_ratio);
+      chunk_dedup_threshold, sampling_ratio, report_period);
 
     std::list<SampleDedupWorkerThread> threads;
+    size_t total_size = 0;
+    size_t total_duplicate_size = 0;
     for (unsigned i = 0; i < max_thread; i++) {
       cout << " add thread.. " << std::endl;
       ObjectCursor shard_start;
@@ -1668,13 +1739,22 @@ int make_crawling_daemon(const po::variables_map &opts)
 	chunk_size,
 	fp_algo,
 	chunk_algo,
-	sample_dedup_global);
+	sample_dedup_global,
+	snap);
       threads.back().create("sample_dedup");
     }
 
     for (auto &p : threads) {
+      total_size += p.get_total_object_size();
+      total_duplicate_size += p.get_total_duplicated_size();
       p.join();
     }
+
+    cerr << "Summary: read "
+	 << total_size << " bytes so far and found saveable space ("
+	 << total_duplicate_size << " bytes)."
+	 << std::endl;
+
     if (loop) {
       sleep(wakeup_period);
     } else {

@@ -109,7 +109,9 @@ void check_bad_user_bucket_mapping(rgw::sal::Driver* driver, rgw::sal::User& use
 
     for (const auto& ent : listing.buckets) {
       std::unique_ptr<rgw::sal::Bucket> bucket;
-      int r = driver->get_bucket(dpp, &user, user.get_tenant(), ent.bucket.name, &bucket, y);
+      int r = driver->load_bucket(dpp, &user,
+                                  rgw_bucket(user.get_tenant(), ent.bucket.name),
+                                  &bucket, y);
       if (r < 0) {
         ldpp_dout(dpp, 0) << "could not get bucket info for bucket=" << bucket << dendl;
         continue;
@@ -181,7 +183,8 @@ int RGWBucket::init(rgw::sal::Driver* _driver, RGWBucketAdminOpState& op_state,
     bucket_name = bucket_name.substr(pos + 1);
   }
 
-  int r = driver->get_bucket(dpp, user.get(), tenant, bucket_name, &bucket, y);
+  int r = driver->load_bucket(dpp, user.get(), rgw_bucket(tenant, bucket_name),
+                              &bucket, y);
   if (r < 0) {
       set_err_msg(err_msg, "failed to fetch bucket info for bucket=" + bucket_name);
       return r;
@@ -1242,16 +1245,17 @@ int RGWBucketAdminOp::remove_bucket(rgw::sal::Driver* driver, RGWBucketAdminOpSt
   std::unique_ptr<rgw::sal::Bucket> bucket;
   std::unique_ptr<rgw::sal::User> user = driver->get_user(op_state.get_user_id());
 
-  int ret = driver->get_bucket(dpp, user.get(), user->get_tenant(), op_state.get_bucket_name(),
-			      &bucket, y);
+  int ret = driver->load_bucket(dpp, user.get(),
+                                rgw_bucket(user->get_tenant(),
+                                           op_state.get_bucket_name()),
+                                &bucket, y);
   if (ret < 0)
     return ret;
 
   if (bypass_gc)
-    ret = bucket->remove_bucket_bypass_gc(op_state.get_max_aio(), keep_index_consistent, y, dpp);
+    ret = bucket->remove_bypass_gc(op_state.get_max_aio(), keep_index_consistent, y, dpp);
   else
-    ret = bucket->remove_bucket(dpp, op_state.will_delete_children(),
-				false, nullptr, y);
+    ret = bucket->remove(dpp, op_state.will_delete_children(), y);
 
   return ret;
 }
@@ -1285,7 +1289,9 @@ static int bucket_stats(rgw::sal::Driver* driver,
   std::unique_ptr<rgw::sal::Bucket> bucket;
   map<RGWObjCategory, RGWStorageStats> stats;
 
-  int ret = driver->get_bucket(dpp, nullptr, tenant_name, bucket_name, &bucket, y);
+  int ret = driver->load_bucket(dpp, nullptr,
+                                rgw_bucket(tenant_name, bucket_name),
+                                &bucket, y);
   if (ret < 0) {
     return ret;
   }
@@ -1312,18 +1318,20 @@ static int bucket_stats(rgw::sal::Driver* driver,
 
   formatter->open_object_section("stats");
   formatter->dump_string("bucket", bucket->get_name());
-  formatter->dump_int("num_shards",
-		      bucket->get_info().layout.current_index.layout.normal.num_shards);
   formatter->dump_string("tenant", bucket->get_tenant());
-  formatter->dump_string("versioning", bucket->versioned() ? (bucket->versioning_enabled() ? "enabled" : "suspended") : "off");
+  formatter->dump_string("versioning",
+			 bucket->versioned()
+			 ? (bucket->versioning_enabled() ? "enabled" : "suspended")
+			 : "off");
   formatter->dump_string("zonegroup", bucket->get_info().zonegroup);
   formatter->dump_string("placement_rule", bucket->get_info().placement_rule.to_str());
   ::encode_json("explicit_placement", bucket->get_key().explicit_placement, formatter);
   formatter->dump_string("id", bucket->get_bucket_id());
   formatter->dump_string("marker", bucket->get_marker());
   formatter->dump_stream("index_type") << bucket->get_info().layout.current_index.layout.type;
-  formatter->dump_bool("versioned", bucket_info.versioned());
-  formatter->dump_bool("versioning_enabled", bucket_info.versioning_enabled());
+  formatter->dump_int("index_generation", bucket->get_info().layout.current_index.gen);
+  formatter->dump_int("num_shards",
+		      bucket->get_info().layout.current_index.layout.normal.num_shards);
   formatter->dump_bool("object_lock_enabled", bucket_info.obj_lock_enabled());
   formatter->dump_bool("mfa_enabled", bucket_info.mfa_enabled());
   ::encode_json("owner", bucket->get_info().owner, formatter);
@@ -1408,7 +1416,7 @@ int RGWBucketAdminOp::limit_check(rgw::sal::Driver* driver,
 	uint64_t num_objects = 0;
 
 	std::unique_ptr<rgw::sal::Bucket> bucket;
-	ret = driver->get_bucket(dpp, user.get(), ent.bucket, &bucket, y);
+	ret = driver->load_bucket(dpp, user.get(), ent.bucket, &bucket, y);
 	if (ret < 0)
 	  continue;
 
@@ -1592,7 +1600,7 @@ void get_stale_instances(rgw::sal::Driver* driver, const std::string& bucket_nam
     std::unique_ptr<rgw::sal::Bucket> bucket;
     rgw_bucket rbucket;
     rgw_bucket_parse_bucket_key(driver->ctx(), bucket_instance, &rbucket, nullptr);
-    int r = driver->get_bucket(dpp, nullptr, rbucket, &bucket, y);
+    int r = driver->load_bucket(dpp, nullptr, rbucket, &bucket, y);
     if (r < 0){
       // this can only happen if someone deletes us right when we're processing
       ldpp_dout(dpp, -1) << "Bucket instance is invalid: " << bucket_instance
@@ -1612,7 +1620,8 @@ void get_stale_instances(rgw::sal::Driver* driver, const std::string& bucket_nam
   auto [tenant, bname] = split_tenant(bucket_name);
   RGWBucketInfo cur_bucket_info;
   std::unique_ptr<rgw::sal::Bucket> cur_bucket;
-  int r = driver->get_bucket(dpp, nullptr, tenant, bname, &cur_bucket, y);
+  int r = driver->load_bucket(dpp, nullptr, rgw_bucket(tenant, bname),
+                              &cur_bucket, y);
   if (r < 0) {
     if (r == -ENOENT) {
       // bucket doesn't exist, everything is stale then
@@ -1746,8 +1755,7 @@ int RGWBucketAdminOp::clear_stale_instances(rgw::sal::Driver* driver,
                       Formatter *formatter,
                       rgw::sal::Driver* driver){
                      for (const auto &binfo: lst) {
-		       std::unique_ptr<rgw::sal::Bucket> bucket;
-		       driver->get_bucket(nullptr, binfo, &bucket);
+		       auto bucket = driver->get_bucket(nullptr, binfo);
 		       int ret = bucket->purge_instance(dpp, y);
                        if (ret == 0){
                          auto md_key = "bucket.instance:" + binfo.bucket.get_key();
@@ -1769,7 +1777,9 @@ static int fix_single_bucket_lc(rgw::sal::Driver* driver,
                                 const DoutPrefixProvider *dpp, optional_yield y)
 {
   std::unique_ptr<rgw::sal::Bucket> bucket;
-  int ret = driver->get_bucket(dpp, nullptr, tenant_name, bucket_name, &bucket, y);
+  int ret = driver->load_bucket(dpp, nullptr,
+                                rgw_bucket(tenant_name, bucket_name),
+                                &bucket, y);
   if (ret < 0) {
     // TODO: Should we handle the case where the bucket could've been removed between
     // listing and fetching?
@@ -1939,11 +1949,7 @@ int RGWBucketAdminOp::fix_obj_expiry(rgw::sal::Driver* driver,
     ldpp_dout(dpp, -1) << "failed to initialize bucket" << dendl;
     return ret;
   }
-  std::unique_ptr<rgw::sal::Bucket> bucket;
-  ret = driver->get_bucket(nullptr, admin_bucket.get_bucket_info(), &bucket);
-  if (ret < 0) {
-    return ret;
-  }
+  auto bucket = driver->get_bucket(nullptr, admin_bucket.get_bucket_info());
 
   return fix_bucket_obj_expiry(dpp, driver, bucket.get(), flusher, dry_run, y);
 }
@@ -2506,7 +2512,6 @@ int RGWBucketInstanceMetadataHandler::do_put(RGWSI_MetaBackend_Handler::Op *op,
 
 void init_default_bucket_layout(CephContext *cct, rgw::BucketLayout& layout,
 				const RGWZone& zone,
-				std::optional<uint32_t> shards,
 				std::optional<rgw::BucketIndexType> type) {
   layout.current_index.gen = 0;
   layout.current_index.layout.normal.hash_type = rgw::BucketHashType::Mod;
@@ -2514,9 +2519,7 @@ void init_default_bucket_layout(CephContext *cct, rgw::BucketLayout& layout,
   layout.current_index.layout.type =
     type.value_or(rgw::BucketIndexType::Normal);
 
-  if (shards) {
-    layout.current_index.layout.normal.num_shards = *shards;
-  } else if (cct->_conf->rgw_override_bucket_index_max_shards > 0) {
+  if (cct->_conf->rgw_override_bucket_index_max_shards > 0) {
     layout.current_index.layout.normal.num_shards =
       cct->_conf->rgw_override_bucket_index_max_shards;
   } else {
@@ -2548,7 +2551,7 @@ int RGWMetadataHandlerPut_BucketInstance::put_check(const DoutPrefixProvider *dp
       bci.info.layout = rgw::BucketLayout{};
       init_default_bucket_layout(cct, bci.info.layout,
 				 bihandler->svc.zone->get_zone(),
-				 std::nullopt, std::nullopt);
+				 std::nullopt);
     } else {
       bci.info.layout = old_bci->info.layout;
     }
@@ -2627,14 +2630,7 @@ int RGWMetadataHandlerPut_BucketInstance::put_post(const DoutPrefixProvider *dpp
 
   /* update lifecyle policy */
   {
-    std::unique_ptr<rgw::sal::Bucket> bucket;
-    ret = bihandler->driver->get_bucket(nullptr, bci.info, &bucket);
-    if (ret < 0) {
-      ldpp_dout(dpp, 0) << __func__ << " failed to get_bucket(...) for "
-			<< bci.info.bucket.name
-			<< dendl;
-      return ret;
-    }
+    auto bucket = bihandler->driver->get_bucket(nullptr, bci.info);
 
     auto lc = bihandler->driver->get_rgwlc();
 
