@@ -4147,7 +4147,7 @@ options:
   desc: Check validity of volume selector on umount
   long_desc: Checks if volume selector did not diverge from the state it should be in.
     Reference is constructed from bluefs inode table. Asserts on inconsistency.
-  default: false
+  default: true
   flags:
   - runtime
   with_legacy: true
