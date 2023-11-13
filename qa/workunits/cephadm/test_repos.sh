@@ -8,7 +8,10 @@ CEPHADM_SRC_DIR=${SCRIPT_DIR}/../../../src/cephadm
 trap "$SUDO rm -rf $TMPDIR" EXIT
 
 if [ -z "$CEPHADM" ]; then
-    CEPHADM=`mktemp -p $TMPDIR tmp.cephadm.XXXXXX`
+    CEPHADM_RELATIVE_PATH=`mktemp -p $TMPDIR tmp.cephadm.XXXXXX`
+    # make sure to get the absolute path to avoid any
+    # potential issues with jinja2 when using relative paths
+    CEPHADM=`realpath $CEPHADM`
     ${CEPHADM_SRC_DIR}/build.sh "$CEPHADM"
 fi
 
