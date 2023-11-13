@@ -346,12 +346,15 @@ class Ceph(ContainerDaemonForm):
             )
         return mounts
 
-    def get_container_mounts(self) -> Dict[str, str]:
-        return self.get_ceph_mounts(
-            self.ctx,
+    def customize_container_mounts(
+        self, ctx: CephadmContext, mounts: Dict[str, str]
+    ) -> None:
+        cm = self.get_ceph_mounts(
+            ctx,
             self.identity,
             no_config=self.ctx.config and self.user_supplied_config,
         )
+        mounts.update(cm)
 
 ##################################
 
@@ -815,7 +818,7 @@ class Monitoring(ContainerDaemonForm):
                   '--path.rootfs=/rootfs']
         return r
 
-    def get_container_mounts(self, data_dir: str) -> Dict[str, str]:
+    def _get_container_mounts(self, data_dir: str) -> Dict[str, str]:
         ctx = self.ctx
         daemon_type = self.identity.daemon_type
         mounts: Dict[str, str] = {}
@@ -857,6 +860,12 @@ class Monitoring(ContainerDaemonForm):
                 os.path.join(data_dir, 'etc/alertmanager')
             ] = '/etc/alertmanager:Z'
         return mounts
+
+    def customize_container_mounts(
+        self, ctx: CephadmContext, mounts: Dict[str, str]
+    ) -> None:
+        data_dir = self.identity.data_dir(ctx.data_dir)
+        mounts.update(self._get_container_mounts(data_dir))
 
 ##################################
 
@@ -915,7 +924,7 @@ class NFSGanesha(ContainerDaemonForm):
     def identity(self) -> DaemonIdentity:
         return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
 
-    def get_container_mounts(self, data_dir):
+    def _get_container_mounts(self, data_dir):
         # type: (str) -> Dict[str, str]
         mounts = dict()
         mounts[os.path.join(data_dir, 'config')] = '/etc/ceph/ceph.conf:z'
@@ -927,6 +936,12 @@ class NFSGanesha(ContainerDaemonForm):
             mounts[os.path.join(data_dir, 'keyring.rgw')] = \
                 '/var/lib/ceph/radosgw/%s-%s/keyring:z' % (cluster, rgw_user)
         return mounts
+
+    def customize_container_mounts(
+        self, ctx: CephadmContext, mounts: Dict[str, str]
+    ) -> None:
+        data_dir = self.identity.data_dir(ctx.data_dir)
+        mounts.update(self._get_container_mounts(data_dir))
 
     @staticmethod
     def get_container_envs():
@@ -1080,7 +1095,7 @@ class CephIscsi(ContainerDaemonForm):
         return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
 
     @staticmethod
-    def get_container_mounts(data_dir, log_dir):
+    def _get_container_mounts(data_dir, log_dir):
         # type: (str, str) -> Dict[str, str]
         mounts = dict()
         mounts[os.path.join(data_dir, 'config')] = '/etc/ceph/ceph.conf:z'
@@ -1091,6 +1106,17 @@ class CephIscsi(ContainerDaemonForm):
         mounts[log_dir] = '/var/log:z'
         mounts['/dev'] = '/dev'
         return mounts
+
+    def customize_container_mounts(
+        self, ctx: CephadmContext, mounts: Dict[str, str]
+    ) -> None:
+        data_dir = self.identity.data_dir(ctx.data_dir)
+        # Removes ending ".tcmu" from data_dir a tcmu-runner uses the same
+        # data_dir as rbd-runner-api
+        if data_dir.endswith('.tcmu'):
+            data_dir = re.sub(r'\.tcmu$', '', data_dir)
+        log_dir = get_log_dir(self.identity.fsid, ctx.log_dir)
+        mounts.update(CephIscsi._get_container_mounts(data_dir, log_dir))
 
     def customize_container_binds(
         self, ctx: CephadmContext, binds: List[List[str]]
@@ -1244,7 +1270,6 @@ done
     def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
         return extract_uid_gid(ctx)
 
-
 ##################################
 
 
@@ -1293,7 +1318,7 @@ class CephNvmeof(ContainerDaemonForm):
         return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
 
     @staticmethod
-    def get_container_mounts(data_dir: str) -> Dict[str, str]:
+    def _get_container_mounts(data_dir: str) -> Dict[str, str]:
         mounts = dict()
         mounts[os.path.join(data_dir, 'config')] = '/etc/ceph/ceph.conf:z'
         mounts[os.path.join(data_dir, 'keyring')] = '/etc/ceph/keyring:z'
@@ -1302,6 +1327,12 @@ class CephNvmeof(ContainerDaemonForm):
         mounts['/dev/hugepages'] = '/dev/hugepages'
         mounts['/dev/vfio/vfio'] = '/dev/vfio/vfio'
         return mounts
+
+    def customize_container_mounts(
+        self, ctx: CephadmContext, mounts: Dict[str, str]
+    ) -> None:
+        data_dir = self.identity.data_dir(ctx.data_dir)
+        mounts.update(self._get_container_mounts(data_dir))
 
     def customize_container_binds(
         self, ctx: CephadmContext, binds: List[List[str]]
@@ -1473,8 +1504,11 @@ class CephExporter(ContainerDaemonForm):
     ) -> Tuple[Optional[str], Optional[str]]:
         return get_config_and_keyring(ctx)
 
-    def get_container_mounts(self) -> Dict[str, str]:
-        return Ceph.get_ceph_mounts(self.ctx, self.identity)
+    def customize_container_mounts(
+        self, ctx: CephadmContext, mounts: Dict[str, str]
+    ) -> None:
+        cm = Ceph.get_ceph_mounts(ctx, self.identity)
+        mounts.update(cm)
 
 
 ##################################
@@ -1565,10 +1599,16 @@ class HAproxy(ContainerDaemonForm):
         return extract_uid_gid(self.ctx, file_path='/var/lib')
 
     @staticmethod
-    def get_container_mounts(data_dir: str) -> Dict[str, str]:
+    def _get_container_mounts(data_dir: str) -> Dict[str, str]:
         mounts = dict()
         mounts[os.path.join(data_dir, 'haproxy')] = '/var/lib/haproxy'
         return mounts
+
+    def customize_container_mounts(
+        self, ctx: CephadmContext, mounts: Dict[str, str]
+    ) -> None:
+        data_dir = self.identity.data_dir(ctx.data_dir)
+        mounts.update(self._get_container_mounts(data_dir))
 
     @staticmethod
     def get_sysctl_settings() -> List[str]:
@@ -1686,10 +1726,16 @@ class Keepalived(ContainerDaemonForm):
         return extract_uid_gid(self.ctx, file_path='/var/lib')
 
     @staticmethod
-    def get_container_mounts(data_dir: str) -> Dict[str, str]:
+    def _get_container_mounts(data_dir: str) -> Dict[str, str]:
         mounts = dict()
         mounts[os.path.join(data_dir, 'keepalived.conf')] = '/etc/keepalived/keepalived.conf'
         return mounts
+
+    def customize_container_mounts(
+        self, ctx: CephadmContext, mounts: Dict[str, str]
+    ) -> None:
+        data_dir = self.identity.data_dir(ctx.data_dir)
+        mounts.update(self._get_container_mounts(data_dir))
 
     def container(self, ctx: CephadmContext) -> CephContainer:
         ctr = get_container(ctx, self.identity)
@@ -1837,7 +1883,7 @@ class CustomContainer(ContainerDaemonForm):
     def get_container_envs(self) -> List[str]:
         return self.envs
 
-    def get_container_mounts(self, data_dir: str) -> Dict[str, str]:
+    def _get_container_mounts(self, data_dir: str) -> Dict[str, str]:
         """
         Get the volume mounts. Relative source paths will be located below
         `/var/lib/ceph/<cluster-fsid>/<daemon-name>`.
@@ -1858,6 +1904,12 @@ class CustomContainer(ContainerDaemonForm):
             source = os.path.join(data_dir, source)
             mounts[source] = destination
         return mounts
+
+    def customize_container_mounts(
+        self, ctx: CephadmContext, mounts: Dict[str, str]
+    ) -> None:
+        data_dir = self.identity.data_dir(ctx.data_dir)
+        mounts.update(self._get_container_mounts(data_dir))
 
     def _get_container_binds(self, data_dir: str) -> List[List[str]]:
         """
@@ -2655,50 +2707,20 @@ def get_container_mounts(
     paths given a daemon identity.
     Setting `no_config` will skip mapping a daemon specific ceph.conf file.
     """
-    # unpack fsid and daemon_type from ident because they're used very frequently
-    fsid, daemon_type = ident.fsid, ident.daemon_type
+    # unpack daemon_type from ident because they're used very frequently
+    daemon_type = ident.daemon_type
     mounts: Dict[str, str] = {}
 
     assert ident.fsid
     assert ident.daemon_id
+    # Ceph daemon types are special cased here beacause of the no_config
+    # option which JJM thinks is *only* used by cephadm shell
     if daemon_type in ceph_daemons():
         mounts = Ceph.get_ceph_mounts(ctx, ident, no_config=no_config)
-
-    if daemon_type in Monitoring.components:
-        data_dir = ident.data_dir(ctx.data_dir)
-        monitoring = Monitoring.create(ctx, ident)
-        mounts.update(monitoring.get_container_mounts(data_dir))
-
-    if daemon_type == NFSGanesha.daemon_type:
-        data_dir = ident.data_dir(ctx.data_dir)
-        nfs_ganesha = NFSGanesha.init(ctx, fsid, ident.daemon_id)
-        mounts.update(nfs_ganesha.get_container_mounts(data_dir))
-
-    if daemon_type == HAproxy.daemon_type:
-        data_dir = ident.data_dir(ctx.data_dir)
-        mounts.update(HAproxy.get_container_mounts(data_dir))
-
-    if daemon_type == CephNvmeof.daemon_type:
-        data_dir = ident.data_dir(ctx.data_dir)
-        mounts.update(CephNvmeof.get_container_mounts(data_dir))
-
-    if daemon_type == CephIscsi.daemon_type:
-        data_dir = ident.data_dir(ctx.data_dir)
-        # Removes ending ".tcmu" from data_dir a tcmu-runner uses the same data_dir
-        # as rbd-runner-api
-        if data_dir.endswith('.tcmu'):
-            data_dir = re.sub(r'\.tcmu$', '', data_dir)
-        log_dir = get_log_dir(fsid, ctx.log_dir)
-        mounts.update(CephIscsi.get_container_mounts(data_dir, log_dir))
-
-    if daemon_type == Keepalived.daemon_type:
-        data_dir = ident.data_dir(ctx.data_dir)
-        mounts.update(Keepalived.get_container_mounts(data_dir))
-
-    if daemon_type == CustomContainer.daemon_type:
-        cc = CustomContainer.init(ctx, fsid, ident.daemon_id)
-        data_dir = ident.data_dir(ctx.data_dir)
-        mounts.update(cc.get_container_mounts(data_dir))
+    else:
+        daemon = daemon_form_create(ctx, ident)
+        assert isinstance(daemon, ContainerDaemonForm)
+        daemon.customize_container_mounts(ctx, mounts)
 
     _update_podman_mounts(ctx, mounts)
     return mounts
@@ -2768,10 +2790,12 @@ def get_container(
     envs: List[str] = []
     host_network: bool = True
     binds: List[List[str]] = []
+    mounts: Dict[str, str] = {}
 
     daemon_type = ident.daemon_type
     if daemon_type in ceph_daemons():
         envs.append('TCMALLOC_MAX_TOTAL_THREAD_CACHE_BYTES=134217728')
+        mounts = get_container_mounts(ctx, ident)
     if container_args is None:
         container_args = []
     _update_pids_limit(ctx, daemon_type, container_args)
@@ -2818,6 +2842,7 @@ def get_container(
             container_args.extend(['--security-opt', 'label=disable'])
         monitoring = Monitoring.create(ctx, ident)
         d_args.extend(monitoring.get_daemon_args())
+        mounts = get_container_mounts(ctx, ident)
     elif daemon_type in Tracing.components:
         entrypoint = ''
         name = ident.daemon_name
@@ -2833,6 +2858,7 @@ def get_container(
         envs.extend(NFSGanesha.get_container_envs())
         nfs_ganesha = NFSGanesha.init(ctx, ident.fsid, ident.daemon_id)
         d_args.extend(nfs_ganesha.get_daemon_args())
+        mounts = get_container_mounts(ctx, ident)
     elif daemon_type == CephExporter.daemon_type:
         entrypoint = CephExporter.entrypoint
         name = 'client.ceph-exporter.%s' % ident.daemon_id
@@ -2844,16 +2870,19 @@ def get_container(
         container_args.extend(['--user=root'])  # haproxy 2.4 defaults to a different user
         haproxy = HAproxy.init(ctx, ident.fsid, ident.daemon_id)
         d_args.extend(haproxy.get_daemon_args())
+        mounts = get_container_mounts(ctx, ident)
     elif daemon_type == Keepalived.daemon_type:
         name = ident.daemon_name
         envs.extend(Keepalived.get_container_envs())
         container_args.extend(['--cap-add=NET_ADMIN', '--cap-add=NET_RAW'])
+        mounts = get_container_mounts(ctx, ident)
     elif daemon_type == CephNvmeof.daemon_type:
         name = ident.daemon_name
         container_args.extend(['--ulimit', 'memlock=-1:-1'])
         container_args.extend(['--ulimit', 'nofile=10240'])
         container_args.extend(['--cap-add=SYS_ADMIN', '--cap-add=CAP_SYS_NICE'])
         binds = get_container_binds(ctx, ident)
+        mounts = get_container_mounts(ctx, ident)
     elif daemon_type == CephIscsi.daemon_type:
         entrypoint = CephIscsi.entrypoint
         name = ident.daemon_name
@@ -2861,6 +2890,7 @@ def get_container(
         # to configfs we need to make this a privileged container.
         privileged = True
         binds = get_container_binds(ctx, ident)
+        mounts = get_container_mounts(ctx, ident)
     elif daemon_type == CustomContainer.daemon_type:
         cc = CustomContainer.init(ctx, ident.fsid, ident.daemon_id)
         entrypoint = cc.entrypoint or ''
@@ -2869,6 +2899,7 @@ def get_container(
         container_args.extend(cc.get_container_args())
         d_args.extend(cc.get_daemon_args())
         binds = get_container_binds(ctx, ident)
+        mounts = get_container_mounts(ctx, ident)
     elif daemon_type == SNMPGateway.daemon_type:
         sg = SNMPGateway.init(ctx, ident.fsid, ident.daemon_id)
         container_args.append(
@@ -2883,7 +2914,7 @@ def get_container(
         entrypoint=entrypoint,
         args=ceph_args + d_args,
         container_args=container_args,
-        volume_mounts=get_container_mounts(ctx, ident),
+        volume_mounts=mounts,
         bind_mounts=binds,
         envs=envs,
         privileged=privileged,
