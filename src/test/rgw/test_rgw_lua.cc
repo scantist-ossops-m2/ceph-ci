@@ -78,10 +78,6 @@ public:
     return 0;
   }
 
-  virtual int create_bucket(const DoutPrefixProvider* dpp, const rgw_bucket& b, const std::string& zonegroup_id, rgw_placement_rule& placement_rule, std::string& swift_ver_location, const RGWQuotaInfo* pquota_info, const RGWAccessControlPolicy& policy, sal::Attrs& attrs, RGWBucketInfo& info, obj_version& ep_objv, bool exclusive, bool obj_lock_enabled, bool* existed, req_info& req_info, std::unique_ptr<sal::Bucket>* bucket, optional_yield y) override {
-    return 0;
-  }
-
   virtual int read_attrs(const DoutPrefixProvider *dpp, optional_yield y) override {
     return 0;
   }
@@ -342,13 +338,14 @@ TEST(TestRGWLua, Bucket)
 
   DEFINE_REQ_STATE;
 
-  rgw_bucket b;
-  b.tenant = "mytenant";
-  b.name = "myname";
-  b.marker = "mymarker";
-  b.bucket_id = "myid"; 
-  s.bucket.reset(new sal::RadosBucket(nullptr, b));
-  s.bucket->set_owner(new sal::RadosUser(nullptr, rgw_user("mytenant", "myuser")));
+  RGWBucketInfo info;
+  info.bucket.tenant = "mytenant";
+  info.bucket.name = "myname";
+  info.bucket.marker = "mymarker";
+  info.bucket.bucket_id = "myid";
+  info.owner.id = "myuser";
+  info.owner.tenant = "mytenant";
+  s.bucket.reset(new sal::RadosBucket(nullptr, info));
 
   const auto rc = lua::request::execute(nullptr, nullptr, nullptr, &s, nullptr, script);
   ASSERT_EQ(rc, 0);
@@ -1562,10 +1559,11 @@ TEST(TestRGWLua, DifferentContextUser)
   DEFINE_REQ_STATE;
 
   s.user.reset(new sal::RadosUser(nullptr, rgw_user("tenant1", "user1")));
-  rgw_bucket b;
-  b.name = "bucket1";
-  s.bucket.reset(new sal::RadosBucket(nullptr, b));
-  s.bucket->set_owner(new sal::RadosUser(nullptr, rgw_user("tenant2", "user2")));
+  RGWBucketInfo info;
+  info.bucket.name = "bucket1";
+  info.owner.id = "user2";
+  info.owner.tenant = "tenant2";
+  s.bucket.reset(new sal::RadosBucket(nullptr, info));
 
   const auto rc = lua::request::execute(nullptr, nullptr, nullptr, &s, nullptr, script);
   ASSERT_EQ(rc, 0);

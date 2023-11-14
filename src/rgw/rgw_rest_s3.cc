@@ -2343,7 +2343,7 @@ static void dump_bucket_metadata(req_state *s, rgw::sal::Bucket* bucket,
   dump_header(s, "X-RGW-Bytes-Used", static_cast<long long>(stats.size));
 
   // only bucket's owner is allowed to get the quota settings of the account
-  if (bucket->is_owner(s->user.get())) {
+  if (bucket->get_owner() == s->user->get_id()) {
     auto user_info = s->user->get_info();
     auto bucket_quota = s->bucket->get_info().quota; // bucket quota
     dump_header(s, "X-RGW-Quota-User-Size", static_cast<long long>(user_info.quota.user_quota.max_size));
@@ -2456,8 +2456,6 @@ int RGWCreateBucket_ObjStore_S3::get_params(optional_yield y)
   if ((op_ret < 0) && (op_ret != -ERR_LENGTH_REQUIRED))
     return op_ret;
 
-  in_data.append(data);
-
   if (data.length()) {
     RGWCreateBucketParser parser;
 
@@ -2486,17 +2484,18 @@ int RGWCreateBucket_ObjStore_S3::get_params(optional_yield y)
 
   size_t pos = location_constraint.find(':');
   if (pos != string::npos) {
-    placement_rule.init(location_constraint.substr(pos + 1), s->info.storage_class);
+    createparams.placement_rule.init(location_constraint.substr(pos + 1),
+                                     s->info.storage_class);
     location_constraint = location_constraint.substr(0, pos);
   } else {
-    placement_rule.storage_class = s->info.storage_class;
+    createparams.placement_rule.storage_class = s->info.storage_class;
   }
   auto iter = s->info.x_meta_map.find("x-amz-bucket-object-lock-enabled");
   if (iter != s->info.x_meta_map.end()) {
     if (!boost::algorithm::iequals(iter->second, "true") && !boost::algorithm::iequals(iter->second, "false")) {
       return -EINVAL;
     }
-    obj_lock_enabled = boost::algorithm::iequals(iter->second, "true");
+    createparams.obj_lock_enabled = boost::algorithm::iequals(iter->second, "true");
   }
   return 0;
 }
@@ -2516,6 +2515,8 @@ void RGWCreateBucket_ObjStore_S3::send_response()
   if (s->system_request) {
     JSONFormatter f; /* use json formatter for system requests output */
 
+    const RGWBucketInfo& info = s->bucket->get_info();
+    const obj_version& ep_objv = s->bucket->get_version();
     f.open_object_section("info");
     encode_json("entry_point_object_ver", ep_objv, &f);
     encode_json("object_ver", info.objv_tracker.read_version, &f);

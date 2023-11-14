@@ -6,14 +6,13 @@
 
 .. index:: monitor, high availability
 
-If a cluster encounters monitor-related problems, this does not necessarily
-mean that the cluster is in danger of going down. Even if multiple monitors are
-lost, the cluster can still be up and running, as long as there are enough
-surviving monitors to form a quorum.
-
-However serious your cluster's monitor-related problems might be, we recommend
-that you take the following troubleshooting steps.
-
+Even if a cluster experiences monitor-related problems, the cluster is not
+necessarily in danger of going down. If a cluster has lost multiple monitors,
+it can still remain up and running as long as there are enough surviving
+monitors to form a quorum.
+   
+If your cluster is having monitor-related problems, we recommend that you
+consult the following troubleshooting information.
 
 Initial Troubleshooting
 =======================
@@ -180,101 +179,131 @@ the quorum is formed by only two monitors, and *c* is in the quorum as a
 Most Common Monitor Issues
 ===========================
 
-Have Quorum but at least one Monitor is down
----------------------------------------------
+The Cluster Has Quorum but at Least One Monitor is Down
+-------------------------------------------------------
 
-When this happens, depending on the version of Ceph you are running,
-you should be seeing something similar to::
+When the cluster has quorum but at least one monitor is down, ``ceph health
+detail`` returns a message similar to the following::
 
       $ ceph health detail
       [snip]
       mon.a (rank 0) addr 127.0.0.1:6789/0 is down (out of quorum)
 
-**How to troubleshoot this?**
+**How do I troubleshoot a Ceph cluster that has quorum but also has at least one monitor down?**
 
-  First, make sure ``mon.a`` is running.
+  #. Make sure that ``mon.a`` is running.
 
-  Second, make sure you are able to connect to ``mon.a``'s node from the
-  other mon nodes. Check the TCP ports as well. Check ``iptables`` and
-  ``nf_conntrack`` on all nodes and ensure that you are not
-  dropping/rejecting connections.
+  #. Make sure that you can connect to ``mon.a``'s node from the
+     other Monitor nodes. Check the TCP ports as well. Check ``iptables`` and
+     ``nf_conntrack`` on all nodes and make sure that you are not
+     dropping/rejecting connections.
 
-  If this initial troubleshooting doesn't solve your problems, then it's
-  time to go deeper.
+  If this initial troubleshooting doesn't solve your problem, then further
+  investigation is necessary.
 
   First, check the problematic monitor's ``mon_status`` via the admin
   socket as explained in `Using the monitor's admin socket`_ and
   `Understanding mon_status`_.
 
-  If the monitor is out of the quorum, its state should be one of ``probing``,
-  ``electing`` or ``synchronizing``. If it happens to be either ``leader`` or
-  ``peon``, then the monitor believes to be in quorum, while the remaining
-  cluster is sure it is not; or maybe it got into the quorum while we were
-  troubleshooting the monitor, so check you ``ceph status`` again just to make
-  sure. Proceed if the monitor is not yet in the quorum.
+  If the Monitor is out of the quorum, then its state will be one of the
+  following: ``probing``, ``electing`` or ``synchronizing``. If the state of
+  the Monitor is ``leader`` or ``peon``, then the Monitor believes itself to be
+  in quorum but the rest of the cluster believes that it is not in quorum. It
+  is possible that a Monitor that is in one of the ``probing``, ``electing``,
+  or ``synchronizing`` states has entered the quorum during the process of
+  troubleshooting. Check ``ceph status`` again to determine whether the Monitor
+  has entered quorum during your troubleshooting. If the Monitor remains out of
+  the quorum, then proceed with the investigations described in this section of
+  the documentation.
+  
 
-**What if the state is ``probing``?**
+**What does it mean when a Monitor's state is ``probing``?**
 
-  This means the monitor is still looking for the other monitors. Every time
-  you start a monitor, the monitor will stay in this state for some time while
-  trying to connect the rest of the monitors specified in the ``monmap``.  The
-  time a monitor will spend in this state can vary. For instance, when on a
-  single-monitor cluster (never do this in production), the monitor will pass
-  through the probing state almost instantaneously.  In a multi-monitor
-  cluster, the monitors will stay in this state until they find enough monitors
-  to form a quorum |---| this means that if you have 2 out of 3 monitors down, the
-  one remaining monitor will stay in this state indefinitely until you bring
-  one of the other monitors up.
+  If ``ceph health detail`` shows that a Monitor's state is
+  ``probing``, then the Monitor is still looking for the other Monitors. Every
+  Monitor remains in this state for some time when it is started. When a
+  Monitor has connected to the other Monitors specified in the ``monmap``, it
+  ceases to be in the ``probing`` state. The amount of time that a Monitor is
+  in the ``probing`` state depends upon the parameters of the cluster of which
+  it is a part. For example, when a Monitor is a part of a single-monitor
+  cluster (never do this in production), the monitor passes through the probing
+  state almost instantaneously. In a multi-monitor cluster, the Monitors stay
+  in the ``probing`` state until they find enough monitors to form a quorum
+  |---| this means that if two out of three Monitors in the cluster are
+  ``down``, the one remaining Monitor stays in the ``probing``  state
+  indefinitely until you bring one of the other monitors up.
 
-  If you have a quorum the starting daemon should be able to find the
-  other monitors quickly, as long as they can be reached. If your
-  monitor is stuck probing and you have gone through with all the communication
-  troubleshooting, then there is a fair chance that the monitor is trying
-  to reach the other monitors on a wrong address. ``mon_status`` outputs the
-  ``monmap`` known to the monitor: check if the other monitor's locations
-  match reality. If they don't, jump to
-  `Recovering a Monitor's Broken monmap`_; if they do, then it may be related
-  to severe clock skews amongst the monitor nodes and you should refer to
-  `Clock Skews`_ first, but if that doesn't solve your problem then it is
-  the time to prepare some logs and reach out to the community (please refer
-  to `Preparing your logs`_ on how to best prepare your logs).
+  If quorum has been established, then the Monitor daemon should be able to
+  find the other Monitors quickly, as long as they can be reached. If a Monitor
+  is stuck in the ``probing`` state and you have exhausted the procedures above
+  that describe the troubleshooting of communications between the Monitors,
+  then it is possible that the problem Monitor is trying to reach the other
+  Monitors at a wrong address. ``mon_status`` outputs the ``monmap`` that is
+  known to the monitor: determine whether the other Monitors' locations as
+  specified in the ``monmap`` match the locations of the Monitors in the
+  network. If they do not, see `Recovering a Monitor's Broken monmap`_.
+  If the locations of the Monitors as specified in the ``monmap`` match the
+  locations of the Monitors in the network, then the persistent
+  ``probing`` state could  be related to severe clock skews amongst the monitor
+  nodes.  See `Clock Skews`_.  If the information in `Clock Skews`_ does not
+  bring the Monitor out of the ``probing`` state, then prepare your system logs
+  and ask the Ceph community for help. See `Preparing your logs`_ for
+  information about the proper preparation of logs.
 
 
-**What if state is ``electing``?**
+**What does it mean when a Monitor's state is ``electing``?**
 
-  This means the monitor is in the middle of an election. With recent Ceph
-  releases these typically complete quickly, but at times the monitors can
-  get stuck in what is known as an *election storm*. This can indicate
-  clock skew among the monitor nodes; jump to
-  `Clock Skews`_ for more information. If all your clocks are properly
-  synchronized, you should search the mailing lists and tracker.
-  This is not a state that is likely to persist and aside from
-  (*really*) old bugs there is not an obvious reason besides clock skews on
-  why this would happen.  Worst case, if there are enough surviving mons,
-  down the problematic one while you investigate.
+  If ``ceph health detail`` shows that a Monitor's state is ``electing``, the
+  monitor is in the middle of an election. Elections typically complete
+  quickly, but sometimes the monitors can get stuck in what is known as an
+  *election storm*. See :ref:`Monitor Elections <dev_mon_elections>` for more
+  on monitor elections.
+  
+  The presence of election storm might indicate clock skew among the monitor
+  nodes. See `Clock Skews`_ for more information. 
+  
+  If your clocks are properly synchronized, search the mailing lists and bug
+  tracker for issues similar to your issue. The ``electing`` state is not
+  likely to persist. In versions of Ceph after the release of Cuttlefish, there
+  is no obvious reason other than clock skew that explains why an ``electing``
+  state would persist.  
+  
+  It is possible to investigate the cause of a persistent ``electing`` state if
+  you put the problematic Monitor into a ``down`` state while you investigate.
+  This is possible only if there are enough surviving Monitors to form quorum. 
 
-**What if state is ``synchronizing``?**
+**What does it mean when a Monitor's state is ``synchronizing``?**
 
-  This means the monitor is catching up with the rest of the cluster in
-  order to join the quorum. Time to synchronize is a function of the size
-  of your monitor store and thus of cluster size and state, so if you have a
-  large or degraded cluster this may take a while.
+  If ``ceph health detail`` shows that the Monitor is ``synchronizing``, the
+  monitor is catching up with the rest of the cluster so that it can join the
+  quorum. The amount of time that it takes for the Monitor to synchronize with
+  the rest of the quorum is a function of the size of the cluster's monitor
+  store, the cluster's size, and the state of the cluster. Larger and degraded
+  clusters generally keep Monitors in the ``synchronizing`` state longer than
+  do smaller, new clusters.
 
-  If you notice that the monitor jumps from ``synchronizing`` to
-  ``electing`` and then back to ``synchronizing``, then you do have a
-  problem: the cluster state may be advancing (i.e., generating new maps)
-  too fast for the synchronization process to keep up. This was a more common
-  thing in early days (Cuttlefish), but since then the synchronization process
-  has been refactored and enhanced to avoid this dynamic. If you experience
-  this in later versions please let us know via a bug tracker. And bring some logs
-  (see `Preparing your logs`_).
+  A Monitor that changes its state from ``synchronizing`` to ``electing`` and
+  then back to ``synchronizing`` indicates a problem: the cluster state may be
+  advancing (that is, generating new maps) too fast for the synchronization
+  process to keep up with the pace of the creation of the new maps. This issue
+  presented more frequently prior to the Cuttlefish release than it does in
+  more recent releases, because the synchronization process has since been
+  refactored and enhanced to avoid this dynamic. If you experience this in
+  later versions, report the issue in the `Ceph bug tracker
+  <https://tracker.ceph.com>`_. Prepare and provide logs to substantiate any
+  bug you raise. See `Preparing your logs`_ for information about the proper
+  preparation of logs.
 
-**What if state is ``leader`` or ``peon``?**
+**What does it mean when a Monitor's state is ``leader`` or ``peon``?**
 
-  This should not happen:  famous last words.  If it does, however, it likely
-  has a lot to do with clock skew -- see `Clock Skews`_. If you are not
-  suffering from clock skew, then please prepare your logs (see
-  `Preparing your logs`_) and reach out to the community.
+  If ``ceph health detail`` shows that the Monitor is in the ``leader`` state
+  or in the ``peon`` state, it is likely that clock skew is present. Follow the
+  instructions in `Clock Skews`_. If you have followed those instructions and
+  ``ceph health detail`` still shows that the Monitor is in the ``leader``
+  state or the ``peon`` state, report the issue in the `Ceph bug tracker
+  <https://tracker.ceph.com>`_. If you raise an issue, provide logs to
+  substantiate it. See `Preparing your logs`_ for information about the
+  proper preparation of logs.
 
 
 Recovering a Monitor's Broken ``monmap``

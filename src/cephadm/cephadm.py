@@ -221,6 +221,7 @@ class Ceph(ContainerDaemonForm):
     def __init__(self, ctx: CephadmContext, ident: DaemonIdentity) -> None:
         self.ctx = ctx
         self._identity = ident
+        self.user_supplied_config = False
 
     @classmethod
     def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'Ceph':
@@ -300,6 +301,52 @@ class Ceph(ContainerDaemonForm):
             else:
                 r += ['--default-mon-cluster-log-to-stderr=true']
         return r
+
+    @staticmethod
+    def get_ceph_mounts(
+        ctx: CephadmContext,
+        ident: DaemonIdentity,
+        no_config: bool = False,
+    ) -> Dict[str, str]:
+        # Warning: This is a hack done for more expedient refactoring
+        mounts = _get_container_mounts_for_type(
+            ctx, ident.fsid, ident.daemon_type
+        )
+        data_dir = ident.data_dir(ctx.data_dir)
+        if ident.daemon_type == 'rgw':
+            cdata_dir = '/var/lib/ceph/radosgw/ceph-rgw.%s' % (
+                ident.daemon_id
+            )
+        else:
+            cdata_dir = '/var/lib/ceph/%s/ceph-%s' % (
+                ident.daemon_type,
+                ident.daemon_id,
+            )
+        if ident.daemon_type != 'crash':
+            mounts[data_dir] = cdata_dir + ':z'
+        if not no_config:
+            mounts[data_dir + '/config'] = '/etc/ceph/ceph.conf:z'
+        if ident.daemon_type in [
+            'rbd-mirror',
+            'cephfs-mirror',
+            'crash',
+            'ceph-exporter',
+        ]:
+            # these do not search for their keyrings in a data directory
+            mounts[
+                data_dir + '/keyring'
+            ] = '/etc/ceph/ceph.client.%s.%s.keyring' % (
+                ident.daemon_type,
+                ident.daemon_id,
+            )
+        return mounts
+
+    def get_container_mounts(self) -> Dict[str, str]:
+        return self.get_ceph_mounts(
+            self.ctx,
+            self.identity,
+            no_config=self.ctx.config and self.user_supplied_config,
+        )
 
 ##################################
 
@@ -763,6 +810,49 @@ class Monitoring(ContainerDaemonForm):
                   '--path.rootfs=/rootfs']
         return r
 
+    def get_container_mounts(self, data_dir: str) -> Dict[str, str]:
+        ctx = self.ctx
+        daemon_type = self.identity.daemon_type
+        mounts: Dict[str, str] = {}
+        log_dir = get_log_dir(self.identity.fsid, ctx.log_dir)
+        if daemon_type == 'prometheus':
+            mounts[
+                os.path.join(data_dir, 'etc/prometheus')
+            ] = '/etc/prometheus:Z'
+            mounts[os.path.join(data_dir, 'data')] = '/prometheus:Z'
+        elif daemon_type == 'loki':
+            mounts[os.path.join(data_dir, 'etc/loki')] = '/etc/loki:Z'
+            mounts[os.path.join(data_dir, 'data')] = '/loki:Z'
+        elif daemon_type == 'promtail':
+            mounts[os.path.join(data_dir, 'etc/promtail')] = '/etc/promtail:Z'
+            mounts[log_dir] = '/var/log/ceph:z'
+            mounts[os.path.join(data_dir, 'data')] = '/promtail:Z'
+        elif daemon_type == 'node-exporter':
+            mounts[
+                os.path.join(data_dir, 'etc/node-exporter')
+            ] = '/etc/node-exporter:Z'
+            mounts['/proc'] = '/host/proc:ro'
+            mounts['/sys'] = '/host/sys:ro'
+            mounts['/'] = '/rootfs:ro'
+        elif daemon_type == 'grafana':
+            mounts[
+                os.path.join(data_dir, 'etc/grafana/grafana.ini')
+            ] = '/etc/grafana/grafana.ini:Z'
+            mounts[
+                os.path.join(data_dir, 'etc/grafana/provisioning/datasources')
+            ] = '/etc/grafana/provisioning/datasources:Z'
+            mounts[
+                os.path.join(data_dir, 'etc/grafana/certs')
+            ] = '/etc/grafana/certs:Z'
+            mounts[
+                os.path.join(data_dir, 'data/grafana.db')
+            ] = '/var/lib/grafana/grafana.db:Z'
+        elif daemon_type == 'alertmanager':
+            mounts[
+                os.path.join(data_dir, 'etc/alertmanager')
+            ] = '/etc/alertmanager:Z'
+        return mounts
+
 ##################################
 
 
@@ -997,16 +1087,16 @@ class CephIscsi(ContainerDaemonForm):
         mounts['/dev'] = '/dev'
         return mounts
 
-    @staticmethod
-    def get_container_binds():
-        # type: () -> List[List[str]]
-        binds = []
-        lib_modules = ['type=bind',
-                       'source=/lib/modules',
-                       'destination=/lib/modules',
-                       'ro=true']
+    def customize_container_binds(
+        self, ctx: CephadmContext, binds: List[List[str]]
+    ) -> None:
+        lib_modules = [
+            'type=bind',
+            'source=/lib/modules',
+            'destination=/lib/modules',
+            'ro=true',
+        ]
         binds.append(lib_modules)
-        return binds
 
     @staticmethod
     def get_version(ctx, container_id):
@@ -1208,16 +1298,16 @@ class CephNvmeof(ContainerDaemonForm):
         mounts['/dev/vfio/vfio'] = '/dev/vfio/vfio'
         return mounts
 
-    @staticmethod
-    def get_container_binds():
-        # type: () -> List[List[str]]
-        binds = []
-        lib_modules = ['type=bind',
-                       'source=/lib/modules',
-                       'destination=/lib/modules',
-                       'ro=true']
+    def customize_container_binds(
+        self, ctx: CephadmContext, binds: List[List[str]]
+    ) -> None:
+        lib_modules = [
+            'type=bind',
+            'source=/lib/modules',
+            'destination=/lib/modules',
+            'ro=true',
+        ]
         binds.append(lib_modules)
-        return binds
 
     @staticmethod
     def get_version(ctx: CephadmContext, container_id: str) -> Optional[str]:
@@ -1352,12 +1442,6 @@ class CephExporter(ContainerDaemonForm):
     def identity(self) -> DaemonIdentity:
         return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
 
-    @staticmethod
-    def get_container_mounts() -> Dict[str, str]:
-        mounts = dict()
-        mounts['/var/run/ceph'] = '/var/run/ceph:z'
-        return mounts
-
     def get_daemon_args(self) -> List[str]:
         args = [
             f'--sock-dir={self.sock_dir}',
@@ -1383,6 +1467,9 @@ class CephExporter(ContainerDaemonForm):
         self, ctx: CephadmContext
     ) -> Tuple[Optional[str], Optional[str]]:
         return get_config_and_keyring(ctx)
+
+    def get_container_mounts(self) -> Dict[str, str]:
+        return Ceph.get_ceph_mounts(self.ctx, self.identity)
 
 
 ##################################
@@ -1767,7 +1854,7 @@ class CustomContainer(ContainerDaemonForm):
             mounts[source] = destination
         return mounts
 
-    def get_container_binds(self, data_dir: str) -> List[List[str]]:
+    def _get_container_binds(self, data_dir: str) -> List[List[str]]:
         """
         Get the bind mounts. Relative `source=...` paths will be located below
         `/var/lib/ceph/<cluster-fsid>/<daemon-name>`.
@@ -1794,6 +1881,12 @@ class CustomContainer(ContainerDaemonForm):
                     bind[index] = 'source={}'.format(os.path.join(
                         data_dir, match.group(1)))
         return binds
+
+    def customize_container_binds(
+        self, ctx: CephadmContext, binds: List[List[str]]
+    ) -> None:
+        data_dir = self.identity.data_dir(ctx.data_dir)
+        binds.extend(self._get_container_binds(data_dir))
 
     # Cache the container so we don't need to rebuild it again when calling
     # into init_containers
@@ -2467,17 +2560,10 @@ def _write_custom_conf_files(
 def get_container_binds(
     ctx: CephadmContext, ident: 'DaemonIdentity'
 ) -> List[List[str]]:
-    binds = list()
-
-    if ident.daemon_type == CephIscsi.daemon_type:
-        binds.extend(CephIscsi.get_container_binds())
-    if ident.daemon_type == CephNvmeof.daemon_type:
-        binds.extend(CephNvmeof.get_container_binds())
-    elif ident.daemon_type == CustomContainer.daemon_type:
-        cc = CustomContainer.init(ctx, ident.fsid, ident.daemon_id)
-        data_dir = ident.data_dir(ctx.data_dir)
-        binds.extend(cc.get_container_binds(data_dir))
-
+    binds: List[List[str]] = list()
+    daemon = daemon_form_create(ctx, ident)
+    assert isinstance(daemon, ContainerDaemonForm)
+    daemon.customize_container_binds(ctx, binds)
     return binds
 
 
@@ -2566,49 +2652,17 @@ def get_container_mounts(
     """
     # unpack fsid and daemon_type from ident because they're used very frequently
     fsid, daemon_type = ident.fsid, ident.daemon_type
-    mounts = _get_container_mounts_for_type(ctx, fsid, daemon_type)
+    mounts: Dict[str, str] = {}
 
     assert ident.fsid
     assert ident.daemon_id
     if daemon_type in ceph_daemons():
-        data_dir = ident.data_dir(ctx.data_dir)
-        if daemon_type == 'rgw':
-            cdata_dir = '/var/lib/ceph/radosgw/ceph-rgw.%s' % (ident.daemon_id)
-        else:
-            cdata_dir = '/var/lib/ceph/%s/ceph-%s' % (daemon_type, ident.daemon_id)
-        if daemon_type != 'crash':
-            mounts[data_dir] = cdata_dir + ':z'
-        if not no_config:
-            mounts[data_dir + '/config'] = '/etc/ceph/ceph.conf:z'
-        if daemon_type in ['rbd-mirror', 'cephfs-mirror', 'crash', 'ceph-exporter']:
-            # these do not search for their keyrings in a data directory
-            mounts[data_dir + '/keyring'] = '/etc/ceph/ceph.client.%s.%s.keyring' % (daemon_type, ident.daemon_id)
+        mounts = Ceph.get_ceph_mounts(ctx, ident, no_config=no_config)
 
     if daemon_type in Monitoring.components:
         data_dir = ident.data_dir(ctx.data_dir)
-        log_dir = get_log_dir(fsid, ctx.log_dir)
-        if daemon_type == 'prometheus':
-            mounts[os.path.join(data_dir, 'etc/prometheus')] = '/etc/prometheus:Z'
-            mounts[os.path.join(data_dir, 'data')] = '/prometheus:Z'
-        elif daemon_type == 'loki':
-            mounts[os.path.join(data_dir, 'etc/loki')] = '/etc/loki:Z'
-            mounts[os.path.join(data_dir, 'data')] = '/loki:Z'
-        elif daemon_type == 'promtail':
-            mounts[os.path.join(data_dir, 'etc/promtail')] = '/etc/promtail:Z'
-            mounts[log_dir] = '/var/log/ceph:z'
-            mounts[os.path.join(data_dir, 'data')] = '/promtail:Z'
-        elif daemon_type == 'node-exporter':
-            mounts[os.path.join(data_dir, 'etc/node-exporter')] = '/etc/node-exporter:Z'
-            mounts['/proc'] = '/host/proc:ro'
-            mounts['/sys'] = '/host/sys:ro'
-            mounts['/'] = '/rootfs:ro'
-        elif daemon_type == 'grafana':
-            mounts[os.path.join(data_dir, 'etc/grafana/grafana.ini')] = '/etc/grafana/grafana.ini:Z'
-            mounts[os.path.join(data_dir, 'etc/grafana/provisioning/datasources')] = '/etc/grafana/provisioning/datasources:Z'
-            mounts[os.path.join(data_dir, 'etc/grafana/certs')] = '/etc/grafana/certs:Z'
-            mounts[os.path.join(data_dir, 'data/grafana.db')] = '/var/lib/grafana/grafana.db:Z'
-        elif daemon_type == 'alertmanager':
-            mounts[os.path.join(data_dir, 'etc/alertmanager')] = '/etc/alertmanager:Z'
+        monitoring = Monitoring.create(ctx, ident)
+        mounts.update(monitoring.get_container_mounts(data_dir))
 
     if daemon_type == NFSGanesha.daemon_type:
         data_dir = ident.data_dir(ctx.data_dir)
@@ -2708,6 +2762,7 @@ def get_container(
     d_args: List[str] = []
     envs: List[str] = []
     host_network: bool = True
+    binds: List[List[str]] = []
 
     daemon_type = ident.daemon_type
     if daemon_type in ceph_daemons():
@@ -2793,12 +2848,14 @@ def get_container(
         container_args.extend(['--ulimit', 'memlock=-1:-1'])
         container_args.extend(['--ulimit', 'nofile=10240'])
         container_args.extend(['--cap-add=SYS_ADMIN', '--cap-add=CAP_SYS_NICE'])
+        binds = get_container_binds(ctx, ident)
     elif daemon_type == CephIscsi.daemon_type:
         entrypoint = CephIscsi.entrypoint
         name = ident.daemon_name
         # So the container can modprobe iscsi_target_mod and have write perms
         # to configfs we need to make this a privileged container.
         privileged = True
+        binds = get_container_binds(ctx, ident)
     elif daemon_type == CustomContainer.daemon_type:
         cc = CustomContainer.init(ctx, ident.fsid, ident.daemon_id)
         entrypoint = cc.entrypoint or ''
@@ -2806,6 +2863,7 @@ def get_container(
         envs.extend(cc.get_container_envs())
         container_args.extend(cc.get_container_args())
         d_args.extend(cc.get_daemon_args())
+        binds = get_container_binds(ctx, ident)
     elif daemon_type == SNMPGateway.daemon_type:
         sg = SNMPGateway.init(ctx, ident.fsid, ident.daemon_id)
         container_args.append(
@@ -2821,7 +2879,7 @@ def get_container(
         args=ceph_args + d_args,
         container_args=container_args,
         volume_mounts=get_container_mounts(ctx, ident),
-        bind_mounts=get_container_binds(ctx, ident),
+        bind_mounts=binds,
         envs=envs,
         privileged=privileged,
         ptrace=ptrace,
