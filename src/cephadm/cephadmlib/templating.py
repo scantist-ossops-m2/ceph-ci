@@ -1,6 +1,8 @@
 # templating.py - functions to wrap string/file templating libs
 
 import enum
+import os
+import zipimport
 
 from typing import Any, Optional, IO
 
@@ -25,6 +27,36 @@ class Templates(str, enum.Enum):
         return repr(self.value)
 
 
+class _PackageLoader(jinja2.PackageLoader):
+    """Workaround for PackageLoader when using cephadm with relative paths.
+
+    It was found that running the cephadm zipapp from a local dir (like:
+    `./cephadm`) instead of an absolute path (like: `/usr/sbin/cephadm`) caused
+    the PackageLoader to fail to load the template.  After investigation it was
+    found to relate to how the PackageLoader tries to normalize paths and yet
+    the zipimporter type did not have a normalized path (/home/foo/./cephadm
+    and /home/foo/cephadm respectively).  When a full absolute path is passed
+    to zipimporter's get_data method it uses the (non normalized) .archive
+    property to strip the prefix from the argument. When the argument is a
+    normalized path - the prefix fails to match and is not stripped and then
+    the full path fails to match any value in the archive.
+
+    This shim subclass of jinja2.PackageLoader tweaks the loader's .archive
+    property to *be* a normalized path, so that the prefixes can match and be
+    stripped from path to be looked up w/in the zip file.
+    """
+
+    def __init__(
+        self,
+        package_name: str,
+        package_path: str = 'templates',
+        encoding: str = 'utf-8',
+    ) -> None:
+        super().__init__(package_name, package_path, encoding)
+        if isinstance(self._loader, zipimport.zipimporter):
+            self._loader.archive = os.path.normpath(self._loader.archive)
+
+
 class Templater:
     """Cephadm's generic templater class. Based on jinja2."""
 
@@ -44,7 +76,7 @@ class Templater:
     @property
     def _loader(self) -> jinja2.BaseLoader:
         if self._jinja2_loader is None:
-            self._jinja2_loader = jinja2.PackageLoader(self._pkg, self._dir)
+            self._jinja2_loader = _PackageLoader(self._pkg, self._dir)
         return self._jinja2_loader
 
     def render_str(
