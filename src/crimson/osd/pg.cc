@@ -818,11 +818,11 @@ PG::do_osd_ops_execute(
       load_obc_ertr::assert_all{"can't live with object state messed up"});
   });
   auto maybe_submit_error_log = [&, op_info, m, obc]
-    (const std::error_code& e, const ceph_tid_t& rep_tid) {
+    (int e_value, const ceph_tid_t& rep_tid) {
     // call submit_error_log only for non-internal clients
     if constexpr (!std::is_same_v<Ret, void>) {
       if(op_info.may_write()) {
-        return submit_error_log(m, op_info, obc, e, rep_tid);
+        return submit_error_log(m, op_info, obc, e_value, rep_tid);
       }
     }
     return seastar::now();
@@ -935,7 +935,7 @@ PG::do_osd_ops_execute(
 
     return maybe_rollback_fut.then_interruptible(
     [error_func_ptr, e, rep_tid, failure_func_ptr] {
-      return (*error_func_ptr)(e, rep_tid).then(
+      return (*error_func_ptr)(e.value(), rep_tid).then(
       [failure_func_ptr, e, rep_tid] {
         return PG::do_osd_ops_iertr::make_ready_future<pg_rep_op_fut_t<Ret>>(
           std::move(seastar::now()),
@@ -950,7 +950,7 @@ seastar::future<> PG::submit_error_log(
   Ref<MOSDOp> m,
   const OpInfo &op_info,
   ObjectContextRef obc,
-  const std::error_code e,
+  const int e,
   ceph_tid_t rep_tid)
 {
   logger().debug("{}: {} rep_tid: {} error: {}",
@@ -962,7 +962,7 @@ seastar::future<> PG::submit_error_log(
                                        next_version(),
                                        eversion_t(), 0,
                                        reqid, utime_t(),
-                                       -e.value()));
+                                       -e));
   if (op_info.allows_returnvec()) {
     log_entries.back().set_op_returns(m->ops);
   }

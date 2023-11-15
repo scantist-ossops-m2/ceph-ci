@@ -536,7 +536,7 @@ public:
     Ref<MOSDOp> m,
     const OpInfo &op_info,
     ObjectContextRef obc,
-    const std::error_code e,
+    const int e,
     ceph_tid_t rep_tid);
 
 private:
