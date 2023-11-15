@@ -829,13 +829,14 @@ PG::do_osd_ops_execute(
   };
   auto error_func_ptr = seastar::make_lw_shared(std::move(maybe_submit_error_log));
   auto failure_func_ptr = seastar::make_lw_shared(std::move(failure_func));
+  auto rep_tid = shard_services.get_tid();
   return interruptor::do_for_each(ops, [ox](OSDOp& osd_op) {
     logger().debug(
       "do_osd_ops_execute: object {} - handling op {}",
       ox->get_target(),
       ceph_osd_op_name(osd_op.op.op));
     return ox->execute_op(osd_op);
-  }).safe_then_interruptible([this, ox, &ops] {
+  }).safe_then_interruptible([this, ox, &ops, error_func_ptr, rep_tid] {
     logger().debug(
       "do_osd_ops_execute: object {} all operations successful",
       ox->get_target());
@@ -850,23 +851,29 @@ PG::do_osd_ops_execute(
       } else if (m.has_flag(CEPH_OSD_FLAG_FULL_TRY)) {
         // they tried, they failed.
         logger().info(" full, replying to FULL_TRY op");
-        if (get_pgpool().info.has_flag(pg_pool_t::FLAG_FULL_QUOTA))
-          return interruptor::make_ready_future<OpsExecuter::rep_op_fut_tuple>(
-            seastar::now(),
-            OpsExecuter::osd_op_ierrorator::future<>(
-              crimson::ct_error::edquot::make()));
-        else
-          return interruptor::make_ready_future<OpsExecuter::rep_op_fut_tuple>(
-            seastar::now(),
-            OpsExecuter::osd_op_ierrorator::future<>(
-              crimson::ct_error::enospc::make()));
+        if (get_pgpool().info.has_flag(pg_pool_t::FLAG_FULL_QUOTA)) {
+          return (*error_func_ptr)(EDQUOT, rep_tid).then([] {
+            return interruptor::make_ready_future<OpsExecuter::rep_op_fut_tuple>(
+              seastar::now(),
+              OpsExecuter::osd_op_ierrorator::future<>(
+                crimson::ct_error::edquot::make()));
+          });
+        } else {
+          return (*error_func_ptr)(ENOSPC, rep_tid).then([] {
+            return interruptor::make_ready_future<OpsExecuter::rep_op_fut_tuple>(
+              seastar::now(),
+              OpsExecuter::osd_op_ierrorator::future<>(
+                crimson::ct_error::enospc::make()));
+          });
+        }
       } else {
         // drop request
-        logger().info(" full, dropping request (bad client)");
-        return interruptor::make_ready_future<OpsExecuter::rep_op_fut_tuple>(
-          seastar::now(),
-          OpsExecuter::osd_op_ierrorator::future<>(
-            crimson::ct_error::eagain::make()));
+        return (*error_func_ptr)(EAGAIN, rep_tid).then([] {
+          return interruptor::make_ready_future<OpsExecuter::rep_op_fut_tuple>(
+            seastar::now(),
+            OpsExecuter::osd_op_ierrorator::future<>(
+              crimson::ct_error::eagain::make()));
+        });
       }
     }
     return std::move(*ox).flush_changes_n_do_ops_effects(
@@ -887,7 +894,7 @@ PG::do_osd_ops_execute(
           std::move(log_entries));
     });
   }).safe_then_unpack_interruptible(
-    [success_func=std::move(success_func), error_func_ptr, rollbacker, this, failure_func_ptr]
+    [success_func=std::move(success_func), error_func_ptr, rollbacker, this, failure_func_ptr, rep_tid]
     (auto submitted_fut, auto _all_completed_fut) mutable {
 
     auto all_completed_fut = _all_completed_fut.safe_then_interruptible_tuple(
@@ -906,15 +913,15 @@ PG::do_osd_ops_execute(
         });
       });
     }), OpsExecuter::osd_op_errorator::all_same_way(
-        [this, error_func_ptr, rollbacker, failure_func_ptr]
+        [this, rollbacker, failure_func_ptr, rep_tid]
         (const std::error_code& e) mutable {
+          // handle non-fatal errors only
+          ceph_assert(e.value() == EDQUOT ||
+                      e.value() == ENOSPC ||
+                      e.value() == EAGAIN);
           return rollbacker.rollback_obc_if_modified(e).then_interruptible(
-          [this, e, failure_func_ptr, error_func_ptr] {
-            auto rep_tid = shard_services.get_tid();
-            return (*error_func_ptr)(e, rep_tid)
-            .then([failure_func_ptr, e, rep_tid] {
-              return (*failure_func_ptr)(e , rep_tid);
-            });
+          [this, e, failure_func_ptr, rep_tid] {
+            return (*failure_func_ptr)(e , rep_tid);
           });
     }));
 
