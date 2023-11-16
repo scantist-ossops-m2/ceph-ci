@@ -449,7 +449,7 @@ public:
       cache->_trim();
       return ret;
     }
-    int _discard(BufferCacheShard* cache, uint64_t offset, uint64_t length);
+    int _discard(BufferCacheShard* cache, uint32_t offset, uint32_t length);
 
     void write(BufferCacheShard* cache, uint64_t seq, uint32_t offset, ceph::buffer::list&& bl,
 	       unsigned flags) {
@@ -469,7 +469,7 @@ public:
       _add_buffer(cache, b, (flags & Buffer::FLAG_NOCACHE) ? 0 : 1, nullptr);
       cache->_trim();
     }
-    void _finish_write(BufferCacheShard* cache, uint32_t offset, uint64_t seq);
+    void _finish_write(BufferCacheShard* cache, uint64_t seq);
     void did_read(BufferCacheShard* cache, uint32_t offset, uint32_t length, ceph::buffer::list&& bl) {
       std::lock_guard l(cache->lock);
       Buffer *b = new Buffer(this, Buffer::STATE_CLEAN, 0, offset, std::move(bl));
@@ -487,7 +487,7 @@ public:
       discard(cache, offset, (uint32_t)-1 - offset);
     }
 
-    bool _dup_writing(TransContext* txc, Collection* collection, OnodeRef onode, uint64_t offset, uint64_t length);
+    void _dup_writing(TransContext* txc, Collection* collection, OnodeRef onode, uint32_t offset, uint32_t length);
     void split(BufferCacheShard* cache, size_t pos, BufferSpace &r);
 
     void dump(BufferCacheShard* cache, ceph::Formatter *f) const {
@@ -1871,7 +1871,7 @@ private:
 #endif
     
     std::set<SharedBlobRef> shared_blobs;  ///< these need to be updated/written
-    std::set<std::tuple<Onode*, uint32_t, uint64_t>> buffers_written; ///< update these on io completion (buffer -> offset, seq pair)
+    std::set<std::tuple<Onode*, uint64_t>> buffers_written; ///< update these on io completion (buffer -> offset, seq pair)
 
     KeyValueDB::Transaction t; ///< then we will commit this
     std::list<Context*> oncommits;  ///< more commit completions
@@ -2908,7 +2908,7 @@ private:
     unsigned flags) {
     onode->bc.write(blob->shared_blob->get_cache(), txc->seq, offset, std::move(bl),
 			     flags);
-    txc->buffers_written.insert({onode.get(), offset, txc->seq});
+    txc->buffers_written.insert({onode.get(), txc->seq});
   }
 
   void _buffer_cache_write(
@@ -2920,7 +2920,7 @@ private:
     unsigned flags) {
     onode->bc.write(blob->shared_blob->get_cache(), txc->seq, offset, bl,
 			     flags);
-    txc->buffers_written.insert({onode.get(), offset, txc->seq});
+    txc->buffers_written.insert({onode.get(), txc->seq});
   }
 
   int _collection_list(
