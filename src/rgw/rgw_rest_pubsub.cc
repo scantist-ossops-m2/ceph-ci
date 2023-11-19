@@ -1033,6 +1033,7 @@ void RGWPSCreateNotifOp::execute(optional_yield y) {
     // make sure that full topic configuration match
     // TODO: use ARN match function
     
+    
     // create unique topic name. this has 2 reasons:
     // (1) topics cannot be shared between different S3 notifications because they hold the filter information
     // (2) make topic cleanup easier, when notification is removed
