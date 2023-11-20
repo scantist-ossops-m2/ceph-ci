@@ -40,6 +40,10 @@ class ScrubResources {
 
   const ceph::common::ConfigProxy& conf;
 
+  /// an aux used to check available local scrubs. Called under the
+  /// resource_lock.
+  bool can_inc_local_scrubs_aux() const;
+
  public:
   explicit ScrubResources(
       log_upwards_t log_access,
