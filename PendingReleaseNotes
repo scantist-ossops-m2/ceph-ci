@@ -1,3 +1,10 @@
+>=18.2.2
+--------
+
+* RADOS: `get_pool_is_selfmanaged_snaps_mode` C++ API has been deprecated
+  due to being prone to false negative results.  It's safer replacement is
+  `pool_is_in_selfmanaged_snaps_mode`.
+
 >=19.0.0
 
 * RGW: S3 multipart uploads using Server-Side Encryption now replicate correctly in
