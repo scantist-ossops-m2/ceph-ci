@@ -39,7 +39,11 @@ CommonClientRequest::recover_missings(
         soid.get_head(),
         [&snaps, pg, soid](auto head, auto) mutable {
         auto oid = resolve_oid(head->get_head_ss(), soid);
-        assert(oid);
+        if (!oid) {
+          ceph_assert(head->get_head_ss().clones.empty());
+          return InterruptibleOperation::interruptor::now();
+        }
+
         return do_recover_missing(pg, *oid
         ).then_interruptible([&snaps, pg, soid, head]() mutable {
           return InterruptibleOperation::interruptor::do_for_each(
@@ -48,7 +52,10 @@ CommonClientRequest::recover_missings(
             auto coid = head->obs.oi.soid;
             coid.snap = snap;
             auto oid = resolve_oid(head->get_head_ss(), coid);
-            assert(oid);
+            if (!oid) {
+              ceph_assert(head->get_head_ss().clones.empty());
+              return InterruptibleOperation::interruptor::now();
+            }
             return do_recover_missing(pg, *oid);
           });
         });
