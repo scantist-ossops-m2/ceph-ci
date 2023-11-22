@@ -18,7 +18,7 @@ Versions and tags
 - [x] Update CMakeLists.txt VERSION (right at the top to X.0.0)
 - [x] Update src/librbd/CMakeLists.txt VERSION (librbd target at the bottom to 1.X.0)
 - [x] Update src/ceph_release with the new release name, number, and type ('dev')
-- [x] Initial tag vX.0.0 (so that we can distinguish from (and sort
+- [ ] Initial tag vX.0.0 (so that we can distinguish from (and sort
       after) the backported (X-1).2.Z versions.
 
 ### Notes on tagging
@@ -56,9 +56,9 @@ Misc
 Docs
 ~~~~
 
-- [x] Remove ``doc/releases/*.rst``. This should leave behind ``doc/releases/releases.yml`` which is used for doc building purposes.
-- [x] Cherry-pick 8cf9ad62949516666ad0f2c0bb7726ef68e4d666 ("doc: add releases links to toc"). There will be trivial conflicts.
-- [x] Add redirect for new major release at `RTD <https://readthedocs.org/dashboard/ceph/redirects/>`_.
+- [ ] Remove ``doc/releases/*.rst``. This should leave behind ``doc/releases/releases.yml`` which is used for doc building purposes.
+- [ ] Cherry-pick 8cf9ad62949516666ad0f2c0bb7726ef68e4d666 ("doc: add releases links to toc"). There will be trivial conflicts.
+- [ ] Add redirect for new major release at `RTD <https://readthedocs.org/dashboard/ceph/redirects/>`_.
 
 Feature bits
 ------------
@@ -105,6 +105,8 @@ Code cleanup
 QA suite
 --------
 
+- [x] create qa/workunits/test_telemetry_(X-1).sh
+- [x] create qa/workunits/test_telemetry_(X-1)_x.sh
 - [x] create qa/suites/upgrade/(X-1)-x
 - [x] remove qa/suites/upgrade/(X-3)-x-*
 - [x] create qa/releases/X.yaml
@@ -138,8 +140,8 @@ See https://github.com/ceph/ceph-container/pull/2109 as an example for what to d
 After dev freeze
 ================
 
-- [x] add release name to redmine (using https://tracker.ceph.com/custom_fields/16/edit)
-- [x] add release name to .github/milestone.yml for github actions to automatically add milestone to backports (this commit must be backported to the release branch)
+- [ ] add release name to redmine (using https://tracker.ceph.com/custom_fields/16/edit)
+- [ ] add release name to .github/milestone.yml for github actions to automatically add milestone to backports (this commit must be backported to the release branch)
 
 First release candidate
 =======================
