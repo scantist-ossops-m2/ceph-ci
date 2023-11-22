@@ -506,7 +506,7 @@ public:
 
 public:
   using with_obc_func_t =
-    std::function<load_obc_iertr::future<> (ObjectContextRef)>;
+    std::function<load_obc_iertr::future<> (ObjectContextRef, ObjectContextRef)>;
 
   load_obc_iertr::future<> with_locked_obc(
     const hobject_t &hobj,
@@ -643,6 +643,12 @@ private:
   std::optional<pg_stat_t> pg_stats;
 
 public:
+  OSDriver &get_osdriver() final {
+    return osdriver;
+  }
+  SnapMapper &get_snap_mapper() final {
+    return snap_mapper;
+  }
   RecoveryBackend* get_recovery_backend() final {
     return recovery_backend.get();
   }
