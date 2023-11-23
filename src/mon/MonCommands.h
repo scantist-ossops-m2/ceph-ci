@@ -1366,6 +1366,20 @@ COMMAND("config generate-minimal-conf",
 	"Generate a minimal ceph.conf file",
 	"config", "r")
 
+/* NVMeofGwMon*/
+COMMAND("nvme-gw create "
+    "name=subsystem-nqn,type=CephString"
+    "name=ids,type=CephString,n=N",
+    "set gw(s) <id> [<id>...] create, "
+    "create gws inside subsystem",
+    "gw", "rw")
+COMMAND("nvme-gw delete "
+    "name=subsystem-nqn,type=CephString"
+    "name=ids,type=CephString,n=N",
+    "set gw(s) <id> [<id>...] delete, "
+    "delete gws inside subsystem",
+    "gw", "rw")
+
 
 
 
