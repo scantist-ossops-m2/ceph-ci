@@ -24,6 +24,10 @@ openstack:
     size: 10 # GB
 overrides:
   ceph:
+    log-ignorelist:
+      - overall HEALTH_
+      - ganesha conf is defaulting to empty
+      - failed to encode map
     conf:
       osd:
         osd shutdown pgref assert: true

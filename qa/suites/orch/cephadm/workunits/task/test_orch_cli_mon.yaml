@@ -43,3 +43,11 @@ tasks:
 - cephfs_test_runner:
     modules:
       - tasks.cephadm_cases.test_cli_mon
+overrides:
+  ceph:
+    log-ignorelist:
+      - overall HEALTH_
+      - \(MON_DOWN\)
+      - mons down, quorum
+      - is down (out of quorum)
+      - \(POOL_APP_NOT_ENABLED\)      

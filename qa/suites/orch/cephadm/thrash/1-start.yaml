@@ -5,3 +5,11 @@ tasks:
       mgr:
         debug ms: 1
         debug mgr: 20
+overrides:
+  ceph:
+    log-ignorelist:
+      - overall HEALTH_
+      - \(OSD_DOWN\)
+      - \(OSDMAP_FLAGS\)
+      - \(PG_AVAILABILITY\)
+      - mons down, quorum
