@@ -17,7 +17,7 @@ template <typename T>
 struct SubOpBlocker : crimson::BlockerT<SubOpBlocker<T>> {
   static constexpr const char* type_name = "CompoundOpBlocker";
 
-  using id_done_t = std::pair<crimson::OperationRef, T>;
+  using id_done_t = std::pair<crimson::OperationRef, T&&>;
 
   void dump_detail(Formatter *f) const final {
     f->open_array_section("dependent_operations");
@@ -44,6 +44,15 @@ struct SubOpBlocker : crimson::BlockerT<SubOpBlocker<T>> {
     return seastar::do_for_each(subops, [](auto&& kv) {
       return std::move(kv.second);
     });
+  }
+
+  id_done_t pop_front() {
+    return std::make_pair(subops.begin()->first,
+                          std::move(subops.erase(subops.begin())->second));
+  }
+
+  bool empty() {
+    return subops.empty();
   }
 
 private:

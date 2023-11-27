@@ -479,25 +479,41 @@ void PG::on_active_actmap()
   peering_state.state_clear(PG_STATE_SNAPTRIM_ERROR);
   // loops until snap_trimq is empty or SNAPTRIM_ERROR.
   Ref<PG> pg_ref = this;
-  std::ignore = seastar::do_until(
-    [this] { return snap_trimq.empty()
-                    || peering_state.state_test(PG_STATE_SNAPTRIM_ERROR);
+  peering_state.state_set(PG_STATE_SNAPTRIM);
+  publish_stats_to_osd();
+  std::ignore = seastar::do_with(
+    SubOpBlocker<SnapTrimEvent::snap_trim_event_ret_t>(),
+    [this, pg_ref=std::move(pg_ref), snap_trimq_traversal=snap_trimq]
+    (auto &snap_trim_events_subops) mutable {
+    // snap_trimq is copied by value merely for a single traversal.
+    // Local copy makes it easier to find the last element
+    // for `needs_pause` usage (interval_set lacks back()).
+    while (!snap_trimq_traversal.empty()) {
+      const auto to_trim = snap_trimq_traversal.range_start();
+      snap_trimq_traversal.erase(to_trim);
+      const auto needs_pause = !snap_trimq_traversal.empty();
+      auto [op, fut] = shard_services.start_operation<SnapTrimEvent>(
+        this,
+        snap_mapper,
+        to_trim,
+        needs_pause);
+      snap_trim_events_subops.emplace_back(
+        std::move(op),
+        std::move(fut)
+      );
+    }
+    return seastar::do_until(
+    [this, &snap_trim_events_subops, pg_ref=std::move(pg_ref)] {
+      return snap_trim_events_subops.empty()
+             || peering_state.state_test(PG_STATE_SNAPTRIM_ERROR);
     },
-    [this] {
-      peering_state.state_set(PG_STATE_SNAPTRIM);
-      publish_stats_to_osd();
-      const auto to_trim = snap_trimq.range_start();
-      snap_trimq.erase(to_trim);
-      const auto needs_pause = !snap_trimq.empty();
-      return seastar::repeat([to_trim, needs_pause, this] {
-        logger().debug("{}: going to start SnapTrimEvent, to_trim={}",
-                       *this, to_trim);
-        return shard_services.start_operation<SnapTrimEvent>(
-          this,
-          snap_mapper,
-          to_trim,
-          needs_pause
-        ).second.handle_error(
+    [this, &snap_trim_events_subops] {
+      auto [op, fut] = snap_trim_events_subops.pop_front();
+      auto to_trim = static_cast<SnapTrimEvent*>(op.get())->get_snapid();
+      logger().debug("{}: going to start SnapTrimEvent, to_trim= {}",
+                     *this, to_trim);
+      return seastar::repeat([this, fut=std::move(fut)]() mutable {
+        return fut.handle_error(
           crimson::ct_error::enoent::handle([this] {
             logger().error("{}: ENOENT saw, trimming stopped", *this);
             peering_state.state_set(PG_STATE_SNAPTRIM_ERROR);
@@ -511,15 +527,16 @@ void PG::on_active_actmap()
           })
         );
       }).then([this, trimmed=to_trim] {
+        snap_trimq.erase(trimmed);
         logger().debug("{}: trimmed snap={}", *this, trimmed);
       });
-    }
-  ).finally([this, pg_ref=std::move(pg_ref)] {
-    logger().debug("{}: PG::on_active_actmap() finished trimming",
-                   *this);
-    peering_state.state_clear(PG_STATE_SNAPTRIM);
-    peering_state.state_clear(PG_STATE_SNAPTRIM_ERROR);
-    publish_stats_to_osd();
+    }).finally([this, pg_ref=std::move(pg_ref)] {
+      logger().debug("{}: PG::on_active_actmap() finished trimming",
+                     *this);
+      peering_state.state_clear(PG_STATE_SNAPTRIM);
+      peering_state.state_clear(PG_STATE_SNAPTRIM_ERROR);
+      publish_stats_to_osd();
+    });
   });
 }
 

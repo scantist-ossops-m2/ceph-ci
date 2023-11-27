@@ -85,6 +85,7 @@ private:
 
 public:
   PipelineHandle& get_handle() { return handle; }
+  const snapid_t get_snapid() { return snapid; }
 
   std::tuple<
     StartEvent,
