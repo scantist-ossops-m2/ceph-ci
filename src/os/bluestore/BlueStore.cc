@@ -4032,7 +4032,8 @@ void BlueStore::ExtentMap::ExtentDecoder::decode_extent(
     if (blobid) {
       consume_blobid(le, false, blobid - 1);
     } else {
-      BlobRef b = c->new_blob();
+      // dummy onodes might not have collections, we need a check for it.
+      BlobRef b = c ? c->new_blob() : new Blob(nullptr);
       uint64_t sbid = 0;
       b->decode(p, struct_v, &sbid, false, c);
       consume_blob(le, extent_pos, sbid, b);
