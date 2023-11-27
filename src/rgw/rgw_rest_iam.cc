@@ -36,8 +36,10 @@ void RGWHandler_REST_IAM::rgw_iam_parse_input()
       }
     }
   }
-  auto payload_hash = rgw::auth::s3::calc_v4_payload_hash(post_body);
-  s->info.args.append("PayloadHash", payload_hash);
+  if (!s->info.args.exists("PayloadHash")) {
+    const auto payload_hash = rgw::auth::s3::calc_v4_payload_hash(post_body);
+    s->info.args.append("PayloadHash", payload_hash);
+  }
 }
 
 RGWOp *RGWHandler_REST_IAM::op_post()

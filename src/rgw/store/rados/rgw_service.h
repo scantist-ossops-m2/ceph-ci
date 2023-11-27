@@ -76,6 +76,7 @@ class RGWSI_User;
 class RGWSI_User_RADOS;
 class RGWDataChangesLog;
 class RGWSI_Role_RADOS;
+class RGWSI_Topic_RADOS;
 
 struct RGWServices_Def
 {
@@ -107,6 +108,7 @@ struct RGWServices_Def
   std::unique_ptr<RGWDataChangesLog> datalog_rados;
   std::unique_ptr<RGWSI_Role_RADOS> role_rados;
 
+  std::unique_ptr<RGWSI_Topic_RADOS> topic_rados;
   RGWServices_Def();
   ~RGWServices_Def();
 
@@ -149,6 +151,7 @@ struct RGWServices
   RGWSI_SysObj_Core *core{nullptr};
   RGWSI_User *user{nullptr};
   RGWSI_Role_RADOS *role{nullptr};
+  RGWSI_Topic_RADOS* topic{nullptr};
 
   int do_init(CephContext *cct, bool have_cache, bool raw_storage, bool run_sync, optional_yield y, const DoutPrefixProvider *dpp);
 
@@ -178,6 +181,7 @@ struct RGWCtlDef {
     std::unique_ptr<RGWMetadataHandler> user;
     std::unique_ptr<RGWMetadataHandler> otp;
     std::unique_ptr<RGWMetadataHandler> role;
+    std::unique_ptr<RGWMetadataHandler> topic;
 
     _meta();
     ~_meta();
@@ -207,6 +211,7 @@ struct RGWCtl {
     RGWMetadataHandler *user{nullptr};
     RGWMetadataHandler *otp{nullptr};
     RGWMetadataHandler *role{nullptr};
+    RGWMetadataHandler* topic{nullptr};
   } meta;
 
   RGWUserCtl *user{nullptr};

@@ -130,21 +130,19 @@ class RGWPSCreateTopicOp : public RGWOp {
       return -EINVAL;
     }
 
-    // Remove the args that are parsed, so the push_endpoint_args only contains
-    // necessary one's.
     opaque_data = s->info.args.get("OpaqueData");
-    s->info.args.remove("OpaqueData");
 
     dest.push_endpoint = s->info.args.get("push-endpoint");
-    s->info.args.remove("push-endpoint");
     s->info.args.get_bool("persistent", &dest.persistent, false);
-    s->info.args.remove("persistent");
-    s->info.args.get_int("time_to_live", reinterpret_cast<int *>(&dest.time_to_live), rgw::notify::DEFAULT_GLOBAL_VALUE);
-    s->info.args.remove("time_to_live");
-    s->info.args.get_int("max_retries", reinterpret_cast<int *>(&dest.max_retries), rgw::notify::DEFAULT_GLOBAL_VALUE);
-    s->info.args.remove("max_retries");
-    s->info.args.get_int("retry_sleep_duration", reinterpret_cast<int *>(&dest.retry_sleep_duration), rgw::notify::DEFAULT_GLOBAL_VALUE);
-    s->info.args.remove("retry_sleep_duration");
+    s->info.args.get_int("time_to_live",
+                         reinterpret_cast<int*>(&dest.time_to_live),
+                         rgw::notify::DEFAULT_GLOBAL_VALUE);
+    s->info.args.get_int("max_retries",
+                         reinterpret_cast<int*>(&dest.max_retries),
+                         rgw::notify::DEFAULT_GLOBAL_VALUE);
+    s->info.args.get_int("retry_sleep_duration",
+                         reinterpret_cast<int*>(&dest.retry_sleep_duration),
+                         rgw::notify::DEFAULT_GLOBAL_VALUE);
 
     if (!validate_and_update_endpoint_secret(dest, s->cct, *(s->info.env))) {
       return -EINVAL;
@@ -154,8 +152,19 @@ class RGWPSCreateTopicOp : public RGWOp {
     if (!policy_text.empty() && !get_policy_from_text(s, policy_text)) {
       return -ERR_MALFORMED_DOC;
     }
-    s->info.args.remove("Policy");
 
+    // Remove the args that are parsed, so the push_endpoint_args only contains
+    // necessary one's which is parsed after this if. but only if master zone,
+    // else we do not remove as request is forwarded to master.
+    if (store->is_meta_master()) {
+      s->info.args.remove("OpaqueData");
+      s->info.args.remove("push-endpoint");
+      s->info.args.remove("persistent");
+      s->info.args.remove("time_to_live");
+      s->info.args.remove("max_retries");
+      s->info.args.remove("retry_sleep_duration");
+      s->info.args.remove("Policy");
+    }
     for (const auto& param : s->info.args.get_params()) {
       if (param.first == "Action" || param.first == "Name" || param.first == "PayloadHash") {
         continue;
@@ -240,6 +249,18 @@ class RGWPSCreateTopicOp : public RGWOp {
 };
 
 void RGWPSCreateTopicOp::execute(optional_yield y) {
+  // master request will replicate the topic creation.
+  bufferlist indata;
+  if (!store->is_meta_master()) {
+    op_ret = store->forward_request_to_master(this, s->user.get(), nullptr,
+                                              indata, nullptr, s->info, y);
+    if (op_ret < 0) {
+      ldpp_dout(this, 1)
+          << "CreateTopic forward_request_to_master returned ret = " << op_ret
+          << dendl;
+      return;
+    }
+  }
   if (!dest.push_endpoint.empty() && dest.persistent) {
     op_ret = rgw::notify::add_persistent_topic(topic_name, s->yield);
     if (op_ret < 0) {
@@ -653,6 +674,17 @@ class RGWPSSetTopicAttributesOp : public RGWOp {
 };
 
 void RGWPSSetTopicAttributesOp::execute(optional_yield y) {
+  if (!store->is_meta_master()) {
+    bufferlist indata;
+    op_ret = store->forward_request_to_master(this, s->user.get(), nullptr,
+                                              indata, nullptr, s->info, y);
+    if (op_ret < 0) {
+      ldpp_dout(this, 1)
+          << "SetTopicAttributes forward_request_to_master returned ret = "
+          << op_ret << dendl;
+      return;
+    }
+  }
   if (!dest.push_endpoint.empty() && dest.persistent) {
     op_ret = rgw::notify::add_persistent_topic(topic_name, s->yield);
     if (op_ret < 0) {
@@ -740,6 +772,17 @@ void RGWPSDeleteTopicOp::execute(optional_yield y) {
   op_ret = get_params();
   if (op_ret < 0) {
     return;
+  }
+  if (!store->is_meta_master()) {
+    bufferlist indata;
+    op_ret = store->forward_request_to_master(this, s->user.get(), nullptr,
+                                              indata, nullptr, s->info, y);
+    if (op_ret < 0) {
+      ldpp_dout(this, 1)
+          << "DeleteTopic forward_request_to_master returned ret = " << op_ret
+          << dendl;
+      return;
+    }
   }
   const RGWPubSub ps(store, s->owner.get_id().tenant);
   rgw_pubsub_topic result;
@@ -886,35 +929,51 @@ void RGWHandler_REST_PSTopic_AWS::rgw_topic_parse_input() {
           s->info.args.append(attr.second.get_key(), attr.second.get_value());
       }
     }
-    const auto payload_hash = rgw::auth::s3::calc_v4_payload_hash(post_body);
-    s->info.args.append("PayloadHash", payload_hash);
+    // PayloadHash is present if request is fwd from secondary site in multisite
+    // environment, so then do not calculate and append.
+    if (!s->info.args.exists("PayloadHash")) {
+      const auto payload_hash = rgw::auth::s3::calc_v4_payload_hash(post_body);
+      s->info.args.append("PayloadHash", payload_hash);
+    }
   }
 }
+
+using op_generator = RGWOp* (*)();
+static const std::unordered_map<std::string, op_generator> op_generators = {
+    {"CreateTopic", []() -> RGWOp* { return new RGWPSCreateTopicOp; }},
+    {"DeleteTopic", []() -> RGWOp* { return new RGWPSDeleteTopicOp; }},
+    {"ListTopics", []() -> RGWOp* { return new RGWPSListTopicsOp; }},
+    {"GetTopic", []() -> RGWOp* { return new RGWPSGetTopicOp; }},
+    {"GetTopicAttributes",
+     []() -> RGWOp* { return new RGWPSGetTopicAttributesOp; }},
+    {"SetTopicAttributes",
+     []() -> RGWOp* { return new RGWPSSetTopicAttributesOp; }}};
 
 RGWOp* RGWHandler_REST_PSTopic_AWS::op_post() {
   rgw_topic_parse_input();
 
   if (s->info.args.exists("Action")) {
-    const auto action = s->info.args.get("Action");
-    if (action.compare("CreateTopic") == 0)
-      return new RGWPSCreateTopicOp();
-    if (action.compare("DeleteTopic") == 0)
-      return new RGWPSDeleteTopicOp;
-    if (action.compare("ListTopics") == 0)
-      return new RGWPSListTopicsOp();
-    if (action.compare("GetTopic") == 0)
-      return new RGWPSGetTopicOp();
-    if (action.compare("GetTopicAttributes") == 0)
-      return new RGWPSGetTopicAttributesOp();
-    if (action.compare("SetTopicAttributes") == 0)
-      return new RGWPSSetTopicAttributesOp();
+    const std::string action_name = s->info.args.get("Action");
+    const auto action_it = op_generators.find(action_name);
+    if (action_it != op_generators.end()) {
+      return action_it->second();
+    }
+    ldpp_dout(s, 10) << "unknown action '" << action_name
+                     << "' for Topic handler" << dendl;
   }
-
   return nullptr;
 }
 
 int RGWHandler_REST_PSTopic_AWS::authorize(const DoutPrefixProvider* dpp, optional_yield y) {
   return RGW_Auth_S3::authorize(dpp, store, auth_registry, s, y);
+}
+
+bool RGWHandler_REST_PSTopic_AWS::action_exists(const req_info& info) {
+  if (info.args.exists("Action")) {
+    const std::string action_name = info.args.get("Action");
+    return op_generators.contains(action_name);
+  }
+  return false;
 }
 
 namespace {
