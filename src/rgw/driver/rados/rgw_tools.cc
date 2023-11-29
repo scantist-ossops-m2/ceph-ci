@@ -105,8 +105,8 @@ int rgw_get_rados_ref(const DoutPrefixProvider* dpp, librados::Rados* rados,
   int r = rgw_init_ioctx(dpp, rados, ref->obj.pool,
 			 ref->ioctx, true, false);
   if (r < 0) {
-    ldpp_dout(dpp, 0) << "ERROR: creating ioctx (pool=" << obj.pool << "); r="
-		      << r << dendl;
+    ldpp_dout(dpp, 0) << "ERROR: creating ioctx (pool=" << ref->obj.pool
+        << "); r=" << r << dendl;
     return r;
   }
 
