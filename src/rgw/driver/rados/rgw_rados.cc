@@ -7923,6 +7923,7 @@ int RGWRados::bucket_index_clear_olh(const DoutPrefixProvider *dpp,
 			  [&](BucketShard *pbs) -> int {
 			    ObjectWriteOperation op;
 			    op.assert_exists(); // bucket index shard must exist
+			    auto& ref = bs.bucket_obj;
 			    cls_rgw_guard_bucket_resharding(op, -ERR_BUSY_RESHARDING);
 			    cls_rgw_clear_olh(op, key, olh_tag);
                             return rgw_rados_operate(dpp, ref.ioctx, ref.obj.oid, &op, y);
