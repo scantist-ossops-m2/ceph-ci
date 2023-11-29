@@ -828,8 +828,33 @@ PG::do_osd_ops_execute(
     (const std::error_code& e, const ceph_tid_t& rep_tid) {
     // call submit_error_log only for non-internal clients
     if constexpr (!std::is_same_v<Ret, void>) {
-      if(op_info.may_write()) {
-        return submit_error_log(m, op_info, obc, e, rep_tid);
+      if(op_info.may_write()) { // !peering_state.pg_has_reset_since(epoch)
+        return submit_error_log(m, op_info, obc, e, rep_tid).then(
+        [this, rep_tid, last_complete=peering_state.get_info().last_complete] {
+          auto fut = seastar::now();
+          ceph_assert(log_entry_version.contains(rep_tid));
+          auto it = log_entry_update_waiting_on.find(rep_tid);
+          ceph_assert(it != log_entry_update_waiting_on.end());
+          auto it2 = it->second.waiting_on.find(pg_whoami);
+          ceph_assert(it2 != it->second.waiting_on.end());
+          it->second.waiting_on.erase(it2);
+          if (it->second.waiting_on.empty()) {
+            log_entry_update_waiting_on.erase(it);
+            peering_state.complete_write(log_entry_version[rep_tid], last_complete);
+            log_entry_version.erase(rep_tid);
+            logger().debug("do_osd_ops_execute: write complete,"
+                           " erasing rep_tid {}", rep_tid);
+          } else {
+            fut = it->second.all_committed.get_shared_future().then(
+            [this, last_complete, rep_tid] {
+              logger().debug("do_osd_ops_execute: awaited {}", rep_tid);
+              peering_state.complete_write(log_entry_version[rep_tid], last_complete);
+              ceph_assert(!log_entry_update_waiting_on.contains(rep_tid));
+              return seastar::now();
+            });
+          }
+          return fut;
+        });
       }
     }
     return seastar::now();
@@ -1090,38 +1115,7 @@ PG::do_osd_ops(
     (const std::error_code& e, const ceph_tid_t& rep_tid, bool record_error) {
     logger().error("do_osd_ops_execute::failure_func {} got error: {} record_error: {}",
                     *m, e, record_error);
-    epoch_t epoch = get_osdmap_epoch();
-    auto last_complete = peering_state.get_info().last_complete;
-    auto fut = seastar::now();
-    if (record_error && !peering_state.pg_has_reset_since(epoch) && op_info.may_write()) {
-      logger().debug("do_osd_ops_execute::failure_func finding rep_tid {}",
-                      rep_tid);
-      ceph_assert(log_entry_version.contains(rep_tid));
-      auto it = log_entry_update_waiting_on.find(rep_tid);
-      ceph_assert(it != log_entry_update_waiting_on.end());
-      auto it2 = it->second.waiting_on.find(pg_whoami);
-      ceph_assert(it2 != it->second.waiting_on.end());
-      it->second.waiting_on.erase(it2);
-      if (it->second.waiting_on.empty()) {
-        log_entry_update_waiting_on.erase(it);
-        peering_state.complete_write(log_entry_version[rep_tid], last_complete);
-        log_entry_version.erase(rep_tid);
-        logger().debug("do_osd_ops_execute::failure_func write complete,"
-                        " erasing rep_tid {}", rep_tid);
-
-      } else {
-        fut = it->second.all_committed.get_shared_future().then(
-          [this, last_complete, rep_tid] {
-          logger().debug("do_osd_ops_execute::failure_func awaited {}", rep_tid);
-          peering_state.complete_write(log_entry_version[rep_tid], last_complete);
-          ceph_assert(!log_entry_update_waiting_on.contains(rep_tid));
-          return seastar::now();
-        });
-      }
-    }
-    return fut.then([this, m, e] {
-      return log_reply(m, e);
-    });
+    return log_reply(m, e);
   });
 }
 
