@@ -332,7 +332,6 @@ void PG::on_removal(ceph::os::Transaction &t) {
 void PG::clear_log_entry_maps()
 {
   log_entry_update_waiting_on.clear();
-  log_entry_version.clear();
 }
 
 void PG::on_activate(interval_set<snapid_t> snaps)
@@ -811,15 +810,13 @@ PG::interruptible_future<> PG::repair_object(
 seastar::future<> PG::complete_error_log(const ceph_tid_t& rep_tid)
 {
   auto result = seastar::now();
-  ceph_assert(log_entry_version.contains(rep_tid));
   auto last_complete = peering_state.get_info().last_complete;
   auto& log_update = log_entry_update_waiting_on[rep_tid];
   ceph_assert(log_update.waiting_on.contains(pg_whoami));
   log_update.waiting_on.erase(pg_whoami);
   if (log_update.waiting_on.empty()) {
   log_entry_update_waiting_on.erase(rep_tid);
-    peering_state.complete_write(log_entry_version[rep_tid], last_complete);
-    log_entry_version.erase(rep_tid);
+    peering_state.complete_write(projected_last_update, last_complete);
      logger().debug("do_osd_ops_execute: write complete,"
                     " erasing rep_tid {}", rep_tid);
   } else {
@@ -828,7 +825,7 @@ seastar::future<> PG::complete_error_log(const ceph_tid_t& rep_tid)
     result = log_update.all_committed.get_shared_future().then(
     [this, last_complete, rep_tid] {
       logger().debug("do_osd_ops_execute: rep_tid {} awaited ", rep_tid);
-      peering_state.complete_write(log_entry_version[rep_tid], last_complete);
+      peering_state.complete_write(projected_last_update, last_complete);
       ceph_assert(!log_entry_update_waiting_on.contains(rep_tid));
       return seastar::now();
     });
@@ -1010,7 +1007,7 @@ seastar::future<> PG::submit_error_log(
   ceph_assert(is_primary());
   ceph_assert(!log_entries.empty());
   ceph_assert(log_entries.rbegin()->version >= projected_last_update);
-  log_entry_version[rep_tid] = projected_last_update = log_entries.rbegin()->version;
+  projected_last_update = log_entries.rbegin()->version;
   ceph::os::Transaction t;
   peering_state.merge_new_log_entries(
     log_entries, t, peering_state.get_pg_trim_to(),
@@ -1447,7 +1444,6 @@ PG::interruptible_future<> PG::do_update_log_missing_reply(
       logger().debug("{}: erasing rep_tid {}",
                      __func__, m->get_tid());
       log_entry_update_waiting_on.erase(it);
-      log_entry_version.erase(m->get_tid());
     }
   } else {
     logger().error("{} : {} got reply {} on unknown tid {}",
