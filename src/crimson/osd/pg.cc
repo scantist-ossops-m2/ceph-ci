@@ -952,7 +952,7 @@ PG::do_osd_ops_execute(
           return rollbacker.rollback_obc_if_modified(e).then_interruptible(
           [this, e, failure_func_ptr] {
             // no need to record error log
-            return (*failure_func_ptr)(e , shard_services.get_tid(), false);
+            return (*failure_func_ptr)(e , shard_services.get_tid());
           });
     }));
 
@@ -980,7 +980,7 @@ PG::do_osd_ops_execute(
       [failure_func_ptr, e, rep_tid] {
         return PG::do_osd_ops_iertr::make_ready_future<pg_rep_op_fut_t<Ret>>(
           std::move(seastar::now()),
-          std::move((*failure_func_ptr)(e, rep_tid, true))
+          std::move((*failure_func_ptr)(e, rep_tid))
         );
       });
     });
@@ -1118,9 +1118,9 @@ PG::do_osd_ops(
     },
     // failure_func
     [m, &op_info, obc, this]
-    (const std::error_code& e, const ceph_tid_t& rep_tid, bool record_error) {
+    (const std::error_code& e, const ceph_tid_t& rep_tid) {
     logger().error("do_osd_ops_execute::failure_func {} got error: {} record_error: {}",
-                    *m, e, record_error);
+                    *m, e);
     return log_reply(m, e);
   });
 }
@@ -1185,7 +1185,7 @@ PG::do_osd_ops(
         return do_osd_ops_iertr::now();
       },
       // failure_func
-      [] (const std::error_code& e, const ceph_tid_t& rep_tid, bool record_error) {
+      [] (const std::error_code& e, const ceph_tid_t& rep_tid) {
         return do_osd_ops_iertr::now();
       });
   });
