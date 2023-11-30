@@ -590,6 +590,7 @@ private:
     std::vector<OSDOp>& ops,
     SuccessFunc&& success_func,
     FailureFunc&& failure_func);
+  seastar::future<> complete_error_log(const ceph_tid_t& rep_tid);
   interruptible_future<MURef<MOSDOpReply>> do_pg_ops(Ref<MOSDOp> m);
   std::tuple<interruptible_future<>, interruptible_future<>>
   submit_transaction(

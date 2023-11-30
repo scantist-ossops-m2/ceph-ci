@@ -808,6 +808,34 @@ PG::interruptible_future<> PG::repair_object(
   return std::move(fut);
 }
 
+seastar::future<> PG::complete_error_log(const ceph_tid_t& rep_tid)
+{
+  auto result = seastar::now();
+  ceph_assert(log_entry_version.contains(rep_tid));
+  auto last_complete = peering_state.get_info().last_complete;
+  auto& log_update = log_entry_update_waiting_on[rep_tid];
+  ceph_assert(log_update.waiting_on.contains(pg_whoami));
+  log_update.waiting_on.erase(pg_whoami);
+  if (log_update.waiting_on.empty()) {
+  log_entry_update_waiting_on.erase(rep_tid);
+    peering_state.complete_write(log_entry_version[rep_tid], last_complete);
+    log_entry_version.erase(rep_tid);
+     logger().debug("do_osd_ops_execute: write complete,"
+                    " erasing rep_tid {}", rep_tid);
+  } else {
+    logger().debug("do_osd_ops_execute: rep_tid {} awaiting update from {}",
+                   rep_tid, log_update.waiting_on);
+    result = log_update.all_committed.get_shared_future().then(
+    [this, last_complete, rep_tid] {
+      logger().debug("do_osd_ops_execute: rep_tid {} awaited ", rep_tid);
+      peering_state.complete_write(log_entry_version[rep_tid], last_complete);
+      ceph_assert(!log_entry_update_waiting_on.contains(rep_tid));
+      return seastar::now();
+    });
+  }
+  return result;
+}
+
 template <class Ret, class SuccessFunc, class FailureFunc>
 PG::do_osd_ops_iertr::future<PG::pg_rep_op_fut_t<Ret>>
 PG::do_osd_ops_execute(
@@ -830,28 +858,8 @@ PG::do_osd_ops_execute(
     if constexpr (!std::is_same_v<Ret, void>) {
       if(op_info.may_write()) { // !peering_state.pg_has_reset_since(epoch)
         return submit_error_log(m, op_info, obc, e, rep_tid).then(
-        [this, rep_tid, last_complete=peering_state.get_info().last_complete] {
-          auto fut = seastar::now();
-          ceph_assert(log_entry_version.contains(rep_tid));
-          auto& log_update = log_entry_update_waiting_on[rep_tid];
-          ceph_assert(log_update.waiting_on.contains(pg_whoami));
-          log_update.waiting_on.erase(pg_whoami);
-          if (log_update.waiting_on.empty()) {
-            log_entry_update_waiting_on.erase(rep_tid);
-            peering_state.complete_write(log_entry_version[rep_tid], last_complete);
-            log_entry_version.erase(rep_tid);
-            logger().debug("do_osd_ops_execute: write complete,"
-                           " erasing rep_tid {}", rep_tid);
-          } else {
-            fut = log_update.all_committed.get_shared_future().then(
-            [this, last_complete, rep_tid] {
-              logger().debug("do_osd_ops_execute: awaited {}", rep_tid);
-              peering_state.complete_write(log_entry_version[rep_tid], last_complete);
-              ceph_assert(!log_entry_update_waiting_on.contains(rep_tid));
-              return seastar::now();
-            });
-          }
-          return fut;
+        [this, rep_tid] {
+          return complete_error_log(rep_tid);
         });
       }
     }
