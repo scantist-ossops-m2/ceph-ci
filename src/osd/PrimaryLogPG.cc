@@ -2549,7 +2549,9 @@ PrimaryLogPG::cache_result_t PrimaryLogPG::maybe_handle_manifest_detail(
         return cache_result_t::NOOP;
       }
 
-      if (can_proxy_chunked_read(op, obc)) {
+      // if there is at least a missing chunk that needs to be retrived,
+      // issue proxy reads to forward the chunk data without promotion
+      if (need_proxy_chunked_read(op, obc)) {
 	map<hobject_t,FlushOpRef>::iterator p = flush_ops.find(obc->obs.oi.soid);
         if (p != flush_ops.end()) {
           do_proxy_chunked_op(op, obc->obs.oi.soid, obc, true);
@@ -2955,6 +2957,18 @@ struct C_ProxyChunkRead : public Context {
       return;
     }
     if (last_peering_reset == pg->get_last_peering_reset()) {
+      if (r >= 0 && obc->obs.oi.size >=
+	  prdop->ops[op_index].op.extent.offset + req_total_len &&
+	  prdop->ops[op_index].outdata.length() == 0) {
+	// read other parts of data in the object other than the chunks
+	// then, overwrite the chunks to the bufferlist
+	r = pg->pgbackend->objects_read_sync(
+	  obc->obs.oi.soid,
+	  prdop->ops[op_index].op.extent.offset,
+	  req_total_len,
+	  prdop->ops[op_index].op.flags,
+	  &prdop->ops[op_index].outdata);
+      }
       if (r >= 0) {
 	if (!prdop->ops[op_index].outdata.length()) {
 	  ceph_assert(req_total_len);
@@ -3268,11 +3282,16 @@ void PrimaryLogPG::do_proxy_chunked_op(OpRequestRef op, const hobject_t& missing
       chunk_length = 0;
       /* find the right chunk position for cursor */
       for (auto &p : manifest->chunk_map) {
-	if (p.first <= cursor && p.first + p.second.length > cursor) {
+	if (p.first >= cursor && p.first + p.second.length > cursor) {
 	  chunk_length = p.second.length;
 	  chunk_index = p.first;
+	  cursor = chunk_index;
 	  break;
 	}
+      }
+      if (chunk_index > op_length) {
+	cursor = op_length;
+	break;
       }
       /* no index */
       if (!chunk_index && !chunk_length) {
@@ -3825,39 +3844,25 @@ void PrimaryLogPG::do_proxy_chunked_read(OpRequestRef op, ObjectContextRef obc, 
   in_progress_proxy_ops[ori_soid].push_back(op);
 }
 
-bool PrimaryLogPG::can_proxy_chunked_read(OpRequestRef op, ObjectContextRef obc)
+bool PrimaryLogPG::need_proxy_chunked_read(OpRequestRef op, ObjectContextRef obc)
 {
   MOSDOp *m = static_cast<MOSDOp*>(op->get_nonconst_req());
   OSDOp *osd_op = NULL;
-  bool ret = true;
+  bool ret = false;
   for (unsigned int i = 0; i < m->ops.size(); i++) {
     osd_op = &m->ops[i];
     ceph_osd_op op = osd_op->op;
     switch (op.op) {
       case CEPH_OSD_OP_READ:
       case CEPH_OSD_OP_SYNC_READ: {
-	uint64_t cursor = osd_op->op.extent.offset;
-	uint64_t remain = osd_op->op.extent.length;
-
-	/* requested chunks exist in chunk_map ? */
+	interval_set<uint64_t> ch;
+	ch.insert(osd_op->op.extent.offset, osd_op->op.extent.length);
 	for (auto &p : obc->obs.oi.manifest.chunk_map) {
-	  if (p.first <= cursor && p.first + p.second.length > cursor) {
-	    if (!p.second.is_missing()) {
-	      return false;
+	  if (ch.intersects(p.first, p.second.length)) {
+	     if (p.second.is_missing()) {
+	      return true;
 	    }
-	    if (p.second.length >= remain) {
-	      remain = 0;
-	      break;
-	    } else {
-	      remain = remain - p.second.length;
-	    }
-	    cursor += p.second.length;
 	  }
-	}
-
-	if (remain) {
-	  dout(20) << __func__ << " requested chunks don't exist in chunk_map " << dendl;
-	  return false;
 	}
 	continue;
       }
