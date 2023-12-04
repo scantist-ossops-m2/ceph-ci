@@ -134,6 +134,16 @@ class RgwDaemon(RESTController):
             for service in server['services']:
                 metadata = service['metadata']
 
+                frontend_config = metadata['frontend_config#0']
+                port_match = re.search(r"port=(\d+)", frontend_config)
+                port = None
+                if port_match:
+                    port = port_match.group(1)
+                else:
+                    match_from_endpoint = re.search(r"endpoint=\S+:(\d+)", frontend_config)
+                    if match_from_endpoint:
+                        port = match_from_endpoint.group(1)
+
                 # extract per-daemon service data and health
                 daemon = {
                     'id': metadata['id'],
@@ -144,7 +154,7 @@ class RgwDaemon(RESTController):
                     'zonegroup_name': metadata['zonegroup_name'],
                     'zone_name': metadata['zone_name'],
                     'default': instance.daemon.name == metadata['id'],
-                    'port': int(re.findall(r'port=(\d+)', metadata['frontend_config#0'])[0])
+                    'port': int(port) if port else None
                 }
 
                 daemons.append(daemon)
@@ -276,6 +286,14 @@ class RgwBucket(RgwRESTController):
                                              retention_period_days,
                                              retention_period_years)
 
+    def _get_policy(self, bucket: str):
+        rgw_client = RgwClient.admin_instance()
+        return rgw_client.get_bucket_policy(bucket)
+
+    def _set_tags(self, bucket_name, tags, daemon_name, owner):
+        rgw_client = RgwClient.instance(owner, daemon_name)
+        return rgw_client.set_tags(bucket_name, tags)
+
     @staticmethod
     def strip_tenant_from_bucket_name(bucket_name):
         # type (str) -> str
@@ -328,6 +346,7 @@ class RgwBucket(RgwRESTController):
         result['encryption'] = encryption['Status']
         result['versioning'] = versioning['Status']
         result['mfa_delete'] = versioning['MfaDelete']
+        result['policy'] = self._get_policy(bucket_name)
 
         # Append the locking configuration.
         locking = self._get_locking(result['owner'], daemon_name, bucket_name)
@@ -340,7 +359,7 @@ class RgwBucket(RgwRESTController):
                lock_enabled='false', lock_mode=None,
                lock_retention_period_days=None,
                lock_retention_period_years=None, encryption_state='false',
-               encryption_type=None, key_id=None, daemon_name=None):
+               encryption_type=None, key_id=None, tags=None, daemon_name=None):
         lock_enabled = str_to_bool(lock_enabled)
         encryption_state = str_to_bool(encryption_state)
         try:
@@ -356,6 +375,9 @@ class RgwBucket(RgwRESTController):
             if encryption_state:
                 self._set_encryption(bucket, encryption_type, key_id, daemon_name, uid)
 
+            if tags:
+                self._set_tags(bucket, tags, daemon_name, uid)
+
             return result
         except RequestException as e:  # pragma: no cover - handling is too obvious
             raise DashboardException(e, http_status_code=500, component='rgw')
@@ -365,7 +387,7 @@ class RgwBucket(RgwRESTController):
             encryption_state='false', encryption_type=None, key_id=None,
             mfa_delete=None, mfa_token_serial=None, mfa_token_pin=None,
             lock_mode=None, lock_retention_period_days=None,
-            lock_retention_period_years=None, daemon_name=None):
+            lock_retention_period_years=None, tags=None, daemon_name=None):
         encryption_state = str_to_bool(encryption_state)
         # When linking a non-tenant-user owned bucket to a tenanted user, we
         # need to prefix bucket name with '/'. e.g. photos -> /photos
@@ -405,6 +427,8 @@ class RgwBucket(RgwRESTController):
             self._set_encryption(bucket_name, encryption_type, key_id, daemon_name, uid)
         if encryption_status['Status'] == 'Enabled' and (not encryption_state):
             self._delete_encryption(bucket_name, daemon_name, uid)
+        if tags:
+            self._set_tags(bucket_name, tags, daemon_name, uid)
         return self._append_bid(result)
 
     def delete(self, bucket, purge_objects='true', daemon_name=None):

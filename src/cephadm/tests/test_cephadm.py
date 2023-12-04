@@ -38,15 +38,6 @@ def get_ceph_conf(
 
 class TestCephAdm(object):
 
-    def test_docker_unit_file(self):
-        ctx = _cephadm.CephadmContext()
-        ctx.container_engine = mock_docker()
-        r = _cephadm.get_unit_file(ctx, '9b9d7609-f4d5-4aba-94c8-effa764d96c9')
-        assert 'Requires=docker.service' in r
-        ctx.container_engine = mock_podman()
-        r = _cephadm.get_unit_file(ctx, '9b9d7609-f4d5-4aba-94c8-effa764d96c9')
-        assert 'Requires=docker.service' not in r
-
     @mock.patch('cephadm.logger')
     def test_attempt_bind(self, _logger):
         from cephadmlib.net_utils import PortOccupiedError, attempt_bind
@@ -329,9 +320,9 @@ class TestCephAdm(object):
     @mock.patch('cephadm.logger')
     @mock.patch('cephadm.fetch_custom_config_files')
     @mock.patch('cephadm.get_container')
-    def test_get_deployment_container(self, _get_container, _get_config, _logger):
+    def test_to_deployment_container(self, _get_container, _get_config, _logger):
         """
-        test get_deployment_container properly makes use of extra container args and custom conf files
+        test to_deployment_container properly makes use of extra container args and custom conf files
         """
 
         ctx = _cephadm.CephadmContext()
@@ -365,7 +356,8 @@ class TestCephAdm(object):
             ptrace=False,
             host_network=True,
         )
-        c = _cephadm.get_deployment_container(ctx, ident)
+        c = _cephadm.get_container(ctx, ident)
+        c = _cephadm.to_deployment_container(ctx, c)
 
         assert '--pids-limit=12345' in c.container_args
         assert '--something' in c.container_args
@@ -380,9 +372,9 @@ class TestCephAdm(object):
     @mock.patch('cephadm.check_unit', lambda *args, **kwargs: (None, 'running', None))
     @mock.patch('cephadm.get_unit_name', lambda *args, **kwargs: 'mon-unit-name')
     @mock.patch('cephadm.extract_uid_gid', lambda *args, **kwargs: (0, 0))
-    @mock.patch('cephadm.get_deployment_container')
+    @mock.patch('cephadm.get_container')
     @mock.patch('cephadm.apply_deploy_config_to_ctx', lambda d, c: None)
-    def test_mon_crush_location(self, _get_deployment_container, _migrate_sysctl, _make_var_run, _deploy_daemon, _file_lock, _logger, monkeypatch):
+    def test_mon_crush_location(self, _get_container, _migrate_sysctl, _make_var_run, _deploy_daemon, _file_lock, _logger, monkeypatch):
         """
         test that crush location for mon is set if it is included in config_json
         """
@@ -390,6 +382,7 @@ class TestCephAdm(object):
         monkeypatch.setattr('cephadmlib.context_getters.fetch_configs', _fetch_configs)
         monkeypatch.setattr('cephadm.fetch_configs', _fetch_configs)
         monkeypatch.setattr('cephadm.read_configuration_source', lambda c: {})
+        monkeypatch.setattr('cephadm.fetch_custom_config_files', mock.MagicMock())
 
         ctx = _cephadm.CephadmContext()
         ctx.name = 'mon.test'
@@ -404,7 +397,7 @@ class TestCephAdm(object):
             'crush_location': 'database=a'
         }
 
-        _get_deployment_container.return_value = _cephadm.CephContainer.for_daemon(
+        _get_container.return_value = _cephadm.CephContainer.for_daemon(
             ctx,
             ident=_cephadm.DaemonIdentity(
                 fsid='9b9d7609-f4d5-4aba-94c8-effa764d96c9',
@@ -1227,9 +1220,9 @@ class TestMonitoring(object):
         daemon_type = 'prometheus'
         daemon_id = 'home'
         fsid = 'aaf5a720-13fe-4a3b-82b9-2d99b7fd9704'
-        args = _cephadm.get_daemon_args(
+        args = _cephadm.Monitoring.create(
             ctx, _cephadm.DaemonIdentity(fsid, daemon_type, daemon_id)
-        )
+        ).get_daemon_args()
         assert any([x.startswith('--web.external-url=http://') for x in args])
 
     @mock.patch('cephadm.call')
@@ -1582,7 +1575,7 @@ class TestShell(object):
             retval = _cephadm.command_shell(ctx)
             assert retval == 0
 
-        cmd = ['shell', '--name', 'foo.bar']
+        cmd = ['shell', '--name', 'mgr.bar']
         with with_cephadm_ctx(cmd) as ctx:
             err = r'must pass --fsid'
             with pytest.raises(_cephadm.Error, match=err):
@@ -1590,7 +1583,7 @@ class TestShell(object):
                 assert retval == 1
 
         fsid = '00000000-0000-0000-0000-0000deadbeef'
-        cmd = ['shell', '--name', 'foo.bar', '--fsid', fsid]
+        cmd = ['shell', '--name', 'mgr.bar', '--fsid', fsid]
         with with_cephadm_ctx(cmd) as ctx:
             retval = _cephadm.command_shell(ctx)
             assert retval == 0
@@ -1780,6 +1773,11 @@ if ! grep -qs /var/lib/ceph/9b9d7609-f4d5-4aba-94c8-effa764d96c9/iscsi.daemon_id
         """
         fsid = '9b9d7609-f4d5-4aba-94c8-effa764d96c9'
         with with_cephadm_ctx(['--image=ceph/ceph'], list_networks={}) as ctx:
+            ctx.config_blobs = {
+                'files': {
+                    'iscsi-gateway.cfg': 'portal',
+                },
+            }
             ctx.fsid = fsid
             c = _cephadm.get_container(
                 ctx, _cephadm.DaemonIdentity(fsid, 'iscsi', 'something')

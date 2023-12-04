@@ -17,17 +17,28 @@ def import_cephadm():
 
 
 def mock_docker():
-    _cephadm = import_cephadm()
-    docker = mock.Mock(_cephadm.Docker)
+    from cephadmlib.container_engines import Docker
+
+    docker = mock.Mock(Docker)
     docker.path = '/usr/bin/docker'
+    type(docker).unlimited_pids_option = Docker.unlimited_pids_option
     return docker
 
 
 def mock_podman():
-    _cephadm = import_cephadm()
-    podman = mock.Mock(_cephadm.Podman)
+    from cephadmlib.container_engines import Podman
+
+    podman = mock.Mock(Podman)
     podman.path = '/usr/bin/podman'
     podman.version = (2, 1, 0)
+    # This next little bit of black magic was adapated from the mock docs for
+    # PropertyMock. We don't use a PropertyMock but the suggestion to call
+    # type(...) from the doc allows us to "borrow" the real
+    # supports_split_cgroups attribute:
+    # https://docs.python.org/3/library/unittest.mock.html#unittest.mock.Mock
+    type(podman).supports_split_cgroups = Podman.supports_split_cgroups
+    type(podman).service_args = Podman.service_args
+    type(podman).unlimited_pids_option = Podman.unlimited_pids_option
     return podman
 
 
@@ -68,6 +79,13 @@ def cephadm_fs(
     use pyfakefs to stub filesystem calls
     """
     from cephadmlib import constants
+
+    # the following is a workaround for the fakefs interfering with jinja2's
+    # package loader when run in the pytest suite when this fixture is used.
+    # it effectively maps what is `src/cephadm` as a real fs into the fake fs.`
+    # See: https://pytest-pyfakefs.readthedocs.io/en/stable/usage.html#access-to-files-in-the-real-file-system
+    srcdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    fs.add_real_directory(srcdir)
 
     uid = os.getuid()
     gid = os.getgid()

@@ -215,7 +215,7 @@ ldpp_dout(s, 20) << "get_encryption_defaults: found kms_attr " << kms_attr << " 
     }
     kms_attr_seen = true;
   } else if (!rest_only && kms_master_key_id != "") {
-ldpp_dout(s, 20) << "get_encryption_defaults: no kms_attr, but kms_master_key_id = " << kms_master_key_id << ", settig kms_attr_seen" << dendl;
+ldpp_dout(s, 20) << "get_encryption_defaults: no kms_attr, but kms_master_key_id = " << kms_master_key_id << ", setting kms_attr_seen" << dendl;
     kms_attr_seen = true;
     rgw_set_amz_meta_header(s->info.crypt_attribute_map, kms_attr, kms_master_key_id, OVERWRITE);
   }
@@ -304,6 +304,18 @@ int RGWGetObj_ObjStore_S3::get_params(optional_yield y)
 
   dst_zone_trace = s->info.args.get(RGW_SYS_PARAM_PREFIX "if-not-replicated-to");
   get_torrent = s->info.args.exists("torrent");
+
+  // optional part number
+  auto optstr = s->info.args.get_optional("partNumber");
+  if (optstr) {
+    string err;
+    multipart_part_num = strict_strtol(optstr->c_str(), 10, &err);
+    if (!err.empty()) {
+      s->err.message = "Invalid partNumber: " + err;
+      ldpp_dout(s, 10) << "bad part number " << *optstr << ": " << err << dendl;
+      return -ERR_INVALID_PART;
+    }
+  }
 
   return RGWGetObj_ObjStore::get_params(y);
 }
@@ -451,10 +463,13 @@ int RGWGetObj_ObjStore_S3::send_response_data(bufferlist& bl, off_t bl_ofs,
       }
     } catch (const buffer::error&) {} // omit x-rgw-replicated-from headers
   }
+  if (multipart_parts_count) {
+    dump_header(s, "x-amz-mp-parts-count", *multipart_parts_count);
+  }
 
   if (! op_ret) {
     if (! lo_etag.empty()) {
-      /* Handle etag of Swift API's large objects (DLO/SLO). It's entirerly
+      /* Handle etag of Swift API's large objects (DLO/SLO). It's entirely
        * legit to perform GET on them through S3 API. In such situation,
        * a client should receive the composited content with corresponding
        * etag value. */
@@ -2343,7 +2358,7 @@ static void dump_bucket_metadata(req_state *s, rgw::sal::Bucket* bucket,
   dump_header(s, "X-RGW-Bytes-Used", static_cast<long long>(stats.size));
 
   // only bucket's owner is allowed to get the quota settings of the account
-  if (bucket->is_owner(s->user.get())) {
+  if (bucket->get_owner() == s->user->get_id()) {
     auto user_info = s->user->get_info();
     auto bucket_quota = s->bucket->get_info().quota; // bucket quota
     dump_header(s, "X-RGW-Quota-User-Size", static_cast<long long>(user_info.quota.user_quota.max_size));
@@ -2456,8 +2471,6 @@ int RGWCreateBucket_ObjStore_S3::get_params(optional_yield y)
   if ((op_ret < 0) && (op_ret != -ERR_LENGTH_REQUIRED))
     return op_ret;
 
-  in_data.append(data);
-
   if (data.length()) {
     RGWCreateBucketParser parser;
 
@@ -2486,17 +2499,18 @@ int RGWCreateBucket_ObjStore_S3::get_params(optional_yield y)
 
   size_t pos = location_constraint.find(':');
   if (pos != string::npos) {
-    placement_rule.init(location_constraint.substr(pos + 1), s->info.storage_class);
+    createparams.placement_rule.init(location_constraint.substr(pos + 1),
+                                     s->info.storage_class);
     location_constraint = location_constraint.substr(0, pos);
   } else {
-    placement_rule.storage_class = s->info.storage_class;
+    createparams.placement_rule.storage_class = s->info.storage_class;
   }
   auto iter = s->info.x_meta_map.find("x-amz-bucket-object-lock-enabled");
   if (iter != s->info.x_meta_map.end()) {
     if (!boost::algorithm::iequals(iter->second, "true") && !boost::algorithm::iequals(iter->second, "false")) {
       return -EINVAL;
     }
-    obj_lock_enabled = boost::algorithm::iequals(iter->second, "true");
+    createparams.obj_lock_enabled = boost::algorithm::iequals(iter->second, "true");
   }
   return 0;
 }
@@ -2516,6 +2530,8 @@ void RGWCreateBucket_ObjStore_S3::send_response()
   if (s->system_request) {
     JSONFormatter f; /* use json formatter for system requests output */
 
+    const RGWBucketInfo& info = s->bucket->get_info();
+    const obj_version& ep_objv = s->bucket->get_version();
     f.open_object_section("info");
     encode_json("entry_point_object_ver", ep_objv, &f);
     encode_json("object_ver", info.objv_tracker.read_version, &f);
@@ -3287,7 +3303,7 @@ void RGWPostObj_ObjStore_S3::send_response()
        * What we really would like is to quaily the bucket name, so
        * that the client could simply copy it and paste into next request.
        * Unfortunately, in S3 we cannot know if the client will decide
-       * to come through DNS, with "bucket.tenant" sytanx, or through
+       * to come through DNS, with "bucket.tenant" syntax, or through
        * URL with "tenant\bucket" syntax. Therefore, we provide the
        * tenant separately.
        */
