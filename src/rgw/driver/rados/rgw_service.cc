@@ -379,7 +379,7 @@ int RGWCtlDef::init(RGWServices& svc, rgw::sal::Driver* driver, const DoutPrefix
 
   meta.otp = rgwrados::otp::create_metadata_handler(
       *svc.sysobj, *svc.cls, *svc.mdlog, svc.zone->get_zone_params());
-  meta.role = std::make_unique<rgw::sal::RGWRoleMetadataHandler>(driver, svc.role);
+  meta.role = create_role_metadata_handler(driver, svc.role);
 
   user = std::make_unique<RGWUserCtl>(svc.zone, svc.user);
 

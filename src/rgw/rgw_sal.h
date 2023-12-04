@@ -44,6 +44,7 @@ class RGWCompressionInfo;
 struct rgw_pubsub_topics;
 struct rgw_pubsub_bucket_topics;
 class RGWZonePlacementInfo;
+struct RGWRoleInfo;
 
 
 using RGWBucketListNameFilter = std::function<bool (const std::string&)>;
