@@ -1290,6 +1290,10 @@ public:
     onode = new BlueStore::Onode(coll.get(), ghobject_t(), "");
   }
   void TearDown() override {
+    onode.reset(nullptr);
+    coll.reset(nullptr);
+    delete bc;
+    delete oc;
     delete store;
   }
 };
@@ -1467,7 +1471,7 @@ class PunchHoleFixture : public BlueStoreFixture
 
     bool blob_remains = al_start != al_hole_begin || al_hole_end != al_end;
     BlueStore::BlobRef b(new BlueStore::Blob);
-    b->shared_blob = new BlueStore::SharedBlob(coll.get());
+    coll->open_shared_blob(0, b);
     blobs_created.insert(b);
     if (!blob_remains) {
       blobs_to_free.insert(b);
@@ -1542,7 +1546,7 @@ class PunchHoleFixture : public BlueStoreFixture
     PExtentVector disk = allocate(al_size);
 
     BlueStore::BlobRef b(new BlueStore::Blob);
-    b->shared_blob = new BlueStore::SharedBlob(coll.get());
+    coll->open_shared_blob(0, b);
     blobs_created.insert(b);
     if (!blob_remains) {
       blobs_to_free.insert(b);
@@ -1977,6 +1981,7 @@ TEST_P(PunchHoleFixture, selftest)
   BlueStore::volatile_statfs statfs_delta;
   store->debug_punch_hole_2(coll, onode, 1000, 32000,
     released, pruned_blobs, shared_changed, statfs_delta);
+  clear();
 }
 
 TEST_P(PunchHoleFixture, all)

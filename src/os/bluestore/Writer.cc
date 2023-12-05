@@ -44,8 +44,8 @@ uint32_t BlueStore::Blob::put_ref_accumulate(
 /// shared_changed - set of shared blobs that are modified,
 ///                  including the case of shared blob being empty
 /// statfs_delta - delta of stats
-void BlueStore::_punch_hole_2(
-  CollectionRef &c,
+BlueStore::extent_map_t::iterator BlueStore::_punch_hole_2(
+  Collection* c,
   OnodeRef& o,
   uint32_t offset,
   uint32_t length,
@@ -68,17 +68,17 @@ void BlueStore::_punch_hole_2(
     uint32_t released_size = 0;
     if (!bblob.is_shared()) {
       released_size =
-        p->blob->put_ref_accumulate(c.get(), p->blob_offset, p->length, &released);
+        p->blob->put_ref_accumulate(c, p->blob_offset, p->length, &released);
     } else {
       // make sure shared blob is loaded
       c->load_shared_blob(p->blob->get_shared_blob());
       // more complicated shared blob release
       PExtentVector local_released;  //no longer used by local blob
       PExtentVector shared_released; //no longer used by shared blob too
-      p->blob->put_ref_accumulate(c.get(), p->blob_offset, p->length, &local_released);
+      p->blob->put_ref_accumulate(c, p->blob_offset, p->length, &local_released);
       // filter local release disk regions
       // through SharedBlob's multi-ref ref_map disk regions
-      bool unshare; //is there a chance that shared blob can be unshared?
+      bool unshare = false; //is there a chance that shared blob can be unshared?
       // TODO - make put_ref return released_size directly
       for (auto de: local_released) {
         p->blob->get_shared_blob()->put_ref(de.offset, de.length, &shared_released, &unshare);
@@ -105,6 +105,9 @@ void BlueStore::_punch_hole_2(
         p->blob->id = -1;
       }
     }
+    Extent* e = &(*p);
     p = emap.extent_map.erase(p);
+    delete e;
   }
+  return p;
 }

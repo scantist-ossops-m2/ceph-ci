@@ -3458,7 +3458,7 @@ public:
     _wctx_finish(&txc, c, o, &wctx, nullptr);
   }
   void debug_punch_hole_2(
-    CollectionRef &c,
+    CollectionRef& c,
     OnodeRef& o,
     uint32_t offset,
     uint32_t length,
@@ -3466,7 +3466,7 @@ public:
     std::vector<BlobRef>& pruned_blobs,
     std::set<SharedBlobRef>& shared_changed,
     volatile_statfs& statfs_delta) {
-      _punch_hole_2(c, o, offset, length, released,
+      _punch_hole_2(c.get(), o, offset, length, released,
         pruned_blobs, shared_changed, statfs_delta);
     }
   inline void log_latency(const char* name,
@@ -3643,8 +3643,8 @@ private:
       uint64_t loffs_end,
       uint64_t min_alloc_size);
   };
-  void _punch_hole_2(
-    CollectionRef &c,
+  BlueStore::extent_map_t::iterator _punch_hole_2(
+    Collection* c,
     OnodeRef& o,
     uint32_t offset,
     uint32_t length,
