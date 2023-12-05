@@ -1,6 +1,6 @@
 tasks:
 - install:
-    branch: quincy
+    sha1: 06a53d8a28b03e09d7f1c23bc4079d97f8f8f899
     exclude_packages:
       - ceph-volume
 - print: "**** done install task..."
