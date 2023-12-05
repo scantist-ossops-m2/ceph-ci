@@ -37,6 +37,9 @@ from .settings import Settings, handle_option_command, options_command_list, opt
 from .tools import NotificationQueue, RequestLoggingTool, TaskManager, \
     prepare_url_prefix, str_to_bool
 
+# pylint: disable=unused-import
+from .services import nvmeof_cli
+
 try:
     import cherrypy
     from cherrypy._cptools import HandlerWrapperTool
