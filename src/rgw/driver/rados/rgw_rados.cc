@@ -3034,7 +3034,7 @@ int RGWRados::swift_versioning_restore(RGWObjectCtx& obj_ctx,
 
     /* Need to remove the archived copy. */
     ret = delete_obj(dpp, obj_ctx, archive_binfo, archive_obj,
-                     archive_binfo.versioning_status(), y);
+                     archive_binfo.versioning_status(), y, false);
 
     return ret;
   };
@@ -5638,7 +5638,6 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
   rgw_obj obj = target->get_obj();
 
   if (instance == "null") {
-    params.null_verid = true;
     obj.key.instance.clear();
   }
 
@@ -5690,7 +5689,7 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
       }
       result.delete_marker = dirent.is_delete_marker();
       r = store->unlink_obj_instance(dpp, target->get_ctx(), target->get_bucket_info(), obj, params.olh_epoch,
-                                     y, params.zones_trace, add_log);
+                                     y, params.null_verid, params.zones_trace, add_log);
       if (r < 0) {
         return r;
       }
@@ -5785,6 +5784,7 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
 
   index_op.set_zones_trace(params.zones_trace);
   index_op.set_bilog_flags(params.bilog_flags);
+  index_op.set_null_verid(params.null_verid);
 
   r = index_op.prepare(dpp, CLS_RGW_OP_DEL, &state->write_tag, y, log_op);
   if (r < 0)
@@ -5837,6 +5837,7 @@ int RGWRados::delete_obj(const DoutPrefixProvider *dpp,
                          const RGWBucketInfo& bucket_info,
                          const rgw_obj& obj,
                          int versioning_status, optional_yield y,// versioning flags defined in enum RGWBucketFlags
+                         bool null_verid,
                          uint16_t bilog_flags,
                          const real_time& expiration_time,
                          rgw_zone_set *zones_trace,
@@ -5850,6 +5851,7 @@ int RGWRados::delete_obj(const DoutPrefixProvider *dpp,
   del_op.params.bilog_flags = bilog_flags;
   del_op.params.expiration_time = expiration_time;
   del_op.params.zones_trace = zones_trace;
+  del_op.params.null_verid = null_verid;
 
   return del_op.delete_obj(y, dpp, log_op ? rgw::sal::FLAG_LOG_OP : 0);
 }
@@ -8141,7 +8143,7 @@ int RGWRados::apply_olh_log(const DoutPrefixProvider *dpp,
        liter != remove_instances.end(); ++liter) {
     cls_rgw_obj_key& key = *liter;
     rgw_obj obj_instance(bucket, key);
-    int ret = delete_obj(dpp, obj_ctx, bucket_info, obj_instance, 0, y, RGW_BILOG_FLAG_VERSIONED_OP, ceph::real_time(), zones_trace, log_op);
+    int ret = delete_obj(dpp, obj_ctx, bucket_info, obj_instance, 0, y, false, RGW_BILOG_FLAG_VERSIONED_OP, ceph::real_time(), zones_trace, log_op);
     if (ret < 0 && ret != -ENOENT) {
       ldpp_dout(dpp, 0) << "ERROR: delete_obj() returned " << ret << " obj_instance=" << obj_instance << dendl;
       return ret;
@@ -8358,7 +8360,7 @@ int RGWRados::set_olh(const DoutPrefixProvider *dpp, RGWObjectCtx& obj_ctx,
 }
 
 int RGWRados::unlink_obj_instance(const DoutPrefixProvider *dpp, RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, const rgw_obj& target_obj,
-                                  uint64_t olh_epoch, optional_yield y, rgw_zone_set *zones_trace, bool log_op)
+                                  uint64_t olh_epoch, optional_yield y, bool null_verid, rgw_zone_set *zones_trace, bool log_op)
 {
   string op_tag;
 

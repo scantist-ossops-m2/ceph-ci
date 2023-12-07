@@ -926,6 +926,7 @@ public:
       bool bs_initialized{false};
       bool blind;
       bool prepared{false};
+      bool null_verid{false};
       rgw_zone_set *zones_trace{nullptr};
 
       int init_bs(const DoutPrefixProvider *dpp, optional_yield y) {
@@ -969,6 +970,10 @@ public:
 
       void set_zones_trace(rgw_zone_set *_zones_trace) {
         zones_trace = _zones_trace;
+      }
+
+      void set_null_verid(bool null_version_id) {
+        null_verid = null_version_id;
       }
 
       int prepare(const DoutPrefixProvider *dpp, RGWModifyOp, const std::string *write_tag, optional_yield y, bool log_op = true);
@@ -1253,7 +1258,8 @@ public:
 		 const RGWBucketInfo& bucket_info,
 		 const rgw_obj& obj,
 		 int versioning_status, optional_yield y,  // versioning flags defined in enum RGWBucketFlags
-		 uint16_t bilog_flags = 0,
+		 bool null_verid,
+                 uint16_t bilog_flags = 0,
 		 const ceph::real_time& expiration_time = ceph::real_time(),
 		 rgw_zone_set *zones_trace = nullptr,
                  bool log_op = true);
@@ -1383,7 +1389,7 @@ public:
   int repair_olh(const DoutPrefixProvider *dpp, RGWObjState* state, const RGWBucketInfo& bucket_info,
                  const rgw_obj& obj, optional_yield y);
   int unlink_obj_instance(const DoutPrefixProvider *dpp, RGWObjectCtx& obj_ctx, RGWBucketInfo& bucket_info, const rgw_obj& target_obj,
-                          uint64_t olh_epoch, optional_yield y, rgw_zone_set *zones_trace = nullptr, bool log_op = true);
+                          uint64_t olh_epoch, optional_yield y, bool null_verid, rgw_zone_set *zones_trace = nullptr, bool log_op = true);
 
   void check_pending_olh_entries(const DoutPrefixProvider *dpp, std::map<std::string, bufferlist>& pending_entries, std::map<std::string, bufferlist> *rm_pending_entries);
   int remove_olh_pending_entries(const DoutPrefixProvider *dpp, const RGWBucketInfo& bucket_info, RGWObjState& state, const rgw_obj& olh_obj, std::map<std::string, bufferlist>& pending_attrs, optional_yield y);
