@@ -449,16 +449,8 @@ public:
         fs.get_mds_map().set_max_filesize(n);
       });
     } else if (var == "max_xattr_size") {
-      if (interr.length()) {
-	ss << var << " requires an integer value";
-	return -EINVAL;
-      }
-      fsmap.modify_filesystem(
-          fsp->get_fscid(),
-          [n](auto&& fs)
-      {
-        fs.get_mds_map().set_max_xattr_size(n);
-      });
+      ss << var << " max_xattr_size is REVERTED FOR TESTING only!";
+      return -EINVAL;
     } else if (var == "allow_new_snaps") {
       bool enable_snaps = false;
       int r = parse_bool(val, &enable_snaps, ss);
