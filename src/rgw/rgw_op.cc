@@ -518,14 +518,6 @@ int rgw_build_bucket_policies(const DoutPrefixProvider *dpp, rgw::sal::Driver* d
     }
   }
 
-  struct {
-    rgw_user uid;
-    std::string display_name;
-  } acct_acl_user = {
-    s->user->get_id(),
-    s->user->get_display_name(),
-  };
-
   if (!s->bucket_name.empty()) {
     s->bucket_exists = true;
 
@@ -554,10 +546,6 @@ int rgw_build_bucket_policies(const DoutPrefixProvider *dpp, rgw::sal::Driver* d
     ret = read_bucket_policy(dpp, driver, s, s->bucket->get_info(),
 			     s->bucket->get_attrs(),
 			     s->bucket_acl, s->bucket->get_key(), y);
-    acct_acl_user = {
-      s->bucket->get_info().owner,
-      s->bucket_acl.get_owner().display_name,
-    };
 
     s->bucket_owner = s->bucket_acl.get_owner();
 
@@ -596,11 +584,9 @@ int rgw_build_bucket_policies(const DoutPrefixProvider *dpp, rgw::sal::Driver* d
 
   /* handle user ACL only for those APIs which support it */
   if (s->dialect == "swift" && !s->user->get_id().empty()) {
-    std::unique_ptr<rgw::sal::User> acl_user = driver->get_user(acct_acl_user.uid);
-
-    ret = acl_user->read_attrs(dpp, y);
+    ret = s->user->read_attrs(dpp, y);
     if (!ret) {
-      ret = get_user_policy_from_attr(dpp, s->cct, acl_user->get_attrs(), s->user_acl);
+      ret = get_user_policy_from_attr(dpp, s->cct, s->user->get_attrs(), s->user_acl);
     }
     if (-ENOENT == ret) {
       /* In already existing clusters users won't have ACL. In such case
@@ -610,8 +596,8 @@ int rgw_build_bucket_policies(const DoutPrefixProvider *dpp, rgw::sal::Driver* d
        *  1. if we try to reach an existing bucket, its owner is considered
        *     as account owner.
        *  2. otherwise account owner is identity stored in s->user->user_id.  */
-      s->user_acl.create_default(acct_acl_user.uid,
-                                 acct_acl_user.display_name);
+      s->user_acl.create_default(s->user->get_id(),
+                                 s->user->get_display_name());
       ret = 0;
     } else if (ret < 0) {
       ldpp_dout(dpp, 0) << "NOTICE: couldn't get user attrs for handling ACL "
