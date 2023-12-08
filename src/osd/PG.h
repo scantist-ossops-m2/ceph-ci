@@ -624,6 +624,8 @@ public:
 
   void on_activate(interval_set<snapid_t> snaps) override;
 
+  void on_replica_activate() override;
+
   void on_activate_committed() override;
 
   void on_active_actmap() override;
@@ -1446,10 +1448,13 @@ public:
  */
 class PGLockWrapper {
  public:
-  explicit PGLockWrapper(PGRef locked_pg) : m_pg{locked_pg} {}
+  template <typename A_PG_REF>
+  explicit PGLockWrapper(A_PG_REF&& locked_pg)
+      : m_pg{std::forward<A_PG_REF>(locked_pg)}
+  {}
   PGRef pg() { return m_pg; }
   ~PGLockWrapper();
-  PGLockWrapper(PGLockWrapper&& rhs) : m_pg(std::move(rhs.m_pg)) {
+  PGLockWrapper(PGLockWrapper&& rhs) noexcept : m_pg(std::move(rhs.m_pg)) {
     rhs.m_pg = nullptr;
   }
   PGLockWrapper(const PGLockWrapper& rhs) = delete;
