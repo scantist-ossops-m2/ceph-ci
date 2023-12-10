@@ -4,6 +4,7 @@
 #include "./osd_scrub.h"
 
 #include "osd/OSD.h"
+#include "osd/osd_perf_counters.h"
 #include "osdc/Objecter.h"
 
 #include "pg_scrubber.h"
@@ -37,7 +38,14 @@ OsdScrub::OsdScrub(
     , m_queue{cct, m_osd_svc}
     , m_log_prefix{fmt::format("osd.{} osd-scrub:", m_osd_svc.get_nodeid())}
     , m_load_tracker{cct, conf, m_osd_svc.get_nodeid()}
-{}
+{
+  create_scrub_perf_counters();
+}
+
+OsdScrub::~OsdScrub()
+{
+  destroy_scrub_perf_counters();
+}
 
 std::ostream& OsdScrub::gen_prefix(std::ostream& out, std::string_view fn) const
 {
@@ -376,6 +384,66 @@ std::chrono::milliseconds OsdScrub::scrub_sleep_time(
 		  regular_sleep_period, extended_sleep)
 	   << dendl;
   return std::max(extended_sleep, regular_sleep_period);
+}
+
+// ////////////////////////////////////////////////////////////////////////// //
+// scrub-related performance counters
+
+
+// note: a static function
+std::vector<std::string> OsdScrub::get_counters_labels()
+{
+  // the labels matrix is:
+  //   <shallow/deep>  X  <replicated/EC>  // maybe later we'll add <periodic/operator>
+  static const std::vector<std::string> labels = {
+      ceph::perf_counters::key_create(
+	  "osd_scrub_sh_repl",
+	  {{"level", "shallow"}, {"pooltp", "replicated"}}),
+      ceph::perf_counters::key_create(
+	  "osd_scrub_dp_repl", {{"level", "deep"}, {"pooltp", "replicated"}}),
+      ceph::perf_counters::key_create(
+	  "osd_scrub_sh_ec", {{"level", "shallow"}, {"pooltp", "ec"}}),
+      ceph::perf_counters::key_create(
+	  "osd_scrub_dp_ec", {{"level", "deep"}, {"pooltp", "ec"}})};
+  return labels;
+}
+
+void OsdScrub::create_scrub_perf_counters()
+{
+  dout(20) << __func__ << dendl;
+
+  // create the counters
+  const auto labels = get_counters_labels();
+  for (const auto& label : labels) {
+    PerfCounters* counters = build_scrub_labeled_perf(cct, label);
+    cct->get_perfcounters_collection()->add(counters);
+    m_perf_counters[label] = counters;
+  }
+}
+
+void OsdScrub::destroy_scrub_perf_counters()
+{
+  dout(20) << __func__ << dendl;
+
+  // destroy the counters
+  for (const auto& [label, counters] : m_perf_counters) {
+    cct->get_perfcounters_collection()->remove(counters);
+    delete counters;
+  }
+  m_perf_counters.clear();
+}
+
+PerfCounters* OsdScrub::get_perf_counters(int pool_type, scrub_level_t level)
+{
+  const std::vector<std::string> labels = get_counters_labels();
+  // the stupid way to get the index of the counter we want:
+  int idx = [&]() {
+    if (pool_type == pg_pool_t::TYPE_REPLICATED) {
+      return static_cast<int>(level);
+    }
+    return 2 + static_cast<int>(level);
+  }();
+  return m_perf_counters[labels[idx]];
 }
 
 // ////////////////////////////////////////////////////////////////////////// //

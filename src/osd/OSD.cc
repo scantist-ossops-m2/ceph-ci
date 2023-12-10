@@ -2395,8 +2395,10 @@ OSD::~OSD()
     delete shards.back();
     shards.pop_back();
   }
+  //cct->get_perfcounters_collection()->remove(scrub_perf);
   cct->get_perfcounters_collection()->remove(recoverystate_perf);
   cct->get_perfcounters_collection()->remove(logger);
+  //delete scrub_perf;
   delete recoverystate_perf;
   delete logger;
 }
