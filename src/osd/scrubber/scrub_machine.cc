@@ -97,7 +97,6 @@ sc::result NotActive::react(const StartScrub&)
 {
   dout(10) << "NotActive::react(const StartScrub&)" << dendl;
   DECLARE_LOCALS;
-  scrbr->set_scrub_begin_time();
   return transit<ReservingReplicas>();
 }
 
@@ -246,6 +245,7 @@ ActiveScrubbing::ActiveScrubbing(my_context ctx)
 {
   dout(10) << "-- state -->> ActiveScrubbing" << dendl;
   DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
+  scrbr->set_scrub_begin_time();
   scrbr->on_init();
 }
 
