@@ -203,8 +203,7 @@ public:
   uint64_t get_max_filesize() const { return max_file_size; }
   void set_max_filesize(uint64_t m) { max_file_size = m; }
 
-  uint64_t get_max_xattr_size() const { return max_xattr_size; }
-  void set_max_xattr_size(uint64_t m) { max_xattr_size = m; }
+  uint64_t get_max_xattr_size() const { return MDS_MAX_XATTR_SIZE; }
 
   void set_min_compat_client(ceph_release_t version);
 
@@ -629,8 +628,6 @@ protected:
   __u32 session_timeout = 60;
   __u32 session_autoclose = 300;
   uint64_t max_file_size = 1ULL<<40; /* 1TB */
-
-  uint64_t max_xattr_size = MDS_MAX_XATTR_SIZE;
 
   feature_bitset_t required_client_features;
 
