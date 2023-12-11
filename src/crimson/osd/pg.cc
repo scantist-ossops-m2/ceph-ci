@@ -1022,7 +1022,7 @@ seastar::future<> PG::submit_error_log(
 PG::do_osd_ops_iertr::future<PG::pg_rep_op_fut_t<MURef<MOSDOpReply>>>
 PG::do_osd_ops(
   Ref<MOSDOp> m,
-  crimson::net::ConnectionRef conn,
+  crimson::net::ConnectionXcoreRef conn,
   ObjectContextRef obc,
   const OpInfo &op_info,
   const SnapContext& snapc)
@@ -1376,7 +1376,7 @@ void PG::handle_rep_op_reply(const MOSDRepOpReply& m)
 
 PG::interruptible_future<> PG::do_update_log_missing(
   Ref<MOSDPGUpdateLogMissing> m,
-  crimson::net::ConnectionRef conn)
+  crimson::net::ConnectionXcoreRef conn)
 {
   if (__builtin_expect(stopping, false)) {
     return seastar::make_exception_future<>(
