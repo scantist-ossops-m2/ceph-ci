@@ -384,5 +384,20 @@ PerfCounters *build_scrub_labeled_perf(CephContext *cct, std::string label)
   scrub_perf.add_u64_counter(scrbcnt_blocked, "locked_object", "waiting on locked object events");
   scrub_perf.add_u64_counter(scrbcnt_write_blocked, "write_blocked_by_scrub", "write blocked by scrub");
 
+  // the replica reservation process
+  scrub_perf.add_u64_counter(scrbcnt_resrv_success, "scrub_reservations_completed", "successfully completed reservation processes");
+  scrub_perf.add_time_avg(scrbcnt_resrv_successful_elapsed, "successful_reservations_elapsed", "time to scrub reservation completion");
+  scrub_perf.add_u64_counter(scrbcnt_resrv_aborted, "reservation_process_aborted", "scrub reservation was aborted");
+  scrub_perf.add_u64_counter(scrbcnt_resrv_timed_out, "reservation_process_timed_out", "scrub reservation timed out");
+  scrub_perf.add_u64_counter(scrbcnt_resrv_rejected, "reservation_process_failure", "scrub reservation failed due to replica denial");
+  scrub_perf.add_u64_counter(scrbcnt_resrv_skipped, "reservation_process_skipped", "scrub reservation skipped for high priority scrub");
+  scrub_perf.add_time_avg(scrbcnt_resrv_failed_elapsed, "failed_reservations_elapsed", "time to scrub reservation to fail");
+  scrub_perf.add_u64(scrbcnt_resrv_replicas_num, "replicas_in_reservation", "number of replicas in reservation");
+
+//   osd_plb.add_u64_counter_histogram(
+//     l_osd_op_r_lat_outb_hist, "op_r_latency_out_bytes_histogram",
+//     op_hist_x_axis_config, op_hist_y_axis_config,
+//     "Histogram of operation latency (including queue time) + data read");
+
   return scrub_perf.create_perf_counters();
 }
