@@ -104,6 +104,10 @@ public:
   void get_meta(uint64_t target_size,
 		std::vector<std::pair<std::string, std::string>>*) const override;
 
+  bool validate(uint64_t min_alloc_size) const override {
+    return false; //FIXME: not implemented, we're going to kill this class anyway
+  }
+
   std::vector<zone_state_t> get_zone_states(KeyValueDB *kvdb) const;
 
   void mark_zone_to_clean_free(uint64_t zone,
