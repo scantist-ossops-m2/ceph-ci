@@ -35,11 +35,10 @@ bool parse_url_authority(const std::string &url, std::string &host, std::string 
         ldout(cct, 1) << "Ali debugging the " << i++ << "th regex " << it.str() << dendl;
       }
     }
-    auto size = url_match_result.size();
-    std::string empty_str = "";
-    host = (size > HOST_GROUP_IDX? url_match_result[HOST_GROUP_IDX]: empty_str);
-    user = (size > USER_GROUP_IDX? url_match_result[USER_GROUP_IDX]: empty_str);
-    password = (size > PASSWORD_GROUP_IDX? url_match_result[PASSWORD_GROUP_IDX]: empty_str);
+
+    host = url_match_result[HOST_GROUP_IDX];
+    user = url_match_result[USER_GROUP_IDX];
+    password = url_match_result[PASSWORD_GROUP_IDX];
     return true;
   }
 
