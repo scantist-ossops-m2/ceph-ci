@@ -99,6 +99,8 @@ CephFS: Disallow delegating preallocated inode ranges to clients. Config
   by disabling async recovery by setting osd_async_recovery_min_cost to a very
   large value on all OSDs until the upgrade is complete:
   ``ceph config set osd osd_async_recovery_min_cost 1099511627776``
+* CephFS: Full support for subvolumes and subvolume groups is now available
+  for snap_schedule Manager module.
 
 >=18.0.0
 
