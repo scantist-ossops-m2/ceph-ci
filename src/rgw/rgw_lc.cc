@@ -52,6 +52,19 @@ const char* LC_STATUS[] = {
 
 using namespace librados;
 
+static inline vector<int> random_sequence(uint32_t n)
+{
+  vector<int> v(n, 0);
+  std::generate(v.begin(), v.end(),
+    [ix = 0]() mutable {
+      return ix++;
+    });
+  std::random_device rd;
+  std::default_random_engine rng{rd()};
+  std::shuffle(v.begin(), v.end(), rd);
+  return v;
+}
+
 bool LCRule::valid() const
 {
   if (id.length() > MAX_ID_LEN) {
@@ -416,93 +429,137 @@ static bool pass_object_lock_check(rgw::sal::RGWStore* store, rgw::sal::RGWObjec
   }
 }
 
-class LCObjsLister {
-  rgw::sal::RGWStore *store;
+class LCObjsListerMgr {
+  const DoutPrefixProvider *dpp;
+  rgw::sal::RGWStore* store;
   rgw::sal::RGWBucket* bucket;
-  rgw::sal::RGWBucket::ListParams list_params;
-  rgw::sal::RGWBucket::ListResults list_results;
-  string prefix;
-  vector<rgw_bucket_dir_entry>::iterator obj_iter;
-  rgw_bucket_dir_entry pre_obj;
-  int64_t delay_ms;
-
-public:
-  LCObjsLister(rgw::sal::RGWStore *_store, rgw::sal::RGWBucket* _bucket) :
-      store(_store), bucket(_bucket) {
-    list_params.list_versions = bucket->versioned();
-    list_params.allow_unordered = true;
-    delay_ms = store->ctx()->_conf.get_val<int64_t>("rgw_lc_thread_delay");
-  }
-
-  void set_prefix(const string& p) {
-    prefix = p;
-    list_params.prefix = prefix;
-  }
-
-  int init(const DoutPrefixProvider *dpp) {
-    return fetch(dpp);
-  }
-
-  int fetch(const DoutPrefixProvider *dpp) {
-    int ret = bucket->list(dpp, list_params, 1000, list_results, null_yield);
-    if (ret < 0) {
-      return ret;
+  std::string prefix;
+  std::vector<int> shard_list;
+  bool multipart;
+  
+  std::optional<int> next_shard_id() {
+    if (shard_list.empty()) {
+      return std::nullopt;
+    } else {
+      int n = shard_list.back();
+      shard_list.pop_back();
+      return n;
     }
-
-    obj_iter = list_results.objs.begin();
-
-    return 0;
   }
-
-  void delay() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-  }
-
-  bool get_obj(const DoutPrefixProvider *dpp, rgw_bucket_dir_entry **obj,
-	       std::function<void(void)> fetch_barrier
-	       = []() { /* nada */}) {
-    if (obj_iter == list_results.objs.end()) {
-      if (!list_results.is_truncated) {
-        delay();
-        return false;
+  
+public:
+  class Lister {
+    rgw::sal::RGWBucket::ListParams list_params;
+    rgw::sal::RGWBucket::ListResults list_results;
+    vector<rgw_bucket_dir_entry>::iterator obj_iter;
+    rgw_bucket_dir_entry pre_obj;
+    int64_t delay_ms;
+    LCObjsListerMgr& mgr;
+    uint64_t current_shard;
+  
+  public:
+    Lister(LCObjsListerMgr& _mgr) : mgr(_mgr) {
+      list_params.allow_unordered = true;
+      list_params.prefix = mgr.prefix;
+      if (mgr.multipart) {
+        MultipartMetaFilter mp_filter;
+        list_params.filter = &mp_filter;
+        list_params.ns = RGW_OBJ_NS_MULTIPART;
+        list_params.list_versions = false;
       } else {
-	fetch_barrier();
-        list_params.marker = pre_obj.key;
-        int ret = fetch(dpp);
+        list_params.list_versions = mgr.bucket->versioned();
+      }
+      delay_ms = mgr.store->ctx()->_conf.get_val<int64_t>("rgw_lc_thread_delay");
+    }
+    
+    int init() {
+      std::optional<int> next_shard =  mgr.next_shard_id();
+      if (next_shard) {
+        list_params.shard_id = next_shard.value();
+        ldpp_dout(mgr.dpp, 0) << "lc obj lister created for shard: " << list_params.shard_id << " bucket: " << mgr.bucket->get_info().bucket.name << dendl;
+        return fetch();
+      } else {
+        obj_iter = list_results.objs.end();
+        return 0;
+      }
+    }
+    
+    int fetch() {
+      int ret = mgr.bucket->list(mgr.dpp, list_params, 1000, list_results, null_yield);
+      if (ret < 0) {
+        return ret;
+      }
+      obj_iter = list_results.objs.begin();
+      return 0;
+    }
+    
+    void delay() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    }
+    
+    bool get_obj(rgw_bucket_dir_entry **obj,
+                 std::function<void(void)> fetch_barrier = []() { /* nada */}) {
+      while (obj_iter == list_results.objs.end()) {
+        if (!list_results.is_truncated) {
+          ldpp_dout(mgr.dpp, 0) << "lc obj lister finished shard: " << list_params.shard_id << " bucket: " << mgr.bucket->get_info().bucket.name << dendl;
+          std::optional<int> next_shard = mgr.next_shard_id();
+          if (next_shard) {
+            list_params.shard_id = next_shard.value();
+            ldpp_dout(mgr.dpp, 0) << "lc obj lister created for shard: " << list_params.shard_id << " bucket: " << mgr.bucket->get_info().bucket.name << dendl;
+            list_params.marker = {};
+          } else {
+            ldpp_dout(mgr.dpp, 0) << "no more shards to process for bucket: " << mgr.bucket->get_info().bucket.name << dendl;
+            delay();
+            return false;
+          }
+        } else {
+          list_params.marker = pre_obj.key;
+        }
+        fetch_barrier();
+        int ret = fetch();
         if (ret < 0) {
-          ldout(store->ctx(), 0) << "ERROR: list_op returned ret=" << ret
-				 << dendl;
+          ldout(mgr.store->ctx(), -1) << "ERROR: list_op returned ret=" << ret << dendl;
           return false;
         }
+        delay();
       }
-      delay();
+      /* returning address of entry in objs */
+      *obj = &(*obj_iter);
+      return true;
     }
-    /* returning address of entry in objs */
-    *obj = &(*obj_iter);
-    return obj_iter != list_results.objs.end();
-  }
-
-  rgw_bucket_dir_entry get_prev_obj() {
-    return pre_obj;
-  }
-
-  void next() {
-    pre_obj = *obj_iter;
-    ++obj_iter;
-  }
-
-  boost::optional<std::string> next_key_name() {
-    if (obj_iter == list_results.objs.end() ||
-	(obj_iter + 1) == list_results.objs.end()) {
-      /* this should have been called after get_obj() was called, so this should
-       * only happen if is_truncated is false */
-      return boost::none;
+    
+    rgw_bucket_dir_entry get_prev_obj() {
+      return pre_obj;
     }
-
-    return ((obj_iter + 1)->key.name);
+    
+    void next() {
+      pre_obj = *obj_iter;
+      ++obj_iter;
+    }
+    
+    boost::optional<std::string> next_key_name() {
+      if (obj_iter == list_results.objs.end() ||
+         (obj_iter + 1) == list_results.objs.end()) {
+        /* this should have been called after get_obj() was called, so this should
+         * only happen if is_truncated is false */
+        return boost::none;
+      }
+      return ((obj_iter + 1)->key.name);
+    }
+  };
+  
+  LCObjsListerMgr(const DoutPrefixProvider *dpp, rgw::sal::RGWStore *_store, rgw::sal::RGWBucket* _bucket,
+                  const std::string& _prefix, const bool _multipart = false) :
+    dpp(dpp), store(_store), bucket(_bucket), multipart(_multipart) {
+    int num_shards = bucket->get_info().layout.current_index.layout.normal.num_shards;
+    shard_list = random_sequence(num_shards);
+    prefix = _prefix;
   }
 
-}; /* LCObjsLister */
+  Lister next_shard_lister() {
+    return Lister(*this);
+  }
+};
 
 struct op_env {
 
@@ -512,12 +569,10 @@ struct op_env {
   rgw::sal::RGWRadosStore *store;
   LCWorker* worker;
   rgw::sal::RGWBucket* bucket;
-  LCObjsLister& ol;
 
   op_env(const lc_op& _op, rgw::sal::RGWRadosStore *_store, LCWorker* _worker,
-	 rgw::sal::RGWBucket* _bucket, LCObjsLister& _ol)
-    : op(_op), store(_store), worker(_worker), bucket(_bucket),
-      ol(_ol) {}
+	 rgw::sal::RGWBucket* _bucket)
+    : op(_op), store(_store), worker(_worker), bucket(_bucket) {}
 }; /* op_env */
 
 class LCRuleOp;
@@ -533,7 +588,6 @@ struct lc_op_ctx {
   rgw::sal::RGWRadosStore *store;
   rgw::sal::RGWBucket* bucket;
   lc_op& op; // ok--refers to expanded env.op
-  LCObjsLister& ol;
 
   std::unique_ptr<rgw::sal::RGWObject> obj;
   RGWObjectCtx rctx;
@@ -546,7 +600,7 @@ struct lc_op_ctx {
 	    const DoutPrefixProvider *dpp, WorkQ* wq)
     : cct(env.store->ctx()), env(env), o(o), next_key_name(next_key_name),
       effective_mtime(effective_mtime),
-      store(env.store), bucket(env.bucket), op(env.op), ol(env.ol),
+      store(env.store), bucket(env.bucket), op(env.op),
       rctx(env.store), dpp(dpp), wq(wq)
     {
       obj = bucket->get_object(o.key);
@@ -655,13 +709,13 @@ public:
   }
 
   void build();
-  void update();
+  void update(boost::optional<std::string> next_key_name, ceph::real_time effective_mtime);
   int process(rgw_bucket_dir_entry& o, const DoutPrefixProvider *dpp,
 	      WorkQ* wq);
 }; /* LCOpRule */
 
 using WorkItem =
-  boost::variant<void*,
+  std::variant<void*,
 		 /* out-of-line delete */
 		 std::tuple<LCOpRule, rgw_bucket_dir_entry>,
 		 /* uncompleted MPU expiration */
@@ -673,7 +727,8 @@ class WorkQ : public Thread
 public:
   using unique_lock = std::unique_lock<std::mutex>;
   using work_f = std::function<void(RGWLC::LCWorker*, WorkQ*, WorkItem&)>;
-  using dequeue_result = boost::variant<void*, WorkItem>;
+  using dequeue_result = std::variant<void*, WorkItem>;
+  using hungry_f = std::function<void(bool)>;
 
   static constexpr uint32_t FLAG_NONE =        0x0000;
   static constexpr uint32_t FLAG_EWAIT_SYNC =  0x0001;
@@ -690,10 +745,11 @@ private:
   uint32_t flags;
   vector<WorkItem> items;
   work_f f;
+  hungry_f h_f;
 
 public:
-  WorkQ(RGWLC::LCWorker* wk, uint32_t ix, uint32_t qmax)
-    : wk(wk), qmax(qmax), ix(ix), flags(FLAG_NONE), f(bsf)
+  WorkQ(RGWLC::LCWorker* wk, uint32_t ix, uint32_t qmax, hungry_f h_f)
+    : wk(wk), qmax(qmax), ix(ix), flags(FLAG_NONE), f(bsf), h_f(h_f)
     {
       create(thr_name().c_str());
     }
@@ -702,19 +758,22 @@ public:
     return std::string{"wp_thrd: "}
     + std::to_string(wk->ix) + ", " + std::to_string(ix);
   }
-
+  
   void setf(work_f _f) {
     f = _f;
+  }
+  
+  size_t is_full() {
+    std::scoped_lock lock(mtx);
+    return items.size() >= qmax;
   }
 
   void enqueue(WorkItem&& item) {
     unique_lock uniq(mtx);
-    while ((!wk->get_lc()->going_down()) &&
-	   (items.size() > qmax)) {
-      flags |= FLAG_EWAIT_SYNC;
-      cv.wait_for(uniq, 200ms);
-    }
     items.push_back(item);
+    if (items.size() == qmax) {
+      h_f(false);
+    }
     if (flags & FLAG_DWAIT_SYNC) {
       flags &= ~FLAG_DWAIT_SYNC;
       cv.notify_one();
@@ -736,7 +795,7 @@ private:
 	   (items.size() == 0)) {
       /* clear drain state, as we are NOT doing work and qlen==0 */
       if (flags & FLAG_EDRAIN_SYNC) {
-	flags &= ~FLAG_EDRAIN_SYNC;
+        flags &= ~FLAG_EDRAIN_SYNC;
       }
       flags |= FLAG_DWAIT_SYNC;
       cv.wait_for(uniq, 200ms);
@@ -744,9 +803,12 @@ private:
     if (items.size() > 0) {
       auto item = items.back();
       items.pop_back();
+      if (items.size() == qmax - 1) {
+        h_f(true);
+      }
       if (flags & FLAG_EWAIT_SYNC) {
-	flags &= ~FLAG_EWAIT_SYNC;
-	cv.notify_one();
+        flags &= ~FLAG_EWAIT_SYNC;
+        cv.notify_one();
       }
       return {item};
     }
@@ -756,11 +818,11 @@ private:
   void* entry() override {
     while (!wk->get_lc()->going_down()) {
       auto item = dequeue();
-      if (item.which() == 0) {
-	/* going down */
-	break;
+      if (item.index() == 0) {
+	      /* going down */
+	      break;
       }
-      f(wk, this, boost::get<WorkItem>(item));
+      f(wk, this, std::get<WorkItem>(item));
     }
     return nullptr;
   }
@@ -768,18 +830,93 @@ private:
 
 class RGWLC::WorkPool
 {
-  using TVector = ceph::containers::tiny_vector<WorkQ, 3>;
+public:
+  // called to fill a slot when queue length becomes less than threshold
+  using feed_f = std::function<bool(WorkItem&)>;
+  // used to create a feed_f for each slot
+  using slot_init_f = std::function<int(feed_f&)>;
+  using stop_check_f = std::function<bool()>;
+  
+private:
+  using TVector = ceph::containers::tiny_vector<WorkQ, 4>;
+  RGWLC::LCWorker* wk;
   TVector wqs;
-  uint64_t ix;
+  std::vector<feed_f> feeders;
+  std::bitset<64> flags;
+  std::mutex mtx;
+  std::condition_variable cv;
+  int last_slot_fed = -1;
+  
+  int next_hungry_slot() {
+    std::unique_lock lock(mtx); 
+    while (flags.none()) {
+      if (wk->get_lc()->going_down()) {
+        return -1; 
+      }
+      cv.wait_for(lock, 200ms);
+    }
+    for (int i = (last_slot_fed + 1) % wqs.size();; i = (i + 1) % wqs.size()) {
+      if (flags.test(i)) {
+        last_slot_fed = i;
+        return i;
+      } 
+    }
+    assert(false);
+    return 0;
+  }
+  
+  void set_hungry(int slot_idx) {
+    std::scoped_lock lock(mtx);
+    flags.set(slot_idx);
+    cv.notify_one();
+  }
+
+  void set_not_hungry(int slot_idx) {
+    std::scoped_lock lock(mtx);
+    flags.reset(slot_idx);
+  }
+  
+  bool all_fed() {
+    std::scoped_lock lock(mtx); 
+    if (flags.any()) {
+      return false;
+    }
+    for (auto i=0ul; i<wqs.size(); i++) {
+      if (wqs[i].is_full()) {
+        return false;
+      }
+    }
+    return true;
+  }
+  
+  void set_all_hungry() {
+    for (auto i=0ul; i<wqs.size(); i++) {
+      set_hungry(i);
+    }
+  }
+
+  void drain() {
+    for (auto& wq : wqs) {
+      wq.drain();
+    }
+  }
 
 public:
   WorkPool(RGWLC::LCWorker* wk, uint16_t n_threads, uint32_t qmax)
-    : wqs(TVector{
-	n_threads,
-	[&](const size_t ix, auto emplacer) {
-	  emplacer.emplace(wk, ix, qmax);
-	}}),
-      ix(0)
+    : wk(wk),
+      wqs(TVector{
+	      std::min(n_threads, static_cast<std::uint16_t>(64)),
+	      [&](const size_t ix, auto emplacer) {
+	        emplacer.emplace(wk, ix, qmax, [ix, this](bool p) {
+                  if (p) {
+                    this->set_hungry(ix);
+                  } else {
+                    this->set_not_hungry(ix);
+                  }
+                });
+	      }}),
+      feeders(), 
+      flags(0)
     {}
 
   ~WorkPool() {
@@ -794,17 +931,53 @@ public:
     }
   }
 
-  void enqueue(WorkItem item) {
-    const auto tix = ix;
-    ix = (ix+1) % wqs.size();
-    (wqs[tix]).enqueue(std::move(item));
+  int reset(int num_feeders, slot_init_f _f) {
+    int r;
+    last_slot_fed = -1;
+    feeders.resize(num_feeders);
+    for (auto i=0; i<num_feeders; i++) {
+      r = _f(feeders[i]);
+      if (r < 0) {
+        return r;
+      }
+    }
+    set_all_hungry();
+    return 0;
   }
 
-  void drain() {
-    for (auto& wq : wqs) {
-      wq.drain();
+  void run(stop_check_f stop_check) {
+    auto stack_guard = make_scope_guard(
+      [&]
+      {
+	      drain();
+      }
+    );
+
+    int cnt = 0;
+    while (true) {
+      if (cnt % 1000 == 0 && stop_check()) {
+        ldpp_dout(wk->dpp, 0) << "stopping lc work pool processing due to exceeded timeout"<< dendl;
+        return;
+      }
+      int slot_idx = next_hungry_slot();
+      if (slot_idx < 0) {
+        ldpp_dout(wk->dpp, 0) << "stopping lc work pool processing because we're shutting down"<< dendl;
+        return;
+      }
+      WorkItem wi{nullptr};
+      if (feeders[slot_idx % feeders.size()](wi)) {
+        wqs[slot_idx].enqueue(std::move(wi));
+      } else {
+        set_not_hungry(slot_idx); 
+        if (all_fed()) {
+          ldpp_dout(wk->dpp, 0) << "lc work pool has finished processing bucket"<< dendl;
+          return;
+        }
+      }
+      cnt++;
     }
   }
+
 }; /* WorkPool */
 
 RGWLC::LCWorker::LCWorker(const DoutPrefixProvider* dpp, CephContext *cct,
@@ -824,21 +997,9 @@ int RGWLC::handle_multipart_expiration(rgw::sal::RGWBucket* target,
 				       const multimap<string, lc_op>& prefix_map,
 				       LCWorker* worker, time_t stop_at, bool once)
 {
-  MultipartMetaFilter mp_filter;
   int ret;
-  rgw::sal::RGWBucket::ListParams params;
-  rgw::sal::RGWBucket::ListResults results;
-  auto delay_ms = cct->_conf.get_val<int64_t>("rgw_lc_thread_delay");
-  params.list_versions = false;
-  /* lifecycle processing does not depend on total order, so can
-   * take advantage of unordered listing optimizations--such as
-   * operating on one shard at a time */
-  params.allow_unordered = true;
-  params.ns = RGW_OBJ_NS_MULTIPART;
-  params.filter = &mp_filter;
-
   auto pf = [&](RGWLC::LCWorker* wk, WorkQ* wq, WorkItem& wi) {
-    auto wt = boost::get<std::tuple<lc_op, rgw_bucket_dir_entry>>(wi);
+    auto wt = std::get<std::tuple<lc_op, rgw_bucket_dir_entry>>(wi);
     auto& [rule, obj] = wt;
     RGWMPObj mp_obj;
     if (obj_has_expired(cct, obj.meta.mtime, rule.mp_expiration)) {
@@ -885,41 +1046,43 @@ int RGWLC::handle_multipart_expiration(rgw::sal::RGWBucket* target,
     if (!prefix_iter->second.status || prefix_iter->second.mp_expiration <= 0) {
       continue;
     }
-    params.prefix = prefix_iter->first;
-    do {
-      auto offset = 0;
-      results.objs.clear();
-      ret = target->list(this, params, 1000, results, null_yield);
+
+    const lc_op& op = prefix_iter->second;
+    LCObjsListerMgr olm(this, store, target, prefix_iter->first, true);
+    int num_feeders = std::min(target->get_info().layout.current_index.layout.normal.num_shards,
+                               (uint32_t) cct->_conf->rgw_lc_max_wp_worker);
+    ret = worker->workpool->reset(num_feeders, [&olm, op, this](RGWLC::WorkPool::feed_f& f) {
+      LCObjsListerMgr::Lister ol = olm.next_shard_lister();
+      int ret = ol.init();
       if (ret < 0) {
-          if (ret == (-ENOENT))
-            return 0;
-          ldpp_dout(this, 0) << "ERROR: store->list_objects():" <<dendl;
-          return ret;
+        if (ret == (-ENOENT)) {
+          f = [](WorkItem& wi) {
+            return false;
+          };
+          return 0;
+        }
+        ldpp_dout(this, 0) << "ERROR: store->list_objects(): " << ret << dendl;
+        return ret;
       }
-
-      for (auto obj_iter = results.objs.begin(); obj_iter != results.objs.end(); ++obj_iter, ++offset) {
-	std::tuple<lc_op, rgw_bucket_dir_entry> t1 =
-	  {prefix_iter->second, *obj_iter};
-	worker->workpool->enqueue(WorkItem{t1});
-	if (going_down()) {
-	  return 0;
-	}
-      } /* for objs */
-
-      if ((offset % 100) == 0) {
-	if (worker_should_stop(stop_at, once)) {
-	  ldpp_dout(this, 5) << __func__ << " interval budget EXPIRED worker "
-			     << worker->ix
-			     << dendl;
-	  return 0;
-	}
-      }
-
-      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-    } while(results.is_truncated);
-  } /* for prefix_map */
-
-  worker->workpool->drain();
+      f = [ol = move(ol), op](WorkItem& wi) mutable {
+        rgw_bucket_dir_entry* o{nullptr};
+        if (ol.get_obj(&o)) {
+          std::tuple<lc_op, rgw_bucket_dir_entry> t1 = {op, *o};
+          wi = WorkItem{std::move(t1)};
+          ol.next();
+          return true;
+        }
+        return false;
+      };
+      return 0;
+    });
+    if (ret < 0) {
+      return ret;
+    }
+    worker->workpool->run([&]() {
+      return worker_should_stop(stop_at, once);
+    });
+  }
   return 0;
 }
 
@@ -1051,11 +1214,15 @@ public:
 	  ldpp_dout(dpp, 7) << __func__ << "(): dm-check DELE: key=" << o.key
 			   << " next_key_name: %%" << nkn << "%% "
 			   << oc.wq->thr_name() << dendl;
-        *exp_time = real_clock::now();
-        return true;
+          *exp_time = real_clock::now();
+          return true;
 	}
       }
-      return false;
+      ldpp_dout(dpp, 7) << __func__ << "(): dm-check DELE: key=" << o.key
+      		        << " next_key_name: NONE (last in shard)" << "%% "
+		        << oc.wq->thr_name() << dendl;
+      *exp_time = real_clock::now();
+      return true;
     }
 
     auto& mtime = o.meta.mtime;
@@ -1372,10 +1539,10 @@ void LCOpRule::build()
   }
 }
 
-void LCOpRule::update()
+void LCOpRule::update(boost::optional<std::string> _next_key_name, ceph::real_time _effective_mtime)
 {
-  next_key_name = env.ol.next_key_name();
-  effective_mtime = env.ol.get_prev_obj().meta.mtime;
+  next_key_name = _next_key_name;
+  effective_mtime = _effective_mtime;
 }
 
 int LCOpRule::process(rgw_bucket_dir_entry& o,
@@ -1482,13 +1649,6 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
     return ret;
   }
 
-  auto stack_guard = make_scope_guard(
-    [&worker]
-      {
-	worker->workpool->drain();
-      }
-    );
-
   if (bucket->get_marker() != bucket_marker) {
     ldpp_dout(this, 1) << "LC: deleting stale entry found for bucket="
 		       << bucket_tenant << ":" << bucket_name
@@ -1517,7 +1677,7 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
 
   auto pf = [](RGWLC::LCWorker* wk, WorkQ* wq, WorkItem& wi) {
     auto wt =
-      boost::get<std::tuple<LCOpRule, rgw_bucket_dir_entry>>(wi);
+      std::get<std::tuple<LCOpRule, rgw_bucket_dir_entry>>(wi);
     auto& [op_rule, o] = wt;
 
     ldpp_dout(wk->get_lc(), 20)
@@ -1565,35 +1725,44 @@ int RGWLC::bucket_lc_process(string& shard_id, LCWorker* worker,
       << " dm_expiration=" << op.dm_expiration
 			<< dendl;
 
-    LCObjsLister ol(store, bucket.get());
-    ol.set_prefix(rule.prefix);
-
-    ret = ol.init(this);
+    LCObjsListerMgr olm(this, store, bucket.get(), rule.prefix);
+    int num_feeders = std::min(bucket->get_info().layout.current_index.layout.normal.num_shards,
+                               (uint32_t) cct->_conf->rgw_lc_max_wp_worker);
+    ret = worker->workpool->reset(num_feeders, [&olm, &bucket, this, op, &worker](RGWLC::WorkPool::feed_f& f) {
+      LCObjsListerMgr::Lister ol = olm.next_shard_lister();
+      int ret = ol.init();
+      if (ret < 0) {
+        if (ret == (-ENOENT)) {
+          f = [](WorkItem& wi) {
+            return false;
+          };
+          return 0;
+        }
+        ldpp_dout(this, 0) << "ERROR: store->list_objects(): " << ret << dendl;
+        return ret;
+      }
+      f = [ol = move(ol), &bucket, this, op, &worker](WorkItem& wi) mutable {
+        op_env oenv(op, this->store, worker, bucket.get());
+        rgw_bucket_dir_entry* o{nullptr};
+        if (ol.get_obj(&o)) {
+          LCOpRule orule(oenv);
+          orule.build(); // why can't ctor do it?
+          orule.update(ol.next_key_name(), ol.get_prev_obj().meta.mtime);
+          std::tuple<LCOpRule, rgw_bucket_dir_entry> t1 = {orule, *o};
+          wi = WorkItem{std::move(t1)};
+          ol.next();
+          return true;
+        }
+        return false;
+      };
+      return 0;
+    });
     if (ret < 0) {
-      if (ret == (-ENOENT))
-        return 0;
-      ldpp_dout(this, 0) << "ERROR: store->list_objects():" <<dendl;
       return ret;
     }
-
-    op_env oenv(op, store, worker, bucket.get(), ol);
-    LCOpRule orule(oenv);
-    orule.build(); // why can't ctor do it?
-    rgw_bucket_dir_entry* o{nullptr};
-    for (auto offset = 0; ol.get_obj(this, &o /* , fetch_barrier */); ++offset, ol.next()) {
-      orule.update();
-      std::tuple<LCOpRule, rgw_bucket_dir_entry> t1 = {orule, *o};
-      worker->workpool->enqueue(WorkItem{t1});
-      if ((offset % 100) == 0) {
-	if (worker_should_stop(stop_at, once)) {
-	  ldpp_dout(this, 5) << __func__ << " interval budget EXPIRED worker "
-			     << worker->ix
-			     << dendl;
-	  return 0;
-	}
-      }
-    }
-    worker->workpool->drain();
+    worker->workpool->run([&]() {
+      return worker_should_stop(stop_at, once);
+    });
   }
 
   ret = handle_multipart_expiration(bucket.get(), prefix_map, worker, stop_at, once);
@@ -1682,19 +1851,6 @@ int RGWLC::list_lc_progress(string& marker, uint32_t max_entries,
       break;
   }
   return 0;
-}
-
-static inline vector<int> random_sequence(uint32_t n)
-{
-  vector<int> v(n, 0);
-  std::generate(v.begin(), v.end(),
-    [ix = 0]() mutable {
-      return ix++;
-    });
-  std::random_device rd;
-  std::default_random_engine rng{rd()};
-  std::shuffle(v.begin(), v.end(), rd);
-  return v;
 }
 
 int RGWLC::process(LCWorker* worker, bool once = false)
