@@ -6052,7 +6052,7 @@ std::vector<Option> get_rgw_options() {
     .set_description("Number of workpool threads per LCWorker")
     .set_long_description(
       "Number of threads in per-LCWorker workpools--used to accelerate "
-      "per-bucket processing"),
+      "per-bucket processing. Maximum value is 64."),
 
     Option("rgw_lc_max_objs", Option::TYPE_INT, Option::LEVEL_ADVANCED)
     .set_default(32)
