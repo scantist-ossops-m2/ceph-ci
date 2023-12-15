@@ -1672,7 +1672,13 @@ public:
             tn->log(10, SSTR("Write " << source_bs.shard_id << " to error repo for retry"));
             yield_spawn_window(rgw::error_repo::write_cr(sync_env->driver->getRados()->get_rados_handle(), error_repo,
                 rgw::error_repo::encode_key(source_bs, each->gen),
-		timestamp), sc->lcc.adj_concurrency(cct->_conf->rgw_data_sync_spawn_window), std::nullopt);
+		timestamp), sc->lcc.adj_concurrency(cct->_conf->rgw_data_sync_spawn_window),
+                            [&](uint64_t stack_id, int ret) {
+                              if (ret < 0) {
+                                retcode = ret;
+                              }
+                              return retcode;
+                            });
           } else {
           shard_cr = data_sync_single_entry(sc, source_bs, each->gen, key, timestamp,
                       lease_cr, bucket_shard_cache, nullptr, error_repo, tn, false);
