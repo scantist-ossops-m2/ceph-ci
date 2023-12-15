@@ -8428,18 +8428,18 @@ int RGWRados::process_gc(bool expired_only)
 }
 
 int RGWRados::list_lc_progress(string& marker, uint32_t max_entries,
-			       vector<rgw::sal::Lifecycle::LCEntry>& progress_map,
+			       vector<std::tuple<int, rgw::sal::Lifecycle::LCEntry>>& progress_map,
 			       int& index)
 {
   return lc->list_lc_progress(marker, max_entries, progress_map, index);
 }
 
-int RGWRados::process_lc()
+int RGWRados::process_lc(std::optional<int> shard_id)
 {
   RGWLC lc;
   lc.initialize(cct, this->store);
   RGWLC::LCWorker worker(&lc, cct, &lc, 0);
-  auto ret = lc.process(&worker, true /* once */);
+  auto ret = lc.process(&worker, true /* once */, shard_id);
   lc.stop_processor(); // sets down_flag, but returns immediately
   return ret;
 }

@@ -1824,7 +1824,7 @@ clean:
 }
 
 int RGWLC::list_lc_progress(string& marker, uint32_t max_entries,
-			    vector<rgw::sal::Lifecycle::LCEntry>& progress_map,
+			    vector<std::tuple<int, rgw::sal::Lifecycle::LCEntry>>& progress_map,
 			    int& index)
 {
   progress_map.clear();
@@ -1841,11 +1841,13 @@ int RGWLC::list_lc_progress(string& marker, uint32_t max_entries,
       }
     }
     progress_map.reserve(progress_map.size() + entries.size());
-    progress_map.insert(progress_map.end(), entries.begin(), entries.end());
+    std::transform(entries.begin(), entries.end(),
+                   std::back_inserter(progress_map),
+                   [index](rgw::sal::Lifecycle::LCEntry e) { return make_tuple(index, e); });
 
     /* update index, marker tuple */
     if (progress_map.size() > 0)
-      marker = progress_map.back().bucket;
+      marker = std::get<1>(progress_map.back()).bucket;
 
     if (progress_map.size() >= max_entries)
       break;
@@ -1853,17 +1855,23 @@ int RGWLC::list_lc_progress(string& marker, uint32_t max_entries,
   return 0;
 }
 
-int RGWLC::process(LCWorker* worker, bool once = false)
+int RGWLC::process(LCWorker* worker, bool once, std::optional<int> shard_idx)
 {
   int max_secs = cct->_conf->rgw_lc_lock_max_time;
 
-  /* generate an index-shard sequence unrelated to any other
-   * that might be running in parallel */
-  vector<int> shard_seq = random_sequence(max_objs);
-  for (auto index : shard_seq) {
-    int ret = process(index, max_secs, worker, once);
+  if (shard_idx) {
+    int ret = process(*shard_idx, max_secs, worker, once);
     if (ret < 0)
       return ret;
+  } else {
+    /* generate an index-shard sequence unrelated to any other
+     * that might be running in parallel */
+    vector<int> shard_seq = random_sequence(max_objs);
+    for (auto index : shard_seq) {
+      int ret = process(index, max_secs, worker, once);
+      if (ret < 0)
+        return ret;
+    }
   }
 
   return 0;
@@ -1905,6 +1913,7 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
   rgw::sal::LCSerializer* lock = sal_lc->get_serializer(lc_index_lock_name,
 							obj_names[index],
 							std::string());
+  bool first_loop_iter = true;
   do {
     utime_t now = ceph_clock_now();
     //string = bucket_name:bucket_id, start_time, int = LC_BUCKET_STATUS
@@ -1924,7 +1933,7 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
     }
     if (ret < 0)
       return 0;
-
+    
     rgw::sal::Lifecycle::LCHead head;
     ret = sal_lc->get_head(obj_names[index], head);
     if (ret < 0) {
@@ -1953,7 +1962,7 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
     }
 
     if(!if_already_run_today(head.start_date) ||
-       once) {
+       (once && first_loop_iter)) {
       head.start_date = now;
       head.marker.clear();
       ret = bucket_lc_prepare(index, worker);
@@ -2005,7 +2014,8 @@ int RGWLC::process(int index, int max_lock_secs, LCWorker* worker,
     lock->unlock();
     ret = bucket_lc_process(entry.bucket, worker, thread_stop_at(), once);
     bucket_lc_post(index, max_lock_secs, entry, ret, worker);
-  } while(1 && !once);
+    first_loop_iter = false;
+  } while(1);
 
   delete lock;
   return 0;

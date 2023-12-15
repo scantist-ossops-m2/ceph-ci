@@ -511,13 +511,13 @@ public:
   void initialize(CephContext *_cct, rgw::sal::RGWRadosStore *_store);
   void finalize();
 
-  int process(LCWorker* worker, bool once);
+  int process(LCWorker* worker, bool once=false, std::optional<int> shard_idx = std::nullopt);
   int process(int index, int max_secs, LCWorker* worker, bool once);
   bool if_already_run_today(time_t start_date);
   bool expired_session(time_t started);
   time_t thread_stop_at();
   int list_lc_progress(string& marker, uint32_t max_entries,
-		       vector<rgw::sal::Lifecycle::LCEntry>&, int& index);
+		       vector<std::tuple<int, rgw::sal::Lifecycle::LCEntry>>&, int& index);
   int bucket_lc_prepare(int index, LCWorker* worker);
   int bucket_lc_process(string& shard_id, LCWorker* worker, time_t stop_at,
 			bool once);

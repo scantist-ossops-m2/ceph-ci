@@ -7337,7 +7337,7 @@ next:
 
   if (opt_cmd == OPT::LC_LIST) {
     formatter->open_array_section("lifecycle_list");
-    vector<rgw::sal::Lifecycle::LCEntry> bucket_lc_map;
+    vector<std::tuple<int, rgw::sal::Lifecycle::LCEntry>> bucket_lc_map;
     string marker;
     int index{0};
 #define MAX_LC_LIST_ENTRIES 100
@@ -7352,8 +7352,12 @@ next:
 	     << std::endl;
         return 1;
       }
-      for (const auto& entry : bucket_lc_map) {
+      for (const auto& it : bucket_lc_map) {
+        int idx;
+        rgw::sal::Lifecycle::LCEntry entry;
+        std::tie(idx, entry) = it;
         formatter->open_object_section("bucket_lc_info");
+        formatter->dump_int("lc_shard", idx);
         formatter->dump_string("bucket", entry.bucket);
 	char exp_buf[100];
 	time_t t{time_t(entry.start_time)};
@@ -7408,7 +7412,7 @@ next:
   }
 
   if (opt_cmd == OPT::LC_PROCESS) {
-    int ret = store->getRados()->process_lc();
+    int ret = store->getRados()->process_lc(specified_shard_id ? std::optional{shard_id} : std::nullopt);
     if (ret < 0) {
       cerr << "ERROR: lc processing returned error: " << cpp_strerror(-ret) << std::endl;
       return 1;

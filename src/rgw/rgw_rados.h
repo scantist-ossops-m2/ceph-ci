@@ -1511,9 +1511,9 @@ public:
   bool process_expire_objects(const DoutPrefixProvider *dpp);
   int defer_gc(const DoutPrefixProvider *dpp, void *ctx, const RGWBucketInfo& bucket_info, const rgw_obj& obj, optional_yield y);
 
-  int process_lc();
+  int process_lc(std::optional<int> shard_id = std::nullopt);
   int list_lc_progress(string& marker, uint32_t max_entries,
-		       vector<rgw::sal::Lifecycle::LCEntry>& progress_map, int& index);
+		       vector<std::tuple<int, rgw::sal::Lifecycle::LCEntry>>& progress_map, int& index);
 
   int bucket_check_index(const DoutPrefixProvider *dpp, RGWBucketInfo& bucket_info,
                          map<RGWObjCategory, RGWStorageStats> *existing_stats,
