@@ -1,11 +1,16 @@
 #!/usr/bin/python3
 
+'''
+This workunits tests the functionality of the D4N read workflow on a small object of size 4.
+''' 
+
 import logging as log
 from configobj import ConfigObj
 import boto3
 import redis
 import subprocess
 import json
+import os
 
 log.basicConfig(level=log.DEBUG)
 
@@ -78,107 +83,93 @@ def get_cmd_output(cmd_out):
     return out
 
 def test_directory_methods(r, client, obj):
-    test_txt = b'test'
+    test_txt = 'test'
 
-    # setValue call
     response_put = obj.put(Body=test_txt)
 
     assert(response_put.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
-    data = r.hgetall('rgw-object:test.txt:directory')
-
-    assert(data.get('key') == 'rgw-object:test.txt:directory')
-    assert(data.get('size') == '4')
-    assert(data.get('bucket_name') == 'bkt')
-    assert(data.get('obj_name') == 'test.txt')
-    assert(data.get('hosts') == '127.0.0.1:6379')
-
-    # getValue call
+    # first get call
     response_get = obj.get()
 
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
-    data = r.hgetall('rgw-object:test.txt:directory')
+    data = r.hgetall('bkt_test.txt_0_4')
+    output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
+    attrs = json.loads(output.decode('latin-1'))
 
-    assert(data.get('key') == 'rgw-object:test.txt:directory')
-    assert(data.get('size') == '4')
-    assert(data.get('bucket_name') == 'bkt')
-    assert(data.get('obj_name') == 'test.txt')
-    assert(data.get('hosts') == '127.0.0.1:6379')
+    assert(data.get('blockID'), '0')
+    assert(data.get('version'), attrs.get('tag'))
+    assert(data.get('size'), '4')
+    assert(data.get('globalWeight'), '0')
+    assert(data.get('blockHosts'), '127.0.0.1:6379')
+    assert(data.get('objName'), 'test.txt')
+    assert(data.get('bucketName'), 'bkt')
+    assert(data.get('creationTime'), attrs.get('mtime'))
+    assert(data.get('dirty'), '0')
+    assert(data.get('objHosts'), '127.0.0.1:6379')
 
-    # delValue call
-    response_del = obj.delete()
+    # second get call
+    response_get = obj.get()
 
-    assert(response_del.get('ResponseMetadata').get('HTTPStatusCode') == 204)
-    assert(r.exists('rgw-object:test.txt:directory') == False)
+    assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
+
+    data = r.hgetall('bkt_test.txt_0_4')
+    output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
+    attrs = json.loads(output.decode('latin-1'))
+
+    assert(data.get('blockID'), '0')
+    assert(data.get('version'), attrs.get('tag'))
+    assert(data.get('size'), '4')
+    assert(data.get('globalWeight'), '0')
+    assert(data.get('blockHosts'), '127.0.0.1:6379')
+    assert(data.get('objName'), 'test.txt')
+    assert(data.get('bucketName'), 'bkt')
+    assert(data.get('creationTime'), attrs.get('mtime'))
+    assert(data.get('dirty'), '0')
+    assert(data.get('objHosts'), '127.0.0.1:6379')
 
     r.flushall()
 
 def test_cache_methods(r, client, obj):
-    test_txt = b'test'
+    test_txt = 'test'
 
-    # setObject call
     response_put = obj.put(Body=test_txt)
 
     assert(response_put.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
-    data = r.hgetall('rgw-object:test.txt:cache')
-    output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
-    attrs = json.loads(output.decode('latin-1'))
-
-    assert((data.get(b'user.rgw.tail_tag')) == attrs.get('attrs').get('user.rgw.tail_tag').encode("latin-1") + b'\x00')
-    assert((data.get(b'user.rgw.idtag')) == attrs.get('tag').encode("latin-1") + b'\x00')
-    assert((data.get(b'user.rgw.etag')) == attrs.get('etag').encode("latin-1"))
-    assert((data.get(b'user.rgw.x-amz-content-sha256')) == attrs.get('attrs').get('user.rgw.x-amz-content-sha256').encode("latin-1") + b'\x00')
-    assert((data.get(b'user.rgw.x-amz-date')) == attrs.get('attrs').get('user.rgw.x-amz-date').encode("latin-1") + b'\x00')
-
-    tmp1 = '\x08\x06L\x01\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x06\x84\x00\x00\x00\n\nj\x00\x00\x00\x03\x00\x00\x00bkt+\x00\x00\x00'
-    tmp2 = '+\x00\x00\x00'
-    tmp3 = '\x00\x00\x00\x00\x00\x00\x00\x00\x00\b\x00\x00\x00test.txt\x00\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00!\x00\x00\x00'
-    tmp4 = '\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x01 \x00\x00\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' \
-           '\x00\x00@\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x11\x00\x00\x00default-placement\x11\x00\x00\x00default-placement\x00\x00\x00\x00\x02\x02\x18' \
-           '\x00\x00\x00\x04\x00\x00\x00none\x01\x01\t\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
-    assert(data.get(b'user.rgw.manifest') == tmp1.encode("latin-1") + attrs.get('manifest').get('tail_placement').get('bucket').get('bucket_id').encode("utf-8")
-                     + tmp2.encode("latin-1") + attrs.get('manifest').get('tail_placement').get('bucket').get('bucket_id').encode("utf-8")
-                     + tmp3.encode("latin-1") + attrs.get('manifest').get('prefix').encode("utf-8")
-                     + tmp4.encode("latin-1"))
-
-    tmp5 = '\x02\x02\x81\x00\x00\x00\x03\x02\x11\x00\x00\x00\x06\x00\x00\x00s3main\x03\x00\x00\x00Foo\x04\x03d\x00\x00\x00\x01\x01\x00\x00\x00\x06\x00\x00' \
-           '\x00s3main\x0f\x00\x00\x00\x01\x00\x00\x00\x06\x00\x00\x00s3main\x05\x035\x00\x00\x00\x02\x02\x04\x00\x00\x00\x00\x00\x00\x00\x06\x00\x00\x00s3main' \
-           '\x00\x00\x00\x00\x00\x00\x00\x00\x02\x02\x04\x00\x00\x00\x0f\x00\x00\x00\x03\x00\x00\x00Foo\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' \
-           '\x00\x00\x00'
-    assert((data.get(b'user.rgw.acl')) == tmp5.encode("latin-1"))
-
-    # getObject call
+    # first get call
     response_get = obj.get()
 
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
-    # Copy to new object with 'COPY' directive; metadata value should not change
-    obj.metadata.update({'test':'value'})
-    m = obj.metadata
-    m['test'] = 'value_replace'
+    # check logs to ensure object was retrieved from storage backend
+    res = subprocess.call(['grep', '"D4NFilterObject::iterate:: iterate(): Fetching object from backend store"', '%s/build/out/radosgw.8000.log' % os.environ['CEPH_ROOT']])
 
-    # copyObject call
-    client.copy_object(Bucket='bkt', Key='test_copy.txt', CopySource='bkt/test.txt', Metadata = m, MetadataDirective='COPY')
+    assert(res >= 1)
 
-    assert(r.hexists('rgw-object:test_copy.txt:cache', b'user.rgw.x-amz-meta-test') == 0)
+    # retrieve and compare cache contents
+    data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
+    data = data.decode('latin-1').strip()
 
-    # Update object with 'REPLACE' directive; metadata value should change
-    client.copy_object(Bucket='bkt', Key='test.txt', CopySource='bkt/test.txt', Metadata = m, MetadataDirective='REPLACE')
+    output = subprocess.check_output(['md5sum', '/tmp/rgw_d4n_datacache/' + data]).decode('latin-1')
+    assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
 
-    data = r.hget('rgw-object:test.txt:cache', b'user.rgw.x-amz-meta-test')
+    # second get call
+    response_get = obj.get()
 
-    assert(data == b'value_replace\x00')
+    assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
-    # Ensure cache entry exists in cache before deletion
-    assert(r.exists('rgw-object:test.txt:cache') == True)
+    # check logs to ensure object was retrieved from cache
+    res = subprocess.call(['grep', '"SSDCache: get_async(): ::aio_read(), ret=0"', '%s/build/out/radosgw.8000.log' % os.environ['CEPH_ROOT']])
+    assert(res >= 1)
 
-    # delObject call
-    response_del = obj.delete()
+    # retrieve and compare cache contents
+    data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
+    data = data.decode('latin-1').strip()
 
-    assert(response_del.get('ResponseMetadata').get('HTTPStatusCode') == 204)
-    assert(r.exists('rgw-object:test.txt:cache') == False)
+    output = subprocess.check_output(['md5sum', '/tmp/rgw_d4n_datacache/' + data]).decode('latin-1')
+    assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
 
     r.flushall()
 
