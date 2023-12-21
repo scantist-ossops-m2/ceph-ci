@@ -10,7 +10,20 @@ For the tests covering Kafka and RabbitMQ security, the RGW will need to accept 
 So, the cluster will have to be started with the following ``rgw_allow_notification_secrets_in_cleartext`` parameter set to ``true``.
 For example::
 
-  MON=1 OSD=1 MDS=0 MGR=1 RGW=1 ../src/vstart.sh -n -d -o "rgw_allow_notification_secrets_in_cleartext=true"
+The test suite can be run against a multisite setup, in the configuration file we will have to decide which RGW and which cluster will be used for the test.
+For example, if the ``test-rgw-multisite.sh`` script is used to setup multisite, and we want to run the test agianst the first RGW in the first cluster, 
+we would need the following configuration file::
+
+				[DEFAULT]
+				port = 8101
+				host = localhost
+				zonegroup = zg1
+				cluster = c1
+
+				[s3 main]
+				access_key = 1234567890
+				secret_key = pencil
+
 
 ===========
 Kafka Tests
