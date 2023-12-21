@@ -1188,6 +1188,15 @@ static void show_reshard_status(
   formatter->flush(cout);
 }
 
+static void show_topics_info_v2(const rgw_pubsub_topic& topic,
+                                std::set<std::string> subscribed_buckets,
+                                Formatter* formatter) {
+  formatter->open_object_section("topic");
+  topic.dump(formatter);
+  encode_json("subscribed_buckets", subscribed_buckets, formatter);
+  formatter->close_section();
+}
+
 class StoreDestructor {
   rgw::sal::Store* store;
 public:
@@ -10492,7 +10501,24 @@ next:
         }
       }
     }
-    encode_json("result", result, formatter.get());
+    if (store->get_zone()->get_zonegroup().supports_feature(
+            rgw::zone_features::notification_v2)) {
+      Formatter::ObjectSection top_section(*formatter, "result");
+      Formatter::ArraySection s(*formatter, "topics");
+      for (const auto& [_, topic] : result.topics) {
+        std::set<std::string> subscribed_buckets;
+        ret = store->get_bucket_topic_mapping(topic, subscribed_buckets,
+                                              null_yield, dpp());
+        if (ret < 0) {
+          cerr << "failed to fetch bucket topic mapping info for topic: "
+               << topic.name << ", ret=" << ret << std::endl;
+        } else {
+          show_topics_info_v2(topic, subscribed_buckets, formatter.get());
+        }
+      }
+    } else {
+      encode_json("result", result, formatter.get());
+    }
     formatter->flush(cout);
   }
 
@@ -10505,12 +10531,19 @@ next:
     RGWPubSub ps(store, tenant);
 
     rgw_pubsub_topic topic;
-    ret = ps.get_topic(dpp(), topic_name, topic, null_yield);
+    std::set<std::string> subscribed_buckets;
+    ret =
+        ps.get_topic(dpp(), topic_name, topic, null_yield, &subscribed_buckets);
     if (ret < 0) {
       cerr << "ERROR: could not get topic: " << cpp_strerror(-ret) << std::endl;
       return -ret;
     }
-    encode_json("topic", topic, formatter.get());
+    if (store->get_zone()->get_zonegroup().supports_feature(
+            rgw::zone_features::notification_v2)) {
+      show_topics_info_v2(topic, subscribed_buckets, formatter.get());
+    } else {
+      encode_json("topic", topic, formatter.get());
+    }
     formatter->flush(cout);
   }
 

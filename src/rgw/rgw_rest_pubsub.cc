@@ -196,7 +196,7 @@ class RGWPSCreateTopicOp : public RGWOp {
 
     const RGWPubSub ps(store, s->owner.get_id().tenant);
     rgw_pubsub_topic result;
-    ret = ps.get_topic(this, topic_name, result, y);
+    ret = ps.get_topic(this, topic_name, result, y, nullptr);
     if (ret == -ENOENT) {
       // topic not present
       return 0;
@@ -414,7 +414,7 @@ void RGWPSGetTopicOp::execute(optional_yield y) {
     return;
   }
   const RGWPubSub ps(store, s->owner.get_id().tenant);
-  op_ret = ps.get_topic(this, topic_name, result, y);
+  op_ret = ps.get_topic(this, topic_name, result, y, nullptr);
   if (op_ret < 0) {
     ldpp_dout(this, 1) << "failed to get topic '" << topic_name << "', ret=" << op_ret << dendl;
     return;
@@ -498,7 +498,7 @@ void RGWPSGetTopicAttributesOp::execute(optional_yield y) {
     return;
   }
   const RGWPubSub ps(store, s->owner.get_id().tenant);
-  op_ret = ps.get_topic(this, topic_name, result, y);
+  op_ret = ps.get_topic(this, topic_name, result, y, nullptr);
   if (op_ret < 0) {
     ldpp_dout(this, 1) << "failed to get topic '" << topic_name << "', ret=" << op_ret << dendl;
     return;
@@ -626,7 +626,7 @@ class RGWPSSetTopicAttributesOp : public RGWOp {
     }
     rgw_pubsub_topic result;
     const RGWPubSub ps(store, s->owner.get_id().tenant);
-    ret = ps.get_topic(this, topic_name, result, y);
+    ret = ps.get_topic(this, topic_name, result, y, nullptr);
     if (ret < 0) {
       ldpp_dout(this, 1) << "failed to get topic '" << topic_name
                          << "', ret=" << ret << dendl;
@@ -786,7 +786,7 @@ void RGWPSDeleteTopicOp::execute(optional_yield y) {
   }
   const RGWPubSub ps(store, s->owner.get_id().tenant);
   rgw_pubsub_topic result;
-  op_ret = ps.get_topic(this, topic_name, result, y);
+  op_ret = ps.get_topic(this, topic_name, result, y, nullptr);
   if (op_ret == 0) {
     op_ret = verify_topic_owner_or_policy(
         s, result, store->get_zone()->get_zonegroup().get_name(),
@@ -1141,8 +1141,8 @@ void RGWPSCreateNotifOp::execute(optional_yield y) {
     const auto topic_name = arn->resource;
 
     // get topic information. destination information is stored in the topic
-    rgw_pubsub_topic topic_info;  
-    op_ret = ps.get_topic(this, topic_name, topic_info, y);
+    rgw_pubsub_topic topic_info;
+    op_ret = ps.get_topic(this, topic_name, topic_info, y, nullptr);
     if (op_ret < 0) {
       ldpp_dout(this, 1) << "failed to get topic '" << topic_name << "', ret=" << op_ret << dendl;
       return;
@@ -1242,7 +1242,6 @@ void RGWPSCreateNotifOp::execute_v2(optional_yield y) {
   }
   const RGWPubSub ps(store, s->owner.get_id().tenant);
   std::unordered_map<std::string, rgw_pubsub_topic> topics;
-  const auto rgwbucket = rgw_bucket(s->bucket_tenant, s->bucket_name, "");
   for (const auto& c : configurations.list) {
     const auto& notif_name = c.id;
     if (notif_name.empty()) {
@@ -1277,7 +1276,7 @@ void RGWPSCreateNotifOp::execute_v2(optional_yield y) {
     if (!topics.contains(topic_name)) {
       // get topic information. destination information is stored in the topic
       rgw_pubsub_topic topic_info;
-      op_ret = ps.get_topic(this, topic_name, topic_info, y);
+      op_ret = ps.get_topic(this, topic_name, topic_info, y,nullptr);
       if (op_ret < 0) {
         ldpp_dout(this, 1) << "failed to get topic '" << topic_name
                            << "', ret=" << op_ret << dendl;
@@ -1312,6 +1311,18 @@ void RGWPSCreateNotifOp::execute_v2(optional_yield y) {
         << "Failed to store RGW_ATTR_BUCKET_NOTIFICATION on bucket="
         << bucket->get_name() << " returned err= " << op_ret << dendl;
     return;
+  }
+  for (const auto& [_, topic] : topics) {
+    const auto ret = store->update_bucket_topic_mapping(
+        topic,
+        rgw_make_bucket_entry_name(bucket->get_tenant(), bucket->get_name()),
+        /*add_mapping=*/true, y, this);
+    if (ret < 0) {
+      ldpp_dout(this, 1) << "Failed to remove topic mapping on bucket="
+                         << bucket->get_name() << " ret= " << ret << dendl;
+      // error should be reported ??
+      // op_ret = ret;
+    }
   }
   ldpp_dout(this, 20) << "successfully created bucket notification for bucket: "
                       << bucket->get_name() << dendl;

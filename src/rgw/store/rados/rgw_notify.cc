@@ -929,7 +929,7 @@ static inline bool notification_match(reservation_t& res,
     // notification.
     rgw_pubsub_topic result;
     const RGWPubSub ps(res.store, res.user_tenant);
-    auto ret = ps.get_topic(res.dpp, topic_cfg.name, result, res.yield);
+    auto ret = ps.get_topic(res.dpp, topic_cfg.name, result, res.yield, nullptr);
     if (ret < 0) {
       ldpp_dout(res.dpp, 1)
           << "INFO: failed to load topic: " << topic_cfg.name
