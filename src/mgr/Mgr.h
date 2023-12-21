@@ -22,6 +22,7 @@
 #include "msg/Messenger.h"
 #include "auth/Auth.h"
 #include "common/Finisher.h"
+#include "common/TrackedOp.h"
 #include "mon/MgrMap.h"
 
 #include "DaemonServer.h"
@@ -69,6 +70,10 @@ protected:
 
   bool initialized;
   bool initializing;
+
+private:
+  // -- op tracking --
+  OpTracker op_tracker;
 
 public:
   Mgr(MonClient *monc_, const MgrMap& mgrmap,
