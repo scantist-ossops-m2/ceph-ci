@@ -92,6 +92,9 @@ class MgrTestCase(CephTestCase):
             cls.mgr_cluster.mon_manager.raw_cluster_cmd(
                 "mgr", "module", "disable", m)
 
+        cls.mgr_cluster.mon_manager.raw_cluster_cmd('config', 'set', 'mon', 'mon_allow_pool_delete', 'true')
+        cls.mgr_cluster.mon_manager.raw_cluster_cmd('osd', 'pool', 'rm', '.mgr', '.mgr', '--yes-i-really-really-mean-it-not-faking')
+
         # Start all the daemons
         for daemon in cls.mgr_cluster.mgr_daemons.values():
             daemon.restart()
