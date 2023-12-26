@@ -13,6 +13,7 @@
  *
  */
 
+#include "include/rados/librados.hpp"
 #include "rgw_aio.h"
 #include "rgw_putobj_processor.h"
 #include "rgw_multi.h"
@@ -465,7 +466,6 @@ int MultipartObjectProcessor::complete(size_t accounted_size,
   if (r < 0)
     return r;
 
-  bufferlist bl;
   RGWUploadPartInfo info;
   string p = "part.";
   bool sorted_omap = is_v2_upload_id(upload_id);
