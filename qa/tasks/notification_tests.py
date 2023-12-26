@@ -72,7 +72,7 @@ def _config_user(bntests_conf, section, user):
 @contextlib.contextmanager
 def pre_process(ctx, config):
     """
-    This function creates a directory which is required to run some AMQP tests.
+    This function creates a directory which is required to run tests that requires our s3 extension.
     """
     assert isinstance(config, dict)
     log.info('Pre-processing...')
