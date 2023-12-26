@@ -5399,7 +5399,7 @@ namespace {
     CSUM_TYPE, CSUM_MAX_BLOCK, CSUM_MIN_BLOCK, FINGERPRINT_ALGORITHM,
     PG_AUTOSCALE_MODE, PG_NUM_MIN, TARGET_SIZE_BYTES, TARGET_SIZE_RATIO,
     PG_AUTOSCALE_BIAS, DEDUP_TIER, DEDUP_CHUNK_ALGORITHM, 
-    DEDUP_CDC_CHUNK_SIZE, POOL_EIO, BULK, PG_NUM_MAX };
+    DEDUP_CDC_CHUNK_SIZE, POOL_EIO, BULK, PG_NUM_MAX, READ_RATIO };
 
   std::set<osd_pool_get_choices>
     subtract_second_from_first(const std::set<osd_pool_get_choices>& first,
@@ -6149,7 +6149,8 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       {"dedup_tier", DEDUP_TIER},
       {"dedup_chunk_algorithm", DEDUP_CHUNK_ALGORITHM},
       {"dedup_cdc_chunk_size", DEDUP_CDC_CHUNK_SIZE},
-      {"bulk", BULK}
+      {"bulk", BULK},
+      {"read_ratio", READ_RATIO}
     };
 
     typedef std::set<osd_pool_get_choices> choices_set_t;
@@ -6165,6 +6166,9 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
     };
     const choices_set_t ONLY_ERASURE_CHOICES = {
       EC_OVERWRITES, ERASURE_CODE_PROFILE
+    };
+    const choices_set_t ONLY_REPLICA_CHOICES = {
+      READ_RATIO
     };
 
     choices_set_t selected_choices;
@@ -6182,6 +6186,10 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
       if(!p->is_erasure()) {
 	selected_choices = subtract_second_from_first(selected_choices,
 						      ONLY_ERASURE_CHOICES);
+      }
+      if(!p->is_replicated()) {
+        selected_choices = subtract_second_from_first(selected_choices,
+						      ONLY_REPLICA_CHOICES);
       }
     } else /* var != "all" */  {
       choices_map_t::const_iterator found = ALL_CHOICES.find(var);
@@ -6207,6 +6215,15 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
 	  != ONLY_ERASURE_CHOICES.end()) {
 	ss << "pool '" << poolstr
 	   << "' is not a erasure pool: variable not applicable";
+	r = -EACCES;
+	goto reply;
+      }
+
+      if (!p->is_replicated() &&
+	  ONLY_REPLICA_CHOICES.find(selected)
+	  != ONLY_REPLICA_CHOICES.end()) {
+	ss << "pool '" << poolstr
+	   << "' is not a replicated pool: variable not applicable";
 	r = -EACCES;
 	goto reply;
       }
@@ -6379,6 +6396,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
 	  case DEDUP_TIER:
 	  case DEDUP_CHUNK_ALGORITHM:
 	  case DEDUP_CDC_CHUNK_SIZE:
+          case READ_RATIO:
             pool_opts_t::key_t key = pool_opts_t::get_opt_desc(i->first).key;
             if (p->opts.is_set(key)) {
               if(*it == CSUM_TYPE) {
@@ -6542,6 +6560,7 @@ bool OSDMonitor::preprocess_command(MonOpRequestRef op)
 	  case DEDUP_TIER:
 	  case DEDUP_CHUNK_ALGORITHM:
 	  case DEDUP_CDC_CHUNK_SIZE:
+          case READ_RATIO:
 	    for (i = ALL_CHOICES.begin(); i != ALL_CHOICES.end(); ++i) {
 	      if (i->second == *it)
 		break;
@@ -8315,6 +8334,11 @@ int OSDMonitor::prepare_command_pool_set(const cmdmap_t& cmdmap,
     return -EACCES;
   }
 
+  if (!p.is_replicated() &&
+      (var == "read_ratio")) {
+    return -EACCES;
+  }
+
   if (var == "size") {
     if (p.has_flag(pg_pool_t::FLAG_NOSIZECHANGE)) {
       ss << "pool size change is disabled; you must unset nosizechange flag for the pool first";
@@ -8948,6 +8972,15 @@ int OSDMonitor::prepare_command_pool_set(const cmdmap_t& cmdmap,
       if (interr.length()) {
         ss << "error parsing int value '" << val << "': " << interr;
         return -EINVAL;
+      }
+    } else if (var == "read_ratio") {
+      if (interr.length()) {
+        ss << "error parsing int value '" << val << "': " << interr;
+        return -EINVAL;
+      }
+      if (n < 0 || n > 100) {
+        ss << "read_ratio must be between 0 and 100";
+        return -ERANGE;
       }
     }
 
