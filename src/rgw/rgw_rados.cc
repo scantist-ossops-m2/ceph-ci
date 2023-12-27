@@ -5163,14 +5163,17 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
     }
   }
 
-  if (!state->exists) {
-    target->invalidate_state();
-    return -ENOENT;
+  
+  bool need_invalidate = false;
+  bool exists = state->exists;
+  if (exists) {
+    r = target->prepare_atomic_modification(dpp, op, false, NULL, NULL, NULL, true, false, y);
+    if (r < 0)
+      return r;
+  } else {
+    need_invalidate = true;
   }
 
-  r = target->prepare_atomic_modification(dpp, op, false, NULL, NULL, NULL, true, false, y);
-  if (r < 0)
-    return r;
 
   RGWBucketInfo& bucket_info = target->get_bucket_info();
 
@@ -5184,13 +5187,16 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
   if (r < 0)
     return r;
 
-  store->remove_rgw_head_obj(op);
-
   auto& ioctx = ref.pool.ioctx();
-  r = rgw_rados_operate(dpp, ioctx, ref.obj.oid, &op, y);
 
-  /* raced with another operation, object state is indeterminate */
-  const bool need_invalidate = (r == -ECANCELED);
+  if (exists) {
+    store->remove_rgw_head_obj(op);
+  
+    r = rgw_rados_operate(dpp, ioctx, ref.obj.oid, &op, y);
+  
+    /* raced with another operation, object state is indeterminate */
+    need_invalidate = (r == -ECANCELED);
+  }
 
   int64_t poolid = ioctx.get_id();
   if (r >= 0) {
@@ -5201,11 +5207,13 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
     }
     r = index_op.complete_del(dpp, poolid, ioctx.get_last_version(), state->mtime, params.remove_objs);
     
-    int ret = target->complete_atomic_modification(dpp);
-    if (ret < 0) {
-      ldpp_dout(dpp, 0) << "ERROR: complete_atomic_modification returned ret=" << ret << dendl;
+    if (exists) {
+      int ret = target->complete_atomic_modification(dpp);
+      if (ret < 0) {
+        ldpp_dout(dpp, 0) << "ERROR: complete_atomic_modification returned ret=" << ret << dendl;
+      }
+      /* other than that, no need to propagate error */
     }
-    /* other than that, no need to propagate error */
   } else {
     int ret = index_op.cancel(dpp, params.remove_objs);
     if (ret < 0) {

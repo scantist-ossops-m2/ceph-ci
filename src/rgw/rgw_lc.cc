@@ -487,6 +487,7 @@ public:
     int fetch() {
       int ret = mgr.bucket->list(mgr.dpp, list_params, 1000, list_results, null_yield);
       if (ret < 0) {
+        // XXX if ret == AdvanceAndRetry, move marker and do it again in a loop
         return ret;
       }
       obj_iter = list_results.objs.begin();
