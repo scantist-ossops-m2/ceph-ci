@@ -18,12 +18,14 @@ struct PGPool;
 
 namespace Scrub {
   class ReplicaReservations;
+  struct ReplicaActive;
 }
 
-/// Facilitating scrub-realated object access to private PG data
+/// Facilitating scrub-related object access to private PG data
 class ScrubberPasskey {
 private:
   friend class Scrub::ReplicaReservations;
+  friend struct Scrub::ReplicaActive;
   friend class PrimaryLogScrub;
   friend class PgScrubber;
   friend class ScrubBackend;
@@ -31,6 +33,11 @@ private:
   ScrubberPasskey(const ScrubberPasskey&) = default;
   ScrubberPasskey& operator=(const ScrubberPasskey&) = delete;
 };
+
+/// randomly returns true with probability equal to the passed parameter
+static inline bool random_bool_with_probability(double probability) {
+  return (ceph::util::generate_random_number<double>(0.0, 1.0) < probability);
+}
 
 namespace Scrub {
 
@@ -42,12 +49,35 @@ enum class scrub_prio_t : bool { low_priority = false, high_priority = true };
 using act_token_t = uint32_t;
 
 /// "environment" preconditions affecting which PGs are eligible for scrubbing
-struct ScrubPreconds {
+struct OSDRestrictions {
   bool allow_requested_repair_only{false};
   bool load_is_low{true};
   bool time_permit{true};
   bool only_deadlined{false};
 };
+
+}  // namespace Scrub
+
+namespace fmt {
+template <>
+struct formatter<Scrub::OSDRestrictions> {
+  constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+  template <typename FormatContext>
+  auto format(const Scrub::OSDRestrictions& conds, FormatContext& ctx)
+  {
+    return fmt::format_to(
+      ctx.out(),
+      "overdue-only:{} load:{} time:{} repair-only:{}",
+        conds.only_deadlined,
+        conds.load_is_low ? "ok" : "high",
+        conds.time_permit ? "ok" : "no",
+        conds.allow_requested_repair_only);
+  }
+};
+}  // namespace fmt
+
+namespace Scrub {
 
 /// PG services used by the scrubber backend
 struct PgScrubBeListener {
@@ -64,7 +94,7 @@ struct PgScrubBeListener {
   // query the PG backend for the on-disk size of an object
   virtual uint64_t logical_to_ondisk_size(uint64_t logical_size) const = 0;
 
-  // used to verify our "cleaness" before scrubbing
+  // used to verify our "cleanliness" before scrubbing
   virtual bool is_waiting_for_unreadable_object() const = 0;
 };
 
@@ -282,11 +312,29 @@ struct ScrubPgIF {
   /// the OSD scrub queue
   virtual void on_new_interval() = 0;
 
+  /// we are peered as a replica
+  virtual void on_replica_activate() = 0;
+
   virtual void scrub_clear_state() = 0;
 
   virtual void handle_query_state(ceph::Formatter* f) = 0;
 
   virtual pg_scrubbing_status_t get_schedule() const = 0;
+
+
+  // // perform 'scrub'/'deep_scrub' asok commands
+
+  /// ... by faking the "last scrub" stamps
+  virtual void on_operator_periodic_cmd(
+    ceph::Formatter* f,
+    scrub_level_t scrub_level,
+    int64_t offset) = 0;
+
+  /// ... by requesting an "operator initiated" scrub
+  virtual void on_operator_forced_scrub(
+    ceph::Formatter* f,
+    scrub_level_t scrub_level,
+    requested_scrub_t& request_flags) = 0;
 
   virtual void dump_scrubber(ceph::Formatter* f,
 			     const requested_scrub_t& request_flags) const = 0;
@@ -328,18 +376,6 @@ struct ScrubPgIF {
    */
   virtual void clear_pgscrub_state() = 0;
 
-  /**
-   *  triggers the 'RemotesReserved' (all replicas granted scrub resources)
-   *  state-machine event
-   */
-  virtual void send_remotes_reserved(epoch_t epoch_queued) = 0;
-
-  /**
-   * triggers the 'ReservationFailure' (at least one replica denied us the
-   * requested resources) state-machine event
-   */
-  virtual void send_reservation_failure(epoch_t epoch_queued) = 0;
-
   virtual void cleanup_store(ObjectStore::Transaction* t) = 0;
 
   virtual bool get_store_errors(const scrub_ls_arg_t& arg,
@@ -353,25 +389,6 @@ struct ScrubPgIF {
     ceph::coarse_real_clock::time_point now_is) = 0;
 
   // --------------- reservations -----------------------------------
-
-  /**
-   *  message all replicas with a request to "unreserve" scrub
-   */
-  virtual void unreserve_replicas() = 0;
-
-  /**
-   *  "forget" all replica reservations. No messages are sent to the
-   *  previously-reserved.
-   *
-   *  Used upon interval change. The replicas' state is guaranteed to
-   *  be reset separately by the interval-change event.
-   */
-  virtual void discard_replica_reservations() = 0;
-
-  /**
-   * clear both local and OSD-managed resource reservation flags
-   */
-  virtual void clear_scrub_reservations() = 0;
 
   /**
    * Reserve local scrub resources (managed by the OSD)
@@ -395,20 +412,20 @@ struct ScrubPgIF {
    */
   virtual void update_scrub_job(const requested_scrub_t& request_flags) = 0;
 
-  // on the replica:
-  virtual void handle_scrub_reserve_request(OpRequestRef op) = 0;
-  virtual void handle_scrub_reserve_release(OpRequestRef op) = 0;
-
-  // and on the primary:
-  virtual void handle_scrub_reserve_grant(OpRequestRef op, pg_shard_t from) = 0;
-  virtual void handle_scrub_reserve_reject(OpRequestRef op,
-					   pg_shard_t from) = 0;
+  /**
+   * route incoming replica-reservations requests/responses to the
+   * appropriate handler.
+   * As the ReplicaReservations object is to be owned by the ScrubMachine, we
+   * send all relevant messages to the ScrubMachine.
+   */
+  virtual void handle_scrub_reserve_msgs(OpRequestRef op) = 0;
 
   virtual void rm_from_osd_scrubbing() = 0;
 
-  virtual void scrub_requested(scrub_level_t scrub_level,
-			       scrub_type_t scrub_type,
-			       requested_scrub_t& req_flags) = 0;
+  virtual scrub_level_t scrub_requested(
+      scrub_level_t scrub_level,
+      scrub_type_t scrub_type,
+      requested_scrub_t& req_flags) = 0;
 
   // --------------- debugging via the asok ------------------------------
 

@@ -359,7 +359,7 @@ void PG::clear_primary_state()
   release_pg_backoffs();
 
   if (m_scrubber) {
-    m_scrubber->discard_replica_reservations();
+    m_scrubber->on_new_interval();
   }
   scrub_after_recovery = false;
 
@@ -1348,11 +1348,14 @@ Scrub::schedule_result_t PG::sched_scrub()
   ceph_assert(m_scrubber);
 
   if (is_scrub_queued_or_active()) {
-    return schedule_result_t::already_started;
+     dout(10) << __func__ << ": already scrubbing" << dendl;
+     return schedule_result_t::target_specific_failure;
   }
 
   if (!is_primary() || !is_active() || !is_clean()) {
-    return schedule_result_t::bad_pg_state;
+    dout(10) << __func__ << ": cannot scrub (not a clean and active primary)"
+      << dendl;
+    return schedule_result_t::target_specific_failure;
   }
 
   if (state_test(PG_STATE_SNAPTRIM) || state_test(PG_STATE_SNAPTRIM_WAIT)) {
@@ -1360,7 +1363,7 @@ Scrub::schedule_result_t PG::sched_scrub()
     // (on the transition from NotTrimming to Trimming/WaitReservation),
     // i.e. some time before setting 'snaptrim'.
     dout(10) << __func__ << ": cannot scrub while snap-trimming" << dendl;
-    return schedule_result_t::bad_pg_state;
+    return schedule_result_t::target_specific_failure;
   }
 
   // analyse the combination of the requested scrub flags, the osd/pool configuration
@@ -1372,14 +1375,14 @@ Scrub::schedule_result_t PG::sched_scrub()
     // (due to configuration or priority issues)
     // The reason was already reported by the callee.
     dout(10) << __func__ << ": failed to initiate a scrub" << dendl;
-    return schedule_result_t::preconditions;
+    return schedule_result_t::target_specific_failure;
   }
 
   // try to reserve the local OSD resources. If failing: no harm. We will
   // be retried by the OSD later on.
   if (!m_scrubber->reserve_local()) {
     dout(10) << __func__ << ": failed to reserve locally" << dendl;
-    return schedule_result_t::no_local_resources;
+    return schedule_result_t::osd_wide_failure;
   }
 
   // can commit to the updated flags now, as nothing will stop the scrub
@@ -1705,7 +1708,8 @@ void PG::on_scrub_schedule_input_change()
 void PG::scrub_requested(scrub_level_t scrub_level, scrub_type_t scrub_type)
 {
   ceph_assert(m_scrubber);
-  m_scrubber->scrub_requested(scrub_level, scrub_type, m_planned_scrub);
+  std::ignore =
+      m_scrubber->scrub_requested(scrub_level, scrub_type, m_planned_scrub);
 }
 
 void PG::clear_ready_to_merge() {
@@ -1817,6 +1821,11 @@ void PG::on_activate(interval_set<snapid_t> snaps)
   release_pg_backoffs();
   projected_last_update = info.last_update;
   m_scrubber->on_pg_activate(m_planned_scrub);
+}
+
+void PG::on_replica_activate()
+{
+  m_scrubber->on_replica_activate();
 }
 
 void PG::on_active_exit()
@@ -2835,4 +2844,12 @@ void PG::with_heartbeat_peers(std::function<void(int)>&& f)
 
 uint64_t PG::get_min_alloc_size() const {
   return osd->store->get_min_alloc_size();
+}
+
+PGLockWrapper::~PGLockWrapper()
+{
+  if (m_pg) {
+    // otherwise - we were 'moved from'
+    m_pg->unlock();
+  }
 }

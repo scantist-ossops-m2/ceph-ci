@@ -101,7 +101,7 @@ int DaosUser::create_bucket(
   std::unique_ptr<Bucket> bucket;
 
   // Look up the bucket. Create it if it doesn't exist.
-  ret = this->store->get_bucket(dpp, this, b, &bucket, y);
+  ret = this->store->load_bucket(dpp, this, b, &bucket, y);
   if (ret != 0 && ret != -ENOENT) {
     return ret;
   }
@@ -179,7 +179,7 @@ int DaosUser::read_stats(const DoutPrefixProvider* dpp, optional_yield y,
 
 /* stats - Not for first pass */
 int DaosUser::read_stats_async(const DoutPrefixProvider* dpp,
-                               RGWGetUserStats_CB* cb) {
+                               boost::intrusive_ptr<ReadStatsCB> cb) {
   return DAOS_NOT_IMPLEMENTED_LOG(dpp);
 }
 
@@ -404,23 +404,19 @@ std::unique_ptr<struct ds3_bucket_info> DaosBucket::get_encoded_info(
   return bucket_info;
 }
 
-int DaosBucket::remove_bucket(const DoutPrefixProvider* dpp,
-                              bool delete_children, bool forward_to_master,
-                              req_info* req_info, optional_yield y) {
+int DaosBucket::remove(const DoutPrefixProvider* dpp,
+                       bool delete_children, optional_yield y) {
   ldpp_dout(dpp, 20) << "DEBUG: remove_bucket, delete_children="
-                    
-                     << delete_children
-                    
-                     << " forward_to_master=" << forward_to_master << dendl;
+                     << delete_children << dendl;
 
   return ds3_bucket_destroy(get_name().c_str(), delete_children, store->ds3,
                             nullptr);
 }
 
-int DaosBucket::remove_bucket_bypass_gc(int concurrent_max,
-                                        bool keep_index_consistent,
-                                        optional_yield y,
-                                        const DoutPrefixProvider* dpp) {
+int DaosBucket::remove_bypass_gc(int concurrent_max,
+                                 bool keep_index_consistent,
+                                 optional_yield y,
+                                 const DoutPrefixProvider* dpp) {
   ldpp_dout(dpp, 20) << "DEBUG: remove_bucket_bypass_gc, concurrent_max="
                     
                      << concurrent_max
@@ -452,8 +448,7 @@ int DaosBucket::put_info(const DoutPrefixProvider* dpp, bool exclusive,
   return ret;
 }
 
-int DaosBucket::load_bucket(const DoutPrefixProvider* dpp, optional_yield y,
-                            bool get_stats) {
+int DaosBucket::load_bucket(const DoutPrefixProvider* dpp, optional_yield y) {
   ldpp_dout(dpp, 20) << "DEBUG: load_bucket(): bucket name=" << get_name()
                      << dendl;
   int ret = open(dpp);
@@ -500,16 +495,12 @@ int DaosBucket::read_stats(const DoutPrefixProvider* dpp,
 int DaosBucket::read_stats_async(
     const DoutPrefixProvider* dpp,
     const bucket_index_layout_generation& idx_layout, int shard_id,
-    RGWGetBucketStats_CB* ctx) {
+    boost::intrusive_ptr<ReadStatsCB> ctx) {
   return DAOS_NOT_IMPLEMENTED_LOG(dpp);
 }
 
 int DaosBucket::sync_user_stats(const DoutPrefixProvider* dpp,
                                 optional_yield y) {
-  return DAOS_NOT_IMPLEMENTED_LOG(dpp);
-}
-
-int DaosBucket::update_container_stats(const DoutPrefixProvider* dpp) {
   return DAOS_NOT_IMPLEMENTED_LOG(dpp);
 }
 
@@ -809,30 +800,15 @@ int DaosStore::initialize(CephContext* cct, const DoutPrefixProvider* dpp) {
   return ret;
 }
 
-const std::string& DaosZoneGroup::get_endpoint() const {
-  if (!group.endpoints.empty()) {
-    return group.endpoints.front();
-  } else {
-    // use zonegroup's master zone endpoints
-    auto z = group.zones.find(group.master_zone);
-    if (z != group.zones.end() && !z->second.endpoints.empty()) {
-      return z->second.endpoints.front();
-    }
-  }
-  return empty;
-}
-
 bool DaosZoneGroup::placement_target_exists(std::string& target) const {
   return !!group.placement_targets.count(target);
 }
 
-int DaosZoneGroup::get_placement_target_names(
+void DaosZoneGroup::get_placement_target_names(
     std::set<std::string>& names) const {
   for (const auto& target : group.placement_targets) {
     names.emplace(target.second.name);
   }
-
-  return 0;
 }
 
 int DaosZoneGroup::get_placement_tier(const rgw_placement_rule& rule,
@@ -887,8 +863,8 @@ const std::string& DaosZone::get_current_period_id() {
   return current_period->get_id();
 }
 
-std::unique_ptr<LuaManager> DaosStore::get_lua_manager() {
-  return std::make_unique<DaosLuaManager>(this);
+std::unique_ptr<LuaManager> DaosStore::get_lua_manager(const DoutPrefixProvider *dpp, const std::string& luarocks_path) {
+  return std::make_unique<DaosLuaManager>(this, dpp, luarocks_path);
 }
 
 int DaosObject::get_obj_state(const DoutPrefixProvider* dpp,
@@ -2054,7 +2030,7 @@ int DaosMultipartWriter::complete(
     ceph::real_time set_mtime, std::map<std::string, bufferlist>& attrs,
     ceph::real_time delete_at, const char* if_match, const char* if_nomatch,
     const std::string* user_data, rgw_zone_set* zones_trace, bool* canceled,
-    optional_yield y) {
+    const req_context& rctx) {
   ldpp_dout(dpp, 20) << "DaosMultipartWriter::complete(): enter part="
                      << part_num_str << dendl;
 
@@ -2260,64 +2236,21 @@ inline std::ostream& operator<<(std::ostream& out, const rgw_user* u) {
   return out << s;
 }
 
-int DaosStore::get_bucket(const DoutPrefixProvider* dpp, User* u,
-                          const rgw_bucket& b, std::unique_ptr<Bucket>* bucket,
-                          optional_yield y) {
-  ldpp_dout(dpp, 20) << "DEBUG: get_bucket1: User: " << u << dendl;
-  int ret;
-  Bucket* bp;
-
-  bp = new DaosBucket(this, b, u);
-  ret = bp->load_bucket(dpp, y);
-  if (ret != 0) {
-    delete bp;
-    return ret;
-  }
-
-  bucket->reset(bp);
-  return 0;
-}
-
-int DaosStore::get_bucket(User* u, const RGWBucketInfo& i,
-                          std::unique_ptr<Bucket>* bucket) {
-  DaosBucket* bp;
-
-  bp = new DaosBucket(this, i, u);
+std::unique_ptr<Bucket> DaosStore::get_bucket(User* u, const RGWBucketInfo& i) {
   /* Don't need to fetch the bucket info, use the provided one */
-
-  bucket->reset(bp);
-  return 0;
+  return std::make_unique<DaosBucket>(this, i, u);
 }
 
-int DaosStore::get_bucket(const DoutPrefixProvider* dpp, User* u,
-                          const std::string& tenant, const std::string& name,
-                          std::unique_ptr<Bucket>* bucket, optional_yield y) {
-  ldpp_dout(dpp, 20) << "get_bucket" << dendl;
-  rgw_bucket b;
+int DaosStore::load_bucket(const DoutPrefixProvider* dpp, User* u,
+                           const rgw_bucket& b, std::unique_ptr<Bucket>* bucket,
+                           optional_yield y) {
+  ldpp_dout(dpp, 20) << "DEBUG: get_bucket1: User: " << u << dendl;
 
-  b.tenant = tenant;
-  b.name = name;
-
-  return get_bucket(dpp, u, b, bucket, y);
+  *bucket = std::make_unique<DaosBucket>(this, b, u);
+  return (*bucket)->load_bucket(dpp, y);
 }
 
 bool DaosStore::is_meta_master() { return true; }
-
-int DaosStore::forward_request_to_master(const DoutPrefixProvider* dpp,
-                                         User* user, obj_version* objv,
-                                         bufferlist& in_data, JSONParser* jp,
-                                         req_info& info, optional_yield y) {
-  return DAOS_NOT_IMPLEMENTED_LOG(dpp);
-}
-
-int DaosStore::forward_iam_request_to_master(const DoutPrefixProvider* dpp,
-                                             const RGWAccessKey& key,
-                                             obj_version* objv,
-                                             bufferlist& in_data,
-                                             RGWXMLDecoder::XMLParser* parser,
-                                             req_info& info, optional_yield y) {
-  return DAOS_NOT_IMPLEMENTED_LOG(dpp);
-}
 
 std::string DaosStore::zone_unique_id(uint64_t unique_num) { return ""; }
 

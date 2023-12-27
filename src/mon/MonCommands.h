@@ -444,6 +444,14 @@ COMMAND("fs rename "
 	"name=new_fs_name,type=CephString,goodchars=" FS_NAME_GOODCHARS
 	" name=yes_i_really_mean_it,type=CephBool,req=false",
 	"rename a ceph file system", "mds", "rw")
+COMMAND("fs swap "
+	"name=fs1_name,type=CephString "
+	"name=fs1_id,type=CephInt,range=0 "
+	"name=fs2_name,type=CephString "
+	"name=fs2_id,type=CephInt,range=0 "
+	"name=swap_fscids,type=CephChoices,strings=yes|no,req=true "
+	"name=yes_i_really_mean_it,type=CephBool,req=false",
+	"swap ceph file system names", "mds", "rw")
 
 /*
  * Monmap commands
@@ -843,13 +851,13 @@ COMMAND("osd erasure-code-profile ls",
 COMMAND("osd set "
 	"name=key,type=CephChoices,strings=full|pause|noup|nodown|"
 	"noout|noin|nobackfill|norebalance|norecover|noscrub|nodeep-scrub|"
-	"notieragent|nosnaptrim|pglog_hardlimit "
+	"notieragent|nosnaptrim|pglog_hardlimit|noautoscale "
         "name=yes_i_really_mean_it,type=CephBool,req=false",
 	"set <key>", "osd", "rw")
 COMMAND("osd unset "
 	"name=key,type=CephChoices,strings=full|pause|noup|nodown|"\
 	"noout|noin|nobackfill|norebalance|norecover|noscrub|nodeep-scrub|"
-	"notieragent|nosnaptrim",
+	"notieragent|nosnaptrim|noautoscale",
 	"unset <key>", "osd", "rw")
 COMMAND("osd require-osd-release "\
 	"name=release,type=CephChoices,strings=octopus|pacific|quincy|reef "

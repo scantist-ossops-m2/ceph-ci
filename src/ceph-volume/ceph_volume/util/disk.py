@@ -359,31 +359,23 @@ def is_device(dev):
         if not allow_loop_devices():
             return False
 
+    TYPE = lsblk(dev).get('TYPE')
+    if TYPE:
+        return TYPE in ['disk', 'mpath']
+
     # fallback to stat
-    return _stat_is_device(os.lstat(dev).st_mode)
+    return _stat_is_device(os.lstat(dev).st_mode) and not is_partition(dev)
 
 
-def is_partition(dev):
+def is_partition(dev: str) -> bool:
     """
     Boolean to determine if a given device is a partition, like /dev/sda1
     """
     if not os.path.exists(dev):
         return False
-    # use lsblk first, fall back to using stat
-    TYPE = lsblk(dev).get('TYPE')
-    if TYPE:
-        return TYPE == 'part'
 
-    # fallback to stat
-    stat_obj = os.stat(dev)
-    if _stat_is_device(stat_obj.st_mode):
-        return False
-
-    major = os.major(stat_obj.st_rdev)
-    minor = os.minor(stat_obj.st_rdev)
-    if os.path.exists('/sys/dev/block/%d:%d/partition' % (major, minor)):
-        return True
-    return False
+    partitions = get_partitions()
+    return dev.split("/")[-1] in partitions
 
 
 def is_ceph_rbd(dev):
@@ -779,8 +771,6 @@ def get_block_devs_sysfs(_sys_block_path='/sys/block', _sys_dev_block_path='/sys
             continue
         type_ = 'disk'
         holders = os.listdir(os.path.join(_sys_block_path, dev, 'holders'))
-        if get_file_contents(os.path.join(_sys_block_path, dev, 'removable')) == "1":
-            continue
         if holder_inner_loop():
             continue
         dm_dir_path = os.path.join(_sys_block_path, dev, 'dm')
@@ -878,6 +868,7 @@ def get_devices(_sys_block_path='/sys/block', device=''):
         for key, file_ in facts:
             metadata[key] = get_file_contents(os.path.join(sysdir, file_))
 
+        device_slaves = []
         if block[2] != 'part':
             device_slaves = os.listdir(os.path.join(sysdir, 'slaves'))
             metadata['partitions'] = get_partitions_facts(sysdir)
@@ -917,6 +908,10 @@ def get_devices(_sys_block_path='/sys/block', device=''):
         metadata['human_readable_size'] = human_readable_size(metadata['size'])
         metadata['path'] = diskname
         metadata['type'] = block[2]
+
+        # some facts from udevadm
+        p = udevadm_property(sysdir)
+        metadata['id_bus'] = p.get('ID_BUS', '')
 
         device_facts[diskname] = metadata
     return device_facts

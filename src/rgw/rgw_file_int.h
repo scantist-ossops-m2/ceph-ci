@@ -36,6 +36,7 @@
 #include "rgw_putobj_processor.h"
 #include "rgw_aio_throttle.h"
 #include "rgw_compression.h"
+#include "rgw_perf_counters.h"
 
 
 /* XXX
@@ -226,6 +227,7 @@ namespace rgw {
       ~file();
     };
 
+    // coverity[missing_lock:SUPPRESS]
     struct directory {
 
       static constexpr uint32_t FLAG_NONE =     0x0000;
@@ -1405,17 +1407,14 @@ public:
     sent_data = true;
   }
 
-  void send_response_data(rgw::sal::BucketList& buckets) override {
+  void send_response_data(std::span<const RGWBucketEnt> buckets) override {
     if (!sent_data)
       return;
-    auto& m = buckets.get_buckets();
-    for (const auto& iter : m) {
-      std::string_view marker{iter.first};
-      auto& ent = iter.second;
-      if (! this->operator()(ent->get_name(), marker)) {
+    for (const auto& ent : buckets) {
+      if (! this->operator()(ent.bucket.name, ent.bucket.name)) {
 	/* caller cannot accept more */
 	lsubdout(cct, rgw, 5) << "ListBuckets rcb failed"
-			      << " dirent=" << ent->get_name()
+			      << " dirent=" << ent.bucket.name
 			      << " call count=" << ix
 			      << dendl;
 	rcb_eof = true;
@@ -1915,11 +1914,9 @@ public:
 
   int get_params(optional_yield) override {
     req_state* state = get_state();
-    RGWAccessControlPolicy_S3 s3policy(state->cct);
-    /* we don't have (any) headers, so just create canned ACLs */
-    int ret = s3policy.create_canned(state->owner, state->bucket_owner, state->canned_acl);
-    policy = s3policy;
-    return ret;
+    /* we don't have (any) headers, so just create default ACLs */
+    policy.create_default(state->owner.id, state->owner.display_name);
+    return 0;
   }
 
   void send_response() override {
@@ -2031,11 +2028,9 @@ public:
 
   int get_params(optional_yield) override {
     req_state* state = get_state();
-    RGWAccessControlPolicy_S3 s3policy(state->cct);
-    /* we don't have (any) headers, so just create canned ACLs */
-    int ret = s3policy.create_canned(state->owner, state->bucket_owner, state->canned_acl);
-    policy = s3policy;
-    return ret;
+    /* we don't have (any) headers, so just create default ACLs */
+    policy.create_default(state->owner.id, state->owner.display_name);
+    return 0;
   }
 
   int get_data(buffer::list& _bl) override {
@@ -2352,10 +2347,10 @@ public:
 
   void send_response() override {
     bucket->get_creation_time() = get_state()->bucket->get_info().creation_time;
-    bs.size = bucket->get_size();
-    bs.size_rounded = bucket->get_size_rounded();
+    bs.size = stats.size;
+    bs.size_rounded = stats.size_rounded;
     bs.creation_time = bucket->get_creation_time();
-    bs.num_entries = bucket->get_count();
+    bs.num_entries = stats.num_objects;
     std::swap(attrs, get_state()->bucket_attrs);
   }
 
@@ -2487,6 +2482,7 @@ public:
   off_t real_ofs;
   size_t bytes_written;
   bool eio;
+  rgw::op_counters::CountersContainer counters;
 
   RGWWriteRequest(rgw::sal::Driver* driver, const RGWProcessEnv& penv,
 		  std::unique_ptr<rgw::sal::User> _user,
@@ -2534,11 +2530,9 @@ public:
 
   int get_params(optional_yield) override {
     req_state* state = get_state();
-    RGWAccessControlPolicy_S3 s3policy(state->cct);
-    /* we don't have (any) headers, so just create canned ACLs */
-    int ret = s3policy.create_canned(state->owner, state->bucket_owner, state->canned_acl);
-    policy = s3policy;
-    return ret;
+    /* we don't have (any) headers, so just create default ACLs */
+    policy.create_default(state->owner.id, state->owner.display_name);
+    return 0;
   }
 
   int get_data(buffer::list& _bl) override {
@@ -2641,15 +2635,13 @@ public:
 
   int get_params(optional_yield) override {
     req_state* s = get_state();
-    RGWAccessControlPolicy_S3 s3policy(s->cct);
-    /* we don't have (any) headers, so just create canned ACLs */
-    int ret = s3policy.create_canned(s->owner, s->bucket_owner, s->canned_acl);
-    dest_policy = s3policy;
+    /* we don't have (any) headers, so just create default ACLs */
+    dest_policy.create_default(s->owner.id, s->owner.display_name);
     /* src_object required before RGWCopyObj::verify_permissions() */
     rgw_obj_key k = rgw_obj_key(src_name);
     s->src_object = s->bucket->get_object(k);
     s->object = s->src_object->clone(); // needed to avoid trap at rgw_op.cc:5150
-    return ret;
+    return 0;
   }
 
   void send_response() override {}

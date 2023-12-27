@@ -49,9 +49,12 @@ function TEST_scrub_test() {
 
     run_mon $dir a --osd_pool_default_size=3 || return 1
     run_mgr $dir x || return 1
+    local ceph_osd_args="--osd-scrub-interval-randomize-ratio=0 --osd-deep-scrub-randomize-ratio=0 "
+    ceph_osd_args+="--osd_scrub_backoff_ratio=0 --osd_stats_update_period_not_scrubbing=3 "
+    ceph_osd_args+="--osd_stats_update_period_scrubbing=2"
     for osd in $(seq 0 $(expr $OSDS - 1))
     do
-      run_osd $dir $osd || return 1
+      run_osd $dir $osd $ceph_osd_args || return 1
     done
 
     # Create a pool with a single pg
@@ -211,27 +214,28 @@ function TEST_scrub_extended_sleep() {
 
     run_mon $dir a --osd_pool_default_size=3 || return 1
     run_mgr $dir x || return 1
+
+    local ceph_osd_args="--osd-scrub-interval-randomize-ratio=0 --osd-deep-scrub-randomize-ratio=0 "
+    ceph_osd_args+="--osd_scrub_backoff_ratio=0 --osd_stats_update_period_not_scrubbing=3 "
+    ceph_osd_args+="--osd_stats_update_period_scrubbing=2 --osd_scrub_sleep=0 "
+    ceph_osd_args+="--osd_scrub_extended_sleep=20 --osd_scrub_begin_week_day=$DAY_START "
+    ceph_osd_args+="--osd_op_queue=wpq --osd_scrub_end_week_day=$DAY_END "
+    ceph_osd_args+="--bluestore_cache_autotune=false" # why needed?
+
     for osd in $(seq 0 $(expr $OSDS - 1))
     do
-      run_osd $dir $osd --osd_scrub_sleep=0 \
-                        --osd_scrub_extended_sleep=20 \
-                        --bluestore_cache_autotune=false \
-	                --osd_deep_scrub_randomize_ratio=0.0 \
-	                --osd_scrub_interval_randomize_ratio=0 \
-			--osd_scrub_begin_week_day=$DAY_START \
-			--osd_scrub_end_week_day=$DAY_END \
-			|| return 1
+      run_osd $dir $osd $ceph_osd_args || return 1
     done
 
     # Create a pool with a single pg
     create_pool $poolname 1 1
     wait_for_clean || return 1
 
-    # Trigger a scrub on a PG
+    # Trigger a periodic scrub on a PG (no 'extended sleep' for h.p. scrubs)
     local pgid=$(get_pg $poolname SOMETHING)
     local primary=$(get_primary $poolname SOMETHING)
     local last_scrub=$(get_last_scrub_stamp $pgid)
-    ceph tell $pgid scrub || return 1
+    ceph tell $pgid schedule-scrub || return 1
 
     # Allow scrub to start extended sleep
     PASSED="false"
@@ -326,12 +330,7 @@ function _scrub_abort() {
     local primary=$(get_primary $poolname obj1)
     local pgid="${poolid}.0"
 
-    ceph tell $pgid $type || return 1
-    # deep-scrub won't start without scrub noticing
-    if [ "$type" = "deep_scrub" ];
-    then
-      ceph tell $pgid scrub || return 1
-    fi
+    ceph tell $pgid schedule-$type || return 1
 
     # Wait for scrubbing to start
     set -o pipefail
@@ -355,7 +354,7 @@ function _scrub_abort() {
     fi
 
     ceph osd set $stopscrub
-    if [ "$type" = "deep_scrub" ];
+    if [ "$type" = "deep-scrub" ];
     then
       ceph osd set noscrub
     fi
@@ -386,7 +385,7 @@ function _scrub_abort() {
     ceph config set osd "osd_scrub_sleep" "0.1"
 
     ceph osd unset $stopscrub
-    if [ "$type" = "deep_scrub" ];
+    if [ "$type" = "deep-scrub" ];
     then
       ceph osd unset noscrub
     fi
@@ -401,7 +400,7 @@ function TEST_scrub_abort() {
 
 function TEST_deep_scrub_abort() {
     local dir=$1
-    _scrub_abort $dir deep_scrub
+    _scrub_abort $dir deep-scrub
 }
 
 function TEST_scrub_permit_time() {
@@ -437,7 +436,7 @@ function TEST_scrub_permit_time() {
     # current time to set last_scrub_stamp, it sets the deadline
     # back by osd_max_interval which would cause the time permit checking
     # to be skipped.  Set back 1 day, the default scrub_min_interval.
-    ceph tell $pgid scrub $(( 24 * 60 * 60 )) || return 1
+    ceph tell $pgid schedule-scrub $(( 24 * 60 * 60 )) || return 1
 
     # Scrub should not run
     for ((i=0; i < 30; i++)); do
@@ -491,7 +490,7 @@ function TEST_just_deep_scrubs() {
     local dbg_counter_at_start=${sched_data['query_scrub_seq']}
     echo "test counter @ start: $dbg_counter_at_start"
 
-    ceph pg $pgid deep_scrub
+    ceph tell $pgid schedule-deep-scrub
 
     sleep 5 # 5s is the 'pg dump' interval
     declare -A sc_data_2
@@ -527,6 +526,8 @@ function TEST_dump_scrub_schedule() {
             --osd_scrub_interval_randomize_ratio=0 \
             --osd_scrub_backoff_ratio=0.0 \
             --osd_op_queue=wpq \
+            --osd_stats_update_period_not_scrubbing=3 \
+            --osd_stats_update_period_scrubbing=2 \
             --osd_scrub_sleep=0.2"
 
     for osd in $(seq 0 $(expr $OSDS - 1))
@@ -568,8 +569,7 @@ function TEST_dump_scrub_schedule() {
 
     saved_last_stamp=${sched_data['query_last_stamp']}
     ceph tell osd.* config set osd_scrub_sleep "0"
-    ceph pg deep-scrub $pgid
-    ceph pg scrub $pgid
+    ceph tell $pgid deep-scrub
 
     # wait for the 'last duration' entries to change. Note that the 'dump' one will need
     # up to 5 seconds to sync
@@ -596,7 +596,7 @@ function TEST_dump_scrub_schedule() {
     sleep 2
     saved_last_stamp=${sched_data['query_last_stamp']}
 
-    ceph pg $pgid scrub
+    ceph tell $pgid schedule-scrub
     sleep 1
     sched_data=()
     declare -A expct_scrub_peri_sched=( ['query_is_future']="false" )
