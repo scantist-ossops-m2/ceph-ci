@@ -17,15 +17,17 @@ CnLog::~CnLog() {
 }
 
 void CnLog::_flush(EntryVector& q, bool crash) {
-  seastar::alien::submit_to(inst, shard, [&q] {
-    for (auto& it : q) {
+  // XXX: log flushing in seastar might be reordered.
+  std::ignore = seastar::alien::submit_to(
+      inst, shard, [moved_q=std::move(q)] {
+    for (auto& it : moved_q) {
       crimson::get_logger(it.m_subsys).log(
         crimson::to_log_level(it.m_prio),
         "{}",
         it.strv());
     }
     return seastar::make_ready_future<>();
-  }).wait();
+  });
   q.clear();
   return;
 }
