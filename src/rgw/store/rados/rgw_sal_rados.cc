@@ -2349,7 +2349,7 @@ int RadosMultipartUpload::cleanup_part_history(const DoutPrefixProvider* dpp,
     manifest.set_prefix(ppfx);
     RGWObjManifest::obj_iterator miter = manifest.obj_begin(dpp);
     for (; miter != manifest.obj_end(dpp); ++miter) {
-      rgw_raw_obj raw_part_obj = miter.get_location().get_raw_obj(store);
+      rgw_raw_obj raw_part_obj = miter.get_location().get_raw_obj(store->getRados());
       cls_rgw_obj_key part_key(raw_part_obj.oid);
       chain.push_obj(raw_part_obj.pool.to_str(), part_key, raw_part_obj.loc);
     }

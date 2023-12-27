@@ -8,6 +8,7 @@
 #include <boost/algorithm/string.hpp>
 
 #include "objclass/objclass.h"
+#include "rgw_obj_manifest.h"
 #include "cls/rgw/cls_rgw_ops.h"
 #include "cls/rgw/cls_rgw_const.h"
 #include "common/Clock.h"

@@ -6,6 +6,7 @@
 #include <errno.h>
 
 #include "objclass/objclass.h"
+#include "rgw_obj_manifest.h"
 #include "cls/rgw/cls_rgw_ops.h"
 #include "cls/rgw/cls_rgw_types.h"
 #include "cls/rgw_gc/cls_rgw_gc_types.h"

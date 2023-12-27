@@ -2,6 +2,7 @@
 // vim: ts=8 sw=2 smarttab
 #include <errno.h>
 
+#include "rgw_obj_manifest.h"
 #include "cls/rgw/cls_rgw_ops.h"
 #include "cls/rgw_gc/cls_rgw_gc_ops.h"
 #include "cls/queue/cls_queue_ops.h"

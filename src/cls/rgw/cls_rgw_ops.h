@@ -4,6 +4,7 @@
 #pragma once
 
 #include "cls/rgw/cls_rgw_types.h"
+#include "rgw_multi_upload_part_info.h"
 
 struct rgw_cls_tag_timeout_op
 {
