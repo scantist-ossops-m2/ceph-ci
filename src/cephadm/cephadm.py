@@ -4074,7 +4074,7 @@ def create_initial_keys(
                '\tcaps osd = allow *\n'
                '[mgr.%s]\n'
                '\tkey = %s\n'
-               '\tcaps mon = profile mgr\n'
+               '\tcaps mon = allow *\n'
                '\tcaps mds = allow *\n'
                '\tcaps osd = allow *\n'
                % (mon_key, admin_key, mgr_id, mgr_key))
