@@ -765,7 +765,7 @@ class MgrService(CephService):
 
         # get mgr. key
         keyring = self.get_keyring_with_caps(self.get_auth_entity(mgr_id),
-                                             ['mon', 'profile mgr',
+                                             ['mon', 'allow *',
                                               'osd', 'allow *',
                                               'mds', 'allow *'])
 
