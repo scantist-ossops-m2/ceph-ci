@@ -63,6 +63,7 @@ int destroy_ec_profile(rados_t *cluster,
   if (ret)
     oss << "rados_mon_command: erasure-code-profile rm testprofile-"
 	<< pool_name << " failed with error " << ret;
+  rados_wait_for_latest_osdmap(*cluster);
   return ret;
 }
 
