@@ -76,41 +76,39 @@ struct connection_t {
   const boost::optional<std::string> mechanism;
   utime_t timestamp = ceph_clock_now();
 
+  // fire all callbacks
+  void clear_callbacks() {
+    std::for_each(callbacks.begin(), callbacks.end(), [this](auto& cb_tag) {
+        cb_tag.cb(status);
+        ldout(cct, 20) << "Kafka clear callbacks: invoking callback with tag="
+                       << cb_tag.tag << " for: " << broker
+                       << " with status: " << status << dendl;
+      });
+    callbacks.clear();
+  }
+
   // cleanup of all internal connection resource
   // the object can still remain, and internal connection
   // resources created again on successful reconnection
-  void destroy(int s) {
-    status = s;
+  void destroy() {
     // destroy temporary conf (if connection was never established)
     if (temp_conf) {
         rd_kafka_conf_destroy(temp_conf);
         return;
     }
-    if (!is_ok()) {
+    if (!producer) {
       // no producer, nothing to destroy
       return;
     }
-    // wait for all remaining acks/nacks
-    rd_kafka_flush(producer, 5*1000 /* wait for max 5 seconds */);
     // destroy all topics
     std::for_each(topics.begin(), topics.end(), [](auto topic) {rd_kafka_topic_destroy(topic);});
+    topics.clear();
     // destroy producer
     rd_kafka_destroy(producer);
     producer = nullptr;
-    // fire all remaining callbacks (if not fired by rd_kafka_flush)
-    std::for_each(callbacks.begin(), callbacks.end(), [this](auto& cb_tag) {
-        cb_tag.cb(status);
-        ldout(cct, 20) << "Kafka destroy: invoking callback with tag="
-                       << cb_tag.tag << " for: " << broker
-                       << " with status: " << status << dendl;
-      });
-    callbacks.clear();
+    clear_callbacks();
     delivery_tag = 1;
     ldout(cct, 20) << "Kafka destroy: complete for: " << broker << dendl;
-  }
-
-  bool is_ok() const {
-    return (producer != nullptr);
   }
 
   // ctor for setting immutable values
@@ -121,7 +119,7 @@ struct connection_t {
 
   // dtor also destroys the internals
   ~connection_t() {
-    destroy(status);
+    destroy();
   }
 };
 
@@ -194,15 +192,73 @@ void log_callback(const rd_kafka_t* rk, int level, const char *fac, const char *
 void poll_err_callback(rd_kafka_t *rk, int err, const char *reason, void *opaque) {
   const auto conn = reinterpret_cast<connection_t*>(rd_kafka_opaque(rk));
   ldout(conn->cct, 10) << "Kafka run: poll error(" << err << "): " << reason << dendl;
+  conn->status = err;
+  conn->clear_callbacks();
 }
 
 using connection_t_ptr = std::unique_ptr<connection_t>;
 
+void update_connection_status(connection_t* conn) {
+  if (!conn->producer) {
+    conn->status = STATUS_CONNECTION_CLOSED;
+    return;
+  }
+  const std::string topic_name{"dummy"};
+  // create a new dummy topic unless it was already created
+  auto topic_it = std::find(conn->topics.begin(), conn->topics.end(), topic_name);
+  rd_kafka_topic_t* topic = nullptr;
+  if (topic_it == conn->topics.end()) {
+    topic = rd_kafka_topic_new(conn->producer, topic_name.c_str(), nullptr);
+    if (!topic) {
+      const auto err = rd_kafka_last_error();
+      ldout(conn->cct, 1) << "Kafka connection status: failed to create topic: " << topic_name << " error: " 
+        << rd_kafka_err2str(err) << dendl;
+      conn->status = err;
+      return;
+    }
+    conn->topics.push_back(topic);
+    ldout(conn->cct, 20) << "Kafka connection status: created new topic: " << topic_name << dendl;
+  } else {
+    topic = *topic_it;
+    ldout(conn->cct, 20) << "Kafka connection status: reused existing topic: " << topic_name << dendl;
+  }
+    
+  const auto rc = rd_kafka_produce(
+      topic,
+      RD_KAFKA_PARTITION_UA,
+      RD_KAFKA_MSG_F_FREE,
+      // data and length
+      nullptr,
+      0,
+      // key and length
+      nullptr, 
+      0,
+      nullptr);
+    if (rc == -1) {
+      const auto err = rd_kafka_last_error();
+      ldout(conn->cct, 10) << "Kafka connection status: failed to produce: " << rd_kafka_err2str(err) << dendl;
+      conn->status = err;
+      return;
+    }
+ 
+    // so far, status is ok, unless "poll" change that
+    conn->status = STATUS_OK;
+    // since rd_kafka_produce is async we call rd_kafka_poll to get the status
+    const auto read_timeout = 1; // 1ms
+    rd_kafka_poll(conn->producer, read_timeout);
+}
+
 // utility function to create a producer, when the connection object already exists
 bool new_producer(connection_t* conn) {
   // reset all status codes
-  conn->status = STATUS_OK; 
+  conn->status = STATUS_CONNECTION_CLOSED; 
   char errstr[512] = {0};
+
+  if (conn->producer) {
+    ldout(conn->cct, 5) << "Kafka connect: producer already exists. detroying the existing before creating a new one" << dendl;
+    conn->status = STATUS_CONF_REPLCACE;
+    conn->destroy();
+  }
 
   conn->temp_conf = rd_kafka_conf_new();
   if (!conn->temp_conf) {
@@ -271,10 +327,6 @@ bool new_producer(connection_t* conn) {
   // define poll callback to allow reconnect
   rd_kafka_conf_set_error_cb(conn->temp_conf, poll_err_callback);
   // create the producer
-  if (conn->producer) {
-    ldout(conn->cct, 5) << "Kafka connect: producer already exists. detroying the existing before creating a new one" << dendl;
-    conn->destroy(STATUS_CONF_REPLCACE);
-  }
   conn->producer = rd_kafka_new(RD_KAFKA_PRODUCER, conn->temp_conf, errstr, sizeof(errstr));
   if (!conn->producer) {
     conn->status = rd_kafka_last_error();
@@ -297,7 +349,8 @@ bool new_producer(connection_t* conn) {
 
   // conf ownership passed to producer
   conn->temp_conf = nullptr;
-  return true;
+  update_connection_status(conn);
+  return (conn->status == STATUS_OK);
 
 conf_error:
   conn->status = rd_kafka_last_error();
@@ -329,7 +382,6 @@ public:
 private:
   std::atomic<size_t> connection_count;
   bool stopped;
-  int read_timeout_ms;
   ConnectionList connections;
   MessageQueue messages;
   std::atomic<size_t> queued;
@@ -353,10 +405,10 @@ private:
 
     conn->timestamp = ceph_clock_now(); 
 
-    if (!conn->is_ok()) {
+    if (!conn->producer || conn->status != STATUS_OK) {
       // connection had an issue while message was in the queue
       // TODO add error stats
-      ldout(conn->cct, 1) << "Kafka publish: producer was closed while message was in the queue. error: " << status_to_string(conn->status) << dendl;
+      ldout(conn->cct, 1) << "Kafka publish: producer had error while message was in the queue. error: " << status_to_string(conn->status) << dendl;
       if (message->cb) {
         message->cb(conn->status);
       }
@@ -370,19 +422,20 @@ private:
       topic = rd_kafka_topic_new(conn->producer, message->topic.c_str(), nullptr);
       if (!topic) {
         const auto err = rd_kafka_last_error();
-        ldout(conn->cct, 1) << "Kafka publish: failed to create topic: " << message->topic << " error: " << status_to_string(err) << dendl;
+        ldout(conn->cct, 1) << "Kafka publish: failed to create topic: " << message->topic << " error: " 
+          << rd_kafka_err2str(err) << dendl;
         if (message->cb) {
           message->cb(err);
         }
-        conn->destroy(err);
+        conn->status = err;
         return;
       }
       // TODO use the topics list as an LRU cache
       conn->topics.push_back(topic);
       ldout(conn->cct, 20) << "Kafka publish: successfully created topic: " << message->topic << dendl;
     } else {
-        topic = *topic_it;
-        ldout(conn->cct, 20) << "Kafka publish: reused existing topic: " << message->topic << dendl;
+      topic = *topic_it;
+      ldout(conn->cct, 20) << "Kafka publish: reused existing topic: " << message->topic << dendl;
     }
 
     const auto tag = (message->cb == nullptr ? nullptr : new uint64_t(conn->delivery_tag++));
@@ -405,12 +458,11 @@ private:
     if (rc == -1) {
       const auto err = rd_kafka_last_error();
       ldout(conn->cct, 10) << "Kafka publish: failed to produce: " << rd_kafka_err2str(err) << dendl;
-      // TODO: dont error on full queue, and don't destroy connection, retry instead
       // immediatly invoke callback on error if needed
       if (message->cb) {
         message->cb(err);
       }
-      conn->destroy(err);
+      conn->status = err;
       delete tag;
       return;
     }
@@ -441,6 +493,10 @@ private:
   // (4) TODO reconnect on connection errors
   // (5) TODO cleanup timedout callbacks
   void run() noexcept {
+    auto read_timeout = cct->_conf->rgw_kafka_sleep_timeout;
+    auto sleep_timeout = read_timeout*3;
+    auto max_sleep_timeout = sleep_timeout*128;
+
     while (!stopped) {
 
       // publish all messages in the queue
@@ -457,7 +513,13 @@ private:
         end_it = connections.end();
       }
 
-      const auto read_timeout = cct->_conf->rgw_kafka_sleep_timeout;
+      if (read_timeout != cct->_conf->rgw_kafka_sleep_timeout) {
+        // conf changed, reset values
+        read_timeout = cct->_conf->rgw_kafka_sleep_timeout;
+        sleep_timeout = read_timeout*3;
+        max_sleep_timeout = sleep_timeout*128;
+      }
+
       // loop over all connections to read acks
       for (;conn_it != end_it;) {
         
@@ -470,20 +532,22 @@ private:
           conn->status = STATUS_CONNECTION_IDLE;
           conn_it = connections.erase(conn_it);
           --connection_count; \
+          sleep_timeout = read_timeout*3;
           continue;
         }
 
         // try to reconnect the connection if it has an error
-        if (!conn->is_ok()) {
+        if (!conn->producer || conn->status != STATUS_OK) {
           ldout(conn->cct, 10) << "Kafka run: connection status is: " << status_to_string(conn->status) << dendl;
           const auto& broker = conn_it->first;
           ldout(conn->cct, 20) << "Kafka run: retry connection" << dendl;
           if (new_producer(conn.get()) == false) {
-            ldout(conn->cct, 10) << "Kafka run: connection (" << broker << ") retry failed" << dendl;
-            // TODO: add error counter for failed retries
-            // TODO: add exponential backoff for retries
+            sleep_timeout = std::min(sleep_timeout*2, max_sleep_timeout);
+            ldout(conn->cct, 10) << "Kafka run: connection (" << broker << ") retry failed. sleep for " << 
+              sleep_timeout << "ms" << dendl;
           } else {
             ldout(conn->cct, 10) << "Kafka run: connection (" << broker << ") retry successful" << dendl;
+            sleep_timeout = read_timeout*3;
           }
           ++conn_it;
           continue;
@@ -494,9 +558,9 @@ private:
         // just increment the iterator
         ++conn_it;
       }
-      // sleep if no messages were received or published across all connection
-      if (send_count == 0 && reply_count == 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(read_timeout*3));
+      // sleep if no messages were published across all connection
+      if (reply_count == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleep_timeout));
       }
     }
   }
@@ -611,6 +675,17 @@ public:
     }
     return STATUS_QUEUE_FULL;
   }
+
+  int check_broker(const std::string& conn_name,
+    const std::string& topic) {
+    std::lock_guard lock(connections_lock);
+    if (const auto it = connections.find(conn_name); it != connections.end()) {
+      ldout(cct, 10) << "Kafka broker: " << conn_name << " status is: " << it->second->status << dendl;
+      return it->second->status;
+    }
+    ldout(cct, 10) << "Kafka broker: " << conn_name << " not found" << dendl;
+    return STATUS_CONNECTION_CLOSED;
+  }
   
   int publish_with_confirm(const std::string& conn_name, 
     const std::string& topic,
@@ -705,6 +780,12 @@ int publish_with_confirm(const std::string& conn_name,
     reply_callback_t cb) {
   if (!s_manager) return STATUS_MANAGER_STOPPED;
   return s_manager->publish_with_confirm(conn_name, topic, message, cb);
+}
+
+int check_broker(const std::string& conn_name,
+    const std::string& topic) {
+  if (!s_manager) return STATUS_MANAGER_STOPPED;
+  return s_manager->check_broker(conn_name, topic);
 }
 
 size_t get_connection_count() {
