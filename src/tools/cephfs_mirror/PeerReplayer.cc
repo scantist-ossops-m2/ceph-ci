@@ -1351,18 +1351,29 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
     return r;
   }
 
+  struct ceph_statx root_stx;
+  r = ceph_fstatx(m_local_mount, fh.c_fd, &root_stx,
+                  CEPH_STATX_MODE | CEPH_STATX_UID | CEPH_STATX_GID |
+                  CEPH_STATX_SIZE | CEPH_STATX_ATIME | CEPH_STATX_MTIME,
+                  AT_STATX_DONT_SYNC | AT_SYMLINK_NOFOLLOW);
+  if (r < 0) {
+    derr << ": failed to stat snap=" << current.first << ": " << cpp_strerror(r)
+         << dendl;
+    return r;
+  }
+
   ceph_snapdiff_info sd_info;
   ceph_snapdiff_entry_t sd_entry;
   std::string epath = ".", npath = "", nabs_path = "", nname = "";
 
-  //The queue of SyncDiffEntry items (directories) to be synchronized.
+  //The queue of SyncEntry items (directories) to be synchronized.
   //We follow a breadth first approach here based on the snapdiff output.
-  std::queue<SyncDiffEntry> sync_queue;
+  std::queue<SyncEntry> sync_queue;
 
   //start with initial/default entry
   strncpy(sd_entry.dir_entry.d_name, ".", sizeof(sd_entry.dir_entry.d_name));
   sd_entry.dir_entry.d_type = DT_DIR;
-  sync_queue.emplace(SyncDiffEntry(sd_entry, epath));
+  sync_queue.emplace(SyncEntry(epath, root_stx));
 
   while (!sync_queue.empty()) {
     if (should_backoff(dir_root, &r)) {
@@ -1372,7 +1383,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
 
     dout(20) << ": " << sync_queue.size() << " entries in queue" << dendl;
     const auto &queue_entry = sync_queue.front();
-    epath = queue_entry.path;
+    epath = queue_entry.epath;
     dout(20) << ": syncing entry, path=" << epath << dendl;
     r = ceph_open_snapdiff(m_local_mount, dir_root.c_str(), epath.c_str(),
                            stringify((*prev).first).c_str(), current.first.c_str(), &sd_info);
@@ -1424,7 +1435,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
                                  AT_STATX_DONT_SYNC | AT_SYMLINK_NOFOLLOW);
         if (S_ISDIR(cstx.stx_mode)) { // is a directory
           //cleanup if it's a file in the remotefs
-          if (!rstat_r && !S_ISDIR(tstx.stx_mode)) {
+          if ((0 == rstat_r) && !S_ISDIR(tstx.stx_mode)) {
             r = ceph_unlinkat(m_remote_mount, fh.r_fd_dir_root, npath.c_str(), 0);
             if (r < 0) {
               derr << ": Error in directory sync. Failed to remove file="
@@ -1437,7 +1448,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
             break;
           }
           // push it to sync_queue for later processing
-          sync_queue.emplace(SyncDiffEntry(sd_entry, npath));
+          sync_queue.emplace(SyncEntry(npath, cstx));
         } else { // is a file
           bool need_data_sync = true;
           bool need_attr_sync = true;
@@ -1449,7 +1460,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
                   << ", attr_sync=" << need_attr_sync << dendl;
           if (need_data_sync || need_attr_sync) {
             //cleanup if it's a directory in the remotefs
-            if (!rstat_r && S_ISDIR(tstx.stx_mode)) {
+            if ((0 == rstat_r) && S_ISDIR(tstx.stx_mode)) {
               r = cleanup_remote_dir(dir_root, npath, fh);
               if (r < 0) {
                 derr << ": Error in file sync. Failed to remove remote directory="

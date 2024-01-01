@@ -132,17 +132,6 @@ private:
     }
   };
 
-  struct SyncDiffEntry {
-    //the snapdiff entry
-    const ceph_snapdiff_entry_t entry;
-    //the relative path
-    const std::string path;
-    SyncDiffEntry(const ceph_snapdiff_entry_t& e, const std::string_view& p)
-      : entry(e),
-	path(p) {
-    }
-  };
-
   using clock = ceph::coarse_mono_clock;
   using time = ceph::coarse_mono_time;
 
