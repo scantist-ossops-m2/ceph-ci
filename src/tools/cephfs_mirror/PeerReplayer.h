@@ -132,17 +132,6 @@ private:
     }
   };
 
-  struct SyncDiffEntry {
-    //the snapdiff entry
-    const ceph_snapdiff_entry_t entry;
-    //the relative path
-    const std::string path;
-    SyncDiffEntry(const ceph_snapdiff_entry_t& e, const std::string_view& p)
-      : entry(e),
-	path(p) {
-    }
-  };
-
   using clock = ceph::coarse_mono_clock;
   using time = ceph::coarse_mono_time;
 
@@ -311,7 +300,7 @@ private:
   void post_sync_close_handles(const FHandles &fh);
 
   int do_synchronize(const std::string &dir_root, const Snapshot &current,
-                     const boost::optional<Snapshot>& prev);
+                     boost::optional<Snapshot> prev);
 
   int do_synchronize(const std::string &dir_root, const Snapshot &current);
 
