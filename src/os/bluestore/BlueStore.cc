@@ -5179,7 +5179,11 @@ void BlueStore::Collection::split_cache(
       // may not be faulted in)
 
       auto rehome_blob = [&](Blob* b) {
-        cache->rm_blob();
+	cache->rm_blob();
+	dest->cache->add_blob();
+	SharedBlob* sb = b->shared_blob.get();
+	if (sb->coll == dest) {
+	  ldout(store->cct, 20) << __func__ << "  already moved " << *sb
 				<< dendl;
 	  return;
 	}
