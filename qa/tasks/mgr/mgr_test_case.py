@@ -29,8 +29,11 @@ class MgrCluster(CephCluster):
     def mgr_stop(self, mgr_id):
         self.mgr_daemons[mgr_id].stop()
 
-    def mgr_fail(self, mgr_id):
-        self.mon_manager.raw_cluster_cmd("mgr", "fail", mgr_id)
+    def mgr_fail(self, mgr_id=None):
+        if mgr_id is None:
+            self.mon_manager.raw_cluster_cmd("mgr", "fail")
+        else:
+            self.mon_manager.raw_cluster_cmd("mgr", "fail", mgr_id)
 
     def mgr_restart(self, mgr_id):
         self.mgr_daemons[mgr_id].restart()
@@ -88,6 +91,9 @@ class MgrTestCase(CephTestCase):
         for m in unload_modules:
             cls.mgr_cluster.mon_manager.raw_cluster_cmd(
                 "mgr", "module", "disable", m)
+
+        cls.mgr_cluster.mon_manager.raw_cluster_cmd('config', 'set', 'mon', 'mon_allow_pool_delete', 'true')
+        cls.mgr_cluster.mon_manager.raw_cluster_cmd('osd', 'pool', 'rm', '.mgr', '.mgr', '--yes-i-really-really-mean-it-not-faking')
 
         # Start all the daemons
         for daemon in cls.mgr_cluster.mgr_daemons.values():
