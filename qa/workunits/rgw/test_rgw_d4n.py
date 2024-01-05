@@ -143,6 +143,8 @@ def test_cache_methods(r, client, obj):
 
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
+    print(subprocess.check_output(['ls', '%s/build/out' % os.environ['CEPH_ROOT']]))
+
     # check logs to ensure object was retrieved from storage backend
     res = subprocess.call(['grep', '"D4NFilterObject::iterate:: iterate(): Fetching object from backend store"', '%s/build/out/radosgw.8000.log' % os.environ['CEPH_ROOT']])
 
