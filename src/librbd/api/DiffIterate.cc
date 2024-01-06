@@ -2,6 +2,7 @@
 // vim: ts=8 sw=2 smarttab
 
 #include "librbd/api/DiffIterate.h"
+#include "librbd/ExclusiveLock.h"
 #include "librbd/ImageCtx.h"
 #include "librbd/ImageState.h"
 #include "librbd/ObjectMap.h"
@@ -168,10 +169,14 @@ int DiffIterate<I>::diff_iterate(I *ictx,
                                  uint64_t off, uint64_t len,
                                  bool include_parent, bool whole_object,
                                  int (*cb)(uint64_t, size_t, int, void *),
-                                 void *arg)
-{
-  ldout(ictx->cct, 20) << "diff_iterate " << ictx << " off = " << off
-      		 << " len = " << len << dendl;
+                                 void *arg) {
+  ldout(ictx->cct, 10) << "from_snap_namespace=" << from_snap_namespace
+                       << ", fromsnapname=" << (fromsnapname ?: "")
+                       << ", off=" << off
+                       << ", len=" << len
+                       << ", include_parent=" << include_parent
+                       << ", whole_object=" << whole_object
+                       << dendl;
 
   if (!ictx->data_ctx.is_valid()) {
     return -ENODEV;
@@ -198,11 +203,30 @@ int DiffIterate<I>::diff_iterate(I *ictx,
     return r;
   }
 
-  ictx->image_lock.lock_shared();
-  r = clip_io(ictx, off, &len, io::ImageArea::DATA);
-  ictx->image_lock.unlock_shared();
-  if (r < 0) {
-    return r;
+  {
+    std::shared_lock owner_locker{ictx->owner_lock};
+    std::shared_lock image_locker{ictx->image_lock};
+
+    r = clip_io(ictx, off, &len, io::ImageArea::DATA);
+    if (r < 0) {
+      return r;
+    }
+
+    // optimization: hang onto the only object map needed to run fast
+    // diff against the beginning of time -- it's loaded when exclusive
+    // lock is acquired
+    if (fromsnapname == nullptr && whole_object &&
+        ictx->test_features(RBD_FEATURE_FAST_DIFF, ictx->image_lock)) {
+      C_SaferCond lock_ctx;
+      if (ictx->exclusive_lock != nullptr &&
+          !ictx->exclusive_lock->is_lock_owner()) {
+        // acquire only if not busy (i.e. don't request), ignore errors
+        ictx->exclusive_lock->try_acquire_lock(&lock_ctx);
+        image_locker.unlock();
+        owner_locker.unlock();
+        lock_ctx.wait();
+      }
+    }
   }
 
   DiffIterate command(*ictx, from_snap_namespace, fromsnapname, off, len,
