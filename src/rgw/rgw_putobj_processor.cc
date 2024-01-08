@@ -13,6 +13,7 @@
  *
  */
 
+#include "include/rados/librados.hpp"
 #include "rgw_aio.h"
 #include "rgw_putobj_processor.h"
 #include "rgw_multi.h"
@@ -465,7 +466,6 @@ int MultipartObjectProcessor::complete(size_t accounted_size,
   if (r < 0)
     return r;
 
-  bufferlist bl;
   RGWUploadPartInfo info;
   string p = "part.";
   bool sorted_omap = is_v2_upload_id(upload_id);
@@ -491,8 +491,6 @@ int MultipartObjectProcessor::complete(size_t accounted_size,
     return r;
   }
 
-  encode(info, bl);
-
   rgw_obj meta_obj;
   meta_obj.init_ns(bucket_info.bucket, mp.get_meta(), RGW_OBJ_NS_MULTIPART);
   meta_obj.set_in_extra_data(true);
@@ -507,14 +505,24 @@ int MultipartObjectProcessor::complete(size_t accounted_size,
     return r;
   }
 
-  map<string, bufferlist> m;
-  m[p] = bl;
-
   librados::ObjectWriteOperation op;
-  op = librados::ObjectWriteOperation{};
-  op.assert_exists(); // detect races with abort
-  op.omap_set(m);
+  cls_rgw_mp_upload_part_info_update(op, p, info);
   r = rgw_rados_operate(dpp, meta_obj_ref.pool.ioctx(), meta_obj_ref.obj.oid, &op, y);
+  ldpp_dout(dpp, 20) << "Update meta: " << meta_obj_ref.obj.oid << " part " << p << " prefix " << info.manifest.get_prefix() << " return " << r << dendl;
+
+  if (r == -EOPNOTSUPP) {
+    // New CLS call to update part info is not yet supported. Fall back to the old handling.
+    bufferlist bl;
+    encode(info, bl);
+
+    map<string, bufferlist> m;
+    m[p] = bl;
+
+    op = librados::ObjectWriteOperation{};
+    op.assert_exists(); // detect races with abort
+    op.omap_set(m);
+    r = rgw_rados_operate(dpp, meta_obj_ref.pool.ioctx(), meta_obj_ref.obj.oid, &op, y);
+  }
   if (r < 0) {
     return r == -ENOENT ? -ERR_NO_SUCH_UPLOAD : r;
   }

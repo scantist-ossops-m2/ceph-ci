@@ -5,6 +5,7 @@
 
 #include "include/str_list.h"
 #include "include/rados/librados.hpp"
+#include "rgw_obj_manifest.h"
 #include "cls_rgw_ops.h"
 #include "cls_rgw_const.h"
 #include "common/RefCountedObj.h"
@@ -617,6 +618,9 @@ int cls_rgw_lc_list(librados::IoCtx& io_ctx, const std::string& oid,
 		    const std::string& marker, uint32_t max_entries,
                     std::vector<cls_rgw_lc_entry>& entries);
 #endif
+
+/* multipart */
+void cls_rgw_mp_upload_part_info_update(librados::ObjectWriteOperation& op, const std::string& part_key, const RGWUploadPartInfo& info);
 
 /* resharding */
 void cls_rgw_reshard_add(librados::ObjectWriteOperation& op, const cls_rgw_reshard_entry& entry);
