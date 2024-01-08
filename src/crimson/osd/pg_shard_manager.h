@@ -392,7 +392,7 @@ public:
         auto &logger = crimson::get_logger(ceph_subsys_osd);
         logger.debug("{}: entering create_or_wait_pg", opref);
         return opref.template enter_stage<>(
-          opref.get_pershard_pipeline(target_shard_services).create_or_wait_pg
+          target_shard_services.get_client_request_pipeline().create_or_wait_pg
         ).then([this, &target_shard_services, op=std::move(op)]() mutable {
           if constexpr (T::can_create()) {
             return this->template run_with_pg_maybe_create<T>(
