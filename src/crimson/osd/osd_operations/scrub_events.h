@@ -42,7 +42,6 @@ public:
 
   PGPeeringPipeline &get_peering_pipeline(PG &pg);
   ConnectionPipeline &get_connection_pipeline();
-  PerShardPipeline &get_pershard_pipeline(ShardServices &);
 
   crimson::net::Connection &get_connection() {
     assert(conn);
