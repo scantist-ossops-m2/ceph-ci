@@ -24,13 +24,6 @@ ConnectionPipeline &RemoteScrubEventBaseT<T>::get_connection_pipeline()
 }
 
 template <class T>
-PerShardPipeline &RemoteScrubEventBaseT<T>::get_pershard_pipeline(
-  ShardServices &shard_services)
-{
-  return shard_services.get_client_request_pipeline();
-}
-
-template <class T>
 seastar::future<> RemoteScrubEventBaseT<T>::with_pg(
   ShardServices &shard_services, Ref<PG> pg)
 {

@@ -144,8 +144,6 @@ public:
 
   ConnectionPipeline &get_connection_pipeline();
 
-  PerShardPipeline &get_pershard_pipeline(ShardServices &);
-
   crimson::net::Connection &get_connection() {
     assert(conn);
     return *conn;
