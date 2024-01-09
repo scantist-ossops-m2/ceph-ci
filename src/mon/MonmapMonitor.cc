@@ -611,6 +611,17 @@ bool MonmapMonitor::prepare_command(MonOpRequestRef op)
       err = -EINVAL;
       goto reply_no_propose;
     }
+    if (monmap.stretch_mode_enabled) {
+      for (const auto &p : loc) {
+        if (!mon.osdmon()->osdmap.crush->name_exists(p.second)) {
+          ss << "location doesn't belong to any existing crush buckets!"
+          << " If you are trying to replace an arbiter mon, please use the command:"
+          <<  " ceph mon set_new_tiebreaker";
+          err = -EINVAL;
+          goto reply_no_propose;
+        }
+      }
+   }
     // TODO: validate location against any existing stretch config
 
     entity_addrvec_t addrs;
