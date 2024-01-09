@@ -182,6 +182,7 @@ void NVMeofGw::send_beacon()
   ceph_assert(ceph_mutex_is_locked_by_me(lock));
   //dout(0) << "sending beacon as gid " << monc.get_global_id() << dendl;
   GW_AVAILABILITY_E gw_availability = GW_AVAILABILITY_E::GW_CREATED;
+  GW_ANA_NONCE_MAP nonce_map;
   GwSubsystems subs;
   if (map.epoch > 0) { // handled map already
     NVMeofGwClient gw_client(
@@ -192,6 +193,14 @@ void NVMeofGw::send_beacon()
       for (int i = 0; i < gw_subsystems.subsystems_size(); i++) {
         const subsystem& sub = gw_subsystems.subsystems(i);
         if (sub.listen_addresses_size() == 0) continue; // don't publish subsytems without listeners
+	for (int j = 0; i < sub.namespaces_size(); j++) {
+	  const auto& ns = sub.namespaces(j);
+	  const auto& nonce = ns.nonce();
+	  const auto& anagrp_id = ns.anagrpid();
+	  auto& nonce_vec = nonce_map[anagrp_id];
+	  if (std::find(nonce_vec.begin(), nonce_vec.end(), nonce) == nonce_vec.end())
+	    nonce_vec.push_back(nonce);
+	}
         struct NqnState nqn_state(sub.nqn());
         auto group_key = std::make_pair(pool, group);
         GW_STATE_T& gw_state = map.Gmap[group_key][nqn_state.nqn][name];
@@ -210,7 +219,7 @@ void NVMeofGw::send_beacon()
       pool,
       group,
       subs,
-      GW_ANA_NONCE_MAP(),
+      nonce_map,
       gw_availability,
       map.epoch);
   monc.send_mon_message(std::move(m));
