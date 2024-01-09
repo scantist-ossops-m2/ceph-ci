@@ -467,6 +467,12 @@ BuildRequires:  libnuma-devel
 %if 0%{?rhel} >= 8
 BuildRequires:  /usr/bin/pathfix.py
 %endif
+#intel qat build
+%if 0%{?fedora} || 0%{?rhel}
+BuildRequires:  qatlib-devel
+BuildRequires:  qatzip-devel
+%endif
+
 
 %description
 Ceph is a massively scalable, open-source, distributed storage system that runs
