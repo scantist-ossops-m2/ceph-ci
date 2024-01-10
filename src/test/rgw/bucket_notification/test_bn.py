@@ -257,9 +257,11 @@ class AMQPReceiver(object):
 def amqp_receiver_thread_runner(receiver):
     """main thread function for the amqp receiver"""
     try:
-        log.info('AMQP receiver started')
+        ct = datetime.datetime.now()
+        log.info('AMQP receiver started ['+str(ct)+']')
         receiver.channel.start_consuming()
-        log.info('AMQP receiver ended')
+        ct = datetime.datetime.now()
+        log.info('AMQP receiver ended ['+str(ct)+']')
     except Exception as error:
         log.info('AMQP receiver ended unexpectedly: %s', str(error))
 
@@ -269,6 +271,16 @@ def create_amqp_receiver_thread(exchange, topic, external_endpoint_address=None,
     receiver = AMQPReceiver(exchange, topic, external_endpoint_address, ca_location)
     task = threading.Thread(target=amqp_receiver_thread_runner, args=(receiver,))
     task.daemon = True
+    wait_sleep_time = 1
+    max_wait_for_task = 90
+    while not task.is_alive():
+        ct = datetime.datetime.now()
+        log.info('wait for AMQP receiver ['+str(ct)+']...')
+        time.sleep(wait_sleep_time)
+        max_wait_for_task = max_wait_for_task - wait_sleep_time
+        if (max_wait_for_task <= 0):
+            log.info('not waiting for AMQP receiver anymore')
+            break
     return task, receiver
 
 def stop_amqp_receiver(receiver, task):
@@ -459,17 +471,16 @@ class KafkaReceiver(object):
 def kafka_receiver_thread_runner(receiver):
     """main thread function for the kafka receiver"""
     try:
-        log.info('Kafka receiver started')
-        print('Kafka receiver started')
+        ct = datetime.datetime.now()
+        log.info('Kafka receiver started ['+str(ct)+']')
         while not receiver.stop:
             for msg in receiver.consumer:
                 receiver.events.append(json.loads(msg.value))
             time.sleep(0.1)
-        log.info('Kafka receiver ended')
-        print('Kafka receiver ended')
+        ct = datetime.datetime.now()
+        log.info('Kafka receiver ended ['+str(ct)+']')
     except Exception as error:
         log.info('Kafka receiver ended unexpectedly: %s', str(error))
-        print('Kafka receiver ended unexpectedly: ' + str(error))
 
 
 def create_kafka_receiver_thread(topic, security_type='PLAINTEXT'):
@@ -477,7 +488,18 @@ def create_kafka_receiver_thread(topic, security_type='PLAINTEXT'):
     receiver = KafkaReceiver(topic, security_type)
     task = threading.Thread(target=kafka_receiver_thread_runner, args=(receiver,))
     task.daemon = True
+    wait_sleep_time = 1
+    max_wait_for_task = 90
+    while not task.is_alive():
+        ct = datetime.datetime.now()
+        log.info('wait for Kafka receiver ['+str(ct)+']...')
+        time.sleep(wait_sleep_time)
+        max_wait_for_task = max_wait_for_task - wait_sleep_time
+        if (max_wait_for_task <= 0):
+            log.info('not waiting for Kafka receiver anymore')
+            break
     return task, receiver
+
 
 def stop_kafka_receiver(receiver, task):
     """stop the receiver thread and wait for it to finish"""
@@ -2208,7 +2230,6 @@ def test_ps_s3_creation_triggers_on_master_external():
 
 def generate_private_key(tempdir):
 
-    import datetime
     import stat
     from cryptography import x509
     from cryptography.x509.oid import NameOID
