@@ -61,7 +61,7 @@ compare_images() {
 
   # demote primary image and calculate hash of its latest mirror snapshot
   demote_image ${CLUSTER1} ${POOL} ${img}
-  local bdev demote demote_id demote_name demote_md5
+  local bdev bdevsize demote demote_id demote_name demote_md5
 
   demote=$(rbd --cluster ${CLUSTER1} snap ls --all ${POOL}/${img} --format=json \
              | jq 'last' \
@@ -71,7 +71,11 @@ compare_images() {
     demote_id=$(echo $demote | jq -r '.id')
     bdev=$(sudo rbd --cluster ${CLUSTER1} device map -t ${RBD_DEVICE_TYPE} \
              --snap-id ${demote_id} ${POOL}/${img})
-    sleep 10
+    for i in {1..30}; do
+      bdevsize=$(sudo blockdev --getsize64 ${bdev})
+      echo "size of mapped ${POOL}/${img} --snap-id ${demote_id} to ${bdev} is ${bdevsize} bytes"
+      sleep 1
+    done
   elif [[ $RBD_DEVICE_TYPE == "krbd" ]]; then
     demote_name=$(echo $demote | jq -r '.name')
     bdev=$(sudo rbd --cluster ${CLUSTER1} device map -t ${RBD_DEVICE_TYPE} \
@@ -95,10 +99,13 @@ compare_images() {
               | jq 'select(.name | contains("mirror.primary"))')
   if [[ $RBD_DEVICE_TYPE == "nbd" ]]; then
     promote_id=$(echo $promote | jq -r '.id')
-    sleep 10
     bdev=$(sudo rbd --cluster ${CLUSTER2} device map -t ${RBD_DEVICE_TYPE} \
              --snap-id ${promote_id} ${POOL}/${img})
-    sleep 10
+    for i in {1..30}; do
+      bdevsize=$(sudo blockdev --getsize64 ${bdev})
+      echo "size of mapped ${POOL}/${img} --snap-id ${promote_id} to ${bdev} is ${bdevsize} bytes"
+      sleep 1
+    done
   elif [[ $RBD_DEVICE_TYPE == "krbd" ]]; then
     promote_name=$(echo $promote | jq -r '.name')
     bdev=$(sudo rbd --cluster ${CLUSTER2} device map -t ${RBD_DEVICE_TYPE} \
