@@ -1022,10 +1022,12 @@ seastar::future<> OSD::_handle_osd_map(Ref<MOSDMap> m)
   return seastar::do_with(ceph::os::Transaction{},
                           [=, this](auto& t) {
     return pg_shard_manager.store_maps(t, start, m).then([=, this, &t] {
+      DEBUG("transaction populated with map objects");
       // even if this map isn't from a mon, we may have satisfied our subscription
       monc->sub_got("osdmap", last);
 
       if (!superblock.maps.empty()) {
+	DEBUG("trimming maps");
         pg_shard_manager.trim_maps(t, superblock);
         // TODO: once we support pg splitting, update pg_num_history here
         //pg_num_history.prune(superblock.get_oldest_map());
@@ -1033,6 +1035,7 @@ seastar::future<> OSD::_handle_osd_map(Ref<MOSDMap> m)
 
       superblock.insert_osdmap_epochs(first, last);
       superblock.current_epoch = last;
+      DEBUG("superblock inserting [{}, {}}, last={}", first, last, last);
 
       // note in the superblock that we were clean thru the prior epoch
       if (boot_epoch && boot_epoch >= superblock.mounted) {
@@ -1040,6 +1043,7 @@ seastar::future<> OSD::_handle_osd_map(Ref<MOSDMap> m)
         superblock.clean_thru = last;
       }
       pg_shard_manager.get_meta_coll().store_superblock(t, superblock);
+      DEBUG("transaction populated with superblock write");
       return pg_shard_manager.set_superblock(superblock).then(
       [FNAME, this, &t] {
         DEBUG("submitting transaction");
