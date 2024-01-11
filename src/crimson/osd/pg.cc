@@ -928,7 +928,7 @@ PG::do_osd_ops_execute(
     (const std::error_code& e) mutable {
     ceph_tid_t rep_tid = shard_services.get_tid();
     return rollbacker.rollback_obc_if_modified(e).then_interruptible(
-    [&, m=std::move(m), obc=std::move(obc),
+    [&, op_info, m, obc,
      this, e, rep_tid, failure_func_ptr] {
       // record error log
       auto maybe_submit_error_log =
