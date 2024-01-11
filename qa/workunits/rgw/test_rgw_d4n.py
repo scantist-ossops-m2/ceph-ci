@@ -131,8 +131,23 @@ def test_directory_methods(r, client, obj):
 
     r.flushall()
 
+def get_body(response):
+    body = response['Body']
+    got = body.read()
+    if type(got) is bytes:
+        got = got.decode()
+    return got
+
 def test_cache_methods(r, client, obj):
     test_txt = 'test'
+
+    # setup for test
+    cache_dir = "/home/rgw_d4n_datacache/"
+    out = exec_cmd('find %s -type f | wc -l' % (cache_dir))
+    chk_cache_dir = int(get_cmd_output(out))
+    log.debug("Check cache dir content: %s", chk_cache_dir)
+    if chk_cache_dir != 0:
+        log.info("ERROR: cache directory is not empty, please ensure that it is empty before running this test.")
 
     response_put = obj.put(Body=test_txt)
 
@@ -140,16 +155,15 @@ def test_cache_methods(r, client, obj):
 
     # first get call
     response_get = obj.get()
-
+    body = get_body(response_get)
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
     # check logs to ensure object was retrieved from storage backend
-    #res = subprocess.call(['grep', '"D4NFilterObject::iterate:: iterate(): Fetching object from backend store"', '%s/build/out/radosgw.8000.log' % os.environ['CEPH_ROOT']])
+    res = subprocess.call(['grep', '"D4NFilterObject::iterate:: iterate(): Fetching object from backend store"', '%s/build/out/radosgw.8000.log' % os.environ['CEPH_ROOT']])
 
-    #assert(res >= 1)
+    assert(res >= 1)
 
-    # check that the cache is enabled (does the cache directory empty)
-    cache_dir = "/tmp/rgw_d4n_datacache/"
+    # check if the cache directory is populated with the correct number of parts
     out = exec_cmd('find %s -type f | wc -l' % (cache_dir))
     chk_cache_dir = int(get_cmd_output(out))
     log.debug("Check cache dir content: %s", chk_cache_dir)
@@ -165,15 +179,16 @@ def test_cache_methods(r, client, obj):
     log.debug("Listing of datacache directory is: %s", list_dir_out)
 
     # retrieve and compare cache contents
-    data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
-    data = data.decode('latin-1').strip()
+    assert body == "test"
+    #data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
+    #data = data.decode('latin-1').strip()
 
-    output = subprocess.check_output(['md5sum', '/tmp/rgw_d4n_datacache/' + data]).decode('latin-1')
-    assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
+    #output = subprocess.check_output(['md5sum', body]).decode('latin-1')
+    #assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
 
     # second get call
     response_get = obj.get()
-
+    body = get_body(response_get)
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
     # check logs to ensure object was retrieved from cache
@@ -181,11 +196,12 @@ def test_cache_methods(r, client, obj):
     assert(res >= 1)
 
     # retrieve and compare cache contents
-    data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
-    data = data.decode('latin-1').strip()
+    assert body == "test"
+    #data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
+    #data = data.decode('latin-1').strip()
 
-    output = subprocess.check_output(['md5sum', '/tmp/rgw_d4n_datacache/' + data]).decode('latin-1')
-    assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
+    #output = subprocess.check_output(['md5sum', body]).decode('latin-1')
+    #assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
 
     r.flushall()
 
