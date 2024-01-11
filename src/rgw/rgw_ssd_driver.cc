@@ -27,8 +27,12 @@ int SSDDriver::initialize(const DoutPrefixProvider* dpp)
                 }
             }
         } else {
-            ldpp_dout(dpp, 5) << "initialize:: creating the persistent storage directory on start" << dendl;
-            efs::create_directories(partition_info.location);
+            ldpp_dout(dpp, 5) << "initialize:: creating the persistent storage directory on start: " << partition_info.location << dendl;
+            std::error_code ec;
+            if (!efs::create_directories(partition_info.location, ec)) {
+                ldpp_dout(dpp, 0) << "initialize::: ERROR initializing the cache storage directory: '" << partition_info.location <<
+                                "' : " << ec.value() << dendl;
+            }
         }
     } catch (const efs::filesystem_error& e) {
         ldpp_dout(dpp, 0) << "initialize::: ERROR initializing the cache storage directory '" << partition_info.location <<
@@ -201,6 +205,7 @@ auto SSDDriver::get_async(const DoutPrefixProvider *dpp, ExecutionContext& ctx, 
     } else {
         (void)p.release();
     }
+    ldpp_dout(dpp, 20) << "SSDCache: " << __func__ << "(): Before init.result.get()" << ret << dendl;
     return init.result.get();
 }
 
@@ -231,6 +236,7 @@ void SSDDriver::libaio_write_completion_cb(AsyncWriteRequest* c)
 {
     efs::space_info space = efs::space(partition_info.location);
     this->free_space = space.available;
+    ldpp_dout(c->dpp, 20) << "SSDCache: " << "(): SSDDriver::libaio_write_completion_cb, oid=" << c->key << dendl;
 }
 
 int SSDDriver::put_async(const DoutPrefixProvider* dpp, const std::string& key, const bufferlist& bl, uint64_t len, const rgw::sal::Attrs& attrs)
