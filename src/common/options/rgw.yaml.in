@@ -4009,3 +4009,25 @@ options:
   services:
   - rgw
   with_legacy: true
+- name: rgw_op_counters_dump_expiration
+  type: uint
+  level: advanced
+  desc: Time in seconds greater than 0 after which performance counters that are not updated will not be dumped
+  default: 600
+  services:
+  - rgw
+  with_legacy: true
+- name: rgw_op_counters_time_filtered
+  type: bool
+  level: advanced
+  desc: rgw operation perfomance counters will not be dumped if they are not recently updated
+  long_desc: If this config option is set, rgw operation perfomance counters,
+    both user and bucket counters, will not be dumped if they are not updated 
+    after rgw_op_counters_dump_expiration amount of seconds.
+  default: false
+  services:
+  - rgw
+  see_also:
+  - rgw_op_counters_dump_expiration
+  - exporter_stats_period
+  with_legacy: true
