@@ -142,6 +142,7 @@ class NodeProxy:
         hostname = data['cephx']['name'][11:]
         results['result'] = self.mgr.node_proxy.oob.get(hostname, '')
         if not results['result']:
+            self.mgr.log.error(f'sending 400 due to no oob login info for {hostname}')
             raise cherrypy.HTTPError(400, 'The provided host has no iDrac details.')
         return results
 
@@ -156,21 +157,30 @@ class NodeProxy:
         :raises cherrypy.HTTPError 403: If the secret provided is wrong.
         """
         cherrypy.response.status = 200
+        self.mgr.log.error(f'Got {data} from node-proxy')
+        self.mgr.log.error(f'Current oob login info: {self.mgr.node_proxy.oob}')
+        self.mgr.log.error(f'Current keyrings: {self.mgr.node_proxy.keyrings}')
         try:
             if 'cephx' not in data.keys():
+                self.mgr.log.error(f'sending 400 due to no "cephx" field')
                 raise cherrypy.HTTPError(400, 'The field \'cephx\' must be provided.')
             elif 'name' not in data['cephx'].keys():
+                self.mgr.log.error(f'sending 400 due to no "name" field')
                 cherrypy.response.status = 400
                 raise cherrypy.HTTPError(400, 'The field \'name\' must be provided.')
             # expecting name to be "node-proxy.<hostname>"
             hostname = data['cephx']['name'][11:]
             if 'secret' not in data['cephx'].keys():
+                self.mgr.log.error(f'sending 400 due to no keyring provided')
                 raise cherrypy.HTTPError(400, 'The node-proxy keyring must be provided.')
             elif not self.mgr.node_proxy.keyrings.get(hostname, ''):
+                self.mgr.log.error(f'sending 502 due to no keyring found for host')
                 raise cherrypy.HTTPError(502, f'Make sure the node-proxy is running on {hostname}')
             elif data['cephx']['secret'] != self.mgr.node_proxy.keyrings[hostname]:
+                self.mgr.log.error(f'sending 400 due to no "name" field')
                 raise cherrypy.HTTPError(403, f'Got wrong keyring from agent on host {hostname}.')
         except AttributeError:
+            self.mgr.log.error(f'sending 400 due to no malformed data')
             raise cherrypy.HTTPError(400, 'Malformed data received.')
 
     # TODO(guits): refactor this
