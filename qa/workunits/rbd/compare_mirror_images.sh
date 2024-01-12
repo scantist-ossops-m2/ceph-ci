@@ -71,7 +71,6 @@ compare_images() {
     demote_id=$(echo $demote | jq -r '.id')
     bdev=$(sudo rbd --cluster ${CLUSTER1} device map -t ${RBD_DEVICE_TYPE} \
              --snap-id ${demote_id} ${POOL}/${img})
-    sleep 5
   elif [[ $RBD_DEVICE_TYPE == "krbd" ]]; then
     demote_name=$(echo $demote | jq -r '.name')
     bdev=$(sudo rbd --cluster ${CLUSTER1} device map -t ${RBD_DEVICE_TYPE} \
@@ -97,7 +96,6 @@ compare_images() {
     promote_id=$(echo $promote | jq -r '.id')
     bdev=$(sudo rbd --cluster ${CLUSTER2} device map -t ${RBD_DEVICE_TYPE} \
              --snap-id ${promote_id} ${POOL}/${img})
-    sleep 5
   elif [[ $RBD_DEVICE_TYPE == "krbd" ]]; then
     promote_name=$(echo $promote | jq -r '.name')
     bdev=$(sudo rbd --cluster ${CLUSTER2} device map -t ${RBD_DEVICE_TYPE} \
