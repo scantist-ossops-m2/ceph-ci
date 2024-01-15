@@ -1,9 +1,9 @@
 import concurrent.futures
-from .basesystem import BaseSystem
-from .redfish_client import RedFishClient
+from ceph_node_proxy.basesystem import BaseSystem
+from ceph_node_proxy.redfish_client import RedFishClient
 from threading import Thread, Lock
 from time import sleep
-from .util import Logger, retry
+from ceph_node_proxy.util import Logger, retry
 from typing import Dict, Any, List
 
 

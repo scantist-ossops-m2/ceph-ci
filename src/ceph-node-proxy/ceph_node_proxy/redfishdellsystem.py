@@ -1,6 +1,6 @@
 import json
-from .baseredfishsystem import BaseRedfishSystem
-from .util import Logger, normalize_dict, to_snake_case
+from ceph_node_proxy.baseredfishsystem import BaseRedfishSystem
+from ceph_node_proxy.util import Logger, normalize_dict, to_snake_case
 from typing import Dict, Any, List
 
 

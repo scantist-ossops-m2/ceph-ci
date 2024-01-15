@@ -29,7 +29,6 @@ from glob import glob
 from io import StringIO
 from threading import Thread, Event
 from pathlib import Path
-from cephadmlib.node_proxy.main import NodeProxy
 
 from cephadmlib.constants import (
     # default images
@@ -176,6 +175,7 @@ from cephadmlib.daemons import (
     NFSGanesha,
     SNMPGateway,
     Tracing,
+    NodeProxy,
 )
 from cephadmlib.agent import http_query
 
@@ -224,6 +224,7 @@ def get_supported_daemons():
     supported_daemons.append(CephadmAgent.daemon_type)
     supported_daemons.append(SNMPGateway.daemon_type)
     supported_daemons.extend(Tracing.components)
+    supported_daemons.append(NodeProxy.daemon_type)
     assert len(supported_daemons) == len(set(supported_daemons))
     return supported_daemons
 
@@ -798,6 +799,10 @@ def create_daemon_dirs(
         sg = SNMPGateway.init(ctx, fsid, ident.daemon_id)
         sg.create_daemon_conf()
 
+    elif daemon_type == NodeProxy.daemon_type:
+        node_proxy = NodeProxy.init(ctx, fsid, ident.daemon_id)
+        node_proxy.create_daemon_dirs(data_dir, uid, gid)
+
     _write_custom_conf_files(ctx, ident, uid, gid)
 
 
@@ -1342,72 +1347,6 @@ class MgrListener(Thread):
             raise RuntimeError('No valid data received.')
 
 
-class NodeProxyManager(Thread):
-    def __init__(self, agent: 'CephadmAgent', event: Event):
-        super().__init__()
-        self.agent = agent
-        self.event = event
-        self.stop = False
-
-    def run(self) -> None:
-        self.event.wait()
-        self.ssl_ctx = self.agent.ssl_ctx
-        self.init()
-        self.loop()
-
-    def init(self) -> None:
-        node_proxy_meta = {
-            'cephx': {
-                'name': self.agent.host,
-                'secret': self.agent.keyring
-            }
-        }
-        status, result = http_query(addr=self.agent.target_ip,
-                                    port=self.agent.target_port,
-                                    data=json.dumps(node_proxy_meta).encode('ascii'),
-                                    endpoint='/node-proxy/oob',
-                                    ssl_ctx=self.ssl_ctx)
-        if status != 200:
-            msg = f'No out of band tool details could be loaded: {status}, {result}'
-            logger.debug(msg)
-            raise RuntimeError(msg)
-
-        result_json = json.loads(result)
-        kwargs = {
-            'host': result_json['result']['addr'],
-            'username': result_json['result']['username'],
-            'password': result_json['result']['password'],
-            'cephx': node_proxy_meta['cephx'],
-            'mgr_target_ip': self.agent.target_ip,
-            'mgr_target_port': self.agent.target_port
-        }
-        if result_json['result'].get('port'):
-            kwargs['port'] = result_json['result']['port']
-
-        self.node_proxy: NodeProxy = NodeProxy(**kwargs)
-        self.node_proxy.start()
-
-    def loop(self) -> None:
-        while not self.stop:
-            try:
-                status = self.node_proxy.check_status()
-                label = 'Ok' if status else 'Critical'
-                logger.debug(f'node-proxy status: {label}')
-            except Exception as e:
-                logger.error(f'node-proxy not running: {e.__class__.__name__}: {e}')
-                time.sleep(120)
-                self.init()
-            else:
-                logger.debug('node-proxy alive, next check in 60sec.')
-                time.sleep(60)
-
-    def shutdown(self) -> None:
-        self.stop = True
-        # if `self.node_proxy.shutdown()` is called before self.start(), it will fail.
-        if self.__dict__.get('node_proxy'):
-            self.node_proxy.shutdown()
-
-
 @register_daemon_form
 class CephadmAgent(DaemonForm):
 
@@ -1463,8 +1402,6 @@ class CephadmAgent(DaemonForm):
         self.ssl_ctx = ssl.create_default_context()
         self.ssl_ctx.check_hostname = True
         self.ssl_ctx.verify_mode = ssl.CERT_REQUIRED
-        self.node_proxy_mgr_event = Event()
-        self.node_proxy_mgr = NodeProxyManager(self, self.node_proxy_mgr_event)
 
     def validate(self, config: Dict[str, str] = {}) -> None:
         # check for the required files
@@ -1520,8 +1457,6 @@ class CephadmAgent(DaemonForm):
 
     def shutdown(self) -> None:
         self.stop = True
-        if self.node_proxy_mgr.is_alive():
-            self.node_proxy_mgr.shutdown()
         if self.mgr_listener.is_alive():
             self.mgr_listener.shutdown()
         if self.ls_gatherer.is_alive():
@@ -1563,9 +1498,6 @@ class CephadmAgent(DaemonForm):
     def run(self) -> None:
         self.pull_conf_settings()
         self.ssl_ctx.load_verify_locations(self.ca_path)
-        # only after self.pull_conf_settings() was called we can actually start
-        # node-proxy
-        self.node_proxy_mgr_event.set()
 
         try:
             for _ in range(1001):
@@ -1586,9 +1518,6 @@ class CephadmAgent(DaemonForm):
 
         if not self.volume_gatherer.is_alive():
             self.volume_gatherer.start()
-
-        if not self.node_proxy_mgr.is_alive():
-            self.node_proxy_mgr.start()
 
         while not self.stop:
             start_time = time.monotonic()

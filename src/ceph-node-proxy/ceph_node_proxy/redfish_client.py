@@ -1,7 +1,7 @@
 import json
 from urllib.error import HTTPError, URLError
-from .baseclient import BaseClient
-from .util import Logger, http_req
+from ceph_node_proxy.baseclient import BaseClient
+from ceph_node_proxy.util import Logger, http_req
 from typing import Dict, Any, Tuple, Optional
 from http.client import HTTPMessage
 

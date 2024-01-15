@@ -138,8 +138,9 @@ class NodeProxy:
 
         self.validate_node_proxy_data(data)
 
-        host = data["cephx"]["name"]
-        results['result'] = self.mgr.node_proxy.oob.get(host)
+        # expecting name to be "node-proxy.<hostname>"
+        hostname = data['cephx']['name'][11:]
+        results['result'] = self.mgr.node_proxy.oob.get(hostname, '')
         if not results['result']:
             raise cherrypy.HTTPError(400, 'The provided host has no iDrac details.')
         return results
@@ -160,13 +161,15 @@ class NodeProxy:
                 raise cherrypy.HTTPError(400, 'The field \'cephx\' must be provided.')
             elif 'name' not in data['cephx'].keys():
                 cherrypy.response.status = 400
-                raise cherrypy.HTTPError(400, 'The field \'host\' must be provided.')
-            elif 'secret' not in data['cephx'].keys():
-                raise cherrypy.HTTPError(400, 'The agent keyring must be provided.')
-            elif not self.mgr.agent_cache.agent_keys.get(data['cephx']['name']):
-                raise cherrypy.HTTPError(502, f'Make sure the agent is running on {data["cephx"]["name"]}')
-            elif data['cephx']['secret'] != self.mgr.agent_cache.agent_keys[data['cephx']['name']]:
-                raise cherrypy.HTTPError(403, f'Got wrong keyring from agent on host {data["cephx"]["name"]}.')
+                raise cherrypy.HTTPError(400, 'The field \'name\' must be provided.')
+            # expecting name to be "node-proxy.<hostname>"
+            hostname = data['cephx']['name'][11:]
+            if 'secret' not in data['cephx'].keys():
+                raise cherrypy.HTTPError(400, 'The node-proxy keyring must be provided.')
+            elif not self.mgr.node_proxy.keyrings.get(hostname, ''):
+                raise cherrypy.HTTPError(502, f'Make sure the node-proxy is running on {hostname}')
+            elif data['cephx']['secret'] != self.mgr.node_proxy.keyrings[hostname]:
+                raise cherrypy.HTTPError(403, f'Got wrong keyring from agent on host {hostname}.')
         except AttributeError:
             raise cherrypy.HTTPError(400, 'Malformed data received.')
 

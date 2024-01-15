@@ -1,7 +1,7 @@
 import socket
-from .util import Config
+from ceph_node_proxy.util import Config
 from typing import Dict, Any
-from .baseclient import BaseClient
+from ceph_node_proxy.baseclient import BaseClient
 
 
 class BaseSystem:
