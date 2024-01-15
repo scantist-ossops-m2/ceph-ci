@@ -271,6 +271,7 @@ def create_amqp_receiver_thread(exchange, topic, external_endpoint_address=None,
     task.daemon = True
     return task, receiver
 
+
 def stop_amqp_receiver(receiver, task):
     """stop the receiver thread and wait for it to finis"""
     try:
@@ -1326,7 +1327,7 @@ def test_ps_s3_notification_push_amqp_on_master():
     receiver1.verify_s3_events(keys, exact_match=True, deletions=True)
     # check amqp receiver 2 has no deletions
     try:
-        receiver1.verify_s3_events(keys, exact_match=False, deletions=True)
+        receiver2.verify_s3_events(keys, exact_match=True, deletions=True)
     except:
         pass
     else:
