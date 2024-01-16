@@ -2217,15 +2217,12 @@ TEST_P(BlueStoreWriteFixture, expand_lr)
   store->debug_get_alloc()->init_add_free(0, disk_size);
 
   for (int i = 0; i < 1000; i++) {
-    BlueStore::Writer w;
     BlueStore::TransContext txc(g_ceph_context, coll.get(), nullptr, nullptr);
     BlueStore::WriteContext wctx;
     wctx.csum_type = checksum_type;
     wctx.csum_order = checksum_order;
-    w.bstore = store;
-    w.o = new BlueStore::Onode(coll.get(), ghobject_t(), ""); // onode;
-    w.txc = &txc;
-    w.wctx = &wctx;
+    BlueStore::Onode* o = new BlueStore::Onode(coll.get(), ghobject_t(), "");
+    BlueStore::Writer w(store, &txc, &wctx, o);
     print_writer pw;
     zero_reader zr;
     w.test_write_divertor = &pw;
@@ -2240,7 +2237,7 @@ TEST_P(BlueStoreWriteFixture, expand_lr)
     bufferlist primary_data;
     primary_data.append(std::string(primary_length, 'a'));
     uint32_t primary_end = primary_offset + primary_length;
-    w._do_write(primary_offset, primary_data);
+    w.do_write(primary_offset, primary_data);
 
     uint32_t secondary_offset = get_offset(rand() % size_range);
     uint32_t secondary_length = get_length((rand() % size_range) + 1);
@@ -2257,8 +2254,8 @@ TEST_P(BlueStoreWriteFixture, expand_lr)
         p2phase(secondary_end, block_size) != 0) {
       min_read++;
     }
-    w._do_write(secondary_offset, secondary_data);
-    w.o->extent_map.clear();
+    w.do_write(secondary_offset, secondary_data);
+    o->extent_map.clear();
     ASSERT_LE(min_read, zr.read_cnt);
   }
 }
@@ -2291,15 +2288,12 @@ TEST_P(BlueStoreWriteFixture, buffer_check)
   store->debug_get_alloc()->init_add_free(0, disk_size);
 
   for (int i = 0; i < 1000; i++) {
-    BlueStore::Writer w;
     BlueStore::TransContext txc(g_ceph_context, coll.get(), nullptr, nullptr);
     BlueStore::WriteContext wctx;
     wctx.csum_type = checksum_type;
     wctx.csum_order = checksum_order;
-    w.bstore = store;
-    w.o = new BlueStore::Onode(coll.get(), ghobject_t(), ""); // onode;
-    w.txc = &txc;
-    w.wctx = &wctx;
+    BlueStore::Onode* o = new BlueStore::Onode(coll.get(), ghobject_t(), "");
+    BlueStore::Writer w(store, &txc, &wctx, o);
     print_writer pw;
     ref_reader zr;
     w.test_write_divertor = &pw;
@@ -2319,7 +2313,7 @@ TEST_P(BlueStoreWriteFixture, buffer_check)
       uint8_t data_val = rand() % 256;
       data.append(std::string(length, data_val));
       memcpy(ref_data + offset, data.c_str(), length);
-      w._do_write(offset, data);
+      w.do_write(offset, data);
     }
 
     bool equal = true;
@@ -2332,11 +2326,11 @@ TEST_P(BlueStoreWriteFixture, buffer_check)
         equal = false;
       }
     };
-    w._debug_iterate_buffers(check_buffer);
+    w.debug_iterate_buffers(check_buffer);
     ASSERT_TRUE(equal);
 
     free(ref_data);
-    w.o->extent_map.clear();
+    o->extent_map.clear();
   }
 }
 
@@ -2403,15 +2397,12 @@ TEST_P(BlueStoreWriteFixture, deferred_check)
   uint64_t needless_deferred = 0;
   uint64_t needless_deferred_cnt = 0;
   for (int i = 0; i < 1000; i++) {
-    BlueStore::Writer w;
     BlueStore::TransContext txc(g_ceph_context, coll.get(), nullptr, nullptr);
     BlueStore::WriteContext wctx;
     wctx.csum_type = checksum_type;
     wctx.csum_order = checksum_order;
-    w.bstore = store;
-    w.o = new BlueStore::Onode(coll.get(), ghobject_t(), ""); // onode;
-    w.txc = &txc;
-    w.wctx = &wctx;
+    BlueStore::Onode* o = new BlueStore::Onode(coll.get(), ghobject_t(), "");
+    BlueStore::Writer w(store, &txc, &wctx, o);
     check_writer pw;
     ref_reader zr;
     w.test_write_divertor = &pw;
@@ -2424,12 +2415,10 @@ TEST_P(BlueStoreWriteFixture, deferred_check)
       uint32_t length = get_length((rand() % size_range) + 1);
       bufferlist data;
       data.append(std::string(length, 0));
-      w._do_write(offset, data);
+      w.do_write(offset, data);
       ASSERT_EQ(pw.bad_direct, 0);
-      w.allocated.clear();
-      w.released.clear();
     }
-    w.o->extent_map.clear();
+    o->extent_map.clear();
     if (pw.needless_deferred != 0) {
       needless_deferred += pw.needless_deferred;
       needless_deferred_cnt++;
@@ -2465,15 +2454,12 @@ TEST_P(BlueStoreWriteFixture, statfs_zero)
   store->debug_get_alloc() = Allocator::create(g_ceph_context, "avl", disk_size, au_size);
   store->debug_get_alloc()->init_add_free(0, disk_size);
   for (int i = 0; i < 1000; i++) {
-    BlueStore::Writer w;
     BlueStore::TransContext txc(g_ceph_context, coll.get(), nullptr, nullptr);
     BlueStore::WriteContext wctx;
     wctx.csum_type = checksum_type;
     wctx.csum_order = checksum_order;
-    w.bstore = store;
-    w.o = new BlueStore::Onode(coll.get(), ghobject_t(), ""); // onode;
-    w.txc = &txc;
-    w.wctx = &wctx;
+    BlueStore::OnodeRef o = new BlueStore::Onode(coll.get(), ghobject_t(), "");
+    BlueStore::Writer w(store, &txc, &wctx, o);
     check_writer pw;
     ref_reader zr;
     w.test_write_divertor = &pw;
@@ -2487,20 +2473,18 @@ TEST_P(BlueStoreWriteFixture, statfs_zero)
       uint32_t length = get_length((rand() % size_range) + 1);
       bufferlist data;
       data.append(std::string(length, 0));
-      w._do_write(offset, data);
-      w.allocated.clear();
-      w.released.clear();
+      w.do_write(offset, data);
     }
     PExtentVector released;
     std::vector<BlueStore::BlobRef> pruned_blobs;
     std::set<BlueStore::SharedBlobRef> shared_changed;
 
-    store->debug_punch_hole_2(coll, w.o, 0, size_range * 3,
+    store->debug_punch_hole_2(coll, o, 0, size_range * 3,
       released, pruned_blobs, shared_changed,
       w.statfs_delta);
     ASSERT_EQ(w.statfs_delta.allocated(), 0);
     ASSERT_EQ(w.statfs_delta.stored(), 0);
-    w.o->extent_map.clear();
+    o->extent_map.clear();
   }
 }
 
