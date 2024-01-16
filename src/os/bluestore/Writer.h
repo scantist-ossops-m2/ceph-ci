@@ -22,11 +22,14 @@ public:
   using exmp_it = extent_map_t::iterator;
   using P = BlueStore::printer;
 
-  struct blob_data {
-    uint32_t real_length;
-    uint32_t compressed_length; // defines compressed
-    bufferlist disk_data; //always at least block aligned
-    bufferlist object_data;
+  // Data that is to be put to object.
+  struct blob_data_t {
+    //uint32_t location;        // There is no need for each chunk to have separate location.
+    uint32_t real_length;       // Size of object data covered by this chunk. Same as object_data.length().
+    uint32_t compressed_length; // Size of compressed representation. 0 or disk_data.length().
+    bufferlist disk_data;       // Bitstream to got o disk. Its either same as object_data,
+                                // or contains compressed data. Block aligned.
+    bufferlist object_data;     // Object data. Needed to put into caches.
     bool is_compressed() {return compressed_length != 0;}
   };
 
@@ -39,17 +42,31 @@ public:
     virtual ~read_divertor() = default;
     virtual bufferlist read(uint32_t object_offset, uint32_t object_length) = 0;
   };
-  BlueStore* bstore;
-  TransContext* txc;
-  WriteContext* wctx;
-  OnodeRef o;
-  write_divertor* test_write_divertor;
-  read_divertor* test_read_divertor;
-  PExtentVector released;   //filled by punch_hole
-  PExtentVector allocated;  //filled by alloc()
+  Writer(BlueStore* bstore, TransContext* txc, WriteContext* wctx, OnodeRef o)
+    :bstore(bstore), txc(txc), wctx(wctx), onode(o) {}
+public:
+  void do_write(
+    uint32_t location,
+    bufferlist& data
+  );
+
+  void debug_iterate_buffers(
+    std::function<void(uint32_t offset, const bufferlist& data)> data_callback
+  );
+
+  write_divertor* test_write_divertor = nullptr;
+  read_divertor* test_read_divertor = nullptr;
   std::vector<BlobRef> pruned_blobs;
   std::set<SharedBlobRef> shared_changed;
   volatile_statfs statfs_delta;
+
+private:
+  BlueStore* bstore;
+  TransContext* txc;
+  WriteContext* wctx;
+  OnodeRef onode;
+  PExtentVector released;   //filled by punch_hole
+  PExtentVector allocated;  //filled by alloc()
   bool do_deferred = false;
   struct {
     PExtentVector::iterator it;  //iterator
@@ -59,7 +76,7 @@ public:
   uint16_t debug_level_to_pp_mode(CephContext* cct);
 
   inline exmp_it _find_mutable_blob_left(
-    BlueStore::extent_map_t::iterator it,
+    exmp_it it,
     uint32_t search_begin, // only interested in blobs that are
     uint32_t search_end,   // within range [begin - end)
     uint32_t mapmust_begin,// for 'unused' case: the area
@@ -127,32 +144,32 @@ public:
     exmp_it after_punch_it,   // hint, we could have found it ourselves
     uint32_t& logical_offset, // will fix value if something consumed
     uint32_t ref_end_offset,  // useful when data is padded
-    blob_data& bd);           // modified when consumed
+    blob_data_t& bd);           // modified when consumed
 
   void _try_reuse_allocated_r(
     exmp_it after_punch_it,   // hint, we could have found it ourselves
     uint32_t& end_offset,     // will fix value if something consumed
     uint32_t ref_end_offset,  // useful when data is padded
-    blob_data& bd);           // modified when consumed
+    blob_data_t& bd);           // modified when consumed
 
   void _try_put_data_on_allocated(
   uint32_t& logical_offset, 
   uint32_t& end_offset,
   uint32_t& ref_end_offset,
-  std::vector<blob_data>& bd,
+  std::vector<blob_data_t>& bd,
   exmp_it after_punch_it);
 
   void _do_put_new_blobs(
     uint32_t logical_offset, 
     uint32_t ref_end_offset,
-    std::vector<blob_data>::iterator& bd_it,
-    std::vector<blob_data>::iterator bd_end);
+    std::vector<blob_data_t>::iterator& bd_it,
+    std::vector<blob_data_t>::iterator bd_end);
 
   void _do_put_blobs(
     uint32_t logical_offset, 
     uint32_t data_end_offset,
     uint32_t ref_end_offset,
-    std::vector<blob_data>& bd,
+    std::vector<blob_data_t>& bd,
     exmp_it after_punch_it);
 
   std::pair<bool, uint32_t> _write_expand_l(
@@ -161,13 +178,7 @@ public:
   std::pair<bool, uint32_t> _write_expand_r(
     uint32_t end_offset);
 
-  void _do_write(
-    uint32_t logical_offset,
-    bufferlist& data
-  );
+  void _collect_released_allocated();
 
-  void _debug_iterate_buffers(
-    std::function<void(uint32_t offset, const bufferlist& data)> data_callback
-  );
 };
 #endif // BLUESTORE_WRITER
