@@ -547,43 +547,101 @@ BlueStore::BlobRef BlueStore::Writer::_blob_create_full(
 
 */
 
+/**
+ * Transfer to disk modulated by unused() bits
+ *
+ * Blob can have unused() bits; it encodes which disk blocks are allocated,
+ * but have never been used. Those bits determine if we can do direct or
+ * deferred write is required.
+ * Function has \ref Writer::test_write_divertor bypass for testing purposes.
+ *
+ * disk_position - Location must be disk block aligned.
+ * data          - Data to write.
+ * mask          - Set of unused() bits, starting from bit 0.
+ * chunk_size    - Size covered by one "mask" bit.
+ */
 inline void BlueStore::Writer::_schedule_io_masked(
-  uint64_t disk_offset,
+  uint64_t disk_position,
   bufferlist data,
   bluestore_blob_t::unused_t mask,
   uint32_t chunk_size)
 {
   if (test_write_divertor == nullptr) {
-    ceph_assert(false);
-  } else {
-    int32_t s = data.length();
-    while (s > 0) {
-      bool do_def = (mask & 1) == 0;
+    int32_t data_left = data.length();
+    while (data_left > 0) {
+      bool chunk_is_unused = (mask & 1) != 0;
       bufferlist ddata;
       data.splice(0, chunk_size, &ddata);
-      test_write_divertor->write(disk_offset, ddata, do_def);
-      disk_offset += chunk_size;
-      s -= chunk_size;
+      if (chunk_is_unused) {
+        bstore->bdev->aio_write(disk_position, ddata, &txc->ioc, false);
+      } else {
+        bluestore_deferred_op_t *op = bstore->_get_deferred_op(txc, ddata.length());
+        op->op = bluestore_deferred_op_t::OP_WRITE;
+        op->extents.emplace_back(bluestore_pextent_t(disk_position, chunk_size));
+        op->data = ddata;
+      }
+      disk_position += chunk_size;
+      data_left -= chunk_size;
       mask >>= 1;
     }
-    ceph_assert(s == 0);
+    ceph_assert(data_left == 0);
+  } else {
+    int32_t data_left = data.length();
+    while (data_left > 0) {
+      bool chunk_is_unused = (mask & 1) != 0;
+      bufferlist ddata;
+      data.splice(0, chunk_size, &ddata);
+      test_write_divertor->write(disk_position, ddata, !chunk_is_unused);
+      disk_position += chunk_size;
+      data_left -= chunk_size;
+      mask >>= 1;
+    }
+    ceph_assert(data_left == 0);
   }
 }
 
+/**
+ * Transfer to disk
+ *
+ * Initiates transfer of data to disk.
+ * Depends on \ref Writer::do_deferred to select direct or deferred action.
+ * If \ref Writer::test_write_divertor bypass is set it overrides default path.
+ *
+ * disk_allocs    - Target disk allocation units.
+ * initial_offset - Offset withing first AU; used when sub-au write is ongoing.
+ * data           - Data.
+ */
 inline void BlueStore::Writer::_schedule_io(
   const PExtentVector& disk_allocs,
   uint32_t initial_offset,
   bufferlist data)
 {
   if (test_write_divertor == nullptr) {
-    ceph_assert(false);
+    if (do_deferred) {
+      bluestore_deferred_op_t *op = bstore->_get_deferred_op(txc, data.length());
+      op->op = bluestore_deferred_op_t::OP_WRITE;
+      for (auto& e : disk_allocs) {
+        op->extents.emplace_back(e);
+      }
+      op->data = data;
+    } else {
+      for (auto loc : disk_allocs) {
+        ceph_assert(initial_offset <= loc.length);
+        bufferlist data_chunk;
+        uint32_t data_to_write = std::min(data.length(), loc.length - initial_offset);
+        data.splice(0, data_to_write, &data_chunk);
+        bstore->bdev->aio_write(loc.offset + initial_offset, data_chunk, &txc->ioc, false);
+        initial_offset = 0;
+      }
+      ceph_assert(data.length() == 0);
+    }
   } else {
     for (auto loc: disk_allocs) {
       ceph_assert(initial_offset <= loc.length);
-      bufferlist loc_data;
+      bufferlist data_chunk;
       uint32_t data_to_write = std::min(data.length(), loc.length - initial_offset);
-      data.splice(0, data_to_write, &loc_data);
-      test_write_divertor->write(loc.offset + initial_offset, loc_data, do_deferred);
+      data.splice(0, data_to_write, &data_chunk);
+      test_write_divertor->write(loc.offset + initial_offset, data_chunk, do_deferred);
       initial_offset = 0;
     }
     ceph_assert(data.length() == 0);
