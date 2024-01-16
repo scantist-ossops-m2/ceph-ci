@@ -648,15 +648,31 @@ inline void BlueStore::Writer::_schedule_io(
   }
 }
 
+/**
+ * Read part of own data
+ *
+ * Rados protocol allows for byte aligned writes. Disk blocks are larger and
+ * we need to read data that is around to form whole block.
+ *
+ * If \ref Writer::test_read_divertor is set it overrides default.
+ */
 inline bufferlist BlueStore::Writer::_read_self(
-  uint32_t offset,
+  uint32_t position,
   uint32_t length)
 {
   if (test_read_divertor == nullptr) {
-    ceph_assert(false); // real read
-    return bufferlist();
+    bufferlist result;
+    int r;
+    r = bstore->_do_read(onode->c, onode, position, length, result);
+    ceph_assert(r >= 0 && r <= (int)length);
+    size_t zlen = length - r;
+    if (zlen) {
+      result.append_zero(zlen);
+      //logger->inc(l_bluestore_write_pad_bytes, zlen);
+    }
+    return result;
   } else {
-    return test_read_divertor->read(offset, length);
+    return test_read_divertor->read(position, length);
   }
 }
 
