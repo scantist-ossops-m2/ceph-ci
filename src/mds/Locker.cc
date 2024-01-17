@@ -1213,6 +1213,7 @@ void Locker::eval_gather(SimpleLock *lock, bool first, bool *pneed_issue, MDSCon
       case LOCK_XSYN_MIX:
 	in->start_scatter(static_cast<ScatterLock *>(lock));
 	if (lock->get_parent()->is_replicated()) {
+	  dout(10) << " HRK auth lock parent is replicated - next lock state LOCK_AC_MIX " << dendl;
 	  bufferlist softdata;
 	  lock->encode_locked_state(softdata);
 	  send_lock_message(lock, LOCK_AC_MIX, softdata);
@@ -1232,6 +1233,7 @@ void Locker::eval_gather(SimpleLock *lock, bool first, bool *pneed_issue, MDSCon
       case LOCK_MIX_SYNC:
       case LOCK_XSYN_SYNC:
 	if (lock->get_parent()->is_replicated()) {
+	  dout(10) << " HRK auth lock parent is replicated - next lock state LOCK_AC_SYNC " << dendl;
 	  bufferlist softdata;
 	  lock->encode_locked_state(softdata);
 	  send_lock_message(lock, LOCK_AC_SYNC, softdata);

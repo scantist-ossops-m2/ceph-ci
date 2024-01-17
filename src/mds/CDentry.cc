@@ -475,16 +475,19 @@ void CDentry::encode_lock_state(int type, bufferlist& bl)
   // null, ino, or remote_ino?
   char c;
   if (linkage.is_primary()) {
+    dout(10) << " HRK encode_lock_state linkage primary - target ino " << std::hex << linkage.get_inode()->ino() << dendl;
     c = 1;
     encode(c, bl);
     encode(linkage.get_inode()->ino(), bl);
   }
   else if (linkage.is_remote() || linkage.is_referent()) {
+    dout(10) << " HRK encode_lock_state linkage remote/referent - target ino " << std::hex << linkage.get_remote_ino() << dendl;
     c = 2;
     encode(c, bl);
     encode(linkage.get_remote_ino(), bl);
   }
   else if (linkage.is_null()) {
+    dout(10) << " HRK encode_lock_state linkage null " << dendl;
     // encode nothing.
   }
   else ceph_abort();
@@ -505,6 +508,7 @@ void CDentry::decode_lock_state(int type, const bufferlist& bl)
 
   if (p.end()) {
     // null
+    dout(10) << " HRK decode_lock_state linkage should be null " << dendl;
     ceph_assert(linkage.is_null());
     return;
   }

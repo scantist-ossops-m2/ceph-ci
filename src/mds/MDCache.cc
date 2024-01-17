@@ -11216,12 +11216,16 @@ void MDCache::send_dentry_link(CDentry *dn, MDRequestRef& mdr)
   CDir *subtree = get_subtree_root(dn->get_dir());
   for (const auto &p : dn->get_replicas()) {
     // don't tell (rename) witnesses; they already know
-    if (mdr.get() && mdr->more()->witnessed.count(p.first))
+    if (mdr.get() && mdr->more()->witnessed.count(p.first)) {
+      dout(10) << __func__ << " HRK rename witness already know SKIP dn " << *dn << dendl;
       continue;
+    }
     if (mds->mdsmap->get_state(p.first) < MDSMap::STATE_REJOIN ||
 	(mds->mdsmap->get_state(p.first) == MDSMap::STATE_REJOIN &&
-	 rejoin_gather.count(p.first)))
+	 rejoin_gather.count(p.first))) {
+      dout(10) << __func__ << " HRK mds is NOT READY!!! " << *dn << dendl;
       continue;
+    }
     CDentry::linkage_t *dnl = dn->get_linkage();
     auto m = make_message<MDentryLink>(subtree->dirfrag(), dn->get_dir()->dirfrag(), dn->get_name(), dnl->is_primary());
     if (dnl->is_primary()) {
@@ -11239,6 +11243,7 @@ void MDCache::send_dentry_link(CDentry *dn, MDRequestRef& mdr)
 void MDCache::handle_dentry_link(const cref_t<MDentryLink> &m)
 {
   CDentry *dn = NULL;
+  dout(7) << __func__ << " HRK starting "  << dendl;
   CDir *dir = get_dirfrag(m->get_dirfrag());
   if (!dir) {
     dout(7) << __func__ << " don't have dirfrag " << m->get_dirfrag() << dendl;
@@ -11295,13 +11300,17 @@ void MDCache::send_dentry_unlink(CDentry *dn, CDentry *straydn, MDRequestRef& md
        it != replicas.end();
        ++it) {
     // don't tell (rmdir) witnesses; they already know
-    if (mdr.get() && mdr->more()->witnessed.count(*it))
+    if (mdr.get() && mdr->more()->witnessed.count(*it)) {
+      dout(10) << __func__ << " HRK rmdir witness already know SKIP dn " << *dn << dendl;
       continue;
+    }
 
     if (mds->mdsmap->get_state(*it) < MDSMap::STATE_REJOIN ||
 	(mds->mdsmap->get_state(*it) == MDSMap::STATE_REJOIN &&
-	 rejoin_gather.count(*it)))
+	 rejoin_gather.count(*it))) {
+      dout(10) << __func__ << " HRK mds is NOT READY!!! " << *dn << dendl;
       continue;
+    }
 
     auto unlink = make_message<MDentryUnlink>(dn->get_dir()->dirfrag(), dn->get_name());
     if (straydn) {
@@ -11319,6 +11328,8 @@ void MDCache::handle_dentry_unlink(const cref_t<MDentryUnlink> &m)
   CInode *strayin = nullptr;
   if (m->straybl.length())
     decode_replica_stray(straydn, &strayin, m->straybl, mds_rank_t(m->get_source().num()));
+
+  dout(7) << __func__ << " HRK starting " << dendl;
 
   CDir *dir = get_dirfrag(m->get_dirfrag());
   if (!dir) {
