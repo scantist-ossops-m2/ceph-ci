@@ -106,7 +106,7 @@ struct Config {
   bool quiesce = false;
   bool readonly = false;
   bool set_max_part = false;
-  bool try_netlink = false;
+  bool try_netlink = true;
   bool show_cookie = false;
 
   std::string poolname;
@@ -166,7 +166,7 @@ static void usage()
             << "  --read-only                   Map read-only\n"
             << "  --reattach-timeout <sec>      Set nbd re-attach timeout\n"
             << "                                (default: " << Config().reattach_timeout << ")\n"
-            << "  --try-netlink                 Use the nbd netlink interface\n"
+            << "  --try-netlink                 Use the nbd netlink interface (deprecated)\n"
             << "  --show-cookie                 Show device cookie\n"
             << "  --cookie                      Specify device cookie\n"
             << "  --snap-id <snap-id>           Specify snapshot by ID instead of by name\n"

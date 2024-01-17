@@ -19,6 +19,11 @@
 * CephFS: The period specifier ``m`` now implies minutes and the period specifier
   ``M`` now implies months. This has been made consistent with the rest
   of the system.
+* RBD: The option ``--try-netlink`` to map rbd images to nbd devices has been
+  deprecated. By default the nbd netlink interface is used for mapping rbd
+  images to nbd devices. If the netlink interface is not supported by the
+  kernel, then the mapping is retried using the ioctl interface, which was the
+  previous default.
 * RGW: New tools have been added to radosgw-admin for identifying and
   correcting issues with versioned bucket indexes. Historical bugs with the
   versioned bucket index transaction workflow made it possible for the index
