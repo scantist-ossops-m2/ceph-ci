@@ -729,12 +729,14 @@ void CDir::unlink_inode_work(CDentry *dn)
   CInode *in = dn->get_linkage()->get_inode();
 
   if (dn->get_linkage()->is_remote()) {
+    dout(10) << __func__ << " HRK " << *dn << " is_remote passed!!! " << dendl;
     // remote
     if (in)
       dn->unlink_remote(dn->get_linkage());
 
     dn->get_linkage()->set_remote(0, 0);
   } else if(dn->get_linkage()->is_referent()) {
+    dout(10) << __func__ << " HRK  " << *dn << " is_referent passed!!! " << dendl;
     // referent remote
       CInode *ref_in = dn->get_linkage()->get_referent_inode();
       // referent inode - unpin dentry?
