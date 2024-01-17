@@ -125,16 +125,53 @@ ReplicaReservations::~ReplicaReservations()
   log_failure_and_duration(scrbcnt_resrv_aborted);
 }
 
+// the specific check for 'is this a relevant response' is expected to be
+// improved in the future, to include a unique counter value (instead of the
+// epoch, which is not guaranteed to change from one reservation attempt to
+// another).
+tl::expected<bool, std::string> ReplicaReservations::is_response_relevant(
+    epoch_t msg_epoch,
+    pg_shard_t from) const
+{
+  if (msg_epoch != m_last_request_sent_epoch) {
+    return tl::unexpected(fmt::format(
+	"stale reservation response from {} (response e:{} vs. expected {})",
+	from, msg_epoch, m_last_request_sent_epoch));
+  }
+  return true;
+}
+
+tl::expected<bool, std::string> ReplicaReservations::is_msg_source_correct(
+    epoch_t msg_epoch,
+    pg_shard_t from) const
+{
+  const auto exp_source = get_last_sent();
+  if (!exp_source || from != *exp_source) {
+    return tl::unexpected(fmt::format(
+	"unexpected response from {} (with e:{}) (expected {})", from,
+	msg_epoch, exp_source.value_or(pg_shard_t{})));
+  }
+  return true;
+}
+
 bool ReplicaReservations::handle_reserve_grant(OpRequestRef op, pg_shard_t from)
 {
+  // is this a stale response to a previous request (e.g. one that
+  // timed-out)? if so - ignore it (but do log an error, to cause tests
+  // to fail)
+  const auto msg_epoch = op->get_req<MOSDScrubReserve>()->map_epoch;
+  const auto epoch_verified = is_response_relevant(msg_epoch, from);
+  if (!epoch_verified) {
+    m_osds->clog->warn() << epoch_verified.error();
+    return false;
+  }
+
   // verify that the grant is from the peer we expected. If not?
   // for now - abort the OSD. \todo reconsider the reaction.
-  if (!get_last_sent().has_value() || from != *get_last_sent()) {
-    dout(1) << fmt::format(
-		   "unexpected grant from {} (expected {})", from,
-		   get_last_sent().value_or(pg_shard_t{}))
-	    << dendl;
-    ceph_assert(from == get_last_sent());
+  const auto peer_verified = is_msg_source_correct(msg_epoch, from);
+  if (!peer_verified) {
+    m_osds->clog->error() << peer_verified.error();
+    ceph_abort_msg(peer_verified.error());
     return false;
   }
 
@@ -143,15 +180,14 @@ bool ReplicaReservations::handle_reserve_grant(OpRequestRef op, pg_shard_t from)
   // log a warning if the response was slow to arrive
   if ((m_slow_response_warn_timeout > 0ms) &&
       (elapsed > m_slow_response_warn_timeout)) {
-    dout(1) << fmt::format(
+    m_osds->clog->warn() << fmt::format(
 		   "slow reservation response from {} ({}ms)", from,
-		   duration_cast<milliseconds>(elapsed).count())
-	    << dendl;
+		   duration_cast<milliseconds>(elapsed).count());
     // prevent additional warnings
     m_slow_response_warn_timeout = 0ms;
   }
   dout(10) << fmt::format(
-		  "granted by {} ({} of {}) in {}ms", from,
+		  "e:{} granted by {} ({} of {}) in {}ms", msg_epoch, from,
 		  active_requests_cnt(), m_sorted_secondaries.size(),
 		  duration_cast<milliseconds>(elapsed).count())
 	   << dendl;
@@ -169,21 +205,22 @@ bool ReplicaReservations::send_next_reservation_or_complete()
 
   // send the next reservation request
   const auto peer = *m_next_to_request;
-  const auto epoch = m_pg->get_osdmap_epoch();
+  m_last_request_sent_epoch = m_pg->get_osdmap_epoch();
   auto m = make_message<MOSDScrubReserve>(
-      spg_t{m_pgid, peer.shard}, epoch, MOSDScrubReserve::REQUEST,
-      m_pg->pg_whoami);
-  m_pg->send_cluster_message(peer.osd, m, epoch, false);
+      spg_t{m_pgid, peer.shard}, m_last_request_sent_epoch,
+      MOSDScrubReserve::REQUEST, m_pg->pg_whoami);
+  m_pg->send_cluster_message(peer.osd, m, m_last_request_sent_epoch, false);
   m_last_request_sent_at = ScrubClock::now();
   dout(10) << fmt::format(
-		  "reserving {} (the {} of {} replicas)", *m_next_to_request,
-		  active_requests_cnt() + 1, m_sorted_secondaries.size())
+		  "reserving {} (the {} of {} replicas) e:{}",
+		  *m_next_to_request, active_requests_cnt() + 1,
+		  m_sorted_secondaries.size(), m_last_request_sent_epoch)
 	   << dendl;
   m_next_to_request++;
   return false;
 }
 
-void ReplicaReservations::verify_rejections_source(
+bool  ReplicaReservations::handle_rejection(
     OpRequestRef op,
     pg_shard_t from)
 {
@@ -194,20 +231,29 @@ void ReplicaReservations::verify_rejections_source(
 		  *op->get_req())
 	   << dendl;
 
+  // is this a stale response to a previous request (e.g. one that
+  // timed-out)? if so - ignore it (but do log an error, to cause tests
+  // to fail)
+  const auto msg_epoch = op->get_req<MOSDScrubReserve>()->map_epoch;
+  const auto epoch_verified = is_response_relevant(msg_epoch, from);
+  if (!epoch_verified) {
+    m_osds->clog->warn() << epoch_verified.error();
+    return false;
+  }
+
+  log_failure_and_duration(scrbcnt_resrv_rejected);
+  ceph_assert(get_last_sent().has_value());
   // verify that the denial is from the peer we expected. If not?
   // we should treat it as though the *correct* peer has rejected the request,
   // but remember to release that peer, too.
-
-  ceph_assert(get_last_sent().has_value());
-  const auto expected = *get_last_sent();
-  if (from != expected) {
-    dout(1) << fmt::format(
-		   "unexpected rejection from {} (expected {})", from, expected)
-	    << dendl;
+  const auto peer_verified = is_msg_source_correct(msg_epoch, from);
+  if (!peer_verified) {
+    m_osds->clog->warn() << peer_verified.error();
   } else {
     // correct peer, wrong answer...
     m_next_to_request--;  // no need to release this one
   }
+  return true;
 }
 
 std::optional<pg_shard_t> ReplicaReservations::get_last_sent() const
