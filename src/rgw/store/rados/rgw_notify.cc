@@ -92,14 +92,13 @@ struct PublishCommitCompleteArg {
 };
 
 void publish_commit_completion(rados_completion_t completion, void *arg) {
-    auto *comp_obj = static_cast<librados::AioCompletionImpl *>(completion);
-    auto *pcc_arg = static_cast<PublishCommitCompleteArg *>(arg);
+    auto *comp_obj = reinterpret_cast<librados::AioCompletionImpl *>(completion);
+    std::unique_ptr<PublishCommitCompleteArg> pcc_arg(reinterpret_cast<PublishCommitCompleteArg *>(arg));
     if (comp_obj->get_return_value() < 0) {
         ldpp_dout(pcc_arg->dpp, 1) << "ERROR: failed to commit reservation to queue: "
                                    << pcc_arg->queue_name << ". error: " << comp_obj->get_return_value()
                                    << dendl;
     }
-    delete pcc_arg;
 };
 
 class Manager : public DoutPrefixProvider {
