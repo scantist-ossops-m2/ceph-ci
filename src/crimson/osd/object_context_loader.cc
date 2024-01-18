@@ -168,7 +168,7 @@ using crimson::common::local_conf;
     auto loaded =
       load_obc_iertr::make_ready_future<ObjectContextRef>(obc);
     if (existed) {
-      ceph_assert(obc->is_fully_loaded());
+      ceph_assert(obc->is_loaded_and_valid());
       DEBUGDPP("cache hit on {}", dpp, obc->get_oid());
     } else {
       DEBUGDPP("cache miss on {}", dpp, obc->get_oid());
