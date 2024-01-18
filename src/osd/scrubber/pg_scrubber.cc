@@ -1686,6 +1686,8 @@ void PgScrubber::handle_scrub_reserve_msgs(OpRequestRef op)
     return;
   }
   auto m = op->get_req<MOSDScrubReserve>();
+  dout(20) << fmt::format("{}: {} from {}", __func__, m->type, m->from)
+	   << dendl;
   switch (m->type) {
     case MOSDScrubReserve::REQUEST:
       m_fsm->process_event(ReplicaReserveReq{op, m->from});
