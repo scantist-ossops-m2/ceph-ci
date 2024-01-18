@@ -105,6 +105,10 @@ CephFS: Disallow delegating preallocated inode ranges to clients. Config
   See https://docs.ceph.com/en/latest/rados/operations/balancer/ for more information.
 * CephFS: Full support for subvolumes and subvolume groups is now available
   for snap_schedule Manager module.
+* RADOS: Read balancing may now be managed automatically via the balancer
+  manager module. Users may choose between two new modes: ``upmap-read``, which
+  offers upmap and read optimization simultaneously, or ``read``, which may be used
+  to only optimize reads. For more detailed information see https://docs.ceph.com/en/latest/rados/operations/read-balancer/#online-optimization.
 
 >=18.0.0
 
