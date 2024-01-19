@@ -14,3 +14,4 @@ target_link_libraries(crimson-os
   ${alienstore_lib}
   crimson-seastore
   crimson)
+
