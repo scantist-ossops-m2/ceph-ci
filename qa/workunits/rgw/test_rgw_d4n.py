@@ -101,6 +101,8 @@ def test_directory_methods(r, client, obj):
     log.debug("Print permissions for tmp dir: %s", list_perm)
 
     data = r.hgetall('bkt_test.txt_0_4')
+    print("Redis data check: ")
+    print(data)
     output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
     attrs = json.loads(output.decode('latin-1'))
 
@@ -121,6 +123,8 @@ def test_directory_methods(r, client, obj):
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
     data = r.hgetall('bkt_test.txt_0_4')
+    print("Redis data check: ")
+    print(data)
     output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
     attrs = json.loads(output.decode('latin-1'))
 
@@ -171,7 +175,7 @@ def test_cache_methods(r, client, obj):
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
     # check logs to ensure object was retrieved from storage backend
-    res = subprocess.call(['grep', '"D4NFilterObject::iterate:: iterate(): Fetching object from backend store"', '%s/build/out/radosgw.8000.log' % os.environ['CEPH_ROOT']])
+    res = subprocess.call(['grep', '"D4NFilterObject::iterate:: iterate(): Fetching object from backend store"', '/var/log/ceph/rgw.ceph.client.0.log'])
 
     assert(res >= 1)
 
@@ -203,7 +207,7 @@ def test_cache_methods(r, client, obj):
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
     # check logs to ensure object was retrieved from cache
-    res = subprocess.call(['grep', '"SSDCache: get_async(): ::aio_read(), ret=0"', '%s/build/out/radosgw.8000.log' % os.environ['CEPH_ROOT']])
+    res = subprocess.call(['grep', '"SSDCache: get_async(): ::aio_read(), ret=0"', '/var/log/ceph/rgw.ceph.client.0.log'])
     assert(res >= 1)
 
     # retrieve and compare cache contents
@@ -262,11 +266,10 @@ def main():
 
     r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
+    log.info("D4NFilterTest: testing directory methods")
     test_directory_methods(r, client, obj)
 
-    # Responses should not be decoded
-    r = redis.Redis(host='localhost', port=6379, db=0)
-
+    log.info("D4NFilterTest: testing cache methods")
     test_cache_methods(r, client, obj)
 
     log.info("D4NFilterTest successfully completed.")
