@@ -186,14 +186,18 @@ int main(int argc, const char* argv[])
           const auto nonce = crimson::osd::get_nonce();
           crimson::net::MessengerRef cluster_msgr, client_msgr;
           crimson::net::MessengerRef hb_front_msgr, hb_back_msgr;
-          for (auto [msgr, name] : {make_pair(std::ref(cluster_msgr), "cluster"s),
-                                    make_pair(std::ref(client_msgr), "client"s)}) {
+          // multi-core messengers:
+          for (auto [msgr, name] : {make_pair(std::ref(client_msgr), "client"s)}) {
+            // TODO: dispatch cluster_msgr multicore
+            //       See: https://tracker.ceph.com/issues/64086
             msgr = crimson::net::Messenger::create(entity_name_t::OSD(whoami),
                                                    name,
                                                    nonce,
                                                    false);
           }
-          for (auto [msgr, name] : {make_pair(std::ref(hb_front_msgr), "hb_front"s),
+          // dispatch_only_on_this_shard messengers:
+          for (auto [msgr, name] : {make_pair(std::ref(cluster_msgr), "cluster"s),
+                                    make_pair(std::ref(hb_front_msgr), "hb_front"s),
                                     make_pair(std::ref(hb_back_msgr), "hb_back"s)}) {
             msgr = crimson::net::Messenger::create(entity_name_t::OSD(whoami),
                                                    name,
