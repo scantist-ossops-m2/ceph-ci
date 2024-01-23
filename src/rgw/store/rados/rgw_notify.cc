@@ -1046,20 +1046,22 @@ int publish_commit(rgw::sal::Object* obj,
       std::vector<buffer::list> bl_data_vec{std::move(bl)};
       librados::ObjectWriteOperation op;
       cls_2pc_queue_commit(op, bl_data_vec, topic.res_id);
-      auto *completion = librados::Rados::aio_create_completion();
-      auto *pcc_arg = new PublishCommitCompleteArg{queue_name, dpp};
-      completion->set_complete_callback(pcc_arg, publish_commit_completion);
+      auto completion = std::unique_ptr<librados::AioCompletion, void (*) (librados::AioCompletion*)>(
+              librados::Rados::aio_create_completion(), [] (librados::AioCompletion *c) {
+                c->release();
+              });
+      auto pcc_arg = make_unique<PublishCommitCompleteArg>(queue_name, dpp);
+      completion->set_complete_callback(pcc_arg.get(), publish_commit_completion);
       auto &io_ctx = res.store->getRados()->get_notif_pool_ctx();
-      int ret = io_ctx.aio_operate(queue_name, completion, &op);
+      int ret = io_ctx.aio_operate(queue_name, completion.get(), &op);
       topic.res_id = cls_2pc_reservation::NO_ID;
       if (ret < 0) {
-        ldpp_dout(dpp, 1)
-            << "ERROR: failed to commit reservation to queue: << queue_name "
-            << ". error: " << ret << dendl;
-        delete pcc_arg;
-        completion->release();
+        ldpp_dout(dpp, 1) << "ERROR: failed to commit reservation to queue: "
+                          << queue_name << ". error: " << ret << dendl;
         return ret;
       }
+      pcc_arg.release();
+      completion.release();
     } else {
       try {
         // TODO add endpoint LRU cache
