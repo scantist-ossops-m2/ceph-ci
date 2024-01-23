@@ -1046,10 +1046,7 @@ int publish_commit(rgw::sal::Object* obj,
       std::vector<buffer::list> bl_data_vec{std::move(bl)};
       librados::ObjectWriteOperation op;
       cls_2pc_queue_commit(op, bl_data_vec, topic.res_id);
-      auto completion = std::unique_ptr<librados::AioCompletion, void (*) (librados::AioCompletion*)>(
-              librados::Rados::aio_create_completion(), [] (librados::AioCompletion *c) {
-                c->release();
-              });
+      aio_completion_ptr completion {librados::Rados::aio_create_completion()};
       auto pcc_arg = make_unique<PublishCommitCompleteArg>(queue_name, dpp);
       completion->set_complete_callback(pcc_arg.get(), publish_commit_completion);
       auto &io_ctx = res.store->getRados()->get_notif_pool_ctx();
