@@ -21,9 +21,8 @@ enum class GW_STATES_PER_AGROUP_E {
     GW_IDLE_STATE = 0, //invalid state
     GW_STANDBY_STATE,
     GW_ACTIVE_STATE,
-    GW_OWNER_WAIT_FBACK_BLIST_CMPL,
-    GW_WAIT_FAILBACK_PREPARED,
-    GW_WAIT_FOVER_BLIST_CMPL
+    GW_BLOCKED_AGROUP_OWNER,
+    GW_WAIT_FAILBACK_PREPARED
 };
 
 enum class GW_EXPORTED_STATES_PER_AGROUP_E {
@@ -76,8 +75,8 @@ struct GW_CREATED_T {
     SM_STATE           sm_state;                      // state machine states per ANA group
     GW_ID_T            failover_peer[MAX_SUPPORTED_ANA_GROUPS];
     struct{
-       epoch_t     osd_epoch;
-       bool        epoch_changed;
+       NONCE_VECTOR_T blocked_addr_vec;
+       NONCE_VECTOR_T unblocked_addr_vec;
     }blocklist_data[MAX_SUPPORTED_ANA_GROUPS];
 
     GW_CREATED_T(): ana_grp_id(REDUNDANT_GW_ANA_GROUP_ID) {};
@@ -87,18 +86,31 @@ struct GW_CREATED_T {
         for (int i = 0; i < MAX_SUPPORTED_ANA_GROUPS; i++){
             sm_state[i] = GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE;
             failover_peer[i]  = "";
-            blocklist_data[i].osd_epoch = 0;
-            blocklist_data[i].epoch_changed = true;
+            blocklist_data[i].blocked_addr_vec.clear();
+            blocklist_data[i].unblocked_addr_vec.clear();
         }
     };
 
     void standby_state(ANA_GRP_ID_T grpid) {
-           sm_state[grpid]       = GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE;
-           failover_peer[grpid]  = "";
+        sm_state[grpid]       = GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE;
+        failover_peer[grpid]  = "";
     };
     void active_state(ANA_GRP_ID_T grpid) {
-           sm_state[grpid]       = GW_STATES_PER_AGROUP_E::GW_ACTIVE_STATE;
-           blocklist_data[grpid].osd_epoch = 0;
+        sm_state[grpid]       = GW_STATES_PER_AGROUP_E::GW_ACTIVE_STATE;
+        reset_addr_vecs(grpid);
+    };
+    void set_state(ANA_GRP_ID_T grpid, GW_STATES_PER_AGROUP_E state) {
+        sm_state[grpid] = state;
+        reset_addr_vecs(grpid);
+    };
+    void set_addr_vecs(ANA_GRP_ID_T grpid, NONCE_VECTOR_T& blocked, NONCE_VECTOR_T& unblocked) {
+        blocklist_data[grpid].blocked_addr_vec   = blocked;
+        blocklist_data[grpid].unblocked_addr_vec = unblocked;
+    };
+private:
+    void reset_addr_vecs(ANA_GRP_ID_T grpid) {
+        blocklist_data[grpid].blocked_addr_vec.clear();
+        blocklist_data[grpid].unblocked_addr_vec.clear();
     };
 };
 
@@ -114,11 +126,10 @@ struct NqnState {
         for (int i=0; i < MAX_SUPPORTED_ANA_GROUPS; i++){
             std::pair<GW_EXPORTED_STATES_PER_AGROUP_E, epoch_t> state_pair;
             state_pair.first = (  sm_state[i] == GW_STATES_PER_AGROUP_E::GW_ACTIVE_STATE
-			       || sm_state[i] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL
-			       || sm_state[i] == GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL)
+			       || sm_state[i] == GW_STATES_PER_AGROUP_E::GW_BLOCKED_AGROUP_OWNER)
                            ? GW_EXPORTED_STATES_PER_AGROUP_E::GW_EXPORTED_OPTIMIZED_STATE
                            : GW_EXPORTED_STATES_PER_AGROUP_E::GW_EXPORTED_INACCESSIBLE_STATE;
-            state_pair.second = gw_created.blocklist_data[i].osd_epoch;
+            //state_pair.second = gw_created.blocklist_data[i].osd_epoch;
             ana_state.push_back(state_pair);
         }
     }
