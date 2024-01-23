@@ -98,16 +98,16 @@ def test_directory_methods(r, client, obj):
     output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
     attrs = json.loads(output.decode('latin-1'))
 
-    assert(data.get('blockID'), '0')
-    assert(data.get('version'), attrs.get('tag'))
-    assert(data.get('size'), '4')
-    assert(data.get('globalWeight'), '0')
-    assert(data.get('blockHosts'), '127.0.0.1:6379')
-    assert(data.get('objName'), 'test.txt')
-    assert(data.get('bucketName'), 'bkt')
-    assert(data.get('creationTime'), attrs.get('mtime'))
-    assert(data.get('dirty'), '0')
-    assert(data.get('objHosts'), '127.0.0.1:6379')
+    assert(data.get('blockID') == '0')
+    assert(data.get('version') == attrs.get('tag'))
+    assert(data.get('size') == '4')
+    assert(data.get('globalWeight') == '0')
+    assert(data.get('blockHosts') == '127.0.0.1:6379')
+    assert(data.get('objName') == 'test.txt')
+    assert(data.get('bucketName') == 'bkt')
+    assert(data.get('creationTime') == attrs.get('mtime'))
+    assert(data.get('dirty') == '0')
+    assert(data.get('objHosts') == '127.0.0.1:6379')
 
     # second get call
     response_get = obj.get()
@@ -118,16 +118,16 @@ def test_directory_methods(r, client, obj):
     output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
     attrs = json.loads(output.decode('latin-1'))
 
-    assert(data.get('blockID'), '0')
-    assert(data.get('version'), attrs.get('tag'))
-    assert(data.get('size'), '4')
-    assert(data.get('globalWeight'), '0')
-    assert(data.get('blockHosts'), '127.0.0.1:6379')
-    assert(data.get('objName'), 'test.txt')
-    assert(data.get('bucketName'), 'bkt')
-    assert(data.get('creationTime'), attrs.get('mtime'))
-    assert(data.get('dirty'), '0')
-    assert(data.get('objHosts'), '127.0.0.1:6379')
+    assert(data.get('blockID') == '0')
+    assert(data.get('version') == attrs.get('tag'))
+    assert(data.get('size') == '4')
+    assert(data.get('globalWeight') == '0')
+    assert(data.get('blockHosts') == '127.0.0.1:6379')
+    assert(data.get('objName') == 'test.txt')
+    assert(data.get('bucketName') == 'bkt')
+    assert(data.get('creationTime') == attrs.get('mtime'))
+    assert(data.get('dirty') == '0')
+    assert(data.get('objHosts') == '127.0.0.1:6379')
 
     r.flushall()
 
@@ -179,12 +179,12 @@ def test_cache_methods(r, client, obj):
     log.debug("Listing of datacache directory is: %s", list_dir_out)
 
     # retrieve and compare cache contents
-    assert body == "test"
-    #data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
-    #data = data.decode('latin-1').strip()
+    assert(body == "test")
+    data = subprocess.check_output(['ls', '/home/rgw_d4n_datacache/'])
+    data = data.decode('latin-1').strip()
 
-    #output = subprocess.check_output(['md5sum', body]).decode('latin-1')
-    #assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
+    output = subprocess.check_output(['md5sum', body]).decode('latin-1')
+    assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
 
     # second get call
     response_get = obj.get()
@@ -196,12 +196,12 @@ def test_cache_methods(r, client, obj):
     assert(res >= 1)
 
     # retrieve and compare cache contents
-    assert body == "test"
-    #data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
-    #data = data.decode('latin-1').strip()
+    assert(body == "test")
+    data = subprocess.check_output(['ls', '/home/rgw_d4n_datacache/'])
+    data = data.decode('latin-1').strip()
 
-    #output = subprocess.check_output(['md5sum', body]).decode('latin-1')
-    #assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
+    output = subprocess.check_output(['md5sum', body]).decode('latin-1')
+    assert(output.splitlines()[0].split()[0] == hashlib.md5("test".encode('utf-8')).hexdigest())
 
     r.flushall()
 
