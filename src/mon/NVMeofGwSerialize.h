@@ -25,9 +25,8 @@ inline std::ostream& operator<<(std::ostream& os, const GW_STATES_PER_AGROUP_E v
         case GW_STATES_PER_AGROUP_E::GW_IDLE_STATE: os << "IDLE "; break;
         case GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE: os << "STANDBY "; break;
         case GW_STATES_PER_AGROUP_E::GW_ACTIVE_STATE: os << "ACTIVE "; break;
-        case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL: os << "BLOCKED_AGROUP_OWNER "; break;
+        case GW_STATES_PER_AGROUP_E::GW_BLOCKED_AGROUP_OWNER: os << "BLOCKED_AGROUP_OWNER "; break;
         case GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED: os << "WAIT_FAILBACK_PREPARED "; break;
-        case GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL: os << "WAIT_FAILOVER_PREPARED "; break;
         default: os << "Invalid " << (int)value << " ";
     }
     return os;
@@ -118,9 +117,9 @@ inline std::ostream& operator<<(std::ostream& os, const GW_ANA_NONCE_MAP value) 
 }
 
 inline std::ostream& print_gw_created_t(std::ostream& os, const GW_CREATED_T value, size_t num_ana_groups) {
-    os << "==Internal map ==GW_CREATED_T { ana_group_id " << value.ana_grp_id << " osd_epochs: ";
+    os << "==Internal map ==GW_CREATED_T { ana_group_id " << value.ana_grp_id << " blocklist data: ";
     for(size_t i = 0; i < num_ana_groups; i ++){
-        os << " " << value.blocklist_data[i].osd_epoch << ":" <<value.blocklist_data[i].epoch_changed ;
+        os << i << ":: blvec: " << value.blocklist_data[i].blocked_addr_vec  <<  "unvec: " << value.blocklist_data[i].unblocked_addr_vec ;
     }
     os << "\n" << MODULE_PREFFIX << "nonces: " << value.nonce_map << " }";
 
@@ -137,10 +136,8 @@ inline std::ostream& print_gw_created_t(std::ostream& os, const GW_CREATED_T val
 }
 
 inline std::ostream& operator<<(std::ostream& os, const GW_CREATED_T value) {
-    os << "==Internal map ==G W_CREATED_T { ana_group_id " << value.ana_grp_id << " osd_epochs: ";
-    for(int i = 0; i < MAX_SUPPORTED_ANA_GROUPS; i ++){
-        os << " " << value.blocklist_data[i].osd_epoch;
-    }
+    os << "==Internal map ==G W_CREATED_T { ana_group_id " << value.ana_grp_id;
+
     os << "\n" << MODULE_PREFFIX << "nonces: " << value.nonce_map << " }";
 
     for (int i = 0; i < MAX_SUPPORTED_ANA_GROUPS; i++) {
@@ -298,8 +295,8 @@ inline void encode(const GW_CREATED_MAP& gws,  ceph::bufferlist &bl) {
         encode(gw.second.subsystems, bl);
 
         for(int i=0; i< MAX_SUPPORTED_ANA_GROUPS; i++){
-            encode(gw.second.blocklist_data[i].osd_epoch, bl);
-            encode(gw.second.blocklist_data[i].epoch_changed, bl);
+            encode(gw.second.blocklist_data[i].blocked_addr_vec, bl);
+            encode(gw.second.blocklist_data[i].unblocked_addr_vec, bl);
         }
         encode(gw.second.nonce_map, bl);
     }
@@ -335,8 +332,8 @@ inline void decode(GW_CREATED_MAP& gws, ceph::buffer::list::const_iterator &bl) 
         gw_created.subsystems = subsystems;
 
         for(int i=0; i< MAX_SUPPORTED_ANA_GROUPS; i++){
-            decode(gw_created.blocklist_data[i].osd_epoch, bl);
-            decode(gw_created.blocklist_data[i].epoch_changed, bl);
+            decode(gw_created.blocklist_data[i].blocked_addr_vec, bl);
+            decode(gw_created.blocklist_data[i].unblocked_addr_vec, bl);
         }
         decode(gw_created.nonce_map, bl);
 
