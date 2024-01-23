@@ -22,7 +22,6 @@
 #include "include/random.h"
 
 class CDir;
-class CInode;
 
 typedef uint64_t damage_entry_id_t;
 
@@ -155,12 +154,6 @@ class DamageTable
      * Indicate that a particular Inode could not be loaded by number
      */
     bool notify_remote_damaged(inodeno_t ino, std::string_view path);
-
-    void remove_dentry_damage_entry(CDir *dir);
-
-    void remove_dirfrag_damage_entry(CDir *dir);
-
-    void remove_backtrace_damage_entry(inodeno_t ino);
 
     bool is_dentry_damaged(
       const CDir *dir_frag,
