@@ -40,15 +40,12 @@ void test_NVMeofGwMap() {
   pending_map.cfg_add_gw("GW3" ,group_key);
   NONCE_VECTOR_T new_nonces = {"abc", "def","hij"};
   pending_map.Created_gws[group_key]["GW1"].nonce_map[1] = new_nonces;
-
+  for(int i=0; i< MAX_SUPPORTED_ANA_GROUPS; i++){
+    pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].osd_epoch = i*2;
+    pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].epoch_changed = false;
+  }
 
   pending_map.Created_gws[group_key]["GW2"].nonce_map[2] = new_nonces;
-  NONCE_VECTOR_T  blocked;
-  NONCE_VECTOR_T  unblocked;
-  blocked = new_nonces;
-  unblocked.push_back("192.168.13.2/12345678");
-  pending_map.Created_gws[group_key]["GW2"].set_addr_vecs(2, blocked, unblocked);
-
   dout(0) << pending_map << dendl;
 
   ceph::buffer::list bl;
@@ -91,6 +88,10 @@ void test_MNVMeofGwMap() {
   NONCE_VECTOR_T new_nonces = {"abc", "def","hij"};
   pending_map.Created_gws[group_key]["GW1"].nonce_map[1] = new_nonces;
   pending_map.Created_gws[group_key]["GW1"].subsystems.push_back(sub);
+  for(int i=0; i< MAX_SUPPORTED_ANA_GROUPS; i++){
+    pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].osd_epoch = i*2;
+    pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].epoch_changed = false;
+  }
 
   pending_map.Created_gws[group_key]["GW2"].nonce_map[2] = new_nonces;
   dout(0) << "False pending map: " << pending_map << dendl;

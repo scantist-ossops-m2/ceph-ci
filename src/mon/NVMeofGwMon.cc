@@ -373,7 +373,7 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     auto m = op->get_req<MNVMeofGwBeacon>();
 
     dout(4) << "availability " <<  m->get_availability() << " GW : " << m->get_gw_id() <<
-          " subsystems " << m->get_subsystems() << dendl;
+        " osdmap_epoch " << m->get_last_osd_epoch() << " subsystems " << m->get_subsystems() << dendl;
 
     GW_ID_T gw_id = m->get_gw_id();
     GROUP_KEY group_key = std::make_pair(m->get_gw_pool(),  m->get_gw_group());
@@ -417,7 +417,8 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
 
         LastBeacon lb = {gw_id, group_key};
         last_beacon[lb] = now;
-        pending_map.process_gw_map_ka(gw_id, group_key, propose);
+        epoch_t last_osd_epoch = m->get_last_osd_epoch();
+        pending_map.process_gw_map_ka(gw_id, group_key, last_osd_epoch, propose);
     }
     else if(avail == GW_AVAILABILITY_E::GW_UNAVAILABLE){ // state set by GW client application
         //  TODO: remove from last_beacon if found . if gw was found in last_beacon call process_gw_map_gw_down
