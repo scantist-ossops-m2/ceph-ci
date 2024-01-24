@@ -565,6 +565,8 @@ else
                   "$motr_pkgs_url/cortx-motr-2.0.0-1_git3252d623_any.el8.${ARCH}.rpm" \
                   "$motr_pkgs_url/cortx-motr-devel-2.0.0-1_git3252d623_any.el8.${ARCH}.rpm"
         fi
+        # for ceph-nvmeof monitor client
+        $SUDO dnf install -y grpc-devel
         ;;
     opensuse*|suse|sles)
         echo "Using zypper to install dependencies"
