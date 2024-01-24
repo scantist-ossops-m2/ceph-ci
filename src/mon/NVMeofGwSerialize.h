@@ -22,12 +22,12 @@ inline std::ostream& operator<<(std::ostream& os, const GW_EXPORTED_STATES_PER_A
 
 inline std::ostream& operator<<(std::ostream& os, const GW_STATES_PER_AGROUP_E value) {
     switch (value) {
-        case GW_STATES_PER_AGROUP_E::GW_IDLE_STATE: os << "IDLE "; break;
-        case GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE: os << "STANDBY "; break;
-        case GW_STATES_PER_AGROUP_E::GW_ACTIVE_STATE: os << "ACTIVE "; break;
-        case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL: os << "BLOCKED_AGROUP_OWNER "; break;
-        case GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED: os << "WAIT_FAILBACK_PREPARED "; break;
-        case GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL: os << "WAIT_FAILOVER_PREPARED "; break;
+        case GW_STATES_PER_AGROUP_E::GW_IDLE_STATE:                  os << "IDLE "; break;
+        case GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE:               os << "STANDBY "; break;
+        case GW_STATES_PER_AGROUP_E::GW_ACTIVE_STATE:                os << "ACTIVE "; break;
+        case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL: os << "OWNER_WAIT_FBACK_BLIST_CMPL "; break;
+        case GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED:      os << "WAIT_FAILBACK_PREPARED "; break;
+        case GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL:       os << "WAIT_FOVER_BLIST_CMPL "; break;
         default: os << "Invalid " << (int)value << " ";
     }
     return os;
