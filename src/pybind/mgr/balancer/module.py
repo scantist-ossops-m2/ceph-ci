@@ -1085,8 +1085,14 @@ class Module(MgrModule):
         no_read_balance_info = []
         replicated_pools_with_optimal_score = []
         rb_error_message = {}
-        not_active_clean = []
         for p in osdmap_dump.get('pools', []):
+            for pool_pg_status in plan.pg_status.get('pgs_by_pool_state', []):
+                if pool_pg_status['pool_id'] != p['pool']:
+                    continue
+                for state in pool_pg_status['pg_state_counts']:
+                    if state['state_name'] != 'active+clean':
+                        msg = "Not all PGs are active+clean; try again later."
+                        return -errno.EALREADY, msg
             if p['pg_num'] > p['pg_num_target']:
                 pools_with_pg_merge.append(p['pool_name'])
             crush_rule_by_pool_name[p['pool_name']] = p['crush_rule']
@@ -1097,13 +1103,6 @@ class Module(MgrModule):
                     rb_error_message[p['pool_name']] = p['read_balance']['error_message']
                 elif p['read_balance']['score_acting'] == p['read_balance']['optimal_score']:
                     replicated_pools_with_optimal_score.append(p['pool_name'])
-            for pool_pg_status in plan.pg_status.get('pgs_by_pool_state', []):
-                if pool_pg_status['pool_id'] != p['pool']:
-                    continue
-                for state in pool_pg_status['pg_state_counts']:
-                    if state['state_name'] != 'active+clean':
-                        not_active_clean.append(p['pool_name'])
-                        break
         for pool in pools:
             if pool not in crush_rule_by_pool_name:
                 self.log.debug('pool %s does not exist' % pool)
@@ -1119,9 +1118,6 @@ class Module(MgrModule):
                 continue
             if pool in rb_error_message:
                 self.log.error(rb_error_message[pool])
-                continue
-            if pool in not_active_clean:
-                self.log.info('not all pgs in pool %s are active+clean, skipping' % pool)
                 continue
             adjusted_pools.append(pool)
         pool_dump = osdmap_dump.get('pools', [])
