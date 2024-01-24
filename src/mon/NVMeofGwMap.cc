@@ -520,8 +520,10 @@ void NVMeofGwMap::fsm_handle_to_expired(const GW_ID_T &gw_id, const GROUP_KEY& g
                     break;
                 }
                 else{
-                    dout(4)  << "Expired Failback timer from GW " << gw_id << " ANA groupId "<< grpid << "but osd epoch didnt change"  << st.blocklist_data[grpid].osd_epoch  << dendl;
-                    ceph_assert(false); //TODO if it happens maybe need to increase the timer value
+                    dout(4)  << "Expired Failback timer from GW " << gw_id << " ANA groupId "<< grpid << "but osd epoch didnt change "  << st.blocklist_data[grpid].osd_epoch  << dendl;
+                    //need to rearm the timer
+                    start_timer(gw_id, group_key, grpid, 2);
+                    break;
                 }
             }
             else if (st.ana_grp_id == grpid){
