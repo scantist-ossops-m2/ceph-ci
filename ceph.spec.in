@@ -211,6 +211,7 @@ BuildRequires:	selinux-policy-devel
 BuildRequires:	gperf
 BuildRequires:  cmake > 3.5
 BuildRequires:	fuse-devel
+BuildRequires:	grpc-devel
 %if 0%{?fedora} || 0%{?suse_version} > 1500 || 0%{?rhel} == 9 || 0%{?openEuler}
 BuildRequires:	gcc-c++ >= 11
 %endif
@@ -579,6 +580,7 @@ Summary:	Ceph Monitor Daemon
 Group:		System/Filesystems
 %endif
 Provides:	ceph-test:/usr/bin/ceph-monstore-tool
+Provides:	ceph-test:/usr/bin/ceph-nvmeof-monitor-client
 Requires:	ceph-base = %{_epoch_prefix}%{version}-%{release}
 %description mon
 ceph-mon is the cluster monitor daemon for the Ceph distributed file
