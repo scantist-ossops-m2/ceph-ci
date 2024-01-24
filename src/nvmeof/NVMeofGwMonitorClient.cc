@@ -25,7 +25,7 @@
 
 #include "messages/MNVMeofGwBeacon.h"
 #include "messages/MNVMeofGwMap.h"
-#include "NVMeofGw.h"
+#include "NVMeofGwMonitorClient.h"
 #include "NVMeofGwClient.h"
 #include "NVMeofGwMonitorGroupClient.h"
 
@@ -34,7 +34,7 @@
 #undef dout_prefix
 #define dout_prefix *_dout << "nvmeofgw " << __PRETTY_FUNCTION__ << " "
 
-NVMeofGw::NVMeofGw(int argc, const char **argv) :
+NVMeofGwMonitorClient::NVMeofGwMonitorClient(int argc, const char **argv) :
   Dispatcher(g_ceph_context),
   osdmap_epoch(0),
   monc{g_ceph_context, poolctx},
@@ -48,9 +48,9 @@ NVMeofGw::NVMeofGw(int argc, const char **argv) :
 {
 }
 
-NVMeofGw::~NVMeofGw() = default;
+NVMeofGwMonitorClient::~NVMeofGwMonitorClient() = default;
 
-const char** NVMeofGw::get_tracked_conf_keys() const
+const char** NVMeofGwMonitorClient::get_tracked_conf_keys() const
 {
   static const char* KEYS[] = {
     NULL
@@ -58,7 +58,7 @@ const char** NVMeofGw::get_tracked_conf_keys() const
   return KEYS;
 }
 
-int NVMeofGw::init()
+int NVMeofGwMonitorClient::init()
 {
   dout(0) << dendl;
   std::string val;
@@ -194,7 +194,7 @@ static bool get_gw_state(const char* desc, const std::map<GROUP_KEY, GWMAP>& m, 
   return true;
 }
 
-void NVMeofGw::send_beacon()
+void NVMeofGwMonitorClient::send_beacon()
 {
   ceph_assert(ceph_mutex_is_locked_by_me(lock));
   //dout(0) << "sending beacon as gid " << monc.get_global_id() << dendl;
@@ -241,7 +241,7 @@ void NVMeofGw::send_beacon()
   monc.send_mon_message(std::move(m));
 }
 
-void NVMeofGw::tick()
+void NVMeofGwMonitorClient::tick()
 {
   dout(0) << dendl;
   send_beacon();
@@ -254,7 +254,7 @@ void NVMeofGw::tick()
   ));
 }
 
-void NVMeofGw::shutdown()
+void NVMeofGwMonitorClient::shutdown()
 {
   finisher.queue(new LambdaContext([&](int) {
     std::lock_guard l(lock);
@@ -285,7 +285,7 @@ void NVMeofGw::shutdown()
   finisher.stop();
 }
 
-void NVMeofGw::handle_nvmeof_gw_map(ceph::ref_t<MNVMeofGwMap> nmap)
+void NVMeofGwMonitorClient::handle_nvmeof_gw_map(ceph::ref_t<MNVMeofGwMap> nmap)
 {
   auto &new_map = nmap->get_map();
   auto group_key = std::make_pair(pool, group);
@@ -388,7 +388,7 @@ void NVMeofGw::handle_nvmeof_gw_map(ceph::ref_t<MNVMeofGwMap> nmap)
   map = new_map;
 }
 
-bool NVMeofGw::ms_dispatch2(const ref_t<Message>& m)
+bool NVMeofGwMonitorClient::ms_dispatch2(const ref_t<Message>& m)
 {
   std::lock_guard l(lock);
   dout(0) << "got map type " << m->get_type() << dendl;
@@ -400,7 +400,7 @@ bool NVMeofGw::ms_dispatch2(const ref_t<Message>& m)
   return handled;
 }
 
-int NVMeofGw::main(std::vector<const char *> args)
+int NVMeofGwMonitorClient::main(std::vector<const char *> args)
 {
   client_messenger->wait();
 
