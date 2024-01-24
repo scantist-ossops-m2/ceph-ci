@@ -867,7 +867,7 @@ endif(WITH_FUSE)
 
 # NVMEOF GATEWAY MONITOR CLIENT
 
-option(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT "build nvmeof gateway monitor client" OFF)
+option(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT "build nvmeof gateway monitor client" ON)
 if(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT)
 
   # Find Protobuf installation

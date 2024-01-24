@@ -550,6 +550,9 @@ else
         munge_ceph_spec_in $with_seastar $with_zbd $for_make_check $DIR/ceph.spec
         # for python3_pkgversion macro defined by python-srpm-macros, which is required by python3-devel
         $SUDO dnf install -y python3-devel
+        # for ceph-nvmeof monitor client
+        ci_debug "Installing gRPC devel"
+        $SUDO dnf install -y grpc-devel
         $SUDO $builddepcmd $DIR/ceph.spec 2>&1 | tee $DIR/yum-builddep.out
         [ ${PIPESTATUS[0]} -ne 0 ] && exit 1
         if [ -n "$dts_ver" ]; then
