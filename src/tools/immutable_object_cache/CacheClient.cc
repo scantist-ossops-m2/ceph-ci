@@ -16,11 +16,13 @@
 #define dout_prefix *_dout << "ceph::cache::CacheClient: " << this << " " \
                            << __func__ << ": "
 
+namespace asio = boost::asio;
+
 namespace ceph {
 namespace immutable_obj_cache {
 
   CacheClient::CacheClient(const std::string& file, CephContext* ceph_ctx)
-    : m_cct(ceph_ctx), m_io_service_work(m_io_service),
+    : m_cct(ceph_ctx), m_io_service_work(asio::make_work_guard(m_io_service)),
       m_dm_socket(m_io_service), m_ep(stream_protocol::endpoint(file)),
       m_io_thread(nullptr), m_session_work(false), m_writing(false),
       m_reading(false), m_sequence_id(0) {
@@ -30,7 +32,7 @@ namespace immutable_obj_cache {
 
     if (m_worker_thread_num != 0) {
       m_worker = new boost::asio::io_context();
-      m_worker_io_service_work = new boost::asio::io_context::work(*m_worker);
+      m_worker_io_service_work.emplace(asio::make_work_guard(*m_worker));
       for (uint64_t i = 0; i < m_worker_thread_num; i++) {
         std::thread* thd = new std::thread([this](){m_worker->run();});
         m_worker_threads.push_back(thd);
@@ -64,7 +66,7 @@ namespace immutable_obj_cache {
         thd->join();
         delete thd;
       }
-      delete m_worker_io_service_work;
+      m_worker_io_service_work.reset();
       delete m_worker;
     }
     return 0;
@@ -299,7 +301,7 @@ namespace immutable_obj_cache {
     });
 
     if (m_worker_thread_num != 0) {
-      m_worker->post([process_reply]() {
+      asio::post(*m_worker, [process_reply]() {
         process_reply->complete(true);
       });
     } else {

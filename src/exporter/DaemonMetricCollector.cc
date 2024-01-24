@@ -36,7 +36,7 @@ void DaemonMetricCollector::request_loop(boost::asio::steady_timer &timer) {
     dump_asok_metrics();
     auto stats_period = g_conf().get_val<int64_t>("exporter_stats_period");
     // time to wait before sending requests again
-    timer.expires_from_now(std::chrono::seconds(stats_period));
+    timer.expires_after(std::chrono::seconds(stats_period));
     request_loop(timer);
   });
 }
