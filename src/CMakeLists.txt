@@ -939,7 +939,7 @@ if(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT)
   # Include generated *.pb.h files
   include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-  set(ceph_nvmeof_srcs
+  set(ceph_nvmeof_monitor_client_srcs
     ${nvmeof_gateway_proto_srcs}
     ${nvmeof_gateway_proto_hdrs}
     ${nvmeof_gateway_grpc_srcs}
@@ -948,13 +948,13 @@ if(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT)
     ${nvmeof_monitor_proto_hdrs}
     ${nvmeof_monitor_grpc_srcs}
     ${nvmeof_monitor_grpc_hdrs}
-    ceph_nvmeof.cc
+    ceph_nvmeof_monitor_client.cc
     nvmeof/NVMeofGwClient.cc
     nvmeof/NVMeofGwMonitorGroupClient.cc
-    nvmeof/NVMeofGw.cc)
-  add_executable(ceph-nvmeof ${ceph_nvmeof_srcs})
-  add_dependencies(ceph-nvmeof ceph-common)
-  target_link_libraries(ceph-nvmeof
+    nvmeof/NVMeofGwMonitorClient.cc)
+  add_executable(ceph-nvmeof-monitor-client ${ceph_nvmeof_monitor_client_srcs})
+  add_dependencies(ceph-nvmeof-monitor-client ceph-common)
+  target_link_libraries(ceph-nvmeof-monitor-client
     client
     mon
     global-static
@@ -962,7 +962,7 @@ if(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT)
     ${_REFLECTION}
     ${_GRPC_GRPCPP}
     )
-  install(TARGETS ceph-nvmeof DESTINATION bin)
+  install(TARGETS ceph-nvmeof-monitor-client DESTINATION bin)
 endif()
 # END OF NVMEOF GATEWAY MONITOR CLIENT
 

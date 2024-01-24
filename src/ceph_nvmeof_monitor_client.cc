@@ -24,7 +24,7 @@
 #include "common/pick_address.h"
 #include "global/global_init.h"
 
-#include "nvmeof/NVMeofGw.h"
+#include "nvmeof/NVMeofGwMonitorClient.h"
 
 static void usage()
 {
@@ -61,13 +61,13 @@ int main(int argc, const char **argv)
   global_init_chdir(g_ceph_context);
   common_init_finish(g_ceph_context);
 
-  NVMeofGw gw(argc, argv);
-  int rc = gw.init();
+  NVMeofGwMonitorClient gw_monitor_client(argc, argv);
+  int rc = gw_monitor_client.init();
   if (rc != 0) {
       std::cerr << "Error in initialization: " << cpp_strerror(rc) << std::endl;
       return rc;
   }
 
-  return gw.main(args);
+  return gw_monitor_client.main(args);
 }
 

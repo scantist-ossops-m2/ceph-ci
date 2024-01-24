@@ -3,7 +3,7 @@
 /*
  * Ceph - scalable distributed file system
  *
- * Copyright (C) 2016 John Spray <john.spray@redhat.com>
+ * Copyright (C) 2023,2024
  *
  * This is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -12,8 +12,8 @@
  */
 
 
-#ifndef NVMEOFGW_H_
-#define NVMEOFGW_H_
+#ifndef NVMEOFGWMONITORCLIENT_H_
+#define NVMEOFGWMONITORCLIENT_H_
 
 #include "auth/Auth.h"
 #include "common/async/context_pool.h"
@@ -26,7 +26,7 @@
 #include "osdc/Objecter.h"
 #include "messages/MNVMeofGwMap.h"
 
-class NVMeofGw : public Dispatcher,
+class NVMeofGwMonitorClient: public Dispatcher,
 		   public md_config_obs_t {
 private:
   std::string name;
@@ -57,8 +57,8 @@ protected:
   void send_beacon();
  
 public:
-  NVMeofGw(int argc, const char **argv);
-  ~NVMeofGw() override;
+  NVMeofGwMonitorClient(int argc, const char **argv);
+  ~NVMeofGwMonitorClient() override;
 
   // Dispatcher interface
   bool ms_dispatch2(const ceph::ref_t<Message>& m) override;
