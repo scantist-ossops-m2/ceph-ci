@@ -206,7 +206,7 @@ inc_osd_num=0
 msgr="21"
 
 read -r -d '' usage <<EOF || true
-usage: $0 [option]... \nex: MON=3 OSD=1 MDS=1 MGR=1 RGW=1 NFS=1 $0 -n -d
+usage: $0 [option]... \nex: MON=3 OSD=1 MDS=1 MGR=1 RGW=1 NFS=1 NVMEOF_GW=ceph:5500 $0 -n -d
 options:
 	-d, --debug
 	-t, --trace
@@ -1302,11 +1302,17 @@ EOF
                     debug echo dashboard module not working correctly!
                 fi
             fi
+
+            if [ -n "${NVMEOF_GW}" ]; then
+                echo "Adding nvmeof-gateway ${NVMEOF_GW} to dashboard"
+                ceph_adm dashboard nvmeof-gateway-add "${NVMEOF_GW}" "${HOSTNAME}"
+            fi
         fi
         if $with_mgr_restful; then
             create_mgr_restful_secret
         fi
     fi
+
 
     if [ "$cephadm" -eq 1 ]; then
         debug echo Enabling cephadm orchestrator

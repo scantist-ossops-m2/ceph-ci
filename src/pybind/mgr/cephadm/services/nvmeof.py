@@ -79,7 +79,7 @@ class NvmeofService(CephService):
                     logger.info(f'Adding NVMeoF gateway {service_url} to Dashboard')
                     cmd_dicts.append({
                         'prefix': 'dashboard nvmeof-gateway-add',
-                        'inbuf': service_url,
+                        'service_url': service_url,
                         'name': dd.hostname
                     })
             return cmd_dicts

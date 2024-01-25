@@ -2,7 +2,7 @@
 import errno
 import json
 
-from mgr_module import CLICheckNonemptyFileInput, CLIReadCommand, CLIWriteCommand
+from mgr_module import CLIReadCommand, CLIWriteCommand
 
 from ..rest_client import RequestException
 from .nvmeof_conf import ManagedByOrchestratorException, \
@@ -18,12 +18,10 @@ def list_nvmeof_gateways(_):
 
 
 @CLIWriteCommand('dashboard nvmeof-gateway-add')
-@CLICheckNonemptyFileInput(desc='NVMe-oF gateway configuration')
-def add_nvmeof_gateway(_, inbuf, name: str):
+def add_nvmeof_gateway(_, service_url: str, name: str):
     '''
     Add NVMe-oF gateway configuration. Gateway URL read from -i <file>
     '''
-    service_url = inbuf
     try:
         NvmeofGatewaysConfig.add_gateway(name, service_url)
         return 0, 'Success', ''
