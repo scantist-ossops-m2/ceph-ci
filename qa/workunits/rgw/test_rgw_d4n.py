@@ -142,7 +142,7 @@ def test_cache_methods(r, client, obj):
     test_txt = 'test'
 
     # setup for test
-    cache_dir = "/home/rgw_d4n_datacache/"
+    cache_dir = "/tmp/rgw_d4n_datacache/"
     out = exec_cmd('find %s -type f | wc -l' % (cache_dir))
     chk_cache_dir = int(get_cmd_output(out))
     log.debug("Check cache dir content: %s", chk_cache_dir)
@@ -180,7 +180,7 @@ def test_cache_methods(r, client, obj):
 
     # retrieve and compare cache contents
     assert(body == "test")
-    data = subprocess.check_output(['ls', '/home/rgw_d4n_datacache/'])
+    data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
     data = data.decode('latin-1').strip()
 
     output = subprocess.check_output(['md5sum', body]).decode('latin-1')
@@ -197,7 +197,7 @@ def test_cache_methods(r, client, obj):
 
     # retrieve and compare cache contents
     assert(body == "test")
-    data = subprocess.check_output(['ls', '/home/rgw_d4n_datacache/'])
+    data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
     data = data.decode('latin-1').strip()
 
     output = subprocess.check_output(['md5sum', body]).decode('latin-1')
