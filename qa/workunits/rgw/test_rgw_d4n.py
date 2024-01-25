@@ -94,6 +94,11 @@ def test_directory_methods(r, client, obj):
 
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
+    dir_tmp = "/tmp/"
+    out = exec_cmd('ls -lA %s' % (dir_tmp))
+    list_perm = get_cmd_output(out)
+    log.debug("Print permissions for tmp dir: %s", list_perm)
+
     data = r.hgetall('bkt_test.txt_0_4')
     output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
     attrs = json.loads(output.decode('latin-1'))
