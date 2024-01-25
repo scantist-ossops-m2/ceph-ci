@@ -640,6 +640,7 @@ Recommends:     python%{python3_pkgversion}-grpcio
 Recommends:     python%{python3_pkgversion}-grpcio-tools
 %endif
 %endif
+%endif
 %if 0%{?suse_version}
 Requires:       python%{python3_pkgversion}-CherryPy
 Requires:       python%{python3_pkgversion}-Routes

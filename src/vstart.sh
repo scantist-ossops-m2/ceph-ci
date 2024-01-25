@@ -1303,6 +1303,9 @@ EOF
                 fi
             fi
 
+            ceph_adm osd pool create rbd
+            ceph_adm osd pool application enable rbd rbd
+
             if [ -n "${NVMEOF_GW}" ]; then
                 echo "Adding nvmeof-gateway ${NVMEOF_GW} to dashboard"
                 ceph_adm dashboard nvmeof-gateway-add "${NVMEOF_GW}" "${HOSTNAME}"
