@@ -357,7 +357,8 @@ void Replay<I>::handle_event(const journal::AioDiscardEvent &event,
     io::ImageRequest<I>::aio_discard(&m_image_ctx, aio_comp,
                                      {{event.offset, event.length}},
                                      io::ImageArea::DATA,
-                                     event.discard_granularity_bytes, {});
+                                     event.discard_granularity_bytes,
+                                     m_image_ctx.get_data_io_context(), {});
   }
 
   if (flush_required) {
@@ -392,7 +393,7 @@ void Replay<I>::handle_event(const journal::AioWriteEvent &event,
     io::ImageRequest<I>::aio_write(&m_image_ctx, aio_comp,
                                    {{event.offset, event.length}},
                                    io::ImageArea::DATA, std::move(data),
-                                   0, {});
+                                   m_image_ctx.get_data_io_context(), 0, {});
   }
 
   if (flush_required) {
@@ -446,7 +447,8 @@ void Replay<I>::handle_event(const journal::AioWriteSameEvent &event,
     io::ImageRequest<I>::aio_writesame(&m_image_ctx, aio_comp,
                                        {{event.offset, event.length}},
                                        io::ImageArea::DATA, std::move(data),
-                                       0, {});
+                                       m_image_ctx.get_data_io_context(), 0,
+                                       {});
   }
 
   if (flush_required) {
@@ -481,7 +483,9 @@ void Replay<I>::handle_event(const journal::AioWriteSameEvent &event,
                                                io::ImageArea::DATA,
                                                std::move(cmp_data),
                                                std::move(write_data),
-                                               nullptr, 0, {});
+                                               nullptr,
+                                               m_image_ctx.get_data_io_context(),
+                                               0, {});
   }
 
   if (flush_required) {
