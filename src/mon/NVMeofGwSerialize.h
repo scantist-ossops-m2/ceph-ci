@@ -25,9 +25,9 @@ inline std::ostream& operator<<(std::ostream& os, const GW_STATES_PER_AGROUP_E v
         case GW_STATES_PER_AGROUP_E::GW_IDLE_STATE:                  os << "IDLE "; break;
         case GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE:               os << "STANDBY "; break;
         case GW_STATES_PER_AGROUP_E::GW_ACTIVE_STATE:                os << "ACTIVE "; break;
-        case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL: os << "OWNER_WAIT_FBACK_BLIST_CMPL "; break;
+        case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED: os << "OWNER_FAILBACK_PREPARED "; break;
         case GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED:      os << "WAIT_FAILBACK_PREPARED "; break;
-        case GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL:       os << "WAIT_FOVER_BLIST_CMPL "; break;
+        case GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL:       os <<   "WAIT_BLOCKLIST_CMPL "; break;
         default: os << "Invalid " << (int)value << " ";
     }
     return os;
@@ -120,7 +120,7 @@ inline std::ostream& operator<<(std::ostream& os, const GW_ANA_NONCE_MAP value) 
 inline std::ostream& print_gw_created_t(std::ostream& os, const GW_CREATED_T value, size_t num_ana_groups) {
     os << "==Internal map ==GW_CREATED_T { ana_group_id " << value.ana_grp_id << " osd_epochs: ";
     for(size_t i = 0; i < num_ana_groups; i ++){
-        os << " " << value.blocklist_data[i].osd_epoch << ":" <<value.blocklist_data[i].epoch_changed ;
+        os << " " << value.blocklist_data[i].osd_epoch << ":" <<value.blocklist_data[i].is_failover ;
     }
     os << "\n" << MODULE_PREFFIX << "nonces: " << value.nonce_map << " }";
 
@@ -299,7 +299,7 @@ inline void encode(const GW_CREATED_MAP& gws,  ceph::bufferlist &bl) {
 
         for(int i=0; i< MAX_SUPPORTED_ANA_GROUPS; i++){
             encode(gw.second.blocklist_data[i].osd_epoch, bl);
-            encode(gw.second.blocklist_data[i].epoch_changed, bl);
+            encode(gw.second.blocklist_data[i].is_failover, bl);
         }
         encode(gw.second.nonce_map, bl);
     }
@@ -336,7 +336,7 @@ inline void decode(GW_CREATED_MAP& gws, ceph::buffer::list::const_iterator &bl) 
 
         for(int i=0; i< MAX_SUPPORTED_ANA_GROUPS; i++){
             decode(gw_created.blocklist_data[i].osd_epoch, bl);
-            decode(gw_created.blocklist_data[i].epoch_changed, bl);
+            decode(gw_created.blocklist_data[i].is_failover, bl);
         }
         decode(gw_created.nonce_map, bl);
 

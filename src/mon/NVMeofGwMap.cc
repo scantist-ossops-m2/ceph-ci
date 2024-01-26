@@ -157,7 +157,7 @@ void NVMeofGwMap::process_gw_map_ka(const GW_ID_T &gw_id, const GROUP_KEY& group
             propose_pending = true;
             find_failback_gw(gw_id, group_key, some_found);
             if (!some_found ) { // There is start of single GW so immediately turn its group to GW_ACTIVE_STATE
-                dout(4)  << "Warning - not found the GW responsible for" << st.ana_grp_id << " that took over the GW " << gw_id << "when it was fallen" << dendl;
+                dout(4)  << " Warning failback GW not found for ANA " << st.ana_grp_id << " for GW" << gw_id << " set ANA  Active" << dendl;
                 st.active_state(st.ana_grp_id);
             }
         }
@@ -204,18 +204,12 @@ void NVMeofGwMap::handle_abandoned_ana_groups(bool& propose)
                             && state.ana_grp_id != REDUNDANT_GW_ANA_GROUP_ID &&
                             state.sm_state[state.ana_grp_id] == GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE)
                 {
-                    bool found = false;
-                    for (auto& gw_state2 : gws_states) {
-                        auto& state2 = gw_state2.second;
-                        if (state2.sm_state[state.ana_grp_id] == GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED){
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        dout(4) << __func__ << " GW " << gw_id   << " turns to be Active for ANA group " << state.ana_grp_id << dendl;
+                    bool some_found = false;
+                    propose = true;
+                    find_failback_gw(gw_id, group_key, some_found);
+                    if (!some_found ) { // There is start of single GW so immediately turn its group to GW_ACTIVE_STATE
+                        dout(4)  << "Abandoned: Warning failback GW not found for ANA " << state.ana_grp_id << " for GW" << gw_id << " set ANA  Active" << dendl;
                         state.active_state(state.ana_grp_id);
-                        propose = true;
                     }
                 }
             }
@@ -228,16 +222,16 @@ void  NVMeofGwMap::set_failover_gw_for_ANA_group(const GW_ID_T &failed_gw_id, co
     GW_CREATED_T& gw_state = Created_gws[group_key][gw_id];
     gw_state.failover_peer[ANA_groupid] = failed_gw_id;
     epoch_t epoch;
-    dout(4) << "Set failower GW " << gw_id << " for ANA group " << (int)ANA_groupid << dendl;
+    dout(4) << "Found failower GW " << gw_id << " for ANA group " << (int)ANA_groupid << dendl;
     int rc = blocklist_gw (failed_gw_id, group_key, ANA_groupid, epoch);
     if(rc){
         gw_state.active_state(ANA_groupid); //TODO check whether it is valid to  start failover when nonces are empty !
         //ceph_assert(false);
     }
     else{
-        gw_state.sm_state[ANA_groupid] = GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL;
+        gw_state.sm_state[ANA_groupid] = GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL;
         gw_state.blocklist_data[ANA_groupid].osd_epoch = epoch;
-        gw_state.blocklist_data[ANA_groupid].epoch_changed = false;
+        gw_state.blocklist_data[ANA_groupid].is_failover = true;
         start_timer(gw_id, group_key, ANA_groupid, 7); //start Failover preparation timer
     }
 }
@@ -248,7 +242,6 @@ void  NVMeofGwMap::find_failback_gw(const GW_ID_T &gw_id, const GROUP_KEY& group
     bool  found_candidate = false;
     auto& gws_states = Created_gws[group_key];
     auto& gw_state = Created_gws[group_key][gw_id];
-    epoch_t epoch;
 
     for (auto& gw_state_it: gws_states) {
         auto& failback_gw_id = gw_state_it.first;
@@ -259,17 +252,13 @@ void  NVMeofGwMap::find_failback_gw(const GW_ID_T &gw_id, const GROUP_KEY& group
             dout(4)  << "Found Failback GW " << failback_gw_id << " that previously took over the ANAGRP " << gw_state.ana_grp_id << " of the available GW " << gw_id << dendl;
             st.sm_state[gw_state.ana_grp_id] = GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED;
             start_timer(failback_gw_id, group_key, gw_state.ana_grp_id, 2);// Add timestamp of start Failback preparation
-            gw_state.sm_state[gw_state.ana_grp_id] = GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL;
+            gw_state.sm_state[gw_state.ana_grp_id] = GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED;
             found_candidate = true;
-            blocklist_gw (failback_gw_id, group_key, gw_state.ana_grp_id, epoch);
-            gw_state.blocklist_data[gw_state.ana_grp_id].osd_epoch = epoch;
-            gw_state.blocklist_data[gw_state.ana_grp_id].epoch_changed = false;
-
             break;
         }
-        else if(st.sm_state[gw_state.ana_grp_id] == GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL) {
+        else if(st.sm_state[gw_state.ana_grp_id] == GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL) {
             ceph_assert(st.failover_peer[gw_state.ana_grp_id] == gw_id);
-            dout(4) << "Found Failback GW " << failback_gw_id << " that Waits to took over the ANAGRP " << gw_state.ana_grp_id << " of the available GW " << gw_id << dendl;
+            dout(4) << "Found Failback GW " << failback_gw_id << " that still Waits to took over the ANAGRP " << gw_state.ana_grp_id << " of the available GW " << gw_id << dendl;
             found_candidate = false;
             break;
         }
@@ -299,8 +288,8 @@ void  NVMeofGwMap::find_failover_candidate(const GW_ID_T &gw_id, const GROUP_KEY
 
         for (auto& found_gw_state: gws_states) { // for all the gateways of the subsystem
             auto st = found_gw_state.second;
-            if(st.sm_state[grpid] ==  GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL){   // some GW already started failover on this group
-               dout(4) << "Failover already started for the group " << grpid <<  " by GW " << found_gw_state.first << dendl;
+            if(st.sm_state[grpid] ==  GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL){   // some GW already started failover/failback on this group
+               dout(4) << "Failover" << st.blocklist_data[grpid].is_failover <<  " already started for the group " << grpid <<  " by GW " << found_gw_state.first << dendl;
                gw_state->second.standby_state(grpid);
                return ;
             }
@@ -314,8 +303,8 @@ void  NVMeofGwMap::find_failover_candidate(const GW_ID_T &gw_id, const GROUP_KEY
             if (st.availability == GW_AVAILABILITY_E::GW_AVAILABLE) {
                 current_ana_groups_in_gw = 0;
                 for (int j = 0; j < MAX_SUPPORTED_ANA_GROUPS; j++) {
-                    if (st.sm_state[j] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL || st.sm_state[j] == GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED
-                                                                                          || st.sm_state[j] == GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL){
+                    if (st.sm_state[j] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED || st.sm_state[j] == GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED
+                                                                                          || st.sm_state[j] == GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL){
                         current_ana_groups_in_gw = 0xFFFF;
                         break; // dont take into account   GWs in the transitive state
                     }
@@ -348,40 +337,23 @@ void  NVMeofGwMap::find_failover_candidate(const GW_ID_T &gw_id, const GROUP_KEY
 void NVMeofGwMap::fsm_handle_gw_alive (const GW_ID_T &gw_id, const GROUP_KEY& group_key,  GW_CREATED_T & gw_state, GW_STATES_PER_AGROUP_E state, ANA_GRP_ID_T grpid, epoch_t& last_osd_epoch, bool &map_modified)
 {
     switch (state) {
-    case GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL:
+    case GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL:
     {
         int timer_val = get_timer(gw_id, group_key, grpid);
-        GW_CREATED_T& failover_gw_map = Created_gws[group_key][gw_id];
-            if(failover_gw_map.blocklist_data[grpid].osd_epoch <= last_osd_epoch){
-                dout(4) << "failover: osd epoch changed from " << failover_gw_map.blocklist_data[grpid].osd_epoch << " to "<< last_osd_epoch
-                                       << " Ana grp: " << grpid  << " timer:" << timer_val << dendl;
+        GW_CREATED_T& gw_map = Created_gws[group_key][gw_id];
+            if(gw_map.blocklist_data[grpid].osd_epoch <= last_osd_epoch){
+                dout(4) << "is-failover: " << gw_map.blocklist_data[grpid].is_failover << " osd epoch changed from " << gw_map.blocklist_data[grpid].osd_epoch << " to "<< last_osd_epoch
+                                       << " Ana-grp: " << grpid  << " timer:" << timer_val << dendl;
                 gw_state.active_state(grpid);                   // Failover Gw still alive and guaranteed that
                 cancel_timer(gw_id, group_key, grpid);          // ana group wouldnt be taken back  during blocklist wait period
-                failover_gw_map.blocklist_data[grpid].epoch_changed = true;
                 map_modified = true;
             }
             else{
-                dout(4) << "failover: osd epoch not changed from " << failover_gw_map.blocklist_data[grpid].osd_epoch << " to "<< last_osd_epoch
-                                                   << " Ana grp: " << grpid  << " timer:" << timer_val << dendl;
+                dout(4) << "osd epoch not changed from " <<  gw_map.blocklist_data[grpid].osd_epoch << " to "<< last_osd_epoch
+                                                   << " Ana-grp: " << grpid  << " timer:" << timer_val << dendl;
             }
     }
     break;
-    case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL:
-    {
-        GW_CREATED_T& failback_gw_map = Created_gws[group_key][gw_id];
-        if(failback_gw_map.blocklist_data[grpid].epoch_changed == false){
-            if(failback_gw_map.blocklist_data[grpid].osd_epoch <= last_osd_epoch){
-                   dout(4) << "failback: osd epoch changed from " << failback_gw_map.blocklist_data[grpid].osd_epoch << " to "<< last_osd_epoch
-                                          << " Ana grp: " << grpid  <<  dendl;
-                   failback_gw_map.blocklist_data[grpid].epoch_changed = true;
-            }
-            else{
-                dout(4) << "failback: osd epoch not changed from " << failback_gw_map.blocklist_data[grpid].osd_epoch << " to "<< last_osd_epoch
-                                                   << " Ana grp: " << grpid   << dendl;
-            }
-        }
-
-    } break;
 
     default:
         break;
@@ -397,7 +369,7 @@ void NVMeofGwMap::fsm_handle_gw_alive (const GW_ID_T &gw_id, const GROUP_KEY& gr
             // nothing to do
             break;
 
-        case GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL:
+        case GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL:
         {
             cancel_timer(gw_id, group_key, grpid);
         }break;
@@ -407,16 +379,16 @@ void NVMeofGwMap::fsm_handle_gw_alive (const GW_ID_T &gw_id, const GROUP_KEY& gr
 
             for (auto& gw_st: Created_gws[group_key]) {
                 auto& st = gw_st.second;
-                if (st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL) { // found GW   that was intended for  Failback for this ana grp
+                if (st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED) { // found GW   that was intended for  Failback for this ana grp
                     dout(4) << "Warning: Outgoing Failback when GW is down back - to rollback it"  <<" GW "  <<gw_id << "for ANA Group " << grpid << dendl;
-                    st.sm_state[grpid] = GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE;
+                    st.standby_state(grpid);
                     map_modified = true;
                     break;
                 }
             }
             break;
 
-        case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL:
+        case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED:
             // nothing to do - let failback timer expire
             break;
 
@@ -440,7 +412,7 @@ void NVMeofGwMap::fsm_handle_gw_delete (const GW_ID_T &gw_id, const GROUP_KEY& g
     {
         case GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE:
         case GW_STATES_PER_AGROUP_E::GW_IDLE_STATE:
-        case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL:
+        case GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED:
         {
             GW_CREATED_T& gw_state = Created_gws[group_key][gw_id];
 
@@ -459,9 +431,12 @@ void NVMeofGwMap::fsm_handle_gw_delete (const GW_ID_T &gw_id, const GROUP_KEY& g
         }
         break;
 
-        case GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL:
+        case GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL:
         {
+            GW_CREATED_T& gw_state = Created_gws[group_key][gw_id];
             cancel_timer(gw_id, group_key, grpid);
+            map_modified = true;
+            gw_state.standby_state(grpid);
         }
         break;
 
@@ -471,7 +446,7 @@ void NVMeofGwMap::fsm_handle_gw_delete (const GW_ID_T &gw_id, const GROUP_KEY& g
             for (auto& nqn_gws_state: Created_gws[group_key]) {
                 auto& st = nqn_gws_state.second;
 
-                if (st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL) { // found GW   that was intended for  Failback for this ana grp
+                if (st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED) { // found GW   that was intended for  Failback for this ana grp
                     dout(4) << "Warning: Outgoing Failback when GW is deleted - to rollback it" << " GW " << gw_id << "for ANA Group " << grpid << dendl;
                     st.standby_state(grpid);
                     map_modified = true;
@@ -500,31 +475,24 @@ void NVMeofGwMap::fsm_handle_to_expired(const GW_ID_T &gw_id, const GROUP_KEY& g
     auto& fbp_gw_state = Created_gws[group_key][gw_id];// GW in Fail-back preparation state fbp
 
     if (fbp_gw_state.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED) {
-
         cancel_timer(gw_id, group_key, grpid);
-        //TODO  handle the case when epoch was not changed - re-arm the timer
         for (auto& gw_state: Created_gws[group_key]) {
             auto& st = gw_state.second;
-            if (st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL &&
-                    st.availability == GW_AVAILABILITY_E::GW_AVAILABLE )
+            if (st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED && st.availability == GW_AVAILABILITY_E::GW_AVAILABLE )
             {
-                if(st.blocklist_data[grpid].epoch_changed == true)
-                {                             //TODO process the scenario when timer expired but epoch_changed = false
-                    // propose to make 2 retries with arming of timer if not helps - to assert
-                    dout(4)  << "Expired Failback timer from GW " << gw_id << " ANA groupId "<< grpid << "osd epoch "  << st.blocklist_data[grpid].osd_epoch  << dendl;
+                fbp_gw_state.standby_state(grpid);// Previous failover GW  set to standby
+                epoch_t epoch;
+                blocklist_gw (gw_id, group_key, grpid, epoch);
+                //st.active_state(grpid);
+                st.sm_state[grpid] = GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL;
+                start_timer(gw_state.first, group_key, grpid, 6);
+                st.blocklist_data[grpid].osd_epoch = epoch;
+                st.blocklist_data[grpid].is_failover = false;
+                dout(4)  << "Expired Failback-preparation timer from GW " << gw_id << " ANA groupId "<< grpid << "osd epoch "  << st.blocklist_data[grpid].osd_epoch  << dendl;
 
-                    fbp_gw_state.standby_state(grpid);
-                    st.active_state(grpid);
-                    dout(4) << "Failback from GW " << gw_id << " to " << gw_state.first << dendl;
-                    map_modified = true;
-                    break;
-                }
-                else{
-                    dout(4)  << "Expired Failback timer from GW " << gw_id << " ANA groupId "<< grpid << "but osd epoch didnt change "  << st.blocklist_data[grpid].osd_epoch  << dendl;
-                    //need to rearm the timer
-                    start_timer(gw_id, group_key, grpid, 2);
-                    break;
-                }
+                dout(4) << "Starting blocklist: Failback from GW " << gw_id << " to " << gw_state.first << dendl;
+                map_modified = true;
+                break;
             }
             else if (st.ana_grp_id == grpid){
                 if(st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE  &&  st.availability == GW_AVAILABILITY_E::GW_AVAILABLE) {
@@ -538,7 +506,7 @@ void NVMeofGwMap::fsm_handle_to_expired(const GW_ID_T &gw_id, const GROUP_KEY& g
             }
         }
     }
-    else if(fbp_gw_state.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL){
+    else if(fbp_gw_state.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL){
         dout(4) << " Expired GW_WAIT_FAILOVER_PREPARED timer from GW " << gw_id << " ANA groupId: "<< grpid << dendl;
         ceph_assert(false);
     }
@@ -551,6 +519,16 @@ GW_CREATED_T& NVMeofGwMap::find_already_created_gw(const GW_ID_T &gw_id, const G
     ceph_assert(gw_it != group_gws.end());//should not happen
     return gw_it->second;
 }
+
+struct CMonRequestProposal : public Context {
+  NVMeofGwMap *m;
+  CMonRequestProposal(NVMeofGwMap *mon) : m(mon) {}
+  void finish(int r) {
+      dout(4) << "osdmon is  writable " << dendl;
+      m->mon->nvmegwmon()->request_proposal(m->mon->osdmon());
+  }
+};
+
 
 int NVMeofGwMap::blocklist_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T grpid, epoch_t &epoch)
 {
@@ -573,8 +551,12 @@ int NVMeofGwMap::blocklist_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key, 
         int rc = addr_vect.parse(&str[0]);
         dout(4) << str << " rc " << rc <<  " network vector: " << addr_vect << " " << addr_vect.size() << dendl;
         epoch = mon->osdmon()->blocklist(addr_vect, until);
-        mon->nvmegwmon()->request_proposal(mon->osdmon());
 
+        if (!mon->osdmon()->is_writeable()) {
+            dout(4) << "osdmon is not writable, waiting " << dendl;
+            mon->osdmon()->wait_for_writeable_ctx( new CMonRequestProposal(this ));// return false;
+        }
+        else  mon->nvmegwmon()->request_proposal(mon->osdmon());
         dout(4) << str << " mon->osdmon()->blocklist:  " << epoch <<  " address vector: " << addr_vect << " " << addr_vect.size() << dendl;
     }
     else{

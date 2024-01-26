@@ -219,7 +219,7 @@ bool NVMeofGwMon::preprocess_query(MonOpRequestRef op){
 }
 
 bool NVMeofGwMon::prepare_update(MonOpRequestRef op){
-    dout(4) << dendl;
+    //dout(4) << dendl;
     auto m = op->get_req<PaxosServiceMessage>();
       switch (m->get_type()) {
         case MSG_MNVMEOF_GW_BEACON:
@@ -352,7 +352,7 @@ bool NVMeofGwMon::prepare_command(MonOpRequestRef op)
 
 
 bool NVMeofGwMon::preprocess_beacon(MonOpRequestRef op){
-    dout(4)   << dendl;
+    //dout(4)   << dendl;
     auto m = op->get_req<MNVMeofGwBeacon>();
      //mon.no_reply(op); // we never reply to beacons
      dout(4) << "beacon from " << m->get_type() << dendl;
@@ -369,7 +369,7 @@ bool NVMeofGwMon::preprocess_beacon(MonOpRequestRef op){
 //#define BYPASS_GW_CREATE_CLI
 
 bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
-    dout(4)  << dendl;
+    //dout(4)  << dendl;
     auto m = op->get_req<MNVMeofGwBeacon>();
 
     dout(4) << "availability " <<  m->get_availability() << " GW : " << m->get_gw_id() <<

@@ -21,9 +21,9 @@ enum class GW_STATES_PER_AGROUP_E {
     GW_IDLE_STATE = 0, //invalid state
     GW_STANDBY_STATE,
     GW_ACTIVE_STATE,
-    GW_OWNER_WAIT_FBACK_BLIST_CMPL,
+    GW_OWNER_WAIT_FAILBACK_PREPARED,
     GW_WAIT_FAILBACK_PREPARED,
-    GW_WAIT_FOVER_BLIST_CMPL
+    GW_WAIT_BLOCKLIST_CMPL
 };
 
 enum class GW_EXPORTED_STATES_PER_AGROUP_E {
@@ -77,7 +77,7 @@ struct GW_CREATED_T {
     GW_ID_T            failover_peer[MAX_SUPPORTED_ANA_GROUPS];
     struct{
        epoch_t     osd_epoch;
-       bool        epoch_changed;
+       bool        is_failover;
     }blocklist_data[MAX_SUPPORTED_ANA_GROUPS];
 
     GW_CREATED_T(): ana_grp_id(REDUNDANT_GW_ANA_GROUP_ID) {};
@@ -88,7 +88,7 @@ struct GW_CREATED_T {
             sm_state[i] = GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE;
             failover_peer[i]  = "";
             blocklist_data[i].osd_epoch = 0;
-            blocklist_data[i].epoch_changed = true;
+            blocklist_data[i].is_failover = true;
         }
     };
 
@@ -114,8 +114,8 @@ struct NqnState {
         for (int i=0; i < MAX_SUPPORTED_ANA_GROUPS; i++){
             std::pair<GW_EXPORTED_STATES_PER_AGROUP_E, epoch_t> state_pair;
             state_pair.first = (  sm_state[i] == GW_STATES_PER_AGROUP_E::GW_ACTIVE_STATE
-			       || sm_state[i] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FBACK_BLIST_CMPL
-			       || sm_state[i] == GW_STATES_PER_AGROUP_E::GW_WAIT_FOVER_BLIST_CMPL)
+//       || sm_state[i] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED
+			       || sm_state[i] == GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL)
                            ? GW_EXPORTED_STATES_PER_AGROUP_E::GW_EXPORTED_OPTIMIZED_STATE
                            : GW_EXPORTED_STATES_PER_AGROUP_E::GW_EXPORTED_INACCESSIBLE_STATE;
             state_pair.second = gw_created.blocklist_data[i].osd_epoch;
