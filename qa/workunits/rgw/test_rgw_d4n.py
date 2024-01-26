@@ -94,6 +94,7 @@ def test_directory_methods(r, client, obj):
 
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
 
+    # list the permissions for the tmp dir
     dir_tmp = "/tmp/"
     out = exec_cmd('ls -lA %s' % (dir_tmp))
     list_perm = get_cmd_output(out)
@@ -145,6 +146,12 @@ def get_body(response):
 
 def test_cache_methods(r, client, obj):
     test_txt = 'test'
+
+    # list the permissions for the tmp dir
+    dir_tmp = "/tmp/"
+    out = exec_cmd('ls -lA %s' % (dir_tmp))
+    list_perm = get_cmd_output(out)
+    log.debug("Print permissions for tmp dir: %s", list_perm)
 
     # setup for test
     cache_dir = "/tmp/rgw_d4n_datacache/"
