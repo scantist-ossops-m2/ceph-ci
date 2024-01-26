@@ -38,7 +38,7 @@ private:
 public:
   std::string_view get_type_name() const override { return "nvmeofgwmap"; }
   void print(std::ostream& out) const override {
-    out << get_type_name() << "(map " << map << ")";
+   // out << get_type_name() << "(map " << map << ")";
   }
 
   void decode_payload() override {

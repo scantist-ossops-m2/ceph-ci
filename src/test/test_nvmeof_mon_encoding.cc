@@ -42,7 +42,7 @@ void test_NVMeofGwMap() {
   pending_map.Created_gws[group_key]["GW1"].nonce_map[1] = new_nonces;
   for(int i=0; i< MAX_SUPPORTED_ANA_GROUPS; i++){
     pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].osd_epoch = i*2;
-    pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].epoch_changed = false;
+    pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].is_failover = false;
   }
 
   pending_map.Created_gws[group_key]["GW2"].nonce_map[2] = new_nonces;
@@ -90,7 +90,7 @@ void test_MNVMeofGwMap() {
   pending_map.Created_gws[group_key]["GW1"].subsystems.push_back(sub);
   for(int i=0; i< MAX_SUPPORTED_ANA_GROUPS; i++){
     pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].osd_epoch = i*2;
-    pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].epoch_changed = false;
+    pending_map.Created_gws[group_key]["GW1"].blocklist_data[i].is_failover = false;
   }
 
   pending_map.Created_gws[group_key]["GW2"].nonce_map[2] = new_nonces;
