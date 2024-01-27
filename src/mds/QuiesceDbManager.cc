@@ -900,6 +900,9 @@ QuiesceTimeInterval QuiesceDbManager::leader_upkeep_awaits()
             rc = EPERM;
           }
           break;
+        case QS_FAILED:
+          rc = EBADF;
+          break;
         default: ceph_abort("unexpected quiesce set state");
       }
     }
