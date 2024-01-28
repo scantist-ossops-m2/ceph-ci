@@ -16,6 +16,11 @@ using jspan_attribute = opentelemetry::common::AttributeValue;
 
 namespace tracing {
 
+static constexpr int TraceIdkSize = 16;
+static constexpr int SpanIdkSize = 8;
+static_assert(TraceIdkSize == opentelemetry::trace::TraceId::kSize);
+static_assert(SpanIdkSize == opentelemetry::trace::SpanId::kSize);
+
 class Tracer {
  private:
   const static opentelemetry::nostd::shared_ptr<opentelemetry::trace::Tracer> noop_tracer;
@@ -54,8 +59,8 @@ inline void encode(const jspan_context& span_ctx, bufferlist& bl, uint64_t f = 0
   auto is_valid = span_ctx.IsValid();
   encode(is_valid, bl);
   if (is_valid) {
-    encode_nohead(std::string_view(reinterpret_cast<const char*>(span_ctx.trace_id().Id().data()), TraceId::kSize), bl);
-    encode_nohead(std::string_view(reinterpret_cast<const char*>(span_ctx.span_id().Id().data()), SpanId::kSize), bl);
+    encode_nohead(std::string_view(reinterpret_cast<const char*>(span_ctx.trace_id().Id().data()), TraceIdkSize), bl);
+    encode_nohead(std::string_view(reinterpret_cast<const char*>(span_ctx.span_id().Id().data()), SpanIdkSize), bl);
     encode(span_ctx.trace_flags().flags(), bl);
   }
   ENCODE_FINISH(bl);
@@ -68,15 +73,15 @@ inline void decode(jspan_context& span_ctx, bufferlist::const_iterator& bl) {
   bool is_valid;
   decode(is_valid, bl);
   if (is_valid) {
-    std::array<uint8_t, TraceId::kSize> trace_id;
-    std::array<uint8_t, SpanId::kSize> span_id;
+    std::array<uint8_t, TraceIdkSize> trace_id;
+    std::array<uint8_t, SpanIdkSize> span_id;
     uint8_t flags;
     decode(trace_id, bl);
     decode(span_id, bl);
     decode(flags, bl);
     span_ctx = SpanContext(
-      TraceId(nostd::span<uint8_t, TraceId::kSize>(trace_id)),
-      SpanId(nostd::span<uint8_t, SpanId::kSize>(span_id)),
+      TraceId(nostd::span<uint8_t, TraceIdkSize>(trace_id)),
+      SpanId(nostd::span<uint8_t, SpanIdkSize>(span_id)),
       TraceFlags(flags),
       true);
   }
