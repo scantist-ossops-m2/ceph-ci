@@ -39,7 +39,6 @@ enum class GW_AVAILABILITY_E {
 };
 
 #define MAX_SUPPORTED_ANA_GROUPS 16
-#define INVALID_GW_TIMER     0xffff
 #define REDUNDANT_GW_ANA_GROUP_ID 0xFF
 
 typedef GW_STATES_PER_AGROUP_E          SM_STATE         [MAX_SUPPORTED_ANA_GROUPS];
@@ -144,13 +143,14 @@ struct GW_STATE_T {
 
 struct GW_METADATA_T {
    struct{
-      uint32_t     anagrp_sm_tstamps; // statemachine timer(timestamp) set in some state
+      uint32_t     timer_started; // statemachine timer(timestamp) set in some state
       uint8_t      timer_value;
+      std::chrono::system_clock::time_point end_time;
    } data[MAX_SUPPORTED_ANA_GROUPS];
 
     GW_METADATA_T() {
         for (int i=0; i<MAX_SUPPORTED_ANA_GROUPS; i++){
-            data[i].anagrp_sm_tstamps = INVALID_GW_TIMER;
+            data[i].timer_started = 0;
             data[i].timer_value = 0;
         }
     };

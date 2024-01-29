@@ -238,10 +238,14 @@ inline  void decode(GW_STATE_T& state,  ceph::bufferlist::const_iterator& bl) {
 
 inline  void encode(const GW_METADATA_T& state,  ceph::bufferlist &bl) {
     for(int i = 0; i <MAX_SUPPORTED_ANA_GROUPS; i ++){
-        int    tick = state.data[i].anagrp_sm_tstamps;
+        int    tick = state.data[i].timer_started;
         uint8_t val = state.data[i].timer_value;
         encode(tick, bl);
         encode(val,  bl);
+        auto endtime = state.data[i].end_time;
+            // Convert the time point to milliseconds since the epoch
+        uint64_t  millisecondsSinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(endtime.time_since_epoch()).count();
+        encode(millisecondsSinceEpoch , bl);
     }
 }
 
@@ -251,8 +255,12 @@ inline  void decode(GW_METADATA_T& state,  ceph::bufferlist::const_iterator& bl)
         uint8_t val;
         decode(tick, bl);
         decode(val,  bl);
-        state.data[i].anagrp_sm_tstamps = tick;
+        state.data[i].timer_started = tick;
         state.data[i].timer_value = val;
+        uint64_t milliseconds;
+        decode(milliseconds, bl);
+        auto duration = std::chrono::milliseconds(milliseconds);
+        state.data[i].end_time = std::chrono::time_point<std::chrono::system_clock>(duration);
     }
 }
 

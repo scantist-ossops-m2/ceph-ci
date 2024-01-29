@@ -135,6 +135,27 @@ void test_MNVMeofGwBeacon() {
   ceph_assert(it != dsubs.end());
 }
 
+void test_NVMeofGwTimers()
+{
+    NVMeofGwMap pending_map;
+    //pending_map.Gmetadata;
+    const GROUP_KEY group_key = std::make_pair("a","b");
+    std::string gwid = "GW1";
+    ANA_GRP_ID_T  grpid = 2;
+    pending_map.start_timer(gwid, group_key, grpid, 30);
+    auto end_time  = pending_map.Gmetadata[group_key][gwid].data[grpid].end_time;
+    uint64_t  millisecondsSinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(end_time.time_since_epoch()).count();
+    dout(0) << "Metadata milliseconds " << millisecondsSinceEpoch << " " << (int)pending_map.Gmetadata[group_key][gwid].data[grpid].timer_value << dendl;
+    ceph::buffer::list bl;
+    pending_map.encode(bl);
+    auto p = bl.cbegin();
+    pending_map.decode(p);
+
+    end_time  = pending_map.Gmetadata[group_key][gwid].data[2].end_time;
+    millisecondsSinceEpoch = std::chrono::duration_cast<std::chrono::milliseconds>(end_time.time_since_epoch()).count();
+    dout(0) << "After encode decode Metadata milliseconds " << millisecondsSinceEpoch << " " <<  (int)pending_map.Gmetadata[group_key][gwid].data[grpid].timer_value<<dendl;
+
+}
 
 int main(int argc, const char **argv)
 {
@@ -149,5 +170,6 @@ int main(int argc, const char **argv)
   test_NVMeofGwMap();
   test_MNVMeofGwMap();
   test_MNVMeofGwBeacon();
+  test_NVMeofGwTimers();
 }
 

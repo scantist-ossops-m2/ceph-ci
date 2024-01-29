@@ -314,8 +314,8 @@ bool NVMeofGwMon::prepare_command(MonOpRequestRef op)
         cmd_getval(cmdmap, "id", id);
         cmd_getval(cmdmap, "pool", pool);
         cmd_getval(cmdmap, "group", group);
-	auto group_key = std::make_pair(pool, group);
-
+        auto group_key = std::make_pair(pool, group);
+        dout(4) << " id "<< id <<" pool "<< pool << " group "<< group << dendl;
         if(prefix == "nvme-gw create"){
             rc = pending_map.cfg_add_gw(id, group_key);
             ceph_assert(rc!= -EINVAL);
@@ -379,6 +379,7 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     GROUP_KEY group_key = std::make_pair(m->get_gw_pool(),  m->get_gw_group());
     GW_AVAILABILITY_E  avail = m->get_availability();
     bool propose = false;
+    bool timer_propose = false;
     auto& group_gws = pending_map.Created_gws[group_key];
     auto gw = group_gws.find(gw_id);
     const BeaconSubsystems& sub = m->get_subsystems();
@@ -431,6 +432,9 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
             pending_map.process_gw_map_gw_down(gw_id, group_key, propose);
         }
     }
+    pending_map.update_active_timers(timer_propose);  // Periodic: check active FSM timers
+    propose |= timer_propose;
+
 set_propose:
     NVMeofGwMap ack_map;
     if(!propose) {
