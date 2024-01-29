@@ -112,7 +112,7 @@ def test_directory_methods(r, client, obj):
     assert(data.get('bucketName') == 'bkt')
     assert(data.get('creationTime') == attrs.get('mtime'))
     assert(data.get('dirty') == '0')
-    assert(data.get('objHosts') == '127.0.0.1:6379')
+    assert(data.get('objHosts') == '')
 
     # second get call
     response_get = obj.get()
@@ -132,7 +132,7 @@ def test_directory_methods(r, client, obj):
     assert(data.get('bucketName') == 'bkt')
     assert(data.get('creationTime') == attrs.get('mtime'))
     assert(data.get('dirty') == '0')
-    assert(data.get('objHosts') == '127.0.0.1:6379')
+    assert(data.get('objHosts') == '')
 
     r.flushall()
 
