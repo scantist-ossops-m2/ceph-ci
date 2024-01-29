@@ -52,17 +52,14 @@ case "$1" in
                  --system \
                  --no-create-home \
                  --disabled-password \
+                 --home $SERVER_HOME \
                  --uid $SERVER_UID \
                  --gid $SERVER_GID \
+                 --comment "$SERVER_NAME" \
+                 --group $SERVER_GROUP \
                  $SERVER_USER 2>/dev/null || true
          echo "..done"
        fi
-       # 3. adjust passwd entry
-       echo -n "Setting system user $SERVER_USER properties.."
-       usermod -c "$SERVER_NAME" \
-               -d $SERVER_HOME   \
-               -g $SERVER_GROUP  \
-               $SERVER_USER
        # Unlock $SERVER_USER in case it is locked from an uninstall
        if [ -f /etc/shadow ]; then
            usermod -U -e '' $SERVER_USER
@@ -71,7 +68,7 @@ case "$1" in
        fi
        echo "..done"
 
-       # 4. adjust file and directory permissions
+       # 3. adjust file and directory permissions
        if ! dpkg-statoverride --list $SERVER_HOME >/dev/null; then
            chown $SERVER_USER:$SERVER_GROUP $SERVER_HOME
            chmod u=rwx,g=rx,o= $SERVER_HOME
@@ -85,7 +82,7 @@ case "$1" in
            chmod u=rwx,g=rwxs,o=t /var/log/ceph
        fi
 
-       # 5. fix /var/run/ceph
+       # 4. fix /var/run/ceph
        if [ -d /var/run/ceph ]; then
            echo -n "Fixing /var/run/ceph ownership.."
            chown $SERVER_USER:$SERVER_GROUP /var/run/ceph
