@@ -46,7 +46,7 @@ public:
     void  update_active_timers          (bool &propose_pending);
     void  handle_abandoned_ana_groups   (bool &propose_pending);
     void  handle_removed_subsystems     (const GW_ID_T &gw_id, const GROUP_KEY& group_key, const std::vector<NQN_ID_T> &current_subsystems, bool &propose_pending);
-
+    void  start_timer (const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T anagrpid, uint8_t value);
 private:
     GW_CREATED_T&   find_already_created_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key);
     void fsm_handle_gw_down    (const GW_ID_T &gw_id, const GROUP_KEY& group_key,  GW_STATES_PER_AGROUP_E state, ANA_GRP_ID_T grpid,  bool &map_modified);
@@ -60,7 +60,7 @@ private:
     void set_failover_gw_for_ANA_group (const GW_ID_T &failed_gw_id, const GROUP_KEY& group_key, const GW_ID_T &gw_id,
                                                                                                      ANA_GRP_ID_T groupid);
     int  blocklist_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T ANA_groupid, epoch_t &epoch);
-    void start_timer (const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T anagrpid, uint8_t value);
+
     int  get_timer   (const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T anagrpid);
     void cancel_timer(const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T anagrpid);
 
