@@ -1210,6 +1210,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
 
   std::stack<SyncEntry> sync_stack;
   sync_stack.emplace(SyncEntry(".", tdirp, tstx));
+  m_snap_sync_stats.at(dir_root).type = "remote_scan";
   while (!sync_stack.empty()) {
     if (should_backoff(dir_root, &r)) {
       dout(0) << ": backing off r=" << r << dendl;
@@ -1373,6 +1374,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
   std::string epath = ".", npath = "", nabs_path = "", nname = "";
   sync_queue.emplace(SyncEntry(epath, cstx));
 
+  m_snap_sync_stats.at(dir_root).type = "local_scan";
   while (!sync_queue.empty()) {
     if (should_backoff(dir_root, &r)) {
       dout(0) << ": backing off r=" << r << dendl;
@@ -1425,6 +1427,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
         }
       } else {
         // stat success, update the existing entry
+	//sleep (10);
         struct ceph_statx tstx;
         int rstat_r = ceph_statx(m_remote_mount, nabs_path.c_str(), &tstx,
                                  CEPH_STATX_MODE | CEPH_STATX_UID | CEPH_STATX_GID |
@@ -1714,6 +1717,7 @@ void PeerReplayer::peer_status(Formatter *f) {
       f->dump_string("state", "idle");
     } else {
       f->dump_string("state", "syncing");
+      f->dump_string("sync_type", sync_stat.type);
       f->open_object_section("current_sycning_snap");
       f->dump_unsigned("id", (*sync_stat.current_syncing_snap).first);
       f->dump_string("name", (*sync_stat.current_syncing_snap).second);

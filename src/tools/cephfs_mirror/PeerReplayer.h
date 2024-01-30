@@ -145,6 +145,7 @@ private:
     uint64_t nr_failures = 0; // number of consecutive failures
     boost::optional<time> last_failed; // lat failed timestamp
     bool failed = false; // hit upper cap for consecutive failures
+    std::string type = "remote_scan";
     boost::optional<std::pair<uint64_t, std::string>> last_synced_snap;
     boost::optional<std::pair<uint64_t, std::string>> current_syncing_snap;
     uint64_t synced_snap_count = 0;
