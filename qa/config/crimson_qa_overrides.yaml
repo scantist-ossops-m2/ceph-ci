@@ -8,8 +8,14 @@ overrides:
       mon:
         osd pool default crimson: true
       osd:
-        crimson seastar smp: 3
+        crimson alien thread cpu cores: 9-11
         crimson osd obc lru size: 10
+      osd.0:
+        crimson seastar cpu cores: 0-2
+      osd.1:
+        crimson seastar cpu cores: 3-5
+      osd.2:
+        crimson seastar cpu cores: 6-8
     flavor: crimson
   workunit:
     env:
