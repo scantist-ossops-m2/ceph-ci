@@ -113,6 +113,14 @@ CephFS: Disallow delegating preallocated inode ranges to clients. Config
 * RBD: The ``try-netlink`` mapping option for rbd-nbd has become the default
   and is now deprecated. If the NBD netlink interface is not supported by the
   kernel, then the mapping is retried using the legacy ioctl interface.
+* RADOS: Read balancing may now be managed automatically via the balancer
+  manager module. Users may choose between two new modes: ``upmap-read``, which
+  offers upmap and read optimization simultaneously, or ``read``, which may be used
+  to only optimize reads. For more detailed information see https://docs.ceph.com/en/latest/rados/operations/read-balancer/#online-optimization.
+* CephFS: MDS log trimming is now driven by a separate thread which tries to
+  trim the log every second (`mds_log_trim_upkeep_interval` config). Also,
+  a couple of configs govern how much time the MDS spends in trimming its
+  logs. These configs are `mds_log_trim_threshold` and `mds_log_trim_decay_rate`.
 
 >=18.0.0
 
