@@ -16,6 +16,8 @@ from threading import Event
 
 from cephadm.service_discovery import ServiceDiscovery
 
+from ceph.deployment.service_spec import PrometheusSpec
+
 import string
 from typing import List, Dict, Optional, Callable, Tuple, TypeVar, \
     Any, Set, TYPE_CHECKING, cast, NamedTuple, Sequence, Type, \
@@ -2970,6 +2972,36 @@ Then run the following:
         self.set_store(PrometheusService.USER_CFG_KEY, user)
         self.set_store(PrometheusService.PASS_CFG_KEY, password)
         return 'prometheus credentials updated correctly'
+    
+    @handle_orch_error
+    def set_prometheus_target(self, url: str) -> str:
+        prometheus_spec = cast(PrometheusSpec, self.spec_store['prometheus'].spec)
+        if url not in prometheus_spec.targets:
+            prometheus_spec.targets.append(url)
+        else:
+            raise OrchestratorError('Target {} already exists'.format(url))
+        if not prometheus_spec:
+            raise OrchestratorError('Service prometheus not found')
+        daemons: List[orchestrator.DaemonDescription] = self.cache.get_daemons_by_type('prometheus')
+        spec = ServiceSpec.from_json(prometheus_spec.to_json())
+        self.apply([spec], no_overwrite=False)
+        self.daemon_action(action='redeploy', daemon_name=daemons[0].daemon_name)
+        return 'prometheus multi-cluster targets updated'
+
+    @handle_orch_error
+    def remove_prometheus_target(self, url: str) -> str:
+        prometheus_spec = cast(PrometheusSpec, self.spec_store['prometheus'].spec)
+        if url in prometheus_spec.targets:
+            prometheus_spec.targets.remove(url)
+        else:
+            raise OrchestratorError('Target {} does not exist'.format(url))
+        if not prometheus_spec:
+            raise OrchestratorError('Service prometheus not found')
+        daemons: List[orchestrator.DaemonDescription] = self.cache.get_daemons_by_type('prometheus')
+        spec = ServiceSpec.from_json(prometheus_spec.to_json())
+        self.apply([spec], no_overwrite=False)
+        self.daemon_action(action='redeploy', daemon_name=daemons[0].daemon_name)
+        return 'prometheus multi-cluster targets updated'
 
     @handle_orch_error
     def set_alertmanager_access_info(self, user: str, password: str) -> str:
