@@ -1369,25 +1369,25 @@ EOF
         #ceph_adm mds set max_mds 2
     done
 
-    if [ $new -eq 1 ]; then
-        if [ "$CEPH_NUM_FS" -gt "0" ] ; then
-            sleep 5 # time for MDS to come up as standby to avoid health warnings on fs creation
-            if [ "$CEPH_NUM_FS" -gt "1" ] ; then
-                ceph_adm fs flag set enable_multiple true --yes-i-really-mean-it
-            fi
+    # if [ $new -eq 1 ]; then
+    #     if [ "$CEPH_NUM_FS" -gt "0" ] ; then
+    #         sleep 5 # time for MDS to come up as standby to avoid health warnings on fs creation
+    #         if [ "$CEPH_NUM_FS" -gt "1" ] ; then
+    #             ceph_adm fs flag set enable_multiple true --yes-i-really-mean-it
+    #         fi
 
-	    # wait for volume module to load
-	    while ! ceph_adm fs volume ls ; do sleep 1 ; done
-            local fs=0
-            for name in a b c d e f g h i j k l m n o p
-            do
-                ceph_adm fs volume create ${name}
-                ceph_adm fs authorize ${name} "client.fs_${name}" / rwp >> "$keyring_fn"
-                fs=$(($fs + 1))
-                [ $fs -eq $CEPH_NUM_FS ] && break
-            done
-        fi
-    fi
+	#     # wait for volume module to load
+	#     while ! ceph_adm fs volume ls ; do sleep 1 ; done
+    #         local fs=0
+    #         for name in a b c d e f g h i j k l m n o p
+    #         do
+    #             ceph_adm fs volume create ${name}
+    #             ceph_adm fs authorize ${name} "client.fs_${name}" / rwp >> "$keyring_fn"
+    #             fs=$(($fs + 1))
+    #             [ $fs -eq $CEPH_NUM_FS ] && break
+    #         done
+    #     fi
+    # fi
 
 }
 
