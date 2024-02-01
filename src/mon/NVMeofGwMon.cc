@@ -67,8 +67,7 @@ void NVMeofGwMon::tick(){
     _propose_pending |= propose;
 
 
-    //TODO handle exception of tick overdued in order to avoid false detection of overdued beacons , see MgrMonitor::tick
-
+    //handle exception of tick overdued in order to avoid false detection of overdued beacons , see MgrMonitor::tick
     const auto cutoff = now - nvmegw_beacon_grace;
     for(auto &itr : last_beacon){// Pass over all the stored beacons
         auto& lb = itr.first;
@@ -322,7 +321,9 @@ bool NVMeofGwMon::prepare_command(MonOpRequestRef op)
         }
         else{
             rc = pending_map.cfg_delete_gw(id, group_key);
-            ceph_assert(rc!= -EINVAL);
+            if(rc== -EINVAL){
+                dout (4) << "Error: GW not found in the database " << id << " " << pool << " " << group << dendl;
+            }
         }
         if(rc != -EEXIST){
             propose_pending();
@@ -380,6 +381,7 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     GW_AVAILABILITY_E  avail = m->get_availability();
     bool propose = false;
     bool timer_propose = false;
+    NVMeofGwMap ack_map;
     auto& group_gws = pending_map.Created_gws[group_key];
     auto gw = group_gws.find(gw_id);
     const BeaconSubsystems& sub = m->get_subsystems();
@@ -395,7 +397,10 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     }
 
     // At this stage the gw has to be in the Created_gws
-    ceph_assert (gw != group_gws.end());
+    if(gw == group_gws.end()){
+        dout(4) << "Error : Administratively deleted GW sends beacon " << gw_id <<dendl;
+        goto false_return; // not sending ack to this beacon
+    }
 
     // deep copy the whole nonce map of this GW
     pending_map.Created_gws[group_key][gw_id].nonce_map = m->get_nonce_map();
@@ -436,7 +441,6 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     propose |= timer_propose;
 
 set_propose:
-    NVMeofGwMap ack_map;
     if(!propose) {
       ack_map.Created_gws[group_key][gw_id] = map.Created_gws[group_key][gw_id];// respond with a map slice correspondent to the same GW
       ack_map.epoch = map.epoch;
@@ -444,6 +448,7 @@ set_propose:
       auto msg = make_message<MNVMeofGwMap>(ack_map);
       mon.send_reply(op, msg.detach());
     }
+false_return:
     if (propose){
       dout(4) << "decision to delayed_map in prepare_beacon" <<dendl;
       return true;

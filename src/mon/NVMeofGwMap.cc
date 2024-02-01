@@ -68,12 +68,17 @@ int NVMeofGwMap::cfg_delete_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key)
             }
             dout(4) << " Delete GW :"<< gw_id  << " ANA grpid: " << state.ana_grp_id  << dendl;
             Gmetadata[group_key].erase(gw_id);
-        } else {
-            rc = -EINVAL;
+            if(Gmetadata[group_key].size() == 0)
+                Gmetadata.erase(group_key);
+
+            Created_gws[group_key].erase(gw_id);
+            if(Created_gws[group_key].size() == 0)
+                Created_gws.erase(group_key);
+            return rc;
         }
     }
-    Created_gws[group_key].erase(gw_id);
-    return rc;
+
+    return -EINVAL;
 }
 
 
@@ -543,20 +548,19 @@ int NVMeofGwMap::blocklist_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key, 
 void NVMeofGwMap::update_active_timers( bool &propose_pending ){
 
     //dout(4) << __func__  <<  " called,  p_monitor: " << mon << dendl;
+    const auto now = std::chrono::system_clock::now();
     for (auto& group_md: Gmetadata) {
         auto& group_key = group_md.first;
         auto& pool = group_key.first;
         auto& group = group_key.second;
-        const auto now = std::chrono::system_clock::now();
-        //dout(4) << " num timer ana groups " << group_md.second.size() << dendl;
         for (auto& gw_md: group_md.second) {
             auto& gw_id = gw_md.first;
             auto& md = gw_md.second;
-            for (size_t i = 0; i < MAX_SUPPORTED_ANA_GROUPS; i ++) {
-                if (md.data[i].timer_started == 0) continue;
-                dout(4) << "Checking timer for GW " << gw_id << " ANA GRP " << i<< " value(seconds): "<< (int)md.data[i].timer_value << dendl;
-                if(now >= md.data[i].end_time){
-                    fsm_handle_to_expired (gw_id, std::make_pair(pool, group), i, propose_pending);
+            for (size_t ana_grpid = 0; ana_grpid < MAX_SUPPORTED_ANA_GROUPS; ana_grpid ++) {
+                if (md.data[ana_grpid].timer_started == 0) continue;
+                dout(4) << "Checking timer for GW " << gw_id << " ANA GRP " << ana_grpid<< " value(seconds): "<< (int)md.data[ana_grpid].timer_value << dendl;
+                if(now >= md.data[ana_grpid].end_time){
+                    fsm_handle_to_expired (gw_id, std::make_pair(pool, group), ana_grpid, propose_pending);
                 }
             }
         }
@@ -567,6 +571,7 @@ void NVMeofGwMap::update_active_timers( bool &propose_pending ){
 void NVMeofGwMap::start_timer(const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T anagrpid, uint8_t value_sec) {
     Gmetadata[group_key][gw_id].data[anagrpid].timer_started = 1;
     Gmetadata[group_key][gw_id].data[anagrpid].timer_value = value_sec;
+    dout(4) << "start timer for ana " << anagrpid << " gw " << gw_id << "value sec " << (int)value_sec << dendl;
     const auto now = std::chrono::system_clock::now();
     Gmetadata[group_key][gw_id].data[anagrpid].end_time = now + std::chrono::seconds(value_sec);
 }
