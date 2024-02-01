@@ -705,8 +705,27 @@ if(WITH_SYSTEM_NPM)
   if(NOT NPM_EXECUTABLE)
     message(FATAL_ERROR "Can't find npm.")
   endif()
+  # build mgr dashboard frontent requires Angular v15 supports node.js versions: 14.20.x, 16.13.x and 18.10.x
+  # And More information Please See https://angular.io/guide/update-to-version-15#angular-v15-supports-nodejs-versions-1420x-1613x-and-1810x
+  execute_process(
+    COMMAND
+      "sh" "-c"
+      "node -v"
+    OUTPUT_VARIABLE NODE_VERSION
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  string(REPLACE "v" "" NODE_VERSION ${NODE_VERSION})
+  if("${NODE_VERSION}" VERSION_LESS "14.20.0")
+    message(FATAL_ERROR "The node version must greater than version v14.20.0")
+  endif()
+  if(("${NODE_VERSION}" VERSION_GREATER_EQUAL "16.0.0") AND ("${NODE_VERSION}" VERSION_LESS "16.13.0"))
+    message(FATAL_ERROR "The node version must greater than version v16.13.0")
+  endif()
+  if(("${NODE_VERSION}" VERSION_GREATER_EQUAL "18.0.0") AND ("${NODE_VERSION}" VERSION_LESS "18.10.0"))
+    message(FATAL_ERROR "The node version must greater than version v18.10.0")
+  endif()
 endif()
-set(DASHBOARD_FRONTEND_LANGS "" CACHE STRING
+set(DASHBOARD_FRONTEND_LANGS "ALL" CACHE STRING
   "List of comma separated ceph-dashboard frontend languages to build. \
   Use value `ALL` to build all languages")
 CMAKE_DEPENDENT_OPTION(WITH_MGR_ROOK_CLIENT "Enable the mgr's Rook support" ON
