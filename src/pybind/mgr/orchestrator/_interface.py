@@ -480,6 +480,14 @@ class Orchestrator(object):
         """
         raise NotImplementedError()
 
+    def systemd_unit_ls(
+        self,
+        hostname: Optional[str] = None,
+        daemon_type: Optional[str] = None,
+        daemon_id: Optional[str] = None
+    ) -> OrchResult[Dict[str, Any]]:
+        raise NotImplementedError()
+
     @handle_orch_error
     def apply(self, specs: Sequence["GenericSpec"], no_overwrite: bool = False) -> List[str]:
         """
