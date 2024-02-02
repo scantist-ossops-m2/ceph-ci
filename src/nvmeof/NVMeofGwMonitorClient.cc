@@ -216,8 +216,7 @@ void NVMeofGwMonitorClient::send_beacon()
       }
       for (int k = 0; k < sub.listen_addresses_size(); k++) {
         const auto& ls = sub.listen_addresses(k);
-        // FIXME addr family
-        BeaconListener bls = { "fake", ls.traddr(), ls.trsvcid() };
+        BeaconListener bls = { ls.adrfam(), ls.traddr(), ls.trsvcid() };
         bsub.listeners.push_back(bls);
       }
       subs.push_back(bsub);
