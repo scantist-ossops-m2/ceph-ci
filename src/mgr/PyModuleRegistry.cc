@@ -14,6 +14,7 @@
 #include "PyModuleRegistry.h"
 
 #include <filesystem>
+#include <boost/scope_exit.hpp>
 
 #include "include/stringify.h"
 #include "common/errno.h"
@@ -46,14 +47,34 @@ void PyModuleRegistry::init()
 
   // Set up global python interpreter
 #define WCHAR(s) L ## #s
+#if PY_VERSION_HEX >= 0x03080000
+  PyConfig py_conf;
+  PyConfig_InitIsolatedConfig(&py_conf);
+  BOOST_SCOPE_EXIT_ALL(&py_conf) {
+    PyConfig_Clear(&py_conf);
+  };
+
+  PyStatus status;
+  status = PyConfig_SetString(&py_conf, &py_conf.program_name, WCHAR(MGR_PYTHON_EXECUTABLE));
+  ceph_assert(PyStatus_Exception(status));
+  // Add more modules
+  if (g_conf().get_val<bool>("daemonize")) {
+    PyImport_AppendInittab("ceph_logger", PyModule::init_ceph_logger);
+  }
+  PyImport_AppendInittab("ceph_module", PyModule::init_ceph_module);
+  status = Py_InitializeFromConfig(&config);
+  ceph_assert(PyStatus_Exception(status));
+#else
   Py_SetProgramName(const_cast<wchar_t*>(WCHAR(MGR_PYTHON_EXECUTABLE)));
-#undef WCHAR
   // Add more modules
   if (g_conf().get_val<bool>("daemonize")) {
     PyImport_AppendInittab("ceph_logger", PyModule::init_ceph_logger);
   }
   PyImport_AppendInittab("ceph_module", PyModule::init_ceph_module);
   Py_InitializeEx(0);
+#endif // PY_VERSION_HEX >= 0x03080000
+#undef WCHAR
+
 #if PY_VERSION_HEX < 0x03090000
   // Let CPython know that we will be calling it back from other
   // threads in future.
