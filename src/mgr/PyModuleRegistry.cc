@@ -57,6 +57,10 @@ void PyModuleRegistry::init()
   PyStatus status;
   status = PyConfig_SetString(&py_conf, &py_conf.program_name, WCHAR(MGR_PYTHON_EXECUTABLE));
   ceph_assert(PyStatus_Exception(status));
+  // Some python modules do not cope with an unpopulated argv, so lets
+  // fake one.  This step also picks up site-packages into sys.path.
+  const wchar_t* argv[] = {L"ceph-mgr"};
+  PyConfig_SetArgv(&py_conf, 1, (wchar_t *const *)argv);
   // Add more modules
   if (g_conf().get_val<bool>("daemonize")) {
     PyImport_AppendInittab("ceph_logger", PyModule::init_ceph_logger);
@@ -72,6 +76,8 @@ void PyModuleRegistry::init()
   }
   PyImport_AppendInittab("ceph_module", PyModule::init_ceph_module);
   Py_InitializeEx(0);
+  const wchar_t *argv[] = {L"ceph-mgr"};
+  PySys_SetArgv(1, (wchar_t**)argv);
 #endif // PY_VERSION_HEX >= 0x03080000
 #undef WCHAR
 
