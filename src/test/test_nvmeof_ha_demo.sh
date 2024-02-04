@@ -47,3 +47,4 @@ docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 
 docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 get_subsystems
 docker-compose  run --rm nvmeof-cli --server-address $GW2_IP --server-port 5500 get_subsystems
 popd
+nvme disconnect-all
