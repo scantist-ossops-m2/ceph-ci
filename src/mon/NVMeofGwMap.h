@@ -56,7 +56,7 @@ private:
     void fsm_handle_to_expired (const GW_ID_T &gw_id, const GROUP_KEY& group_key,  ANA_GRP_ID_T grpid,  bool &map_modified);
 
     void find_failover_candidate(const GW_ID_T &gw_id, const GROUP_KEY& group_key,  ANA_GRP_ID_T grpid, bool &propose_pending);
-    void find_failback_gw       (const GW_ID_T &gw_id, const GROUP_KEY& group_key,  bool &found);
+    void find_failback_gw       (const GW_ID_T &gw_id, const GROUP_KEY& group_key,  bool &propose_pending);
     void set_failover_gw_for_ANA_group (const GW_ID_T &failed_gw_id, const GROUP_KEY& group_key, const GW_ID_T &gw_id,
                                                                                                      ANA_GRP_ID_T groupid);
     int  blocklist_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T ANA_groupid, epoch_t &epoch);

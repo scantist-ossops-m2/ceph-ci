@@ -106,8 +106,6 @@ int NVMeofGwMap::process_gw_map_gw_down(const GW_ID_T &gw_id, const GROUP_KEY& g
 
 void NVMeofGwMap::process_gw_map_ka(const GW_ID_T &gw_id, const GROUP_KEY& group_key,  epoch_t& last_osd_epoch, bool &propose_pending)
 {
-
-#define     FAILBACK_PERSISTENCY_INT_SEC 8
     auto& gws_states = Created_gws[group_key];
     auto  gw_state = gws_states.find(gw_id);
     ceph_assert (gw_state != gws_states.end());
@@ -132,13 +130,7 @@ void NVMeofGwMap::process_gw_map_ka(const GW_ID_T &gw_id, const GROUP_KEY& group
         else {
             //========= prepare to Failback to this GW =========
             // find the GW that took over on the group st.ana_grp_id
-            bool some_found = false;
-            propose_pending = true;
-            find_failback_gw(gw_id, group_key, some_found);
-            if (!some_found ) { // There is start of single GW so immediately turn its group to GW_ACTIVE_STATE
-                dout(4)  << " Warning failback GW not found for ANA " << st.ana_grp_id << " for GW" << gw_id << " set ANA  Active" << dendl;
-                st.active_state(st.ana_grp_id);
-            }
+            find_failback_gw(gw_id, group_key, propose_pending);
         }
     }
     else if (st.availability == GW_AVAILABILITY_E::GW_AVAILABLE) {
@@ -183,13 +175,7 @@ void NVMeofGwMap::handle_abandoned_ana_groups(bool& propose)
                             && state.ana_grp_id != REDUNDANT_GW_ANA_GROUP_ID &&
                             state.sm_state[state.ana_grp_id] == GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE)
                 {
-                    bool some_found = false;
-                    propose = true;
-                    find_failback_gw(gw_id, group_key, some_found);
-                    if (!some_found ) { // There is start of single GW so immediately turn its group to GW_ACTIVE_STATE
-                        dout(4)  << "Abandoned: Warning failback GW not found for ANA " << state.ana_grp_id << " for GW" << gw_id << " set ANA  Active" << dendl;
-                        state.active_state(state.ana_grp_id);
-                    }
+                    find_failback_gw(gw_id, group_key, propose);
                 }
             }
     }
@@ -215,13 +201,24 @@ void  NVMeofGwMap::set_failover_gw_for_ANA_group(const GW_ID_T &failed_gw_id, co
     }
 }
 
-void  NVMeofGwMap::find_failback_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key,   bool &some_found)
+void  NVMeofGwMap::find_failback_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key,   bool &propose)
 {
-    bool  found_some_gw   = false;
-    bool  found_candidate = false;
     auto& gws_states = Created_gws[group_key];
     auto& gw_state = Created_gws[group_key][gw_id];
+    int avail_cnt = 0;
 
+    for (auto& gw_state_it: gws_states) {
+        auto& st = gw_state_it.second;
+        if (st.availability == GW_AVAILABILITY_E::GW_AVAILABLE) {
+            avail_cnt++;
+        }
+    }
+    if(avail_cnt == 1) { // if there is at least other 1 available GW, it should be chosen as failback, but not exactly immediately
+        dout(4)  << "Failback GW candidate was not found, just set Optimized to group " << gw_state.ana_grp_id << " to GW " << gw_id << dendl;
+        gw_state.active_state(gw_state.ana_grp_id);
+        propose = true;
+        return;
+    }
     for (auto& gw_state_it: gws_states) {
         auto& failback_gw_id = gw_state_it.first;
         auto& st = gw_state_it.second;
@@ -230,20 +227,12 @@ void  NVMeofGwMap::find_failback_gw(const GW_ID_T &gw_id, const GROUP_KEY& group
 
             dout(4)  << "Found Failback GW " << failback_gw_id << " that previously took over the ANAGRP " << gw_state.ana_grp_id << " of the available GW " << gw_id << dendl;
             st.sm_state[gw_state.ana_grp_id] = GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED;
-            start_timer(failback_gw_id, group_key, gw_state.ana_grp_id, 5);// Add timestamp of start Failback preparation
+            start_timer(failback_gw_id, group_key, gw_state.ana_grp_id, 6);// Add timestamp of start Failback preparation
             gw_state.sm_state[gw_state.ana_grp_id] = GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED;
-            found_candidate = true;
+            propose = true;
             break;
         }
-        else if(st.sm_state[gw_state.ana_grp_id] == GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL) {
-            ceph_assert(st.failover_peer[gw_state.ana_grp_id] == gw_id);
-            dout(4) << "Found Failback GW " << failback_gw_id << " that still Waits to took over the ANAGRP " << gw_state.ana_grp_id << " of the available GW " << gw_id << dendl;
-            found_candidate = false;
-            break;
-        }
-        else found_some_gw = true;
     }
-    some_found =  found_candidate |found_some_gw;
 }
 
 
@@ -518,7 +507,7 @@ int NVMeofGwMap::blocklist_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key, 
         std::string str = "[";
         entity_addrvec_t addr_vect;
         //auto until = ceph_clock_now();  // until += g_conf().get_val<double>("mon_mgr_blocklist_interval"); // 1day - TODO
-        utime_t until(30,0);
+        utime_t until(30, 0);
         dout(4) << "until timestamp before now " << until << dendl;
         until += ceph_clock_now();
         dout(4) << "until timestamp " << until << dendl;
