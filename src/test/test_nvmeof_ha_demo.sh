@@ -35,16 +35,14 @@ GW1_NAME=$(docker ps --format '{{.ID}}\t{{.Names}}' | awk '$2 ~ /nvmeof/ && $2 ~
 GW2_NAME=$(docker ps --format '{{.ID}}\t{{.Names}}' | awk '$2 ~ /nvmeof/ && $2 ~ /2/ {print $1}')
 GW1_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$GW1_NAME")"
 GW2_IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$GW2_NAME")"
-
-docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 create_bdev --pool rbd --image demo_image1 --bdev demo_bdev1
-docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 create_bdev --pool rbd --image demo_image2 --bdev demo_bdev2
-docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 create_subsystem --subnqn "nqn.2016-06.io.spdk:cnode1" -a -t
-docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 add_namespace --subnqn "nqn.2016-06.io.spdk:cnode1" --bdev demo_bdev1  -a 1
-docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 add_namespace --subnqn "nqn.2016-06.io.spdk:cnode1" --bdev demo_bdev2  -a 2
-docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 create_listener --subnqn "nqn.2016-06.io.spdk:cnode1" --gateway-name $GW1_NAME --traddr $GW1_IP --trsvcid 4420
-docker-compose  run --rm nvmeof-cli --server-address $GW2_IP --server-port 5500 create_listener --subnqn "nqn.2016-06.io.spdk:cnode1" --gateway-name $GW2_NAME --traddr $GW2_IP --trsvcid 4420
-docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 add_host --subnqn "nqn.2016-06.io.spdk:cnode1" --host "*"
-docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 get_subsystems
-docker-compose  run --rm nvmeof-cli --server-address $GW2_IP --server-port 5500 get_subsystems
+NQN=$("nqn.2016-06.io.spdk:cnode1")
+docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 subsystem add --subsystem  "nqn.2016-06.io.spdk:cnode1" -a -t
+docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500  namespace add --subsystem "nqn.2016-06.io.spdk:cnode1" --rbd-pool rbd --rbd-image demo_image1 --size 10M --rbd-create-image -l 1
+docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500  namespace add --subsystem "nqn.2016-06.io.spdk:cnode1" --rbd-pool rbd --rbd-image demo_image2 --size 10M --rbd-create-image -l 2
+docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500   listener add --subsystem "nqn.2016-06.io.spdk:cnode1" --gateway-name $GW1_NAME --traddr $GW1_IP --trsvcid 4420
+docker-compose  run --rm nvmeof-cli --server-address $GW2_IP --server-port 5500   listener add --subsystem "nqn.2016-06.io.spdk:cnode1" --gateway-name $GW2_NAME --traddr $GW2_IP --trsvcid 4420
+docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500   host add     --subsystem "nqn.2016-06.io.spdk:cnode1" --host "*"
+docker-compose  run --rm nvmeof-cli --server-address $GW1_IP --server-port 5500 subsystem list
+docker-compose  run --rm nvmeof-cli --server-address $GW2_IP --server-port 5500 subsystem list
 popd
 nvme disconnect-all
