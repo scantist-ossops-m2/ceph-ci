@@ -5782,9 +5782,12 @@ int RGWRados::Object::Delete::delete_obj(optional_yield y, const DoutPrefixProvi
   RGWRados::Bucket bop(store, bucket_info);
   RGWRados::Bucket::UpdateIndex index_op(&bop, obj);
 
+  if (params.null_verid) {
+    index_op.set_bilog_flags(RGW_BILOG_NULL_VERSION);
+  }
+
   index_op.set_zones_trace(params.zones_trace);
   index_op.set_bilog_flags(params.bilog_flags);
-  index_op.set_null_verid(params.null_verid);
 
   r = index_op.prepare(dpp, CLS_RGW_OP_DEL, &state->write_tag, y, log_op);
   if (r < 0)
@@ -9299,7 +9302,7 @@ int RGWRados::cls_obj_complete_add(BucketShard& bs, const rgw_obj& obj, string& 
                                    rgw_zone_set *zones_trace, bool log_op)
 {
   return cls_obj_complete_op(bs, obj, CLS_RGW_OP_ADD, tag, pool, epoch,
-                             ent, category, remove_objs, bilog_flags,
+                             ent, category, remove_objs, bilog_flags, false,
                              zones_trace, log_op);
 }
 
@@ -9329,7 +9332,7 @@ int RGWRados::cls_obj_complete_cancel(BucketShard& bs, string& tag, rgw_obj& obj
   obj.key.get_index_key(&ent.key);
   return cls_obj_complete_op(bs, obj, CLS_RGW_OP_CANCEL, tag,
 			     -1 /* pool id */, 0, ent,
-			     RGWObjCategory::None, remove_objs, bilog_flags,
+			     RGWObjCategory::None, remove_objs, bilog_flags, false,
 			     zones_trace, log_op);
 }
 

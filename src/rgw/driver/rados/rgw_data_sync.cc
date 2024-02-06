@@ -4724,7 +4724,7 @@ int RGWBucketFullSyncCR::operate(const DoutPrefixProvider *dpp)
         } else {
           using SyncCR = RGWBucketSyncSingleEntryCR<rgw_obj_key, rgw_obj_key>;
           yield spawn(new SyncCR(sc, sync_pipe, entry->key,
-                                 false, /* versioned, only matters for object removal */ entry->null_verid,
+                                 false, /* versioned, only matters for object removal */ false,
                                  entry->versioned_epoch, entry->mtime,
                                  entry->owner, entry->get_modify_op(), CLS_RGW_STATE_COMPLETE,
                                  entry->key, &marker_tracker, zones_trace, tn),
@@ -5131,9 +5131,10 @@ int RGWBucketShardIncrementalSyncCR::operate(const DoutPrefixProvider *dpp)
               versioned_epoch = entry->ver.epoch;
             }
             tn->log(20, SSTR("entry->timestamp=" << entry->timestamp));
+            tn->log(20, SSTR("entry->is_null_verid=" << entry->is_null_verid()));
             using SyncCR = RGWBucketSyncSingleEntryCR<string, rgw_obj_key>;
             spawn(new SyncCR(sc, sync_pipe, key,
-                             entry->is_versioned(), entry->null_verid, versioned_epoch,
+                             entry->is_versioned(), entry->is_null_verid(), versioned_epoch,
                              entry->timestamp, owner, entry->op, entry->state,
                              cur_id, &marker_tracker, entry->zones_trace, tn),
                   false);
