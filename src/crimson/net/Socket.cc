@@ -39,7 +39,7 @@ struct bufferlist_consumer {
     if (remaining >= data.size()) {
       // consume the whole buffer
       remaining -= data.size();
-      bl.append(buffer::create(std::move(data)));
+      bl.append(buffer::create_local(std::move(data)));
       if (remaining > 0) {
         // return none to request more segments
         return seastar::make_ready_future<consumption_result_type>(
@@ -52,7 +52,7 @@ struct bufferlist_consumer {
     }
     if (remaining > 0) {
       // consume the front
-      bl.append(buffer::create(data.share(0, remaining)));
+      bl.append(buffer::create_local(data.share(0, remaining)));
       data.trim_front(remaining);
       remaining = 0;
     }
@@ -157,7 +157,7 @@ Socket::read_exactly(size_t bytes) {
       return seastar::make_ready_future<bufferptr>();
     }
     return in.read_exactly(bytes).then([bytes](auto buf) {
-      bufferptr ptr(buffer::create(buf.share()));
+      bufferptr ptr(buffer::create_local(buf.share()));
       if (ptr.length() < bytes) {
         throw std::system_error(make_error_code(error::read_eof));
       }

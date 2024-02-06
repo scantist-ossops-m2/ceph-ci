@@ -38,7 +38,7 @@ seastar::future<KeyRing*> load_from_keyring(KeyRing* keyring)
     if (exists) {
       return read_file(path).then([keyring](auto buf) {
         bufferlist bl;
-        bl.append(buffer::create(std::move(buf)));
+        bl.append(buffer::create_local(std::move(buf)));
         auto i = bl.cbegin();
         keyring->decode(i);
         return seastar::make_ready_future<KeyRing*>(keyring);
