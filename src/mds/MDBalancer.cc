@@ -230,6 +230,7 @@ void MDBalancer::handle_export_pins(void)
 void MDBalancer::tick()
 {
   static int num_bal_times = g_conf()->mds_bal_max;
+  bool balance_automate = mds->mdsmap->allows_balance_automate();
   auto bal_interval = g_conf().get_val<int64_t>("mds_bal_interval");
   auto bal_max_until = g_conf().get_val<int64_t>("mds_bal_max_until");
   time now = clock::now();
@@ -248,7 +249,8 @@ void MDBalancer::tick()
   // We can use duration_cast below, although the result is an int,
   // because the values from g_conf are also integers.
   // balance?
-  if (mds->get_nodeid() == 0
+  if (balance_automate
+      && mds->get_nodeid() == 0
       && mds->is_active()
       && bal_interval > 0
       && chrono::duration_cast<chrono::seconds>(now - last_heartbeat).count() >= bal_interval
@@ -684,7 +686,12 @@ void MDBalancer::queue_merge(CDir *dir)
       }
       bool all = true;
       for (auto& sib : sibs) {
-        if (!sib->is_auth() || !sib->should_merge()) {
+	auto is_auth = sib->is_auth();
+	auto should_merge = sib->should_merge();
+
+	dout(20) << ": sib=" << *sib << ", is_auth=" << is_auth << ", should_merge="
+		 << should_merge << dendl;
+        if (!is_auth || !should_merge) {
           all = false;
           break;
         }

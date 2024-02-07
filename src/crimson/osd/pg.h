@@ -39,6 +39,7 @@
 #include "crimson/osd/pg_recovery_listener.h"
 #include "crimson/osd/recovery_backend.h"
 #include "crimson/osd/object_context_loader.h"
+#include "crimson/osd/scrub/pg_scrubber.h"
 
 class MQuery;
 class OSDMap;
@@ -159,8 +160,6 @@ public:
     bool dirty_big_info,
     bool need_write_epoch,
     ceph::os::Transaction &t) final;
-
-  void scrub_requested(scrub_level_t scrub_level, scrub_type_t scrub_type) final;
 
   uint64_t get_snap_trimq_size() const final {
     return std::size(snap_trimq);
@@ -318,6 +317,7 @@ public:
   }
   void on_change(ceph::os::Transaction &t) final;
   void on_activate(interval_set<snapid_t> to_trim) final;
+  void on_replica_activate() final;
   void on_activate_complete() final;
   void on_new_interval() final {
     // Not needed yet
@@ -348,8 +348,7 @@ public:
   void on_active_advmap(const OSDMapRef &osdmap) final;
 
   epoch_t cluster_osdmap_trim_lower_bound() final {
-    // TODO
-    return 0;
+    return shard_services.get_osdmap_tlb();
   }
 
   void on_backfill_reserved() final {
@@ -506,7 +505,7 @@ public:
 
 public:
   using with_obc_func_t =
-    std::function<load_obc_iertr::future<> (ObjectContextRef)>;
+    std::function<load_obc_iertr::future<> (ObjectContextRef, ObjectContextRef)>;
 
   load_obc_iertr::future<> with_locked_obc(
     const hobject_t &hobj,
@@ -527,14 +526,16 @@ public:
   void handle_rep_op_reply(const MOSDRepOpReply& m);
   interruptible_future<> do_update_log_missing(
     Ref<MOSDPGUpdateLogMissing> m,
-    crimson::net::ConnectionRef conn);
+    crimson::net::ConnectionXcoreRef conn);
   interruptible_future<> do_update_log_missing_reply(
                          Ref<MOSDPGUpdateLogMissingReply> m);
 
 
   void print(std::ostream& os) const;
   void dump_primary(Formatter*);
-  seastar::future<> submit_error_log(
+  seastar::future<> complete_error_log(const ceph_tid_t& rep_tid,
+                                       const eversion_t& version);
+  seastar::future<std::optional<eversion_t>> submit_error_log(
     Ref<MOSDOp> m,
     const OpInfo &op_info,
     ObjectContextRef obc,
@@ -543,18 +544,19 @@ public:
 
 private:
 
-  struct SnapTrimMutex {
-    struct WaitPG : OrderedConcurrentPhaseT<WaitPG> {
-      static constexpr auto type_name = "SnapTrimEvent::wait_pg";
-    } wait_pg;
+  struct BackgroundProcessLock {
+    struct Wait : OrderedConcurrentPhaseT<Wait> {
+      static constexpr auto type_name = "PG::BackgroundProcessLock::wait";
+    } wait;
     seastar::shared_mutex mutex;
 
-    interruptible_future<> lock(SnapTrimEvent &st_event) noexcept;
+    interruptible_future<> lock_with_op(SnapTrimEvent &st_event) noexcept;
+    interruptible_future<> lock() noexcept;
 
     void unlock() noexcept {
       mutex.unlock();
     }
-  } snaptrim_mutex;
+  } background_process_lock;
 
   using do_osd_ops_ertr = crimson::errorator<
    crimson::ct_error::eagain>;
@@ -568,7 +570,7 @@ private:
                do_osd_ops_iertr::future<Ret>>;
   do_osd_ops_iertr::future<pg_rep_op_fut_t<MURef<MOSDOpReply>>> do_osd_ops(
     Ref<MOSDOp> m,
-    crimson::net::ConnectionRef conn,
+    crimson::net::ConnectionXcoreRef conn,
     ObjectContextRef obc,
     const OpInfo &op_info,
     const SnapContext& snapc);
@@ -610,9 +612,9 @@ private:
 
 public:
   cached_map_t get_osdmap() { return peering_state.get_osdmap(); }
-  eversion_t next_version() {
+  eversion_t get_next_version() {
     return eversion_t(get_osdmap_epoch(),
-		      ++projected_last_update.version);
+		      projected_last_update.version + 1);
   }
   ShardServices& get_shard_services() final {
     return shard_services;
@@ -627,6 +629,18 @@ private:
   eversion_t projected_last_update;
 
 public:
+  // scrub state
+
+  friend class ScrubScan;
+  friend class ScrubFindRange;
+  friend class ScrubReserveRange;
+  friend class scrub::PGScrubber;
+  template <typename T> friend class RemoteScrubEventBaseT;
+
+  scrub::PGScrubber scrubber;
+
+  void scrub_requested(scrub_level_t scrub_level, scrub_type_t scrub_type) final;
+
   ObjectContextRegistry obc_registry;
   ObjectContextLoader obc_loader;
 
@@ -643,6 +657,12 @@ private:
   std::optional<pg_stat_t> pg_stats;
 
 public:
+  OSDriver &get_osdriver() final {
+    return osdriver;
+  }
+  SnapMapper &get_snap_mapper() final {
+    return snap_mapper;
+  }
   RecoveryBackend* get_recovery_backend() final {
     return recovery_backend.get();
   }
@@ -773,13 +793,12 @@ private:
   };
 
   std::map<ceph_tid_t, log_update_t> log_entry_update_waiting_on;
-  std::map<ceph_tid_t, eversion_t> log_entry_version;
   // snap trimming
   interval_set<snapid_t> snap_trimq;
 };
 
 struct PG::do_osd_ops_params_t {
-  crimson::net::ConnectionRef &get_connection() const {
+  crimson::net::ConnectionXcoreRef &get_connection() const {
     return conn;
   }
   osd_reqid_t get_reqid() const {
@@ -807,7 +826,7 @@ struct PG::do_osd_ops_params_t {
     return orig_source_inst.name;
   }
 
-  crimson::net::ConnectionRef &conn;
+  crimson::net::ConnectionXcoreRef &conn;
   osd_reqid_t reqid;
   utime_t mtime;
   epoch_t map_epoch;

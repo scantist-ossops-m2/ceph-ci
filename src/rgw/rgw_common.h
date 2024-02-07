@@ -1180,9 +1180,9 @@ struct req_state : DoutPrefixProvider {
     } s3_postobj_creds;
   } auth;
 
-  std::unique_ptr<RGWAccessControlPolicy> user_acl;
-  std::unique_ptr<RGWAccessControlPolicy> bucket_acl;
-  std::unique_ptr<RGWAccessControlPolicy> object_acl;
+  RGWAccessControlPolicy user_acl;
+  RGWAccessControlPolicy bucket_acl;
+  RGWAccessControlPolicy object_acl;
 
   rgw::IAM::Environment env;
   boost::optional<rgw::IAM::Policy> iam_policy;
@@ -1490,8 +1490,8 @@ bool rgw_set_amz_meta_header(
 
 extern std::string rgw_string_unquote(const std::string& s);
 extern void parse_csv_string(const std::string& ival, std::vector<std::string>& ovals);
-extern int parse_key_value(std::string& in_str, std::string& key, std::string& val);
-extern int parse_key_value(std::string& in_str, const char *delim, std::string& key, std::string& val);
+extern int parse_key_value(const std::string& in_str, std::string& key, std::string& val);
+extern int parse_key_value(const std::string& in_str, const char *delim, std::string& key, std::string& val);
 
 extern boost::optional<std::pair<std::string_view,std::string_view>>
 parse_key_value(const std::string_view& in_str,
@@ -1584,20 +1584,20 @@ struct perm_state : public perm_state_base {
 bool verify_bucket_permission_no_policy(
   const DoutPrefixProvider* dpp,
   struct perm_state_base * const s,
-  RGWAccessControlPolicy * const user_acl,
-  RGWAccessControlPolicy * const bucket_acl,
+  const RGWAccessControlPolicy& user_acl,
+  const RGWAccessControlPolicy& bucket_acl,
   const int perm);
 
 bool verify_user_permission_no_policy(const DoutPrefixProvider* dpp,
                                       struct perm_state_base * const s,
-                                      RGWAccessControlPolicy * const user_acl,
+                                      const RGWAccessControlPolicy& user_acl,
                                       const int perm);
 
 bool verify_object_permission_no_policy(const DoutPrefixProvider* dpp,
                                         struct perm_state_base * const s,
-					RGWAccessControlPolicy * const user_acl,
-					RGWAccessControlPolicy * const bucket_acl,
-					RGWAccessControlPolicy * const object_acl,
+					const RGWAccessControlPolicy& user_acl,
+					const RGWAccessControlPolicy& bucket_acl,
+					const RGWAccessControlPolicy& object_acl,
 					const int perm);
 
 /** Check if the req_state's user has the necessary permissions
@@ -1609,7 +1609,7 @@ rgw::IAM::Effect eval_identity_or_session_policies(const DoutPrefixProvider* dpp
                           const rgw::ARN& arn);
 bool verify_user_permission(const DoutPrefixProvider* dpp,
                             req_state * const s,
-                            RGWAccessControlPolicy * const user_acl,
+                            const RGWAccessControlPolicy& user_acl,
                             const std::vector<rgw::IAM::Policy>& user_policies,
                             const std::vector<rgw::IAM::Policy>& session_policies,
                             const rgw::ARN& res,
@@ -1617,7 +1617,7 @@ bool verify_user_permission(const DoutPrefixProvider* dpp,
                             bool mandatory_policy=true);
 bool verify_user_permission_no_policy(const DoutPrefixProvider* dpp,
                                       req_state * const s,
-                                      RGWAccessControlPolicy * const user_acl,
+                                      const RGWAccessControlPolicy& user_acl,
                                       const int perm);
 bool verify_user_permission(const DoutPrefixProvider* dpp,
                             req_state * const s,
@@ -1631,8 +1631,8 @@ bool verify_bucket_permission(
   const DoutPrefixProvider* dpp,
   req_state * const s,
   const rgw_bucket& bucket,
-  RGWAccessControlPolicy * const user_acl,
-  RGWAccessControlPolicy * const bucket_acl,
+  const RGWAccessControlPolicy& user_acl,
+  const RGWAccessControlPolicy& bucket_acl,
   const boost::optional<rgw::IAM::Policy>& bucket_policy,
   const std::vector<rgw::IAM::Policy>& identity_policies,
   const std::vector<rgw::IAM::Policy>& session_policies,
@@ -1641,8 +1641,8 @@ bool verify_bucket_permission(const DoutPrefixProvider* dpp, req_state * const s
 bool verify_bucket_permission_no_policy(
   const DoutPrefixProvider* dpp,
   req_state * const s,
-  RGWAccessControlPolicy * const user_acl,
-  RGWAccessControlPolicy * const bucket_acl,
+  const RGWAccessControlPolicy& user_acl,
+  const RGWAccessControlPolicy& bucket_acl,
   const int perm);
 bool verify_bucket_permission_no_policy(const DoutPrefixProvider* dpp,
                                         req_state * const s,
@@ -1653,9 +1653,9 @@ extern bool verify_object_permission(
   const DoutPrefixProvider* dpp,
   req_state * const s,
   const rgw_obj& obj,
-  RGWAccessControlPolicy * const user_acl,
-  RGWAccessControlPolicy * const bucket_acl,
-  RGWAccessControlPolicy * const object_acl,
+  const RGWAccessControlPolicy& user_acl,
+  const RGWAccessControlPolicy& bucket_acl,
+  const RGWAccessControlPolicy& object_acl,
   const boost::optional<rgw::IAM::Policy>& bucket_policy,
   const std::vector<rgw::IAM::Policy>& identity_policies,
   const std::vector<rgw::IAM::Policy>& session_policies,
@@ -1664,9 +1664,9 @@ extern bool verify_object_permission(const DoutPrefixProvider* dpp, req_state *s
 extern bool verify_object_permission_no_policy(
   const DoutPrefixProvider* dpp,
   req_state * const s,
-  RGWAccessControlPolicy * const user_acl,
-  RGWAccessControlPolicy * const bucket_acl,
-  RGWAccessControlPolicy * const object_acl,
+  const RGWAccessControlPolicy& user_acl,
+  const RGWAccessControlPolicy& bucket_acl,
+  const RGWAccessControlPolicy& object_acl,
   int perm);
 extern bool verify_object_permission_no_policy(const DoutPrefixProvider* dpp, req_state *s,
 					       int perm);
@@ -1767,7 +1767,7 @@ static constexpr uint32_t MATCH_POLICY_RESOURCE = 0x02;
 static constexpr uint32_t MATCH_POLICY_ARN = 0x04;
 static constexpr uint32_t MATCH_POLICY_STRING = 0x08;
 
-extern bool match_policy(std::string_view pattern, std::string_view input,
+extern bool match_policy(const std::string& pattern, const std::string& input,
                          uint32_t flag);
 
 extern std::string camelcase_dash_http_attr(const std::string& orig, bool convert2dash = true);
@@ -1824,13 +1824,14 @@ static inline ssize_t rgw_unescape_str(const std::string& s, ssize_t ofs,
   return std::string::npos;
 }
 
-static inline std::string rgw_bl_str(ceph::buffer::list& raw)
+/// Return a string copy of the given bufferlist with trailing nulls removed
+static inline std::string rgw_bl_str(const ceph::buffer::list& bl)
 {
-  size_t len = raw.length();
-  std::string s(raw.c_str(), len);
-  while (len && !s[len - 1]) {
-    --len;
-    s.resize(len);
+  // use to_str() instead of c_str() so we don't reallocate a flat bufferlist
+  std::string s = bl.to_str();
+  // with to_str(), the result may include null characters. trim trailing nulls
+  while (!s.empty() && s.back() == '\0') {
+    s.pop_back();
   }
   return s;
 }
@@ -1854,3 +1855,9 @@ rgw_global_init(const std::map<std::string,std::string> *defaults,
 		    std::vector < const char* >& args,
 		    uint32_t module_type, code_environment_t code_env,
 		    int flags);
+
+
+struct AioCompletionDeleter {
+  void operator()(librados::AioCompletion* c) { c->release(); }
+};
+using aio_completion_ptr = std::unique_ptr<librados::AioCompletion, AioCompletionDeleter>;

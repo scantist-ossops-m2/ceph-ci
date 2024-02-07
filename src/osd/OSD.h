@@ -209,7 +209,6 @@ public:
 		       const OSDMapRef& osdmap,
 		       epoch_t peer_epoch_lb=0);
 
-  void send_map(class MOSDMap *m, Connection *con);
   void send_incremental_map(epoch_t since, Connection *con,
 			    const OSDMapRef& osdmap);
   MOSDMap *build_incremental_map_msg(epoch_t from, epoch_t to,
@@ -251,6 +250,14 @@ public:
    * returns nullopt if failing to lock.
    */
   std::optional<PGLockWrapper> get_locked_pg(spg_t pgid) final;
+
+  /**
+   * the entity that counts the number of active replica scrub
+   * operations, and grant scrub reservation requests asynchronously.
+   */
+  AsyncReserver<spg_t, Finisher>& get_scrub_reserver() {
+    return scrub_reserver;
+  }
 
  private:
   // -- agent shared state --
@@ -495,11 +502,13 @@ public:
   void send_pg_created();
 
   AsyncReserver<spg_t, Finisher> snap_reserver;
+  /// keeping track of replicas being reserved for scrubbing
+  AsyncReserver<spg_t, Finisher> scrub_reserver;
   void queue_recovery_context(PG *pg,
                               GenContext<ThreadPool::TPHandle&> *c,
                               uint64_t cost,
 			      int priority);
-  void queue_for_snap_trim(PG *pg);
+  void queue_for_snap_trim(PG *pg, uint64_t cost);
   void queue_for_scrub(PG* pg, Scrub::scrub_prio_t with_priority);
 
   void queue_scrub_after_repair(PG* pg, Scrub::scrub_prio_t with_priority);
@@ -525,9 +534,6 @@ public:
 
   /// Signals that all write OPs are done
   void queue_scrub_digest_update(PG* pg, Scrub::scrub_prio_t with_priority);
-
-  /// Signals that the the local (Primary's) scrub map is ready
-  void queue_scrub_got_local_map(PG* pg, Scrub::scrub_prio_t with_priority);
 
   /// Signals that we (the Primary) got all waited-for scrub-maps from our replicas
   void queue_scrub_got_repl_maps(PG* pg, Scrub::scrub_prio_t with_priority);
@@ -1032,12 +1038,14 @@ struct OSDShard {
   void register_and_wake_split_child(PG *pg);
   void unprime_split_children(spg_t parent, unsigned old_pg_num);
   void update_scheduler_config();
-  std::string get_scheduler_type();
+  op_queue_type_t get_op_queue_type() const;
 
   OSDShard(
     int id,
     CephContext *cct,
-    OSD *osd);
+    OSD *osd,
+    op_queue_type_t osd_op_queue,
+    unsigned osd_op_queue_cut_off);
 };
 
 class OSD : public Dispatcher,
@@ -1672,6 +1680,18 @@ protected:
   void note_up_osd(int osd);
   friend struct C_OnMapCommit;
 
+  std::optional<epoch_t> get_epoch_from_osdmap_object(const ghobject_t& osdmap);
+  /**
+   * trim_stale_maps
+   *
+   * trim_maps had a possible (rare) leak which resulted in stale osdmaps.
+   * This method will cleanup any existing osdmap from the store
+   * in the range of 0 up to the superblock's oldest_map.
+   * @return number of stale osdmaps which were removed.
+   * See: https://tracker.ceph.com/issues/61962
+   */
+  int trim_stale_maps();
+
   bool advance_pg(
     epoch_t advance_to,
     PG *pg,
@@ -1982,7 +2002,6 @@ private:
                          double *elapsed,
                          std::ostream& ss);
   void mon_cmd_set_config(const std::string &key, const std::string &val);
-  bool unsupported_objstore_for_qos();
 
   void scrub_purged_snaps();
   void probe_smart(const std::string& devid, std::ostream& ss);
@@ -2015,6 +2034,9 @@ public:
 public:
   OSDService service;
   friend class OSDService;
+
+  /// op queue type set for the OSD
+  op_queue_type_t osd_op_queue_type() const;
 
 private:
   void set_perf_queries(const ConfigPayload &config_payload);

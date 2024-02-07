@@ -57,10 +57,11 @@ public:
   }
 
   void finish(int) final {
-    return seastar::alien::submit_to(alien, cpuid, [this] {
-      alien_done.set_value();
+    std::ignore = seastar::alien::submit_to(alien, cpuid,
+        [&_alien_done=this->alien_done] {
+      _alien_done.set_value();
       return seastar::make_ready_future<>();
-    }).wait();
+    });
   }
 };
 }
@@ -202,7 +203,6 @@ AlienStore::list_objects(CollectionRef ch,
   assert(tp);
   return do_with_op_gate(std::vector<ghobject_t>(), ghobject_t(),
                          [=, this] (auto &objects, auto &next) {
-    objects.reserve(limit);
     return tp->submit(ch->get_cid().hash_to_shard(tp->size()),
       [=, this, &objects, &next] {
       auto c = static_cast<AlienCollection*>(ch.get());

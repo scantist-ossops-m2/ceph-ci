@@ -15,6 +15,10 @@
 
 #pragma once
 
+#include "include/neorados/RADOS.hpp"
+
+#include <boost/asio/io_context.hpp>
+
 #include "rgw_sal_store.h"
 #include "rgw_rados.h"
 #include "rgw_notify.h"
@@ -112,19 +116,24 @@ class RadosZone : public StoreZone {
 
 class RadosStore : public StoreDriver {
   private:
+    boost::asio::io_context& io_context;
+    const rgw::SiteConfig& site_config;
     RGWRados* rados;
     RGWUserCtl* user_ctl;
     std::unique_ptr<RadosZone> zone;
+    std::optional<neorados::RADOS> neorados;
     std::string topics_oid(const std::string& tenant) const;
 
   public:
-    RadosStore()
-      : rados(nullptr) {
+    RadosStore(boost::asio::io_context& io_context,
+	       const rgw::SiteConfig& site_config)
+      : io_context(io_context), site_config(site_config), rados(nullptr) {
       }
     ~RadosStore() {
       delete rados;
     }
 
+    int init_neorados(const DoutPrefixProvider* dpp);
     virtual int initialize(CephContext *cct, const DoutPrefixProvider *dpp) override;
     virtual const std::string get_name() const override {
       return "rados";
@@ -240,6 +249,9 @@ class RadosStore : public StoreDriver {
 
     void setRados(RGWRados * st) { rados = st; }
     RGWRados* getRados(void) { return rados; }
+    boost::asio::io_context& get_io_context() { return io_context; }
+    const rgw::SiteConfig& get_siteconfig() { return site_config; }
+    neorados::RADOS& get_neorados() { return *neorados; }
 
     RGWServices* svc() { return &rados->svc; }
     const RGWServices* svc() const { return &rados->svc; }
@@ -332,7 +344,7 @@ class RadosObject : public StoreObject {
     public:
       RadosDeleteOp(RadosObject* _source);
 
-      virtual int delete_obj(const DoutPrefixProvider* dpp, optional_yield y) override;
+      virtual int delete_obj(const DoutPrefixProvider* dpp, optional_yield y, uint32_t flags) override;
     };
 
     RadosObject(RadosStore *_st, const rgw_obj_key& _k)
@@ -364,7 +376,7 @@ class RadosObject : public StoreObject {
       rados_ctx->invalidate(get_obj());
     }
     virtual int delete_object(const DoutPrefixProvider* dpp,
-			      optional_yield y, bool prevent_versioning) override;
+			      optional_yield y, uint32_t flags) override;
     virtual int copy_object(User* user,
                req_info* info, const rgw_zone_id& source_zone,
                rgw::sal::Object* dest_object, rgw::sal::Bucket* dest_bucket,
@@ -413,7 +425,8 @@ class RadosObject : public StoreObject {
 			   const real_time& mtime,
 			   uint64_t olh_epoch,
 			   const DoutPrefixProvider* dpp,
-			   optional_yield y) override;
+			   optional_yield y,
+                           uint32_t flags) override;
     virtual int transition_to_cloud(Bucket* bucket,
 			   rgw::sal::PlacementTier* tier,
 			   rgw_bucket_dir_entry& o,
@@ -752,7 +765,8 @@ public:
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
                        rgw_zone_set *zones_trace, bool *canceled,
-                       const req_context& rctx) override;
+                       const req_context& rctx,
+                       uint32_t flags) override;
 };
 
 class RadosAppendWriter : public StoreWriter {
@@ -799,7 +813,8 @@ public:
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
                        rgw_zone_set *zones_trace, bool *canceled,
-                       const req_context& rctx) override;
+                       const req_context& rctx,
+                       uint32_t flags) override;
 };
 
 class RadosMultipartWriter : public StoreWriter {
@@ -844,7 +859,8 @@ public:
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
                        rgw_zone_set *zones_trace, bool *canceled,
-                       const req_context& rctx) override;
+                       const req_context& rctx,
+                       uint32_t flags) override;
 };
 
 class RadosLuaManager : public StoreLuaManager {

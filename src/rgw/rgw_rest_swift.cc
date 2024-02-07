@@ -42,6 +42,109 @@
 
 using namespace std;
 
+template <class HASHFLAVOR, rgw::auth::swift::SignatureFlavor SIGNATUREFLAVOR>
+class FormPostSignatureT: public rgw::auth::swift::FormatSignature<HASHFLAVOR,SIGNATUREFLAVOR>
+{
+  using UCHARPTR = const unsigned char*;
+  using base_t = rgw::auth::swift::SignatureHelperT<HASHFLAVOR>;
+  using format_signature_t = rgw::auth::swift::FormatSignature<HASHFLAVOR,SIGNATUREFLAVOR>;
+public:
+  const char* calc(const std::string& key,
+      const std::string_view& path_info,
+      const std::string_view& redirect,
+      const std::string_view& max_file_size,
+      const std::string_view& max_file_count,
+      const std::string_view& expires) {
+    HASHFLAVOR hmac((UCHARPTR) key.data(), key.size());
+
+    hmac.Update((UCHARPTR) path_info.data(), path_info.size());
+    hmac.Update((UCHARPTR) "\n", 1);
+
+    hmac.Update((UCHARPTR) redirect.data(), redirect.size());
+    hmac.Update((UCHARPTR) "\n", 1);
+
+    hmac.Update((UCHARPTR) max_file_size.data(), max_file_size.size());
+    hmac.Update((UCHARPTR) "\n", 1);
+
+    hmac.Update((UCHARPTR) max_file_count.data(), max_file_count.size());
+    hmac.Update((UCHARPTR) "\n", 1);
+
+    hmac.Update((UCHARPTR) expires.data(), expires.size());
+
+    hmac.Final(base_t::dest);
+
+    return format_signature_t::result();
+  }
+};
+class RGWFormPost::SignatureHelper {
+public:
+  virtual ~SignatureHelper() {};
+  virtual const char* calc(const std::string& key,
+    const std::string_view& path_info,
+    const std::string_view& redirect,
+    const std::string_view& max_file_size,
+    const std::string_view& max_file_count,
+    const std::string_view& expires) {
+    return nullptr;
+  };
+  virtual const char* get_signature() const {
+    return nullptr;
+  };
+  virtual bool is_equal_to(const std::string& rhs) {
+    return false;
+  };
+  static std::unique_ptr<SignatureHelper> get_sig_helper(std::string_view x);
+};
+template<typename HASHFLAVOR, rgw::auth::swift::SignatureFlavor SIGNATUREFLAVOR>
+class RGWFormPost::SignatureHelper_x : public RGWFormPost::SignatureHelper
+{
+  friend RGWFormPost;
+private:
+  FormPostSignatureT<HASHFLAVOR,SIGNATUREFLAVOR> d;
+public:
+  ~SignatureHelper_x() { };
+  SignatureHelper_x() {};
+  virtual const char* calc(const std::string& key,
+    const std::string_view& path_info,
+    const std::string_view& redirect,
+    const std::string_view& max_file_size,
+    const std::string_view& max_file_count,
+    const std::string_view& expires) {
+    return d.calc(key,path_info,redirect,
+      max_file_size,max_file_count,expires) ;
+  };
+  virtual const char* get_signature() const {
+    return d.get_signature();
+  };
+  virtual bool is_equal_to(const std::string& rhs) {
+    return d.is_equal_to(rhs);
+  };
+};
+
+std::unique_ptr<RGWFormPost::SignatureHelper> RGWFormPost::SignatureHelper::get_sig_helper(std::string_view x) {
+  size_t pos = x.find(':');
+  if (pos == x.npos || pos <= 0) {
+    switch(x.length()) {
+    case CEPH_CRYPTO_HMACSHA1_DIGESTSIZE*2:
+      return std::make_unique<SignatureHelper_x<ceph::crypto::HMACSHA1,rgw::auth::swift::SignatureFlavor::BARE_HEX>>();
+    case CEPH_CRYPTO_HMACSHA256_DIGESTSIZE*2:
+      return std::make_unique<SignatureHelper_x<ceph::crypto::HMACSHA256,rgw::auth::swift::SignatureFlavor::BARE_HEX>>();
+    case CEPH_CRYPTO_HMACSHA512_DIGESTSIZE*2:
+      return std::make_unique<SignatureHelper_x<ceph::crypto::HMACSHA512,rgw::auth::swift::SignatureFlavor::BARE_HEX>>();
+    }
+    return std::make_unique<BadSignatureHelper>();
+  }
+  std::string_view type { x.substr(0,pos) };
+  if (type == "sha1") {
+    return std::make_unique<SignatureHelper_x<ceph::crypto::HMACSHA1,rgw::auth::swift::SignatureFlavor::NAMED_BASE64>>();
+  } else if (type == "sha256") {
+    return std::make_unique<SignatureHelper_x<ceph::crypto::HMACSHA256,rgw::auth::swift::SignatureFlavor::NAMED_BASE64>>();
+  } else if (type == "sha512") {
+    return std::make_unique<SignatureHelper_x<ceph::crypto::HMACSHA512,rgw::auth::swift::SignatureFlavor::NAMED_BASE64>>();
+  }
+  return std::make_unique<BadSignatureHelper>();
+};
+
 int RGWListBuckets_ObjStore_SWIFT::get_params(optional_yield y)
 {
   prefix = s->info.args.get("prefix");
@@ -92,7 +195,7 @@ static void dump_account_metadata(req_state * const s,
                                   /* const */map<string, bufferlist>& attrs,
                                   const RGWQuotaInfo& quota,
                                   int32_t max_buckets,
-                                  const RGWAccessControlPolicy_SWIFTAcct &policy)
+                                  const RGWAccessControlPolicy& policy)
 {
   /* Adding X-Timestamp to keep align with Swift API */
   dump_header(s, "X-Timestamp", ceph_clock_now());
@@ -164,8 +267,8 @@ static void dump_account_metadata(req_state * const s,
     }
   }
 
-  /* Dump account ACLs */
-  auto account_acls = policy.to_str();
+  /* Dump account ACLs, if any */
+  auto account_acls = rgw::swift::format_account_acl(policy);
   if (account_acls) {
     dump_header(s, "X-Account-Access-Control", std::move(*account_acls));
   }
@@ -188,7 +291,7 @@ void RGWListBuckets_ObjStore_SWIFT::send_response_begin(bool has_buckets)
             s->user->get_attrs(),
             s->user->get_info().quota.user_quota,
             s->user->get_max_buckets(),
-            static_cast<RGWAccessControlPolicy_SWIFTAcct&>(*s->user_acl));
+            s->user_acl);
     dump_errno(s);
     dump_header(s, "Accept-Ranges", "bytes");
     end_header(s, NULL, NULL, NO_CONTENT_LENGTH, true);
@@ -287,7 +390,7 @@ void RGWListBuckets_ObjStore_SWIFT::send_response_end()
             s->user->get_attrs(),
             s->user->get_info().quota.user_quota,
             s->user->get_max_buckets(),
-            static_cast<RGWAccessControlPolicy_SWIFTAcct&>(*s->user_acl));
+            s->user_acl);
     dump_errno(s);
     end_header(s, nullptr, nullptr, s->formatter->get_len(), true);
   }
@@ -470,10 +573,8 @@ static void dump_container_metadata(req_state *s,
   }
 
   if (rgw::sal::Object::empty(s->object.get())) {
-    auto swift_policy = \
-      static_cast<RGWAccessControlPolicy_SWIFT*>(s->bucket_acl.get());
     std::string read_acl, write_acl;
-    swift_policy->to_str(read_acl, write_acl);
+    rgw::swift::format_container_acls(s->bucket_acl, read_acl, write_acl);
 
     if (read_acl.size()) {
       dump_header(s, "X-Container-Read", read_acl);
@@ -567,7 +668,7 @@ void RGWStatAccount_ObjStore_SWIFT::send_response()
             attrs,
             s->user->get_info().quota.user_quota,
             s->user->get_max_buckets(),
-            static_cast<RGWAccessControlPolicy_SWIFTAcct&>(*s->user_acl));
+            s->user_acl);
   }
 
   set_req_state_err(s, op_ret);
@@ -595,7 +696,7 @@ void RGWStatBucket_ObjStore_SWIFT::send_response()
 
 static int get_swift_container_settings(req_state * const s,
                                         rgw::sal::Driver*  const driver,
-                                        RGWAccessControlPolicy * const policy,
+                                        RGWAccessControlPolicy& policy,
                                         bool * const has_policy,
                                         uint32_t * rw_mask,
                                         RGWCORSConfiguration * const cors_config,
@@ -607,18 +708,17 @@ static int get_swift_container_settings(req_state * const s,
   *has_policy = false;
 
   if (read_list || write_list) {
-    RGWAccessControlPolicy_SWIFT swift_policy(s->cct);
-    const auto r = swift_policy.create(s, driver,
-                                       s->user->get_id(),
-                                       s->user->get_display_name(),
-                                       read_list,
-                                       write_list,
-                                       *rw_mask);
+    int r = rgw::swift::create_container_policy(s, driver,
+                                                s->user->get_id(),
+                                                s->user->get_display_name(),
+                                                read_list,
+                                                write_list,
+                                                *rw_mask,
+                                                policy);
     if (r < 0) {
       return r;
     }
 
-    *policy = swift_policy;
     *has_policy = true;
   }
 
@@ -716,7 +816,7 @@ int RGWCreateBucket_ObjStore_SWIFT::get_params(optional_yield y)
   bool has_policy;
   uint32_t policy_rw_mask = 0;
 
-  int r = get_swift_container_settings(s, driver, &policy, &has_policy,
+  int r = get_swift_container_settings(s, driver, policy, &has_policy,
 				       &policy_rw_mask, &cors_config, &has_cors);
   if (r < 0) {
     return r;
@@ -1060,23 +1160,21 @@ void RGWPutObj_ObjStore_SWIFT::send_response()
 
 static int get_swift_account_settings(req_state * const s,
                                       rgw::sal::Driver*  const driver,
-                                      RGWAccessControlPolicy_SWIFTAcct*  const policy,
+                                      RGWAccessControlPolicy& policy,
                                       bool * const has_policy)
 {
   *has_policy = false;
 
   const char * const acl_attr = s->info.env->get("HTTP_X_ACCOUNT_ACCESS_CONTROL");
   if (acl_attr) {
-    RGWAccessControlPolicy_SWIFTAcct swift_acct_policy(s->cct);
-    const bool r = swift_acct_policy.create(s, driver,
-                                     s->user->get_id(),
-                                     s->user->get_display_name(),
-                                     string(acl_attr));
-    if (r != true) {
-      return -EINVAL;
+    int r = rgw::swift::create_account_policy(s, driver,
+                                              s->user->get_id(),
+                                              s->user->get_display_name(),
+                                              acl_attr, policy);
+    if (r < 0) {
+      return r;
     }
 
-    *policy = swift_acct_policy;
     *has_policy = true;
   }
 
@@ -1089,12 +1187,7 @@ int RGWPutMetadataAccount_ObjStore_SWIFT::get_params(optional_yield y)
     return -EINVAL;
   }
 
-  int ret = get_swift_account_settings(s,
-                                       driver,
-                                       // FIXME: we need to carry unique_ptr in generic class
-                                       // and allocate appropriate ACL class in the ctor
-                                       static_cast<RGWAccessControlPolicy_SWIFTAcct *>(&policy),
-                                       &has_policy);
+  int ret = get_swift_account_settings(s, driver, policy, &has_policy);
   if (ret < 0) {
     return ret;
   }
@@ -1127,7 +1220,7 @@ int RGWPutMetadataBucket_ObjStore_SWIFT::get_params(optional_yield y)
     return -EINVAL;
   }
 
-  int r = get_swift_container_settings(s, driver, &policy, &has_policy,
+  int r = get_swift_container_settings(s, driver, policy, &has_policy,
 				       &policy_rw_mask, &cors_config, &has_cors);
   if (r < 0) {
     return r;
@@ -2044,6 +2137,7 @@ bool RGWFormPost::is_non_expired()
 bool RGWFormPost::is_integral()
 {
   const std::string form_signature = get_part_str(ctrl_parts, "signature");
+  bool r = false;
 
   try {
     get_owner_info(s, s->user->get_info());
@@ -2061,28 +2155,31 @@ bool RGWFormPost::is_integral()
       continue;
     }
 
-    SignatureHelper sig_helper;
-    sig_helper.calc(temp_url_key,
+    auto sig_helper{ RGWFormPost::SignatureHelper::get_sig_helper(form_signature) };
+    sig_helper->calc(temp_url_key,
                     s->info.request_uri,
                     get_part_str(ctrl_parts, "redirect"),
                     get_part_str(ctrl_parts, "max_file_size", "0"),
                     get_part_str(ctrl_parts, "max_file_count", "0"),
                     get_part_str(ctrl_parts, "expires", "0"));
 
-    const auto local_sig = sig_helper.get_signature();
+    const char* local_sig = sig_helper->get_signature();
+    if (!local_sig) local_sig = "???";
 
     ldpp_dout(this, 20) << "FormPost signature [" << temp_url_key_num << "]"
                       << " (calculated): " << local_sig << dendl;
 
-    if (sig_helper.is_equal_to(form_signature)) {
-      return true;
-    } else {
+    r = sig_helper->is_equal_to(form_signature);
+    if (!r) {
       ldpp_dout(this, 5) << "FormPost's signature mismatch: "
                        << local_sig << " != " << form_signature << dendl;
     }
+    if (r) {
+      break;
+    }
   }
 
-  return false;
+  return r;
 }
 
 void RGWFormPost::get_owner_info(const req_state* const s,

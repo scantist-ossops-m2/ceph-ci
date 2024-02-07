@@ -354,7 +354,7 @@ namespace rgw::sal {
     Attrs attrs = get_attrs();
     attrs[RGW_ATTR_ACL] = aclbl;
 
-    ret = store->getDB()->update_bucket(dpp, "attrs", info, false, &(acl.get_owner().get_id()), &attrs, nullptr, nullptr);
+    ret = store->getDB()->update_bucket(dpp, "attrs", info, false, &acl.get_owner().id, &attrs, nullptr, nullptr);
 
     return ret;
   }
@@ -618,7 +618,8 @@ namespace rgw::sal {
       const real_time& mtime,
       uint64_t olh_epoch,
       const DoutPrefixProvider* dpp,
-      optional_yield y)
+      optional_yield y,
+      uint32_t flags)
   {
     DB::Object op_target(store->getDB(),
         get_bucket()->get_info(), get_obj());
@@ -699,9 +700,9 @@ namespace rgw::sal {
     parent_op(&op_target)
   { }
 
-  int DBObject::DBDeleteOp::delete_obj(const DoutPrefixProvider* dpp, optional_yield y)
+  int DBObject::DBDeleteOp::delete_obj(const DoutPrefixProvider* dpp, optional_yield y, uint32_t flags)
   {
-    parent_op.params.bucket_owner = params.bucket_owner.get_id();
+    parent_op.params.bucket_owner = params.bucket_owner.id;
     parent_op.params.versioning_status = params.versioning_status;
     parent_op.params.obj_owner = params.obj_owner;
     parent_op.params.olh_epoch = params.olh_epoch;
@@ -726,7 +727,7 @@ namespace rgw::sal {
     return ret;
   }
 
-  int DBObject::delete_object(const DoutPrefixProvider* dpp, optional_yield y, bool prevent_versioning)
+  int DBObject::delete_object(const DoutPrefixProvider* dpp, optional_yield y, uint32_t flags)
   {
     DB::Object del_target(store->getDB(), bucket->get_info(), get_obj());
     DB::Object::Delete del_op(&del_target);
@@ -793,13 +794,13 @@ namespace rgw::sal {
     int ret;
 
     std::unique_ptr<rgw::sal::Object::DeleteOp> del_op = meta_obj->get_delete_op();
-    del_op->params.bucket_owner = bucket->get_info().owner;
+    del_op->params.bucket_owner.id = bucket->get_info().owner;
     del_op->params.versioning_status = 0;
 
     // Since the data objects are associated with meta obj till
     // MultipartUpload::Complete() is done, removing the metadata obj
     // should remove all the uploads so far.
-    ret = del_op->delete_obj(dpp, null_yield);
+    ret = del_op->delete_obj(dpp, null_yield, 0);
     if (ret < 0) {
       ldpp_dout(dpp, 20) << __func__ << ": del_op.delete_obj returned " <<
         ret << dendl;
@@ -833,7 +834,7 @@ namespace rgw::sal {
     DB::Object::Write obj_op(&op_target);
 
     /* Create meta object */
-    obj_op.meta.owner = owner.get_id();
+    obj_op.meta.owner = owner.id;
     obj_op.meta.category = RGWObjCategory::MultiMeta;
     obj_op.meta.flags = PUT_OBJ_CREATE_EXCL;
     obj_op.meta.mtime = &mtime;
@@ -932,7 +933,7 @@ namespace rgw::sal {
     int marker = 0;
     uint64_t min_part_size = cct->_conf->rgw_multipart_min_part_size;
     auto etags_iter = part_etags.begin();
-    rgw::sal::Attrs attrs = target_obj->get_attrs();
+    rgw::sal::Attrs& attrs = target_obj->get_attrs();
 
     ofs = 0;
     accounted_size = 0;
@@ -1012,7 +1013,7 @@ namespace rgw::sal {
     DB::Object::Write obj_op(&op_target);
     ret = obj_op.prepare(dpp);
 
-    obj_op.meta.owner = owner.get_id();
+    obj_op.meta.owner = owner.id;
     obj_op.meta.flags = PUT_OBJ_CREATE;
     obj_op.meta.category = RGWObjCategory::Main;
     obj_op.meta.modify_tail = true;
@@ -1226,7 +1227,8 @@ namespace rgw::sal {
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
                        rgw_zone_set *zones_trace, bool *canceled,
-                       const req_context& rctx)
+                       const req_context& rctx,
+                       uint32_t flags)
   {
     /* XXX: same as AtomicWriter..consolidate code */
     parent_op.meta.mtime = mtime;
@@ -1380,7 +1382,8 @@ namespace rgw::sal {
                          const char *if_match, const char *if_nomatch,
                          const std::string *user_data,
                          rgw_zone_set *zones_trace, bool *canceled,
-                         const req_context& rctx)
+                         const req_context& rctx,
+                         uint32_t flags)
   {
     parent_op.meta.mtime = mtime;
     parent_op.meta.delete_at = delete_at;

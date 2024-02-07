@@ -3,6 +3,7 @@
 import enum
 import os
 import posixpath
+import shlex
 import zipimport
 
 from typing import Any, Optional, IO, Tuple, Callable, cast
@@ -21,6 +22,13 @@ class Templates(str, enum.Enum):
 
     ceph_service = 'ceph.service.j2'
     agent_service = 'agent.service.j2'
+    dropin_service = 'dropin.service.j2'
+    init_ctr_service = 'init_ctr.service.j2'
+    sidecar_service = 'sidecar.service.j2'
+    cluster_logrotate_config = 'cluster.logrotate.config.j2'
+    cephadm_logrotate_config = 'cephadm.logrotate.config.j2'
+    sidecar_run = 'sidecar.run.j2'
+    init_ctr_run = 'init_containers.run.j2'
 
     def __str__(self) -> str:
         return self.value
@@ -34,27 +42,18 @@ class TemplateNotFoundInZipApp(jinja2.TemplateNotFound):
         self,
         template: str,
         *,
-        path: str = '',
         relative_path: str = '',
-        archive_norm_path: str = '',
-        archive_path: str = ''
+        archive_path: str = '',
     ) -> None:
         super().__init__(template)
-        self.path = path
         self.relative_path = relative_path
-        self.archive_norm_path = archive_norm_path
         self.archive_path = archive_path
 
     def __str__(self) -> str:
-        msg = self.message
-        msg2 = ''
-        if self.path or self.relative_path:
-            msg2 += f' path [{self.path!r}, rel={self.relative_path!r}] not found'
-        if self.archive_norm_path or self.archive_path:
-            msg2 += f' in [{self.archive_norm_path!r}, orig={self.archive_path!r}]'
-        if msg2:
-            msg2 = ':' + msg2
-        return f'{msg}{msg2}'
+        return (
+            f'{self.message}: path {self.relative_path!r}'
+            f' not found in {self.archive_path!r}'
+        )
 
 
 class _PackageLoader(jinja2.PackageLoader):
@@ -86,27 +85,23 @@ class _PackageLoader(jinja2.PackageLoader):
 
     def _get_archive_source(self, template: str) -> Tuple[str, str, None]:
         assert isinstance(self._loader, zipimport.zipimporter)
-        path = arelpath = os.path.normpath(
-            posixpath.join(
-                self._template_root,
-                *jinja2.loaders.split_template_path(template)
-            )
+        arelpath = posixpath.join(
+            self.package_name, self.package_path, template
         )
-        archive_path = os.path.normpath(self._loader.archive)
-        if arelpath.startswith(archive_path + '/'):
-            plen = len(archive_path) + 1
-            arelpath = arelpath[plen:]
+        if any(p == '.' or p == '..' for p in arelpath.split(posixpath.sep)):
+            raise ValueError('template path contains invalid components')
         try:
             source = cast(bytes, self._loader.get_data(arelpath))
         except OSError as e:
             not_found = TemplateNotFoundInZipApp(
                 template,
-                path=path,
                 relative_path=arelpath,
-                archive_norm_path=archive_path,
                 archive_path=self._loader.archive,
             )
             raise not_found from e
+        path = os.path.normpath(
+            posixpath.join(self._loader.archive, arelpath)
+        )
         return source.decode(self.encoding), path, None
 
 
@@ -124,6 +119,7 @@ class Templater:
     def _env(self) -> jinja2.Environment:
         if self._jinja2_env is None:
             self._jinja2_env = jinja2.Environment(loader=self._loader)
+            self._jinja2_env.filters['shellquote'] = shlex.quote
         return self._jinja2_env
 
     @property

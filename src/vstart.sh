@@ -168,12 +168,14 @@ fi
 ceph_osd=ceph-osd
 rgw_frontend="beast"
 rgw_compression=""
+rgw_store="rados"
 lockdep=${LOCKDEP:-1}
 spdk_enabled=0 # disable SPDK by default
 pmem_enabled=0
 zoned_enabled=0
 io_uring_enabled=0
 with_jaeger=0
+force_addr=0
 
 with_mgr_dashboard=true
 if [[ "$(get_cmake_variable WITH_MGR_DASHBOARD_FRONTEND)" != "ON" ]] ||
@@ -204,7 +206,7 @@ inc_osd_num=0
 msgr="21"
 
 read -r -d '' usage <<EOF || true
-usage: $0 [option]... \nex: MON=3 OSD=1 MDS=1 MGR=1 RGW=1 NFS=1 $0 -n -d
+usage: $0 [option]... \nex: MON=3 OSD=1 MDS=1 MGR=1 RGW=1 NFS=1 NVMEOF_GW=ceph:5500 $0 -n -d
 options:
 	-d, --debug
 	-t, --trace
@@ -229,6 +231,7 @@ options:
 	--rgw_frontend specify the rgw frontend configuration
 	--rgw_arrow_flight start arrow flight frontend
 	--rgw_compression specify the rgw compression plugin
+	--rgw_store storage backend: rados|dbstore|posix
 	--seastore use seastore as crimson osd backend
 	-b, --bluestore use bluestore as the osd objectstore backend (default)
 	-K, --kstore use kstore as the osd objectstore backend
@@ -344,6 +347,7 @@ case $1 in
         ;;
     -l | --localhost)
         ip="127.0.0.1"
+        force_addr=1
         ;;
     -i)
         [ -z "$2" ] && usage_exit
@@ -459,6 +463,10 @@ case $1 in
         ;;
     --rgw_compression)
         rgw_compression=$2
+        shift
+        ;;
+    --rgw_store)
+        rgw_store=$2
         shift
         ;;
     --kstore_path)
@@ -692,6 +700,22 @@ done
 
 }
 
+do_rgw_dbstore_conf() {
+    if [ $CEPH_NUM_RGW -gt 1 ]; then
+        echo "dbstore is not distributed so only works with CEPH_NUM_RGW=1"
+        exit 1
+    fi
+
+    prun mkdir -p "$CEPH_DEV_DIR/rgw/dbstore"
+    wconf <<EOF
+        rgw backend store = dbstore
+        rgw config store = dbstore
+        dbstore db dir = $CEPH_DEV_DIR/rgw/dbstore
+        dbstore_config_uri = file://$CEPH_DEV_DIR/rgw/dbstore/config.db
+
+EOF
+}
+
 format_conf() {
     local opts=$1
     local indent="        "
@@ -736,6 +760,12 @@ prepare_conf() {
     if [ $msgr -eq 1 ]; then
         msgr_conf="ms bind msgr2 = false
                    ms bind msgr1 = true"
+    fi
+    if [ $force_addr -eq 1 ]; then
+        msgr_conf+="
+                   public bind addr = $IP
+                   public addr = $IP
+                   cluster addr = $IP"
     fi
 
     wconf <<EOF
@@ -861,6 +891,20 @@ $CCLIENTDEBUG
         ; rgw lc debug interval = 10
         $(format_conf "${extra_conf}")
 EOF
+    if [ "$rgw_store" == "dbstore" ] ; then
+        do_rgw_dbstore_conf
+    elif [ "$rgw_store" == "posix" ] ; then
+        # use dbstore as the backend and posix as the filter
+        do_rgw_dbstore_conf
+        posix_dir="$CEPH_DEV_DIR/rgw/posix"
+        prun mkdir -p $posix_dir/root $posix_dir/lmdb
+        wconf <<EOF
+        rgw filter = posix
+        rgw posix base path = $posix_dir/root
+        rgw posix database root = $posix_dir/lmdb
+
+EOF
+    fi
 	do_rgw_conf
 	wconf << EOF
 [mds]
@@ -915,6 +959,26 @@ EOF
         osd pool default crimson = true
 EOF
     fi
+
+    # this is most probably a bug in ceph_mon
+    # but public_bind_addr set in [global] doesn't work
+    # when mon_host is also provided, resulting
+    # in different public and bind addresses (ports)
+    # As a result, no client can connect to the mon.
+    # The problematic code is in ceph_mon.cc, it looks like
+    #
+    #   // check if the public_bind_addr option is set
+    #  if (!g_conf()->public_bind_addr.is_blank_ip()) {
+    #    bind_addrs = make_mon_addrs(g_conf()->public_bind_addr);
+    #  }
+    #
+    if [ $force_addr -eq 1 ]; then
+        wconf <<EOF
+        ; this is to counter the explicit public_bind_addr in the [global] section
+        ; see src/vstart.sh for more info
+        public bind addr =
+EOF
+    fi   
 }
 
 write_logrotate_conf() {
@@ -1237,6 +1301,14 @@ EOF
                 if ! ceph_adm dashboard create-self-signed-cert;  then
                     debug echo dashboard module not working correctly!
                 fi
+            fi
+
+            ceph_adm osd pool create rbd
+            ceph_adm osd pool application enable rbd rbd
+
+            if [ -n "${NVMEOF_GW}" ]; then
+                echo "Adding nvmeof-gateway ${NVMEOF_GW} to dashboard"
+                ceph_adm dashboard nvmeof-gateway-add -i <(echo "${NVMEOF_GW}") "${NVMEOF_GW/:/_}"
             fi
         fi
         if $with_mgr_restful; then
@@ -1587,7 +1659,7 @@ EOF
     fi
     if [ "$cephadm" -gt 0 ]; then
         debug echo Setting mon public_network ...
-        public_network=$(ip route list | grep -w "$IP" | grep -v default | awk '{print $1}')
+        public_network=$(ip route list | grep -w "$IP" | grep -v default | grep -E "/[0-9]+" | awk '{print $1}')
         ceph_adm config set mon public_network $public_network
     fi
 fi
@@ -1785,11 +1857,13 @@ do_rgw()
     for n in $(seq 1 $CEPH_NUM_RGW); do
         rgw_name="client.rgw.${current_port}"
 
-        ceph_adm auth get-or-create $rgw_name \
-            mon 'allow rw' \
-            osd 'allow rwx' \
-            mgr 'allow rw' \
-            >> "$keyring_fn"
+        if [ "$CEPH_NUM_MON" -gt 0 ]; then
+            ceph_adm auth get-or-create $rgw_name \
+                mon 'allow rw' \
+                osd 'allow rwx' \
+                mgr 'allow rw' \
+                >> "$keyring_fn"
+        fi
 
         debug echo start rgw on http${CEPH_RGW_HTTPS}://localhost:${current_port}
         run 'rgw' $current_port $RGWSUDO $CEPH_BIN/radosgw -c $conf_fn \

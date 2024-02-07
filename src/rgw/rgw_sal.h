@@ -191,6 +191,9 @@ enum AttrsMod {
   ATTRSMOD_MERGE   = 2
 };
 
+static constexpr uint32_t FLAG_LOG_OP = 0x0001;
+static constexpr uint32_t FLAG_PREVENT_VERSIONING = 0x0002;
+
 // a simple streaming data processing abstraction
 /**
  * @brief A simple streaming data processing abstraction
@@ -224,7 +227,8 @@ class ObjectProcessor : public DataProcessor {
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
                        rgw_zone_set *zones_trace, bool *canceled,
-                       const req_context& rctx) = 0;
+                       const req_context& rctx,
+                       uint32_t flags) = 0;
 };
 
 /** A list of key-value attributes */
@@ -887,7 +891,7 @@ class Object {
       virtual ~DeleteOp() = default;
 
       /** Delete the object */
-      virtual int delete_obj(const DoutPrefixProvider* dpp, optional_yield y) = 0;
+      virtual int delete_obj(const DoutPrefixProvider* dpp, optional_yield y, uint32_t flags) = 0;
     };
 
     Object() {}
@@ -896,7 +900,7 @@ class Object {
     /** Shortcut synchronous delete call for common deletes */
     virtual int delete_object(const DoutPrefixProvider* dpp,
 			      optional_yield y,
-			      bool prevent_versioning = false) = 0;
+			      uint32_t flags) = 0;
     /** Copy an this object to another object. */
     virtual int copy_object(User* user,
                req_info* info, const rgw_zone_id& source_zone,
@@ -964,7 +968,8 @@ class Object {
 			   const real_time& mtime,
 			   uint64_t olh_epoch,
 			   const DoutPrefixProvider* dpp,
-			   optional_yield y) = 0;
+			   optional_yield y,
+                           uint32_t flags) = 0;
     /** Move an object to the cloud */
     virtual int transition_to_cloud(Bucket* bucket,
 			   rgw::sal::PlacementTier* tier,
@@ -1372,7 +1377,8 @@ public:
                        const char *if_match, const char *if_nomatch,
                        const std::string *user_data,
                        rgw_zone_set *zones_trace, bool *canceled,
-                       const req_context& rctx) = 0;
+                       const req_context& rctx,
+                       uint32_t flags) = 0;
 };
 
 
@@ -1530,6 +1536,8 @@ public:
   static rgw::sal::Driver* get_storage(const DoutPrefixProvider* dpp,
 				      CephContext* cct,
 				      const Config& cfg,
+				      boost::asio::io_context& io_context,
+				      const rgw::SiteConfig& site_config,
 				      bool use_gc_thread,
 				      bool use_lc_thread,
 				      bool quota_threads,
@@ -1538,7 +1546,9 @@ public:
 				      bool run_notification_thread, optional_yield y,
 				      bool use_cache = true,
 				      bool use_gc = true) {
-    rgw::sal::Driver* driver = init_storage_provider(dpp, cct, cfg, use_gc_thread,
+    rgw::sal::Driver* driver = init_storage_provider(dpp, cct, cfg, io_context,
+						   site_config,
+						   use_gc_thread,
 						   use_lc_thread,
 						   quota_threads,
 						   run_sync_thread,
@@ -1549,14 +1559,20 @@ public:
   }
   /** Get a stripped down driver by service name */
   static rgw::sal::Driver* get_raw_storage(const DoutPrefixProvider* dpp,
-					  CephContext* cct, const Config& cfg) {
-    rgw::sal::Driver* driver = init_raw_storage_provider(dpp, cct, cfg);
+					  CephContext* cct, const Config& cfg,
+					  boost::asio::io_context& io_context,
+					  const rgw::SiteConfig& site_config) {
+    rgw::sal::Driver* driver = init_raw_storage_provider(dpp, cct, cfg,
+							 io_context,
+							 site_config);
     return driver;
   }
   /** Initialize a new full Driver */
   static rgw::sal::Driver* init_storage_provider(const DoutPrefixProvider* dpp,
 						CephContext* cct,
 						const Config& cfg,
+						boost::asio::io_context& io_context,
+						const rgw::SiteConfig& site_config,
 						bool use_gc_thread,
 						bool use_lc_thread,
 						bool quota_threads,
@@ -1568,7 +1584,9 @@ public:
   /** Initialize a new raw Driver */
   static rgw::sal::Driver* init_raw_storage_provider(const DoutPrefixProvider* dpp,
 						    CephContext* cct,
-						    const Config& cfg);
+						    const Config& cfg,
+						    boost::asio::io_context& io_context,
+						    const rgw::SiteConfig& site_config);
   /** Close a Driver when it's no longer needed */
   static void close_storage(rgw::sal::Driver* driver);
 

@@ -379,6 +379,17 @@ export class TaskMessageService {
     ),
     'cephfs/subvolume/group/remove': this.newTaskMessage(this.commonOperations.remove, (metadata) =>
       this.subvolumegroup(metadata)
+    ),
+    'cephfs/subvolume/snapshot/create': this.newTaskMessage(
+      this.commonOperations.create,
+      (metadata) => this.snapshot(metadata)
+    ),
+    'cephfs/subvolume/snapshot/delete': this.newTaskMessage(
+      this.commonOperations.delete,
+      (metadata) => this.snapshot(metadata)
+    ),
+    'cephfs/snapshot/schedule/create': this.newTaskMessage(this.commonOperations.add, (metadata) =>
+      this.snapshotSchedule(metadata)
     )
   };
 
@@ -447,6 +458,13 @@ export class TaskMessageService {
     return $localize`subvolume group '${metadata.subvolumegroupName}'`;
   }
 
+  snapshot(metadata: any) {
+    return $localize`snapshot '${metadata.snapshotName}'`;
+  }
+
+  snapshotSchedule(metadata: any) {
+    return $localize`snapshot schedule for path '${metadata?.path}'`;
+  }
   crudMessageId(id: string) {
     return $localize`${id}`;
   }

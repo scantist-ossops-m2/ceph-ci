@@ -41,6 +41,9 @@
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_rgw
 
+constexpr int32_t hours_in_a_day = 24;
+constexpr int32_t secs_in_a_day = hours_in_a_day * 60 * 60;
+
 using namespace std;
 
 const char* LC_STATUS[] = {
@@ -289,7 +292,7 @@ static bool obj_has_expired(const DoutPrefixProvider *dpp, CephContext *cct, cep
   utime_t base_time;
   if (cct->_conf->rgw_lc_debug_interval <= 0) {
     /* Normal case, run properly */
-    cmp = double(days)*24*60*60;
+    cmp = double(days) * secs_in_a_day;
     base_time = ceph_clock_now().round_to_day();
   } else {
     /* We're in debug mode; Treat each rgw_lc_debug_interval seconds as a day */
@@ -509,6 +512,28 @@ struct lc_op_ctx {
 static std::string lc_id = "rgw lifecycle";
 static std::string lc_req_id = "0";
 
+/* do all zones in the zone group process LC? */
+static bool zonegroup_lc_check(const DoutPrefixProvider *dpp, rgw::sal::Zone* zone)
+{
+  auto& zonegroup = zone->get_zonegroup();
+  std::list<std::string> ids;
+  int ret = zonegroup.list_zones(ids);
+  if (ret < 0) {
+    return false;
+  }
+
+  return std::all_of(ids.begin(), ids.end(), [&](const auto& id) {
+    std::unique_ptr<rgw::sal::Zone> zone;
+    ret = zonegroup.get_zone_by_id(id, &zone);
+    if (ret < 0) {
+      return false;
+    }
+    const auto& tier_type = zone->get_tier_type();
+    ldpp_dout(dpp, 20) << "checking zone tier_type=" << tier_type << dendl;
+    return (tier_type == "rgw" || tier_type == "archive" || tier_type == "");
+  });
+}
+
 static int remove_expired_obj(
   const DoutPrefixProvider *dpp, lc_op_ctx& oc, bool remove_indeed,
   rgw::notify::EventType event_type)
@@ -519,11 +544,8 @@ static int remove_expired_obj(
   auto obj_key = o.key;
   auto& meta = o.meta;
   int ret;
-  auto& version_id = obj_key.instance;
+  auto version_id = obj_key.instance; // deep copy, so not cleared below
   std::unique_ptr<rgw::sal::Notification> notify;
-
-  std::unique_ptr<rgw::sal::User> user;
-  user = driver->get_user(bucket_info.owner);
 
   /* per discussion w/Daniel, Casey,and Eric, we *do need*
    * a new sal object handle, based on the following decision
@@ -546,13 +568,13 @@ static int remove_expired_obj(
     = obj->get_delete_op();
   del_op->params.versioning_status
     = obj->get_bucket()->get_info().versioning_status();
-  del_op->params.obj_owner.set_id(rgw_user {meta.owner});
-  del_op->params.obj_owner.set_name(meta.owner_display_name);
-  del_op->params.bucket_owner.set_id(bucket_info.owner);
+  del_op->params.obj_owner.id = rgw_user{meta.owner};
+  del_op->params.obj_owner.display_name = meta.owner_display_name;
+  del_op->params.bucket_owner.id = bucket_info.owner;
   del_op->params.unmod_since = meta.mtime;
 
   // notification supported only for RADOS driver for now
-  notify = driver->get_notification(dpp, oc.obj.get(), nullptr, event_type,
+  notify = driver->get_notification(dpp, obj.get(), nullptr, event_type,
 				   oc.bucket, lc_id,
 				   const_cast<std::string&>(oc.bucket->get_tenant()),
 				   lc_req_id, null_yield);
@@ -565,19 +587,21 @@ static int remove_expired_obj(
       << dendl;
     return ret;
   }
-  ret =  del_op->delete_obj(dpp, null_yield);
+
+  uint32_t flags = (!remove_indeed || !zonegroup_lc_check(dpp, oc.driver->get_zone()))
+                   ? rgw::sal::FLAG_LOG_OP : 0;
+  ret =  del_op->delete_obj(dpp, null_yield, flags);
   if (ret < 0) {
     ldpp_dout(dpp, 1) <<
       fmt::format("ERROR: {} failed, with error: {}", __func__, ret) << dendl;
   } else {
     // send request to notification manager
-    ret = notify->publish_commit(dpp, obj_state->size,
+    int publish_ret = notify->publish_commit(dpp, obj_state->size,
 				 ceph::real_clock::now(),
 				 obj_state->attrset[RGW_ATTR_ETAG].to_str(),
 				 version_id);
-    if (ret < 0) {
-      ldpp_dout(dpp, 1) << "ERROR: notify publish_commit failed, with error: "
-												<< ret << dendl;
+    if (publish_ret < 0) {
+      ldpp_dout(dpp, 5) << "WARNING: notify publish_commit failed, with error: " << publish_ret << dendl;
     }
   }
 
@@ -832,18 +856,25 @@ int RGWLC::handle_multipart_expiration(rgw::sal::Bucket* target,
     int ret{0};
     auto wt = boost::get<std::tuple<lc_op, rgw_bucket_dir_entry>>(wi);
     auto& [rule, obj] = wt;
+
     if (obj_has_expired(this, cct, obj.meta.mtime, rule.mp_expiration)) {
       rgw_obj_key key(obj.key);
-      std::unique_ptr<rgw::sal::MultipartUpload> mpu = target->get_multipart_upload(key.name);
-      std::unique_ptr<rgw::sal::Object> sal_obj
-	= target->get_object(key);
+      auto mpu = target->get_multipart_upload(key.name);
+      auto sal_obj = target->get_object(key);
+
+      RGWObjState* obj_state{nullptr};
+      ret = sal_obj->get_obj_state(this, &obj_state, null_yield, true);
+      if (ret < 0) {
+	return ret;
+      }
+
       std::unique_ptr<rgw::sal::Notification> notify
 	= driver->get_notification(
 	  this, sal_obj.get(), nullptr, event_type,
 	  target, lc_id,
 	  const_cast<std::string&>(target->get_tenant()),
 	  lc_req_id, null_yield);
-			auto& version_id = obj.key.instance;
+      auto version_id = obj.key.instance;
 
       ret = notify->publish_reserve(this, nullptr);
       if (ret < 0) {
@@ -857,13 +888,14 @@ int RGWLC::handle_multipart_expiration(rgw::sal::Bucket* target,
 
       ret = mpu->abort(this, cct, null_yield);
       if (ret == 0) {
-        ret = notify->publish_commit(
-            this, sal_obj->get_obj_size(), ceph::real_clock::now(),
-            sal_obj->get_attrs()[RGW_ATTR_ETAG].to_str(),
-						version_id);
-        if (ret < 0) {
-          ldpp_dout(wk->get_lc(), 1)
-              << "ERROR: notify publish_commit failed, with error: " << ret
+        int publish_ret = notify->publish_commit(
+            this, obj_state->size,
+	    ceph::real_clock::now(),
+            obj_state->attrset[RGW_ATTR_ETAG].to_str(),
+	    version_id);
+        if (publish_ret < 0) {
+          ldpp_dout(wk->get_lc(), 5)
+              << "WARNING: notify publish_commit failed, with error: " << ret
               << dendl;
         }
         if (perfcounter) {
@@ -1330,9 +1362,13 @@ public:
 
     /* notifications */
     auto& bucket = oc.bucket;
-    std::string version_id;
-
     auto& obj = oc.obj;
+
+    RGWObjState* obj_state{nullptr};
+    ret = obj->get_obj_state(oc.dpp, &obj_state, null_yield, true);
+    if (ret < 0) {
+      return ret;
+    }
 
     const auto event_type = (bucket->versioned() &&
 			     oc.o.is_current() && !oc.o.is_delete_marker()) ?
@@ -1345,6 +1381,7 @@ public:
 	bucket, lc_id,
 	const_cast<std::string&>(oc.bucket->get_tenant()),
 	lc_req_id, null_yield);
+    auto version_id = oc.o.key.instance;
 
     ret = notify->publish_reserve(oc.dpp, nullptr);
     if (ret < 0) {
@@ -1363,13 +1400,13 @@ public:
       return ret;
     } else {
       // send request to notification manager
-      ret =  notify->publish_commit(oc.dpp, obj->get_obj_size(),
+      int publish_ret =  notify->publish_commit(oc.dpp, obj_state->size,
 				    ceph::real_clock::now(),
-				    obj->get_attrs()[RGW_ATTR_ETAG].to_str(),
+				    obj_state->attrset[RGW_ATTR_ETAG].to_str(),
 				    version_id);
-      if (ret < 0) {
-	ldpp_dout(oc.dpp, 1) <<
-	  "ERROR: notify publish_commit failed, with error: " << ret << dendl;
+      if (publish_ret < 0) {
+	ldpp_dout(oc.dpp, 5) <<
+	  "WARNING: notify publish_commit failed, with error: " << publish_ret << dendl;
       }
     }
 
@@ -1428,8 +1465,10 @@ public:
         return -EINVAL;
       }
 
+      uint32_t flags = !zonegroup_lc_check(oc.dpp, oc.driver->get_zone())
+                       ? rgw::sal::FLAG_LOG_OP : 0;
       int r = oc.obj->transition(oc.bucket, target_placement, o.meta.mtime,
-	  		         o.versioned_epoch, oc.dpp, null_yield);
+                                 o.versioned_epoch, oc.dpp, null_yield, flags);
       if (r < 0) {
         ldpp_dout(oc.dpp, 0) << "ERROR: failed to transition obj " 
 			     << oc.bucket << ":" << o.key 
@@ -1943,8 +1982,7 @@ bool RGWLC::expired_session(time_t started)
   }
 
   time_t interval = (cct->_conf->rgw_lc_debug_interval > 0)
-    ? cct->_conf->rgw_lc_debug_interval
-    : 24*60*60;
+    ? cct->_conf->rgw_lc_debug_interval : secs_in_a_day;
 
   auto now = time(nullptr);
 
@@ -1960,8 +1998,7 @@ bool RGWLC::expired_session(time_t started)
 time_t RGWLC::thread_stop_at()
 {
   uint64_t interval = (cct->_conf->rgw_lc_debug_interval > 0)
-    ? cct->_conf->rgw_lc_debug_interval
-    : 24*60*60;
+    ? cct->_conf->rgw_lc_debug_interval : secs_in_a_day;
 
   return time(nullptr) + interval;
 }
@@ -2052,7 +2089,7 @@ static inline bool allow_shard_rollover(CephContext* cct, time_t now, time_t sha
    *    - the current shard has not rolled over in the last 24 hours
    */
   if (((shard_rollover_date < now) &&
-       (now - shard_rollover_date > 24*60*60)) ||
+       (now - shard_rollover_date > secs_in_a_day)) ||
       (! shard_rollover_date /* no rollover date stored */) ||
       (cct->_conf->rgw_lc_debug_interval > 0 /* defaults to -1 == disabled */)) {
     return true;
@@ -2078,7 +2115,7 @@ static inline bool already_run_today(CephContext* cct, time_t start_date)
   bdt.tm_min = 0;
   bdt.tm_sec = 0;
   begin_of_day = mktime(&bdt);
-  if (now - begin_of_day < 24*60*60)
+  if (now - begin_of_day < secs_in_a_day)
     return true;
   else
     return false;
@@ -2424,6 +2461,12 @@ bool RGWLC::LCWorker::should_work(utime_t& now)
   time_t tt = now.sec();
   localtime_r(&tt, &bdt);
 
+  // next-day adjustment if the configured end_hour is less than start_hour
+  if (end_hour < start_hour) {
+    bdt.tm_hour = bdt.tm_hour > end_hour ? bdt.tm_hour : bdt.tm_hour + hours_in_a_day;
+    end_hour += hours_in_a_day;
+  }
+
   if (cct->_conf->rgw_lc_debug_interval > 0) {
 	  /* We're debugging, so say we can run */
 	  return true;
@@ -2464,7 +2507,7 @@ int RGWLC::LCWorker::schedule_next_start_time(utime_t &start, utime_t& now)
   nt = mktime(&bdt);
   secs = nt - tt;
 
-  return secs>0 ? secs : secs+24*60*60;
+  return secs > 0 ? secs : secs + secs_in_a_day;
 }
 
 RGWLC::LCWorker::~LCWorker()
@@ -2755,7 +2798,7 @@ std::string s3_expiration_header(
       if (rule_expiration.has_days()) {
 	rule_expiration_date =
 	  boost::optional<ceph::real_time>(
-	    mtime + make_timespan(double(rule_expiration.get_days())*24*60*60 - ceph::real_clock::to_time_t(mtime)%(24*60*60) + 24*60*60));
+	    mtime + make_timespan(double(rule_expiration.get_days()) * secs_in_a_day - ceph::real_clock::to_time_t(mtime)%(secs_in_a_day) + secs_in_a_day));
       }
     }
 
@@ -2834,7 +2877,7 @@ bool s3_multipart_abort_header(
     std::optional<ceph::real_time> rule_abort_date;
     if (mp_expiration.has_days()) {
       rule_abort_date = std::optional<ceph::real_time>(
-              mtime + make_timespan(mp_expiration.get_days()*24*60*60 - ceph::real_clock::to_time_t(mtime)%(24*60*60) + 24*60*60));
+              mtime + make_timespan(mp_expiration.get_days() * secs_in_a_day - ceph::real_clock::to_time_t(mtime)%(secs_in_a_day) + secs_in_a_day));
     }
 
     // update earliest abort date

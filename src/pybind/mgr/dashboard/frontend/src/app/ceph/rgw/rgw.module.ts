@@ -158,6 +158,13 @@ const routes: Routes = [
         data: {
           breadcrumbs: ActionLabels.CREATE
         }
+      },
+      {
+        path: URLVerbs.EDIT,
+        component: CrudFormComponent,
+        data: {
+          breadcrumbs: ActionLabels.EDIT
+        }
       }
     ]
   },
@@ -185,6 +192,7 @@ const routes: Routes = [
   },
   {
     path: 'multisite',
+    data: { breadcrumbs: 'Multi-site' },
     children: [{ path: '', component: RgwMultisiteDetailsComponent }]
   }
 ];

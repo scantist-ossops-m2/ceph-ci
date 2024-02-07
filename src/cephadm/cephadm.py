@@ -18,7 +18,7 @@ import tempfile
 import time
 import errno
 import ssl
-from typing import Dict, List, Tuple, Optional, Union, Any, Callable, IO, Sequence, TypeVar, cast, Iterable, TextIO
+from typing import Dict, List, Tuple, Optional, Union, Any, Callable, Sequence, TypeVar, cast, Iterable
 
 import re
 import uuid
@@ -28,29 +28,13 @@ from functools import wraps
 from glob import glob
 from io import StringIO
 from threading import Thread, Event
-from urllib.error import HTTPError, URLError
-from urllib.request import urlopen, Request
 from pathlib import Path
 
 from cephadmlib.constants import (
     # default images
-    DEFAULT_ALERT_MANAGER_IMAGE,
-    DEFAULT_ELASTICSEARCH_IMAGE,
-    DEFAULT_GRAFANA_IMAGE,
-    DEFAULT_HAPROXY_IMAGE,
     DEFAULT_IMAGE,
     DEFAULT_IMAGE_IS_MAIN,
     DEFAULT_IMAGE_RELEASE,
-    DEFAULT_JAEGER_AGENT_IMAGE,
-    DEFAULT_JAEGER_COLLECTOR_IMAGE,
-    DEFAULT_JAEGER_QUERY_IMAGE,
-    DEFAULT_KEEPALIVED_IMAGE,
-    DEFAULT_LOKI_IMAGE,
-    DEFAULT_NODE_EXPORTER_IMAGE,
-    DEFAULT_NVMEOF_IMAGE,
-    DEFAULT_PROMETHEUS_IMAGE,
-    DEFAULT_PROMTAIL_IMAGE,
-    DEFAULT_SNMP_GATEWAY_IMAGE,
     # other constant values
     CEPH_CONF,
     CEPH_CONF_DIR,
@@ -82,7 +66,6 @@ from cephadmlib.context_getters import (
     get_config_and_keyring,
     get_parm,
     read_configuration_source,
-    should_log_to_journald,
 )
 from cephadmlib.exceptions import (
     ClusterAlreadyExists,
@@ -99,7 +82,6 @@ from cephadmlib.call_wrappers import (
     concurrent_tasks,
 )
 from cephadmlib.container_engines import (
-    Docker,
     Podman,
     check_container_engine,
     find_container_engine,
@@ -107,7 +89,6 @@ from cephadmlib.container_engines import (
     registry_login,
 )
 from cephadmlib.data_utils import (
-    dict_get,
     dict_get_join,
     get_legacy_config_fsid,
     is_fsid,
@@ -120,10 +101,10 @@ from cephadmlib.file_utils import (
     get_file_timestamp,
     makedirs,
     pathify,
-    populate_files,
     read_file,
     recursive_chown,
     touch,
+    unlink_file,
     write_new,
     write_tmp,
 )
@@ -134,7 +115,6 @@ from cephadmlib.net_utils import (
     check_subnet,
     get_fqdn,
     get_hostname,
-    get_ip_addresses,
     get_short_hostname,
     ip_in_subnets,
     is_ipv6,
@@ -147,13 +127,20 @@ from cephadmlib.net_utils import (
 from cephadmlib.locking import FileLock
 from cephadmlib.daemon_identity import DaemonIdentity, DaemonSubIdentity
 from cephadmlib.packagers import create_packager, Packager
-from cephadmlib.logging import cephadm_init_logging, Highlight, LogDestination
-from cephadmlib.systemd import check_unit, check_units
+from cephadmlib.logging import (
+    cephadm_init_logging,
+    Highlight,
+    LogDestination,
+)
+from cephadmlib.systemd import check_unit, check_units, terminate_service
+from cephadmlib import systemd_unit
+from cephadmlib import runscripts
 from cephadmlib.container_types import (
     CephContainer,
     InitContainer,
-    is_container_running,
+    SidecarContainer,
     extract_uid_gid,
+    is_container_running,
 )
 from cephadmlib.decorators import (
     deprecated_command,
@@ -176,6 +163,21 @@ from cephadmlib.container_daemon_form import (
 from cephadmlib.sysctl import install_sysctl, migrate_sysctl_dir
 from cephadmlib.firewalld import Firewalld, update_firewalld
 from cephadmlib import templating
+from cephadmlib.daemons.ceph import get_ceph_mounts_for_type, ceph_daemons
+from cephadmlib.daemons import (
+    Ceph,
+    CephIscsi,
+    CephNvmeof,
+    CustomContainer,
+    HAproxy,
+    Keepalived,
+    Monitoring,
+    NFSGanesha,
+    SNMPGateway,
+    Tracing,
+    NodeProxy,
+)
+from cephadmlib.agent import http_query
 
 
 FuncT = TypeVar('FuncT', bound=Callable)
@@ -211,1992 +213,6 @@ class ContainerInfo:
 ##################################
 
 
-@register_daemon_form
-class Ceph(ContainerDaemonForm):
-    _daemons = ('mon', 'mgr', 'osd', 'mds', 'rgw', 'rbd-mirror',
-                'crash', 'cephfs-mirror')
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        # TODO: figure out a way to un-special-case osd
-        return daemon_type in cls._daemons and daemon_type != 'osd'
-
-    def __init__(self, ctx: CephadmContext, ident: DaemonIdentity) -> None:
-        self.ctx = ctx
-        self._identity = ident
-        self.user_supplied_config = False
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'Ceph':
-        return cls(ctx, ident)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return self._identity
-
-    def firewall_service_name(self) -> str:
-        if self.identity.daemon_type == 'mon':
-            return 'ceph-mon'
-        elif self.identity.daemon_type in ['mgr', 'mds']:
-            return 'ceph'
-        return ''
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        # previous to being a ContainerDaemonForm, this make_var_run
-        # call was hard coded in the deploy path. Eventually, it would be
-        # good to move this somwhere cleaner and avoid needing to know the
-        # uid/gid here.
-        uid, gid = self.uid_gid(ctx)
-        make_var_run(ctx, ctx.fsid, uid, gid)
-
-        # mon and osd need privileged in order for libudev to query devices
-        privileged = self.identity.daemon_type in ['mon', 'osd']
-        ctr = daemon_to_container(ctx, self, privileged=privileged)
-        ctr = to_deployment_container(ctx, ctr)
-        config_json = fetch_configs(ctx)
-        if self.identity.daemon_type == 'mon' and config_json is not None:
-            if 'crush_location' in config_json:
-                c_loc = config_json['crush_location']
-                # was originally "c.args.extend(['--set-crush-location', c_loc])"
-                # but that doesn't seem to persist in the object after it's passed
-                # in further function calls
-                ctr.args = ctr.args + ['--set-crush-location', c_loc]
-        return ctr
-
-    _uid_gid: Optional[Tuple[int, int]] = None
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        if self._uid_gid is None:
-            self._uid_gid = extract_uid_gid(ctx)
-        return self._uid_gid
-
-    def config_and_keyring(
-        self, ctx: CephadmContext
-    ) -> Tuple[Optional[str], Optional[str]]:
-        return get_config_and_keyring(ctx)
-
-    def get_daemon_args(self) -> List[str]:
-        if self.identity.daemon_type == 'crash':
-            return []
-        r = [
-            '--setuser', 'ceph',
-            '--setgroup', 'ceph',
-            '--default-log-to-file=false',
-        ]
-        log_to_journald = should_log_to_journald(self.ctx)
-        if log_to_journald:
-            r += [
-                '--default-log-to-journald=true',
-                '--default-log-to-stderr=false',
-            ]
-        else:
-            r += [
-                '--default-log-to-stderr=true',
-                '--default-log-stderr-prefix=debug ',
-            ]
-        if self.identity.daemon_type == 'mon':
-            r += [
-                '--default-mon-cluster-log-to-file=false',
-            ]
-            if log_to_journald:
-                r += [
-                    '--default-mon-cluster-log-to-journald=true',
-                    '--default-mon-cluster-log-to-stderr=false',
-                ]
-            else:
-                r += ['--default-mon-cluster-log-to-stderr=true']
-        return r
-
-    @staticmethod
-    def get_ceph_mounts(
-        ctx: CephadmContext,
-        ident: DaemonIdentity,
-        no_config: bool = False,
-    ) -> Dict[str, str]:
-        # Warning: This is a hack done for more expedient refactoring
-        mounts = _get_container_mounts_for_type(
-            ctx, ident.fsid, ident.daemon_type
-        )
-        data_dir = ident.data_dir(ctx.data_dir)
-        if ident.daemon_type == 'rgw':
-            cdata_dir = '/var/lib/ceph/radosgw/ceph-rgw.%s' % (
-                ident.daemon_id
-            )
-        else:
-            cdata_dir = '/var/lib/ceph/%s/ceph-%s' % (
-                ident.daemon_type,
-                ident.daemon_id,
-            )
-        if ident.daemon_type != 'crash':
-            mounts[data_dir] = cdata_dir + ':z'
-        if not no_config:
-            mounts[data_dir + '/config'] = '/etc/ceph/ceph.conf:z'
-        if ident.daemon_type in [
-            'rbd-mirror',
-            'cephfs-mirror',
-            'crash',
-            'ceph-exporter',
-        ]:
-            # these do not search for their keyrings in a data directory
-            mounts[
-                data_dir + '/keyring'
-            ] = '/etc/ceph/ceph.client.%s.%s.keyring' % (
-                ident.daemon_type,
-                ident.daemon_id,
-            )
-        return mounts
-
-    def customize_container_mounts(
-        self, ctx: CephadmContext, mounts: Dict[str, str]
-    ) -> None:
-        no_config = bool(
-            getattr(ctx, 'config', None) and self.user_supplied_config
-        )
-        cm = self.get_ceph_mounts(
-            ctx,
-            self.identity,
-            no_config=no_config,
-        )
-        mounts.update(cm)
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.append(ctx.container_engine.unlimited_pids_option)
-
-    def customize_process_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        ident = self.identity
-        if ident.daemon_type == 'rgw':
-            name = 'client.rgw.%s' % ident.daemon_id
-        elif ident.daemon_type == 'rbd-mirror':
-            name = 'client.rbd-mirror.%s' % ident.daemon_id
-        elif ident.daemon_type == 'cephfs-mirror':
-            name = 'client.cephfs-mirror.%s' % ident.daemon_id
-        elif ident.daemon_type == 'crash':
-            name = 'client.crash.%s' % ident.daemon_id
-        elif ident.daemon_type in ['mon', 'mgr', 'mds', 'osd']:
-            name = ident.daemon_name
-        else:
-            raise ValueError(ident)
-        args.extend(['-n', name])
-        if ident.daemon_type != 'crash':
-            args.append('-f')
-        args.extend(self.get_daemon_args())
-
-    def customize_container_envs(
-        self, ctx: CephadmContext, envs: List[str]
-    ) -> None:
-        envs.append('TCMALLOC_MAX_TOTAL_THREAD_CACHE_BYTES=134217728')
-
-    def default_entrypoint(self) -> str:
-        ep = {
-            'rgw': '/usr/bin/radosgw',
-            'rbd-mirror': '/usr/bin/rbd-mirror',
-            'cephfs-mirror': '/usr/bin/cephfs-mirror',
-        }
-        daemon_type = self.identity.daemon_type
-        return ep.get(daemon_type) or f'/usr/bin/ceph-{daemon_type}'
-
-##################################
-
-
-@register_daemon_form
-class OSD(Ceph):
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        # TODO: figure out a way to un-special-case osd
-        return daemon_type == 'osd'
-
-    def __init__(
-        self,
-        ctx: CephadmContext,
-        ident: DaemonIdentity,
-        osd_fsid: Optional[str] = None,
-    ) -> None:
-        super().__init__(ctx, ident)
-        self._osd_fsid = osd_fsid
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'OSD':
-        osd_fsid = getattr(ctx, 'osd_fsid', None)
-        if osd_fsid is None:
-            logger.info(
-                'Creating an OSD daemon form without an OSD FSID value'
-            )
-        return cls(ctx, ident, osd_fsid)
-
-    @staticmethod
-    def get_sysctl_settings() -> List[str]:
-        return [
-            '# allow a large number of OSDs',
-            'fs.aio-max-nr = 1048576',
-            'kernel.pid_max = 4194304',
-        ]
-
-    def firewall_service_name(self) -> str:
-        return 'ceph'
-
-    @property
-    def osd_fsid(self) -> Optional[str]:
-        return self._osd_fsid
-
-
-##################################
-
-
-@register_daemon_form
-class SNMPGateway(ContainerDaemonForm):
-    """Defines an SNMP gateway between Prometheus and SNMP monitoring Frameworks"""
-    daemon_type = 'snmp-gateway'
-    SUPPORTED_VERSIONS = ['V2c', 'V3']
-    default_image = DEFAULT_SNMP_GATEWAY_IMAGE
-    DEFAULT_PORT = 9464
-    env_filename = 'snmp-gateway.conf'
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return cls.daemon_type == daemon_type
-
-    def __init__(self,
-                 ctx: CephadmContext,
-                 fsid: str,
-                 daemon_id: Union[int, str],
-                 config_json: Dict[str, Any],
-                 image: Optional[str] = None) -> None:
-        self.ctx = ctx
-        self.fsid = fsid
-        self.daemon_id = daemon_id
-        self.image = image or SNMPGateway.default_image
-
-        self.uid = config_json.get('uid', 0)
-        self.gid = config_json.get('gid', 0)
-
-        self.destination = config_json.get('destination', '')
-        self.snmp_version = config_json.get('snmp_version', 'V2c')
-        self.snmp_community = config_json.get('snmp_community', 'public')
-        self.log_level = config_json.get('log_level', 'info')
-        self.snmp_v3_auth_username = config_json.get('snmp_v3_auth_username', '')
-        self.snmp_v3_auth_password = config_json.get('snmp_v3_auth_password', '')
-        self.snmp_v3_auth_protocol = config_json.get('snmp_v3_auth_protocol', '')
-        self.snmp_v3_priv_protocol = config_json.get('snmp_v3_priv_protocol', '')
-        self.snmp_v3_priv_password = config_json.get('snmp_v3_priv_password', '')
-        self.snmp_v3_engine_id = config_json.get('snmp_v3_engine_id', '')
-
-        self.validate()
-
-    @classmethod
-    def init(cls, ctx: CephadmContext, fsid: str,
-             daemon_id: Union[int, str]) -> 'SNMPGateway':
-        cfgs = fetch_configs(ctx)
-        assert cfgs  # assert some config data was found
-        return cls(ctx, fsid, daemon_id, cfgs, ctx.image)
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'SNMPGateway':
-        return cls.init(ctx, ident.fsid, ident.daemon_id)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
-
-    @staticmethod
-    def get_version(ctx: CephadmContext, fsid: str, daemon_id: str) -> Optional[str]:
-        """Return the version of the notifier from it's http endpoint"""
-        path = os.path.join(ctx.data_dir, fsid, f'snmp-gateway.{daemon_id}', 'unit.meta')
-        try:
-            with open(path, 'r') as env:
-                metadata = json.loads(env.read())
-        except (OSError, json.JSONDecodeError):
-            return None
-
-        ports = metadata.get('ports', [])
-        if not ports:
-            return None
-
-        try:
-            with urlopen(f'http://127.0.0.1:{ports[0]}/') as r:
-                html = r.read().decode('utf-8').split('\n')
-        except (HTTPError, URLError):
-            return None
-
-        for h in html:
-            stripped = h.strip()
-            if stripped.startswith(('<pre>', '<PRE>')) and \
-               stripped.endswith(('</pre>', '</PRE>')):
-                # <pre>(version=1.2.1, branch=HEAD, revision=7...
-                return stripped.split(',')[0].split('version=')[1]
-
-        return None
-
-    @property
-    def port(self) -> int:
-        endpoints = fetch_endpoints(self.ctx)
-        if not endpoints:
-            return self.DEFAULT_PORT
-        return endpoints[0].port
-
-    def get_daemon_args(self) -> List[str]:
-        v3_args = []
-        base_args = [
-            f'--web.listen-address=:{self.port}',
-            f'--snmp.destination={self.destination}',
-            f'--snmp.version={self.snmp_version}',
-            f'--log.level={self.log_level}',
-            '--snmp.trap-description-template=/etc/snmp_notifier/description-template.tpl'
-        ]
-
-        if self.snmp_version == 'V3':
-            # common auth settings
-            v3_args.extend([
-                '--snmp.authentication-enabled',
-                f'--snmp.authentication-protocol={self.snmp_v3_auth_protocol}',
-                f'--snmp.security-engine-id={self.snmp_v3_engine_id}'
-            ])
-            # authPriv setting is applied if we have a privacy protocol setting
-            if self.snmp_v3_priv_protocol:
-                v3_args.extend([
-                    '--snmp.private-enabled',
-                    f'--snmp.private-protocol={self.snmp_v3_priv_protocol}'
-                ])
-
-        return base_args + v3_args
-
-    @property
-    def data_dir(self) -> str:
-        return os.path.join(self.ctx.data_dir, self.ctx.fsid, f'{self.daemon_type}.{self.daemon_id}')
-
-    @property
-    def conf_file_path(self) -> str:
-        return os.path.join(self.data_dir, self.env_filename)
-
-    def create_daemon_conf(self) -> None:
-        """Creates the environment file holding 'secrets' passed to the snmp-notifier daemon"""
-        with write_new(self.conf_file_path) as f:
-            if self.snmp_version == 'V2c':
-                f.write(f'SNMP_NOTIFIER_COMMUNITY={self.snmp_community}\n')
-            else:
-                f.write(f'SNMP_NOTIFIER_AUTH_USERNAME={self.snmp_v3_auth_username}\n')
-                f.write(f'SNMP_NOTIFIER_AUTH_PASSWORD={self.snmp_v3_auth_password}\n')
-                if self.snmp_v3_priv_password:
-                    f.write(f'SNMP_NOTIFIER_PRIV_PASSWORD={self.snmp_v3_priv_password}\n')
-
-    def validate(self) -> None:
-        """Validate the settings
-
-        Raises:
-            Error: if the fsid doesn't look like an fsid
-            Error: if the snmp version is not supported
-            Error: destination IP and port address missing
-        """
-        if not is_fsid(self.fsid):
-            raise Error(f'not a valid fsid: {self.fsid}')
-
-        if self.snmp_version not in SNMPGateway.SUPPORTED_VERSIONS:
-            raise Error(f'not a valid snmp version: {self.snmp_version}')
-
-        if not self.destination:
-            raise Error('config is missing destination attribute(<ip>:<port>) of the target SNMP listener')
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        ctr = daemon_to_container(ctx, self)
-        return to_deployment_container(ctx, ctr)
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        return self.uid, self.gid
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.append(f'--env-file={self.conf_file_path}')
-
-    def customize_process_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.extend(self.get_daemon_args())
-
-
-##################################
-@register_daemon_form
-class Monitoring(ContainerDaemonForm):
-    """Define the configs for the monitoring containers"""
-
-    port_map = {
-        'prometheus': [9095],  # Avoid default 9090, due to conflict with cockpit UI
-        'node-exporter': [9100],
-        'grafana': [3000],
-        'alertmanager': [9093, 9094],
-        'loki': [3100],
-        'promtail': [9080]
-    }
-
-    components = {
-        'prometheus': {
-            'image': DEFAULT_PROMETHEUS_IMAGE,
-            'cpus': '2',
-            'memory': '4GB',
-            'args': [
-                '--config.file=/etc/prometheus/prometheus.yml',
-                '--storage.tsdb.path=/prometheus',
-            ],
-            'config-json-files': [
-                'prometheus.yml',
-            ],
-        },
-        'loki': {
-            'image': DEFAULT_LOKI_IMAGE,
-            'cpus': '1',
-            'memory': '1GB',
-            'args': [
-                '--config.file=/etc/loki/loki.yml',
-            ],
-            'config-json-files': [
-                'loki.yml'
-            ],
-        },
-        'promtail': {
-            'image': DEFAULT_PROMTAIL_IMAGE,
-            'cpus': '1',
-            'memory': '1GB',
-            'args': [
-                '--config.file=/etc/promtail/promtail.yml',
-            ],
-            'config-json-files': [
-                'promtail.yml',
-            ],
-        },
-        'node-exporter': {
-            'image': DEFAULT_NODE_EXPORTER_IMAGE,
-            'cpus': '1',
-            'memory': '1GB',
-            'args': [
-                '--no-collector.timex'
-            ],
-        },
-        'grafana': {
-            'image': DEFAULT_GRAFANA_IMAGE,
-            'cpus': '2',
-            'memory': '4GB',
-            'args': [],
-            'config-json-files': [
-                'grafana.ini',
-                'provisioning/datasources/ceph-dashboard.yml',
-                'certs/cert_file',
-                'certs/cert_key',
-            ],
-        },
-        'alertmanager': {
-            'image': DEFAULT_ALERT_MANAGER_IMAGE,
-            'cpus': '2',
-            'memory': '2GB',
-            'args': [
-                '--cluster.listen-address=:{}'.format(port_map['alertmanager'][1]),
-            ],
-            'config-json-files': [
-                'alertmanager.yml',
-            ],
-            'config-json-args': [
-                'peers',
-            ],
-        },
-    }  # type: ignore
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return daemon_type in cls.components
-
-    @staticmethod
-    def get_version(ctx, container_id, daemon_type):
-        # type: (CephadmContext, str, str) -> str
-        """
-        :param: daemon_type Either "prometheus", "alertmanager", "loki", "promtail" or "node-exporter"
-        """
-        assert daemon_type in ('prometheus', 'alertmanager', 'node-exporter', 'loki', 'promtail')
-        cmd = daemon_type.replace('-', '_')
-        code = -1
-        err = ''
-        out = ''
-        version = ''
-        if daemon_type == 'alertmanager':
-            for cmd in ['alertmanager', 'prometheus-alertmanager']:
-                out, err, code = call(ctx, [
-                    ctx.container_engine.path, 'exec', container_id, cmd,
-                    '--version'
-                ], verbosity=CallVerbosity.QUIET)
-                if code == 0:
-                    break
-            cmd = 'alertmanager'  # reset cmd for version extraction
-        else:
-            out, err, code = call(ctx, [
-                ctx.container_engine.path, 'exec', container_id, cmd, '--version'
-            ], verbosity=CallVerbosity.QUIET)
-        if code == 0:
-            if err.startswith('%s, version ' % cmd):
-                version = err.split(' ')[2]
-            elif out.startswith('%s, version ' % cmd):
-                version = out.split(' ')[2]
-        return version
-
-    @staticmethod
-    def extract_uid_gid(
-        ctx: CephadmContext, daemon_type: str
-    ) -> Tuple[int, int]:
-        if daemon_type == 'prometheus':
-            uid, gid = extract_uid_gid(ctx, file_path='/etc/prometheus')
-        elif daemon_type == 'node-exporter':
-            uid, gid = 65534, 65534
-        elif daemon_type == 'grafana':
-            uid, gid = extract_uid_gid(ctx, file_path='/var/lib/grafana')
-        elif daemon_type == 'loki':
-            uid, gid = extract_uid_gid(ctx, file_path='/etc/loki')
-        elif daemon_type == 'promtail':
-            uid, gid = extract_uid_gid(ctx, file_path='/etc/promtail')
-        elif daemon_type == 'alertmanager':
-            uid, gid = extract_uid_gid(
-                ctx, file_path=['/etc/alertmanager', '/etc/prometheus']
-            )
-        else:
-            raise Error('{} not implemented yet'.format(daemon_type))
-        return uid, gid
-
-    def __init__(self, ctx: CephadmContext, ident: DaemonIdentity) -> None:
-        self.ctx = ctx
-        self._identity = ident
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'Monitoring':
-        return cls(ctx, ident)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return self._identity
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        self._prevalidate(ctx)
-        ctr = daemon_to_container(ctx, self)
-        return to_deployment_container(ctx, ctr)
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        return self.extract_uid_gid(ctx, self.identity.daemon_type)
-
-    def _prevalidate(self, ctx: CephadmContext) -> None:
-        # before being refactored into a ContainerDaemonForm these checks were
-        # done inside the deploy function. This was the only "family" of daemons
-        # that performed these checks in that location
-        daemon_type = self.identity.daemon_type
-        config = fetch_configs(ctx)  # type: ignore
-        required_files = self.components[daemon_type].get(
-            'config-json-files', list()
-        )
-        required_args = self.components[daemon_type].get(
-            'config-json-args', list()
-        )
-        if required_files:
-            if not config or not all(c in config.get('files', {}).keys() for c in required_files):  # type: ignore
-                raise Error(
-                    '{} deployment requires config-json which must '
-                    'contain file content for {}'.format(
-                        daemon_type.capitalize(), ', '.join(required_files)
-                    )
-                )
-        if required_args:
-            if not config or not all(c in config.keys() for c in required_args):  # type: ignore
-                raise Error(
-                    '{} deployment requires config-json which must '
-                    'contain arg for {}'.format(
-                        daemon_type.capitalize(), ', '.join(required_args)
-                    )
-                )
-
-    def get_daemon_args(self) -> List[str]:
-        ctx = self.ctx
-        daemon_type = self.identity.daemon_type
-        metadata = self.components[daemon_type]
-        r = list(metadata.get('args', []))
-        # set ip and port to bind to for nodeexporter,alertmanager,prometheus
-        if daemon_type not in ['grafana', 'loki', 'promtail']:
-            ip = ''
-            port = self.port_map[daemon_type][0]
-            meta = fetch_meta(ctx)
-            if meta:
-                if 'ip' in meta and meta['ip']:
-                    ip = meta['ip']
-                if 'ports' in meta and meta['ports']:
-                    port = meta['ports'][0]
-            r += [f'--web.listen-address={ip}:{port}']
-            if daemon_type == 'prometheus':
-                config = fetch_configs(ctx)
-                retention_time = config.get('retention_time', '15d')
-                retention_size = config.get('retention_size', '0')  # default to disabled
-                r += [f'--storage.tsdb.retention.time={retention_time}']
-                r += [f'--storage.tsdb.retention.size={retention_size}']
-                scheme = 'http'
-                host = get_fqdn()
-                # in case host is not an fqdn then we use the IP to
-                # avoid producing a broken web.external-url link
-                if '.' not in host:
-                    ipv4_addrs, ipv6_addrs = get_ip_addresses(get_hostname())
-                    # use the first ipv4 (if any) otherwise use the first ipv6
-                    addr = next(iter(ipv4_addrs or ipv6_addrs), None)
-                    host = wrap_ipv6(addr) if addr else host
-                r += [f'--web.external-url={scheme}://{host}:{port}']
-        if daemon_type == 'alertmanager':
-            config = fetch_configs(ctx)
-            peers = config.get('peers', list())  # type: ignore
-            for peer in peers:
-                r += ['--cluster.peer={}'.format(peer)]
-            try:
-                r += [f'--web.config.file={config["web_config"]}']
-            except KeyError:
-                pass
-            # some alertmanager, by default, look elsewhere for a config
-            r += ['--config.file=/etc/alertmanager/alertmanager.yml']
-        if daemon_type == 'promtail':
-            r += ['--config.expand-env']
-        if daemon_type == 'prometheus':
-            config = fetch_configs(ctx)
-            try:
-                r += [f'--web.config.file={config["web_config"]}']
-            except KeyError:
-                pass
-        if daemon_type == 'node-exporter':
-            config = fetch_configs(ctx)
-            try:
-                r += [f'--web.config.file={config["web_config"]}']
-            except KeyError:
-                pass
-            r += ['--path.procfs=/host/proc',
-                  '--path.sysfs=/host/sys',
-                  '--path.rootfs=/rootfs']
-        return r
-
-    def _get_container_mounts(self, data_dir: str) -> Dict[str, str]:
-        ctx = self.ctx
-        daemon_type = self.identity.daemon_type
-        mounts: Dict[str, str] = {}
-        log_dir = get_log_dir(self.identity.fsid, ctx.log_dir)
-        if daemon_type == 'prometheus':
-            mounts[
-                os.path.join(data_dir, 'etc/prometheus')
-            ] = '/etc/prometheus:Z'
-            mounts[os.path.join(data_dir, 'data')] = '/prometheus:Z'
-        elif daemon_type == 'loki':
-            mounts[os.path.join(data_dir, 'etc/loki')] = '/etc/loki:Z'
-            mounts[os.path.join(data_dir, 'data')] = '/loki:Z'
-        elif daemon_type == 'promtail':
-            mounts[os.path.join(data_dir, 'etc/promtail')] = '/etc/promtail:Z'
-            mounts[log_dir] = '/var/log/ceph:z'
-            mounts[os.path.join(data_dir, 'data')] = '/promtail:Z'
-        elif daemon_type == 'node-exporter':
-            mounts[
-                os.path.join(data_dir, 'etc/node-exporter')
-            ] = '/etc/node-exporter:Z'
-            mounts['/proc'] = '/host/proc:ro'
-            mounts['/sys'] = '/host/sys:ro'
-            mounts['/'] = '/rootfs:ro'
-        elif daemon_type == 'grafana':
-            mounts[
-                os.path.join(data_dir, 'etc/grafana/grafana.ini')
-            ] = '/etc/grafana/grafana.ini:Z'
-            mounts[
-                os.path.join(data_dir, 'etc/grafana/provisioning/datasources')
-            ] = '/etc/grafana/provisioning/datasources:Z'
-            mounts[
-                os.path.join(data_dir, 'etc/grafana/certs')
-            ] = '/etc/grafana/certs:Z'
-            mounts[
-                os.path.join(data_dir, 'data/grafana.db')
-            ] = '/var/lib/grafana/grafana.db:Z'
-        elif daemon_type == 'alertmanager':
-            mounts[
-                os.path.join(data_dir, 'etc/alertmanager')
-            ] = '/etc/alertmanager:Z'
-        return mounts
-
-    def customize_container_mounts(
-        self, ctx: CephadmContext, mounts: Dict[str, str]
-    ) -> None:
-        data_dir = self.identity.data_dir(ctx.data_dir)
-        mounts.update(self._get_container_mounts(data_dir))
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        uid, _ = self.uid_gid(ctx)
-        monitoring_args = [
-            '--user',
-            str(uid),
-            # FIXME: disable cpu/memory limits for the time being (not supported
-            # by ubuntu 18.04 kernel!)
-        ]
-        args.extend(monitoring_args)
-        if self.identity.daemon_type == 'node-exporter':
-            # in order to support setting '--path.procfs=/host/proc','--path.sysfs=/host/sys',
-            # '--path.rootfs=/rootfs' for node-exporter we need to disable selinux separation
-            # between the node-exporter container and the host to avoid selinux denials
-            args.extend(['--security-opt', 'label=disable'])
-
-    def customize_process_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.extend(self.get_daemon_args())
-
-    def default_entrypoint(self) -> str:
-        return ''
-
-##################################
-
-
-@register_daemon_form
-class NFSGanesha(ContainerDaemonForm):
-    """Defines a NFS-Ganesha container"""
-
-    daemon_type = 'nfs'
-    entrypoint = '/usr/bin/ganesha.nfsd'
-    daemon_args = ['-F', '-L', 'STDERR']
-
-    required_files = ['ganesha.conf']
-
-    port_map = {
-        'nfs': 2049,
-    }
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return cls.daemon_type == daemon_type
-
-    def __init__(self,
-                 ctx,
-                 fsid,
-                 daemon_id,
-                 config_json,
-                 image=DEFAULT_IMAGE):
-        # type: (CephadmContext, str, Union[int, str], Dict, str) -> None
-        self.ctx = ctx
-        self.fsid = fsid
-        self.daemon_id = daemon_id
-        self.image = image
-
-        # config-json options
-        self.pool = dict_get(config_json, 'pool', require=True)
-        self.namespace = dict_get(config_json, 'namespace')
-        self.userid = dict_get(config_json, 'userid')
-        self.extra_args = dict_get(config_json, 'extra_args', [])
-        self.files = dict_get(config_json, 'files', {})
-        self.rgw = dict_get(config_json, 'rgw', {})
-
-        # validate the supplied args
-        self.validate()
-
-    @classmethod
-    def init(cls, ctx, fsid, daemon_id):
-        # type: (CephadmContext, str, Union[int, str]) -> NFSGanesha
-        return cls(ctx, fsid, daemon_id, fetch_configs(ctx), ctx.image)
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'NFSGanesha':
-        return cls.init(ctx, ident.fsid, ident.daemon_id)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
-
-    def _get_container_mounts(self, data_dir):
-        # type: (str) -> Dict[str, str]
-        mounts = dict()
-        mounts[os.path.join(data_dir, 'config')] = '/etc/ceph/ceph.conf:z'
-        mounts[os.path.join(data_dir, 'keyring')] = '/etc/ceph/keyring:z'
-        mounts[os.path.join(data_dir, 'etc/ganesha')] = '/etc/ganesha:z'
-        if self.rgw:
-            cluster = self.rgw.get('cluster', 'ceph')
-            rgw_user = self.rgw.get('user', 'admin')
-            mounts[os.path.join(data_dir, 'keyring.rgw')] = \
-                '/var/lib/ceph/radosgw/%s-%s/keyring:z' % (cluster, rgw_user)
-        return mounts
-
-    def customize_container_mounts(
-        self, ctx: CephadmContext, mounts: Dict[str, str]
-    ) -> None:
-        data_dir = self.identity.data_dir(ctx.data_dir)
-        mounts.update(self._get_container_mounts(data_dir))
-
-    @staticmethod
-    def get_container_envs():
-        # type: () -> List[str]
-        envs = [
-            'CEPH_CONF=%s' % (CEPH_DEFAULT_CONF)
-        ]
-        return envs
-
-    @staticmethod
-    def get_version(ctx, container_id):
-        # type: (CephadmContext, str) -> Optional[str]
-        version = None
-        out, err, code = call(ctx,
-                              [ctx.container_engine.path, 'exec', container_id,
-                               NFSGanesha.entrypoint, '-v'],
-                              verbosity=CallVerbosity.QUIET)
-        if code == 0:
-            match = re.search(r'NFS-Ganesha Release\s*=\s*[V]*([\d.]+)', out)
-            if match:
-                version = match.group(1)
-        return version
-
-    def validate(self):
-        # type: () -> None
-        if not is_fsid(self.fsid):
-            raise Error('not an fsid: %s' % self.fsid)
-        if not self.daemon_id:
-            raise Error('invalid daemon_id: %s' % self.daemon_id)
-        if not self.image:
-            raise Error('invalid image: %s' % self.image)
-
-        # check for the required files
-        if self.required_files:
-            for fname in self.required_files:
-                if fname not in self.files:
-                    raise Error('required file missing from config-json: %s' % fname)
-
-        # check for an RGW config
-        if self.rgw:
-            if not self.rgw.get('keyring'):
-                raise Error('RGW keyring is missing')
-            if not self.rgw.get('user'):
-                raise Error('RGW user is missing')
-
-    def get_daemon_name(self):
-        # type: () -> str
-        return '%s.%s' % (self.daemon_type, self.daemon_id)
-
-    def get_container_name(self, desc=None):
-        # type: (Optional[str]) -> str
-        cname = 'ceph-%s-%s' % (self.fsid, self.get_daemon_name())
-        if desc:
-            cname = '%s-%s' % (cname, desc)
-        return cname
-
-    def get_daemon_args(self):
-        # type: () -> List[str]
-        return self.daemon_args + self.extra_args
-
-    def create_daemon_dirs(self, data_dir, uid, gid):
-        # type: (str, int, int) -> None
-        """Create files under the container data dir"""
-        if not os.path.isdir(data_dir):
-            raise OSError('data_dir is not a directory: %s' % (data_dir))
-
-        logger.info('Creating ganesha config...')
-
-        # create the ganesha conf dir
-        config_dir = os.path.join(data_dir, 'etc/ganesha')
-        makedirs(config_dir, uid, gid, 0o755)
-
-        # populate files from the config-json
-        populate_files(config_dir, self.files, uid, gid)
-
-        # write the RGW keyring
-        if self.rgw:
-            keyring_path = os.path.join(data_dir, 'keyring.rgw')
-            with write_new(keyring_path, owner=(uid, gid)) as f:
-                f.write(self.rgw.get('keyring', ''))
-
-    def firewall_service_name(self) -> str:
-        return 'nfs'
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        ctr = daemon_to_container(ctx, self)
-        return to_deployment_container(ctx, ctr)
-
-    def customize_container_endpoints(
-        self, endpoints: List[EndPoint], deployment_type: DeploymentType
-    ) -> None:
-        if deployment_type == DeploymentType.DEFAULT and not endpoints:
-            nfs_ports = list(NFSGanesha.port_map.values())
-            endpoints.extend([EndPoint('0.0.0.0', p) for p in nfs_ports])
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        # TODO: extract ganesha uid/gid (997, 994) ?
-        return extract_uid_gid(ctx)
-
-    def config_and_keyring(
-        self, ctx: CephadmContext
-    ) -> Tuple[Optional[str], Optional[str]]:
-        return get_config_and_keyring(ctx)
-
-    def customize_container_envs(
-        self, ctx: CephadmContext, envs: List[str]
-    ) -> None:
-        envs.extend(self.get_container_envs())
-
-    def customize_process_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.extend(self.get_daemon_args())
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.append(ctx.container_engine.unlimited_pids_option)
-
-    def default_entrypoint(self) -> str:
-        return self.entrypoint
-
-##################################
-
-
-@register_daemon_form
-class CephIscsi(ContainerDaemonForm):
-    """Defines a Ceph-Iscsi container"""
-
-    daemon_type = 'iscsi'
-    entrypoint = '/usr/bin/rbd-target-api'
-
-    required_files = ['iscsi-gateway.cfg']
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return cls.daemon_type == daemon_type
-
-    def __init__(self,
-                 ctx: CephadmContext,
-                 ident: DaemonIdentity,
-                 config_json: Dict,
-                 image: str = DEFAULT_IMAGE):
-        self.ctx = ctx
-        self._identity = ident
-        self.image = image
-
-        # config-json options
-        self.files = dict_get(config_json, 'files', {})
-
-        # validate the supplied args
-        self.validate()
-
-    @classmethod
-    def init(cls, ctx: CephadmContext, fsid: str, daemon_id: str) -> 'CephIscsi':
-        return cls.create(ctx, DaemonIdentity(fsid, cls.daemon_type, daemon_id))
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'CephIscsi':
-        return cls(ctx, ident, fetch_configs(ctx), ctx.image)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return self._identity
-
-    @property
-    def fsid(self) -> str:
-        return self._identity.fsid
-
-    @property
-    def daemon_id(self) -> str:
-        return self._identity.daemon_id
-
-    @staticmethod
-    def _get_container_mounts(data_dir, log_dir):
-        # type: (str, str) -> Dict[str, str]
-        mounts = dict()
-        mounts[os.path.join(data_dir, 'config')] = '/etc/ceph/ceph.conf:z'
-        mounts[os.path.join(data_dir, 'keyring')] = '/etc/ceph/keyring:z'
-        mounts[os.path.join(data_dir, 'iscsi-gateway.cfg')] = '/etc/ceph/iscsi-gateway.cfg:z'
-        mounts[os.path.join(data_dir, 'configfs')] = '/sys/kernel/config'
-        mounts[os.path.join(data_dir, 'tcmu-runner-entrypoint.sh')] = '/usr/local/scripts/tcmu-runner-entrypoint.sh'
-        mounts[log_dir] = '/var/log:z'
-        mounts['/dev'] = '/dev'
-        return mounts
-
-    def customize_container_mounts(
-        self, ctx: CephadmContext, mounts: Dict[str, str]
-    ) -> None:
-        data_dir = self.identity.data_dir(ctx.data_dir)
-        # Removes ending ".tcmu" from data_dir a tcmu-runner uses the same
-        # data_dir as rbd-runner-api
-        if data_dir.endswith('.tcmu'):
-            data_dir = re.sub(r'\.tcmu$', '', data_dir)
-        log_dir = get_log_dir(self.identity.fsid, ctx.log_dir)
-        mounts.update(CephIscsi._get_container_mounts(data_dir, log_dir))
-
-    def customize_container_binds(
-        self, ctx: CephadmContext, binds: List[List[str]]
-    ) -> None:
-        lib_modules = [
-            'type=bind',
-            'source=/lib/modules',
-            'destination=/lib/modules',
-            'ro=true',
-        ]
-        binds.append(lib_modules)
-
-    @staticmethod
-    def get_version(ctx, container_id):
-        # type: (CephadmContext, str) -> Optional[str]
-        version = None
-        out, err, code = call(ctx,
-                              [ctx.container_engine.path, 'exec', container_id,
-                               '/usr/bin/python3', '-c',
-                               "import pkg_resources; print(pkg_resources.require('ceph_iscsi')[0].version)"],
-                              verbosity=CallVerbosity.QUIET)
-        if code == 0:
-            version = out.strip()
-        return version
-
-    def validate(self):
-        # type: () -> None
-        if not is_fsid(self.fsid):
-            raise Error('not an fsid: %s' % self.fsid)
-        if not self.daemon_id:
-            raise Error('invalid daemon_id: %s' % self.daemon_id)
-        if not self.image:
-            raise Error('invalid image: %s' % self.image)
-
-        # check for the required files
-        if self.required_files:
-            for fname in self.required_files:
-                if fname not in self.files:
-                    raise Error('required file missing from config-json: %s' % fname)
-
-    def get_daemon_name(self):
-        # type: () -> str
-        return '%s.%s' % (self.daemon_type, self.daemon_id)
-
-    def get_container_name(self, desc=None):
-        # type: (Optional[str]) -> str
-        cname = 'ceph-%s-%s' % (self.fsid, self.get_daemon_name())
-        if desc:
-            cname = '%s-%s' % (cname, desc)
-        return cname
-
-    def create_daemon_dirs(self, data_dir, uid, gid):
-        # type: (str, int, int) -> None
-        """Create files under the container data dir"""
-        if not os.path.isdir(data_dir):
-            raise OSError('data_dir is not a directory: %s' % (data_dir))
-
-        logger.info('Creating ceph-iscsi config...')
-        configfs_dir = os.path.join(data_dir, 'configfs')
-        makedirs(configfs_dir, uid, gid, 0o755)
-
-        # set up the tcmu-runner entrypoint script
-        # to be mounted into the container. For more info
-        # on why we need this script, see the
-        # tcmu_runner_entrypoint_script function
-        self.files['tcmu-runner-entrypoint.sh'] = self.tcmu_runner_entrypoint_script()
-
-        # populate files from the config-json
-        populate_files(data_dir, self.files, uid, gid)
-
-        # we want the tcmu runner entrypoint script to be executable
-        # populate_files will give it 0o600 by default
-        os.chmod(os.path.join(data_dir, 'tcmu-runner-entrypoint.sh'), 0o700)
-
-    @staticmethod
-    def configfs_mount_umount(data_dir, mount=True):
-        # type: (str, bool) -> List[str]
-        mount_path = os.path.join(data_dir, 'configfs')
-        if mount:
-            cmd = 'if ! grep -qs {0} /proc/mounts; then ' \
-                  'mount -t configfs none {0}; fi'.format(mount_path)
-        else:
-            cmd = 'if grep -qs {0} /proc/mounts; then ' \
-                  'umount {0}; fi'.format(mount_path)
-        return cmd.split()
-
-    @staticmethod
-    def tcmu_runner_entrypoint_script() -> str:
-        # since we are having tcmu-runner be a background
-        # process in its systemd unit (rbd-target-api being
-        # the main process) systemd will not restart it when
-        # it fails. in order to try and get around that for now
-        # we can have a script mounted in the container that
-        # that attempts to do the restarting for us. This script
-        # can then become the entrypoint for the tcmu-runner
-        # container
-
-        # This is intended to be dropped for a better solution
-        # for at least the squid release onward
-        return """#!/bin/bash
-RUN_DIR=/var/run/tcmu-runner
-
-if [ ! -d "${RUN_DIR}" ] ; then
-    mkdir -p "${RUN_DIR}"
-fi
-
-rm -rf "${RUN_DIR}"/*
-
-while true
-do
-    touch "${RUN_DIR}"/start-up-$(date -Ins)
-    /usr/bin/tcmu-runner
-
-    # If we got around 3 kills/segfaults in the last minute,
-    # don't start anymore
-    if [ $(find "${RUN_DIR}" -type f -cmin -1 | wc -l) -ge 3 ] ; then
-        exit 0
-    fi
-
-    sleep 1
-done
-"""
-
-    def get_tcmu_runner_container(self):
-        # type: () -> CephContainer
-        # daemon_id, is used to generated the cid and pid files used by podman but as both tcmu-runner
-        # and rbd-target-api have the same daemon_id, it conflits and prevent the second container from
-        # starting. .tcmu runner is appended to the daemon_id to fix that.
-        subident = DaemonSubIdentity(
-            self.fsid, self.daemon_type, self.daemon_id, 'tcmu'
-        )
-        tcmu_dmn = self.create(self.ctx, subident)
-        tcmu_container = to_deployment_container(
-            self.ctx, daemon_to_container(self.ctx, tcmu_dmn, privileged=True)
-        )
-        # TODO: Eventually we don't want to run tcmu-runner through this script.
-        # This is intended to be a workaround backported to older releases
-        # and should eventually be removed in at least squid onward
-        tcmu_container.entrypoint = '/usr/local/scripts/tcmu-runner-entrypoint.sh'
-        tcmu_container.cname = self.get_container_name(desc='tcmu')
-        return tcmu_container
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        # So the container can modprobe iscsi_target_mod and have write perms
-        # to configfs we need to make this a privileged container.
-        ctr = daemon_to_container(ctx, self, privileged=True)
-        return to_deployment_container(ctx, ctr)
-
-    def config_and_keyring(
-        self, ctx: CephadmContext
-    ) -> Tuple[Optional[str], Optional[str]]:
-        return get_config_and_keyring(ctx)
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        return extract_uid_gid(ctx)
-
-    def default_entrypoint(self) -> str:
-        return self.entrypoint
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.append(ctx.container_engine.unlimited_pids_option)
-
-##################################
-
-
-@register_daemon_form
-class CephNvmeof(ContainerDaemonForm):
-    """Defines a Ceph-Nvmeof container"""
-
-    daemon_type = 'nvmeof'
-    required_files = ['ceph-nvmeof.conf']
-    default_image = DEFAULT_NVMEOF_IMAGE
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return cls.daemon_type == daemon_type
-
-    def __init__(self,
-                 ctx,
-                 fsid,
-                 daemon_id,
-                 config_json,
-                 image=DEFAULT_NVMEOF_IMAGE):
-        # type: (CephadmContext, str, Union[int, str], Dict, str) -> None
-        self.ctx = ctx
-        self.fsid = fsid
-        self.daemon_id = daemon_id
-        self.image = image
-
-        # config-json options
-        self.files = dict_get(config_json, 'files', {})
-
-        # validate the supplied args
-        self.validate()
-
-    @classmethod
-    def init(cls, ctx, fsid, daemon_id):
-        # type: (CephadmContext, str, Union[int, str]) -> CephNvmeof
-        return cls(ctx, fsid, daemon_id,
-                   fetch_configs(ctx), ctx.image)
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'CephNvmeof':
-        return cls.init(ctx, ident.fsid, ident.daemon_id)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
-
-    @staticmethod
-    def _get_container_mounts(data_dir: str) -> Dict[str, str]:
-        mounts = dict()
-        mounts[os.path.join(data_dir, 'config')] = '/etc/ceph/ceph.conf:z'
-        mounts[os.path.join(data_dir, 'keyring')] = '/etc/ceph/keyring:z'
-        mounts[os.path.join(data_dir, 'ceph-nvmeof.conf')] = '/src/ceph-nvmeof.conf:z'
-        mounts[os.path.join(data_dir, 'configfs')] = '/sys/kernel/config'
-        mounts['/dev/hugepages'] = '/dev/hugepages'
-        mounts['/dev/vfio/vfio'] = '/dev/vfio/vfio'
-        return mounts
-
-    def customize_container_mounts(
-        self, ctx: CephadmContext, mounts: Dict[str, str]
-    ) -> None:
-        data_dir = self.identity.data_dir(ctx.data_dir)
-        mounts.update(self._get_container_mounts(data_dir))
-
-    def customize_container_binds(
-        self, ctx: CephadmContext, binds: List[List[str]]
-    ) -> None:
-        lib_modules = [
-            'type=bind',
-            'source=/lib/modules',
-            'destination=/lib/modules',
-            'ro=true',
-        ]
-        binds.append(lib_modules)
-
-    @staticmethod
-    def get_version(ctx: CephadmContext, container_id: str) -> Optional[str]:
-        out, err, ret = call(ctx,
-                             [ctx.container_engine.path, 'inspect',
-                              '--format', '{{index .Config.Labels "io.ceph.version"}}',
-                              ctx.image])
-        version = None
-        if ret == 0:
-            version = out.strip()
-        return version
-
-    def validate(self):
-        # type: () -> None
-        if not is_fsid(self.fsid):
-            raise Error('not an fsid: %s' % self.fsid)
-        if not self.daemon_id:
-            raise Error('invalid daemon_id: %s' % self.daemon_id)
-        if not self.image:
-            raise Error('invalid image: %s' % self.image)
-
-        # check for the required files
-        if self.required_files:
-            for fname in self.required_files:
-                if fname not in self.files:
-                    raise Error('required file missing from config-json: %s' % fname)
-
-    def get_daemon_name(self):
-        # type: () -> str
-        return '%s.%s' % (self.daemon_type, self.daemon_id)
-
-    def get_container_name(self, desc=None):
-        # type: (Optional[str]) -> str
-        cname = '%s-%s' % (self.fsid, self.get_daemon_name())
-        if desc:
-            cname = '%s-%s' % (cname, desc)
-        return cname
-
-    def create_daemon_dirs(self, data_dir, uid, gid):
-        # type: (str, int, int) -> None
-        """Create files under the container data dir"""
-        if not os.path.isdir(data_dir):
-            raise OSError('data_dir is not a directory: %s' % (data_dir))
-
-        logger.info('Creating ceph-nvmeof config...')
-        configfs_dir = os.path.join(data_dir, 'configfs')
-        makedirs(configfs_dir, uid, gid, 0o755)
-
-        # populate files from the config-json
-        populate_files(data_dir, self.files, uid, gid)
-
-    @staticmethod
-    def configfs_mount_umount(data_dir, mount=True):
-        # type: (str, bool) -> List[str]
-        mount_path = os.path.join(data_dir, 'configfs')
-        if mount:
-            cmd = 'if ! grep -qs {0} /proc/mounts; then ' \
-                  'mount -t configfs none {0}; fi'.format(mount_path)
-        else:
-            cmd = 'if grep -qs {0} /proc/mounts; then ' \
-                  'umount {0}; fi'.format(mount_path)
-        return cmd.split()
-
-    @staticmethod
-    def get_sysctl_settings() -> List[str]:
-        return [
-            'vm.nr_hugepages = 4096',
-        ]
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        ctr = daemon_to_container(ctx, self)
-        return to_deployment_container(ctx, ctr)
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        return 167, 167  # TODO: need to get properly the uid/gid
-
-    def config_and_keyring(
-        self, ctx: CephadmContext
-    ) -> Tuple[Optional[str], Optional[str]]:
-        return get_config_and_keyring(ctx)
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.append(ctx.container_engine.unlimited_pids_option)
-        args.extend(['--ulimit', 'memlock=-1:-1'])
-        args.extend(['--ulimit', 'nofile=10240'])
-        args.extend(['--cap-add=SYS_ADMIN', '--cap-add=CAP_SYS_NICE'])
-
-
-##################################
-
-
-@register_daemon_form
-class CephExporter(ContainerDaemonForm):
-    """Defines a Ceph exporter container"""
-
-    daemon_type = 'ceph-exporter'
-    entrypoint = '/usr/bin/ceph-exporter'
-    DEFAULT_PORT = 9926
-    port_map = {
-        'ceph-exporter': DEFAULT_PORT,
-    }
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return cls.daemon_type == daemon_type
-
-    def __init__(self,
-                 ctx: CephadmContext,
-                 fsid: str, daemon_id: Union[int, str],
-                 config_json: Dict[str, Any],
-                 image: str = DEFAULT_IMAGE) -> None:
-        self.ctx = ctx
-        self.fsid = fsid
-        self.daemon_id = daemon_id
-        self.image = image
-
-        self.sock_dir = config_json.get('sock-dir', '/var/run/ceph/')
-        ipv4_addrs, _ = get_ip_addresses(get_hostname())
-        addrs = '0.0.0.0' if ipv4_addrs else '::'
-        self.addrs = config_json.get('addrs', addrs)
-        self.port = config_json.get('port', self.DEFAULT_PORT)
-        self.prio_limit = config_json.get('prio-limit', 5)
-        self.stats_period = config_json.get('stats-period', 5)
-
-        self.validate()
-
-    @classmethod
-    def init(cls, ctx: CephadmContext, fsid: str,
-             daemon_id: Union[int, str]) -> 'CephExporter':
-        return cls(ctx, fsid, daemon_id,
-                   fetch_configs(ctx), ctx.image)
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'CephExporter':
-        return cls.init(ctx, ident.fsid, ident.daemon_id)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
-
-    def get_daemon_args(self) -> List[str]:
-        args = [
-            f'--sock-dir={self.sock_dir}',
-            f'--addrs={self.addrs}',
-            f'--port={self.port}',
-            f'--prio-limit={self.prio_limit}',
-            f'--stats-period={self.stats_period}',
-        ]
-        return args
-
-    def validate(self) -> None:
-        if not os.path.isdir(self.sock_dir):
-            raise Error(f'Directory does not exist. Got: {self.sock_dir}')
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        ctr = daemon_to_container(ctx, self)
-        return to_deployment_container(ctx, ctr)
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        return extract_uid_gid(ctx)
-
-    def config_and_keyring(
-        self, ctx: CephadmContext
-    ) -> Tuple[Optional[str], Optional[str]]:
-        return get_config_and_keyring(ctx)
-
-    def customize_container_mounts(
-        self, ctx: CephadmContext, mounts: Dict[str, str]
-    ) -> None:
-        cm = Ceph.get_ceph_mounts(ctx, self.identity)
-        mounts.update(cm)
-
-    def customize_process_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        name = 'client.ceph-exporter.%s' % self.identity.daemon_id
-        args.extend(['-n', name, '-f'])
-        args.extend(self.get_daemon_args())
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.append(ctx.container_engine.unlimited_pids_option)
-
-    def customize_container_envs(
-        self, ctx: CephadmContext, envs: List[str]
-    ) -> None:
-        envs.append('TCMALLOC_MAX_TOTAL_THREAD_CACHE_BYTES=134217728')
-
-    def default_entrypoint(self) -> str:
-        return self.entrypoint
-
-
-##################################
-
-
-@register_daemon_form
-class HAproxy(ContainerDaemonForm):
-    """Defines an HAproxy container"""
-    daemon_type = 'haproxy'
-    required_files = ['haproxy.cfg']
-    default_image = DEFAULT_HAPROXY_IMAGE
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return cls.daemon_type == daemon_type
-
-    def __init__(self,
-                 ctx: CephadmContext,
-                 fsid: str, daemon_id: Union[int, str],
-                 config_json: Dict, image: str) -> None:
-        self.ctx = ctx
-        self.fsid = fsid
-        self.daemon_id = daemon_id
-        self.image = image
-
-        # config-json options
-        self.files = dict_get(config_json, 'files', {})
-
-        self.validate()
-
-    @classmethod
-    def init(cls, ctx: CephadmContext,
-             fsid: str, daemon_id: Union[int, str]) -> 'HAproxy':
-        return cls(ctx, fsid, daemon_id, fetch_configs(ctx),
-                   ctx.image)
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'HAproxy':
-        return cls.init(ctx, ident.fsid, ident.daemon_id)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
-
-    def create_daemon_dirs(self, data_dir: str, uid: int, gid: int) -> None:
-        """Create files under the container data dir"""
-        if not os.path.isdir(data_dir):
-            raise OSError('data_dir is not a directory: %s' % (data_dir))
-
-        # create additional directories in data dir for HAproxy to use
-        if not os.path.isdir(os.path.join(data_dir, 'haproxy')):
-            makedirs(os.path.join(data_dir, 'haproxy'), uid, gid, DATA_DIR_MODE)
-
-        data_dir = os.path.join(data_dir, 'haproxy')
-        populate_files(data_dir, self.files, uid, gid)
-
-    def get_daemon_args(self) -> List[str]:
-        return ['haproxy', '-f', '/var/lib/haproxy/haproxy.cfg']
-
-    def validate(self):
-        # type: () -> None
-        if not is_fsid(self.fsid):
-            raise Error('not an fsid: %s' % self.fsid)
-        if not self.daemon_id:
-            raise Error('invalid daemon_id: %s' % self.daemon_id)
-        if not self.image:
-            raise Error('invalid image: %s' % self.image)
-
-        # check for the required files
-        if self.required_files:
-            for fname in self.required_files:
-                if fname not in self.files:
-                    raise Error('required file missing from config-json: %s' % fname)
-
-    def get_daemon_name(self):
-        # type: () -> str
-        return '%s.%s' % (self.daemon_type, self.daemon_id)
-
-    def get_container_name(self, desc=None):
-        # type: (Optional[str]) -> str
-        cname = 'ceph-%s-%s' % (self.fsid, self.get_daemon_name())
-        if desc:
-            cname = '%s-%s' % (cname, desc)
-        return cname
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        # better directory for this?
-        return extract_uid_gid(self.ctx, file_path='/var/lib')
-
-    @staticmethod
-    def _get_container_mounts(data_dir: str) -> Dict[str, str]:
-        mounts = dict()
-        mounts[os.path.join(data_dir, 'haproxy')] = '/var/lib/haproxy'
-        return mounts
-
-    def customize_container_mounts(
-        self, ctx: CephadmContext, mounts: Dict[str, str]
-    ) -> None:
-        data_dir = self.identity.data_dir(ctx.data_dir)
-        mounts.update(self._get_container_mounts(data_dir))
-
-    @staticmethod
-    def get_sysctl_settings() -> List[str]:
-        return [
-            '# IP forwarding and non-local bind',
-            'net.ipv4.ip_forward = 1',
-            'net.ipv4.ip_nonlocal_bind = 1',
-        ]
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        ctr = daemon_to_container(ctx, self)
-        return to_deployment_container(ctx, ctr)
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.extend(
-            ['--user=root']
-        )  # haproxy 2.4 defaults to a different user
-
-    def customize_process_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.extend(self.get_daemon_args())
-
-
-##################################
-
-
-@register_daemon_form
-class Keepalived(ContainerDaemonForm):
-    """Defines an Keepalived container"""
-    daemon_type = 'keepalived'
-    required_files = ['keepalived.conf']
-    default_image = DEFAULT_KEEPALIVED_IMAGE
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return cls.daemon_type == daemon_type
-
-    def __init__(self,
-                 ctx: CephadmContext,
-                 fsid: str, daemon_id: Union[int, str],
-                 config_json: Dict, image: str) -> None:
-        self.ctx = ctx
-        self.fsid = fsid
-        self.daemon_id = daemon_id
-        self.image = image
-
-        # config-json options
-        self.files = dict_get(config_json, 'files', {})
-
-        self.validate()
-
-    @classmethod
-    def init(cls, ctx: CephadmContext, fsid: str,
-             daemon_id: Union[int, str]) -> 'Keepalived':
-        return cls(ctx, fsid, daemon_id,
-                   fetch_configs(ctx), ctx.image)
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'Keepalived':
-        return cls.init(ctx, ident.fsid, ident.daemon_id)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
-
-    def create_daemon_dirs(self, data_dir: str, uid: int, gid: int) -> None:
-        """Create files under the container data dir"""
-        if not os.path.isdir(data_dir):
-            raise OSError('data_dir is not a directory: %s' % (data_dir))
-
-        # create additional directories in data dir for keepalived to use
-        if not os.path.isdir(os.path.join(data_dir, 'keepalived')):
-            makedirs(os.path.join(data_dir, 'keepalived'), uid, gid, DATA_DIR_MODE)
-
-        # populate files from the config-json
-        populate_files(data_dir, self.files, uid, gid)
-
-    def validate(self):
-        # type: () -> None
-        if not is_fsid(self.fsid):
-            raise Error('not an fsid: %s' % self.fsid)
-        if not self.daemon_id:
-            raise Error('invalid daemon_id: %s' % self.daemon_id)
-        if not self.image:
-            raise Error('invalid image: %s' % self.image)
-
-        # check for the required files
-        if self.required_files:
-            for fname in self.required_files:
-                if fname not in self.files:
-                    raise Error('required file missing from config-json: %s' % fname)
-
-    def get_daemon_name(self):
-        # type: () -> str
-        return '%s.%s' % (self.daemon_type, self.daemon_id)
-
-    def get_container_name(self, desc=None):
-        # type: (Optional[str]) -> str
-        cname = 'ceph-%s-%s' % (self.fsid, self.get_daemon_name())
-        if desc:
-            cname = '%s-%s' % (cname, desc)
-        return cname
-
-    @staticmethod
-    def get_container_envs():
-        # type: () -> List[str]
-        envs = [
-            'KEEPALIVED_AUTOCONF=false',
-            'KEEPALIVED_CONF=/etc/keepalived/keepalived.conf',
-            'KEEPALIVED_CMD=/usr/sbin/keepalived -n -l -f /etc/keepalived/keepalived.conf',
-            'KEEPALIVED_DEBUG=false'
-        ]
-        return envs
-
-    @staticmethod
-    def get_sysctl_settings() -> List[str]:
-        return [
-            '# IP forwarding and non-local bind',
-            'net.ipv4.ip_forward = 1',
-            'net.ipv4.ip_nonlocal_bind = 1',
-        ]
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        # better directory for this?
-        return extract_uid_gid(self.ctx, file_path='/var/lib')
-
-    @staticmethod
-    def _get_container_mounts(data_dir: str) -> Dict[str, str]:
-        mounts = dict()
-        mounts[os.path.join(data_dir, 'keepalived.conf')] = '/etc/keepalived/keepalived.conf'
-        return mounts
-
-    def customize_container_mounts(
-        self, ctx: CephadmContext, mounts: Dict[str, str]
-    ) -> None:
-        data_dir = self.identity.data_dir(ctx.data_dir)
-        mounts.update(self._get_container_mounts(data_dir))
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        ctr = daemon_to_container(ctx, self)
-        return to_deployment_container(ctx, ctr)
-
-    def customize_container_envs(
-        self, ctx: CephadmContext, envs: List[str]
-    ) -> None:
-        envs.extend(self.get_container_envs())
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.extend(['--cap-add=NET_ADMIN', '--cap-add=NET_RAW'])
-
-
-##################################
-
-
-@register_daemon_form
-class Tracing(ContainerDaemonForm):
-    """Define the configs for the jaeger tracing containers"""
-
-    components: Dict[str, Dict[str, Any]] = {
-        'elasticsearch': {
-            'image': DEFAULT_ELASTICSEARCH_IMAGE,
-            'envs': ['discovery.type=single-node']
-        },
-        'jaeger-agent': {
-            'image': DEFAULT_JAEGER_AGENT_IMAGE,
-        },
-        'jaeger-collector': {
-            'image': DEFAULT_JAEGER_COLLECTOR_IMAGE,
-        },
-        'jaeger-query': {
-            'image': DEFAULT_JAEGER_QUERY_IMAGE,
-        },
-    }  # type: ignore
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return daemon_type in cls.components
-
-    @staticmethod
-    def set_configuration(config: Dict[str, str], daemon_type: str) -> None:
-        if daemon_type in ['jaeger-collector', 'jaeger-query']:
-            assert 'elasticsearch_nodes' in config
-            Tracing.components[daemon_type]['envs'] = [
-                'SPAN_STORAGE_TYPE=elasticsearch',
-                f'ES_SERVER_URLS={config["elasticsearch_nodes"]}']
-        if daemon_type == 'jaeger-agent':
-            assert 'collector_nodes' in config
-            Tracing.components[daemon_type]['daemon_args'] = [
-                f'--reporter.grpc.host-port={config["collector_nodes"]}',
-                '--processor.jaeger-compact.server-host-port=6799'
-            ]
-
-    def __init__(self, ident: DaemonIdentity) -> None:
-        self._identity = ident
-        self._configured = False
-
-    def _configure(self, ctx: CephadmContext) -> None:
-        if self._configured:
-            return
-        config = fetch_configs(ctx)
-        # Currently, this method side-effects the class attribute, and that
-        # is unpleasant. In the future it would be nice to move all of
-        # set_configuration into _confiure and only modify each classes data
-        # independently
-        self.set_configuration(config, self.identity.daemon_type)
-        self._configured = True
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'Tracing':
-        return cls(ident)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return self._identity
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        ctr = daemon_to_container(ctx, self)
-        return to_deployment_container(ctx, ctr)
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        return 65534, 65534
-
-    def get_daemon_args(self) -> List[str]:
-        return self.components[self.identity.daemon_type].get(
-            'daemon_args', []
-        )
-
-    def customize_process_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        self._configure(ctx)
-        # earlier code did an explicit check if the daemon type was jaeger-agent
-        # and would only call get_daemon_args if that was true. However, since
-        # the function only returns a non-empty list in the case of jaeger-agent
-        # that check is unnecessary and is not brought over.
-        args.extend(self.get_daemon_args())
-
-    def customize_container_envs(
-        self, ctx: CephadmContext, envs: List[str]
-    ) -> None:
-        self._configure(ctx)
-        envs.extend(
-            self.components[self.identity.daemon_type].get('envs', [])
-        )
-
-    def default_entrypoint(self) -> str:
-        return ''
-
-
-##################################
-
-
-@register_daemon_form
-class CustomContainer(ContainerDaemonForm):
-    """Defines a custom container"""
-    daemon_type = 'container'
-
-    @classmethod
-    def for_daemon_type(cls, daemon_type: str) -> bool:
-        return cls.daemon_type == daemon_type
-
-    def __init__(self,
-                 fsid: str, daemon_id: Union[int, str],
-                 config_json: Dict, image: str) -> None:
-        self.fsid = fsid
-        self.daemon_id = daemon_id
-        self.image = image
-
-        # config-json options
-        self.entrypoint = dict_get(config_json, 'entrypoint')
-        self.uid = dict_get(config_json, 'uid', 65534)  # nobody
-        self.gid = dict_get(config_json, 'gid', 65534)  # nobody
-        self.volume_mounts = dict_get(config_json, 'volume_mounts', {})
-        self.args = dict_get(config_json, 'args', [])
-        self.envs = dict_get(config_json, 'envs', [])
-        self.privileged = dict_get(config_json, 'privileged', False)
-        self.bind_mounts = dict_get(config_json, 'bind_mounts', [])
-        self.ports = dict_get(config_json, 'ports', [])
-        self.dirs = dict_get(config_json, 'dirs', [])
-        self.files = dict_get(config_json, 'files', {})
-
-    @classmethod
-    def init(cls, ctx: CephadmContext,
-             fsid: str, daemon_id: Union[int, str]) -> 'CustomContainer':
-        return cls(fsid, daemon_id,
-                   fetch_configs(ctx), ctx.image)
-
-    @classmethod
-    def create(cls, ctx: CephadmContext, ident: DaemonIdentity) -> 'CustomContainer':
-        return cls.init(ctx, ident.fsid, ident.daemon_id)
-
-    @property
-    def identity(self) -> DaemonIdentity:
-        return DaemonIdentity(self.fsid, self.daemon_type, self.daemon_id)
-
-    def create_daemon_dirs(self, data_dir: str, uid: int, gid: int) -> None:
-        """
-        Create dirs/files below the container data directory.
-        """
-        logger.info('Creating custom container configuration '
-                    'dirs/files in {} ...'.format(data_dir))
-
-        if not os.path.isdir(data_dir):
-            raise OSError('data_dir is not a directory: %s' % data_dir)
-
-        for dir_path in self.dirs:
-            logger.info('Creating directory: {}'.format(dir_path))
-            dir_path = os.path.join(data_dir, dir_path.strip('/'))
-            makedirs(dir_path, uid, gid, 0o755)
-
-        for file_path in self.files:
-            logger.info('Creating file: {}'.format(file_path))
-            content = dict_get_join(self.files, file_path)
-            file_path = os.path.join(data_dir, file_path.strip('/'))
-            with write_new(file_path, owner=(uid, gid), encoding='utf-8') as f:
-                f.write(content)
-
-    def get_daemon_args(self) -> List[str]:
-        return []
-
-    def get_container_args(self) -> List[str]:
-        return self.args
-
-    def get_container_envs(self) -> List[str]:
-        return self.envs
-
-    def _get_container_mounts(self, data_dir: str) -> Dict[str, str]:
-        """
-        Get the volume mounts. Relative source paths will be located below
-        `/var/lib/ceph/<cluster-fsid>/<daemon-name>`.
-
-        Example:
-        {
-            /foo/conf: /conf
-            foo/conf: /conf
-        }
-        becomes
-        {
-            /foo/conf: /conf
-            /var/lib/ceph/<cluster-fsid>/<daemon-name>/foo/conf: /conf
-        }
-        """
-        mounts = {}
-        for source, destination in self.volume_mounts.items():
-            source = os.path.join(data_dir, source)
-            mounts[source] = destination
-        return mounts
-
-    def customize_container_mounts(
-        self, ctx: CephadmContext, mounts: Dict[str, str]
-    ) -> None:
-        data_dir = self.identity.data_dir(ctx.data_dir)
-        mounts.update(self._get_container_mounts(data_dir))
-
-    def _get_container_binds(self, data_dir: str) -> List[List[str]]:
-        """
-        Get the bind mounts. Relative `source=...` paths will be located below
-        `/var/lib/ceph/<cluster-fsid>/<daemon-name>`.
-
-        Example:
-        [
-            'type=bind',
-            'source=lib/modules',
-            'destination=/lib/modules',
-            'ro=true'
-        ]
-        becomes
-        [
-            ...
-            'source=/var/lib/ceph/<cluster-fsid>/<daemon-name>/lib/modules',
-            ...
-        ]
-        """
-        binds = self.bind_mounts.copy()
-        for bind in binds:
-            for index, value in enumerate(bind):
-                match = re.match(r'^source=(.+)$', value)
-                if match:
-                    bind[index] = 'source={}'.format(os.path.join(
-                        data_dir, match.group(1)))
-        return binds
-
-    def customize_container_binds(
-        self, ctx: CephadmContext, binds: List[List[str]]
-    ) -> None:
-        data_dir = self.identity.data_dir(ctx.data_dir)
-        binds.extend(self._get_container_binds(data_dir))
-
-    # Cache the container so we don't need to rebuild it again when calling
-    # into init_containers
-    _container: Optional[CephContainer] = None
-
-    def container(self, ctx: CephadmContext) -> CephContainer:
-        if self._container is None:
-            ctr = daemon_to_container(
-                ctx,
-                self,
-                host_network=False,
-                privileged=self.privileged,
-                ptrace=ctx.allow_ptrace,
-            )
-            self._container = to_deployment_container(ctx, ctr)
-        return self._container
-
-    def init_containers(self, ctx: CephadmContext) -> List[InitContainer]:
-        primary = self.container(ctx)
-        init_containers: List[Dict[str, Any]] = getattr(
-            ctx, 'init_containers', []
-        )
-        return [
-            InitContainer.from_primary_and_opts(ctx, primary, ic_opts)
-            for ic_opts in init_containers
-        ]
-
-    def customize_container_endpoints(
-        self, endpoints: List[EndPoint], deployment_type: DeploymentType
-    ) -> None:
-        if deployment_type == DeploymentType.DEFAULT:
-            endpoints.extend([EndPoint('0.0.0.0', p) for p in self.ports])
-
-    def customize_container_envs(
-        self, ctx: CephadmContext, envs: List[str]
-    ) -> None:
-        envs.extend(self.get_container_envs())
-
-    def customize_container_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.extend(self.get_container_args())
-
-    def customize_process_args(
-        self, ctx: CephadmContext, args: List[str]
-    ) -> None:
-        args.extend(self.get_daemon_args())
-
-    def default_entrypoint(self) -> str:
-        return self.entrypoint or ''
-
-    def uid_gid(self, ctx: CephadmContext) -> Tuple[int, int]:
-        return self.uid, self.gid
-
-
-##################################
-
-
 def get_supported_daemons():
     # type: () -> List[str]
     supported_daemons = ceph_daemons()
@@ -2210,17 +226,9 @@ def get_supported_daemons():
     supported_daemons.append(CephadmAgent.daemon_type)
     supported_daemons.append(SNMPGateway.daemon_type)
     supported_daemons.extend(Tracing.components)
+    supported_daemons.append(NodeProxy.daemon_type)
     assert len(supported_daemons) == len(set(supported_daemons))
     return supported_daemons
-
-
-def ceph_daemons() -> List[str]:
-    cds = list(Ceph._daemons)
-    cds.append(CephExporter.daemon_type)
-    return cds
-
-##################################
-
 
 ##################################
 
@@ -2654,7 +662,7 @@ def get_unit_name(
     return DaemonIdentity(fsid, daemon_type, daemon_id).unit_name
 
 
-def get_unit_name_by_daemon_name(ctx: CephadmContext, fsid: str, name: str) -> str:
+def lookup_unit_name_by_daemon_name(ctx: CephadmContext, fsid: str, name: str) -> str:
     daemon = get_daemon_description(ctx, fsid, name)
     try:
         return daemon['systemd_unit']
@@ -2793,6 +801,10 @@ def create_daemon_dirs(
         sg = SNMPGateway.init(ctx, fsid, ident.daemon_id)
         sg.create_daemon_conf()
 
+    elif daemon_type == NodeProxy.daemon_type:
+        node_proxy = NodeProxy.init(ctx, fsid, ident.daemon_id)
+        node_proxy.create_daemon_dirs(data_dir, uid, gid)
+
     _write_custom_conf_files(ctx, ident, uid, gid)
 
 
@@ -2844,73 +856,8 @@ def get_container_mounts_for_type(
     """Return a dictionary mapping container-external paths to container-internal
     paths given an fsid and daemon_type.
     """
-    mounts = _get_container_mounts_for_type(ctx, fsid, daemon_type)
+    mounts = get_ceph_mounts_for_type(ctx, fsid, daemon_type)
     _update_podman_mounts(ctx, mounts)
-    return mounts
-
-
-def _get_container_mounts_for_type(
-    ctx: CephadmContext, fsid: str, daemon_type: str
-) -> Dict[str, str]:
-    """The main implementation of get_container_mounts_for_type minus the call
-    to _update_podman_mounts so that this can be called from
-    get_container_mounts.
-    """
-    mounts = dict()
-
-    if daemon_type in ceph_daemons():
-        if fsid:
-            run_path = os.path.join('/var/run/ceph', fsid)
-            if os.path.exists(run_path):
-                mounts[run_path] = '/var/run/ceph:z'
-            log_dir = get_log_dir(fsid, ctx.log_dir)
-            mounts[log_dir] = '/var/log/ceph:z'
-            crash_dir = '/var/lib/ceph/%s/crash' % fsid
-            if os.path.exists(crash_dir):
-                mounts[crash_dir] = '/var/lib/ceph/crash:z'
-            if daemon_type != 'crash' and should_log_to_journald(ctx):
-                journald_sock_dir = '/run/systemd/journal'
-                mounts[journald_sock_dir] = journald_sock_dir
-
-    if daemon_type in ['mon', 'osd', 'clusterless-ceph-volume']:
-        mounts['/dev'] = '/dev'  # FIXME: narrow this down?
-        mounts['/run/udev'] = '/run/udev'
-    if daemon_type in ['osd', 'clusterless-ceph-volume']:
-        mounts['/sys'] = '/sys'  # for numa.cc, pick_address, cgroups, ...
-        mounts['/run/lvm'] = '/run/lvm'
-        mounts['/run/lock/lvm'] = '/run/lock/lvm'
-    if daemon_type == 'osd':
-        # selinux-policy in the container may not match the host.
-        if HostFacts(ctx).selinux_enabled:
-            cluster_dir = f'{ctx.data_dir}/{fsid}'
-            selinux_folder = f'{cluster_dir}/selinux'
-            if os.path.exists(cluster_dir):
-                if not os.path.exists(selinux_folder):
-                    os.makedirs(selinux_folder, mode=0o755)
-                mounts[selinux_folder] = '/sys/fs/selinux:ro'
-            else:
-                logger.error(f'Cluster direcotry {cluster_dir} does not exist.')
-        mounts['/'] = '/rootfs'
-
-    try:
-        if ctx.shared_ceph_folder:  # make easy manager modules/ceph-volume development
-            ceph_folder = pathify(ctx.shared_ceph_folder)
-            if os.path.exists(ceph_folder):
-                cephadm_binary = ceph_folder + '/src/cephadm/cephadm'
-                if not os.path.exists(pathify(cephadm_binary)):
-                    raise Error("cephadm binary does not exist. Please run './build.sh cephadm' from ceph/src/cephadm/ directory.")
-                mounts[cephadm_binary] = '/usr/sbin/cephadm'
-                mounts[ceph_folder + '/src/ceph-volume/ceph_volume'] = '/usr/lib/python3.6/site-packages/ceph_volume'
-                mounts[ceph_folder + '/src/pybind/mgr'] = '/usr/share/ceph/mgr'
-                mounts[ceph_folder + '/src/python-common/ceph'] = '/usr/lib/python3.6/site-packages/ceph'
-                mounts[ceph_folder + '/monitoring/ceph-mixin/dashboards_out'] = '/etc/grafana/dashboards/ceph-dashboard'
-                mounts[ceph_folder + '/monitoring/ceph-mixin/prometheus_alerts.yml'] = '/etc/prometheus/ceph/ceph_default_alerts.yml'
-            else:
-                logger.error(
-                    'Ceph shared source folder does not exist.',
-                    extra=Highlight.FAILURE.extra())
-    except AttributeError:
-        pass
     return mounts
 
 
@@ -2991,9 +938,8 @@ def _update_container_args_for_podman(
 ) -> None:
     if not isinstance(ctx.container_engine, Podman):
         return
-    service_name = f'{ident.unit_name}.service'
     container_args.extend(
-        ctx.container_engine.service_args(ctx, service_name)
+        ctx.container_engine.service_args(ctx, ident.service_name)
     )
 
 
@@ -3009,6 +955,7 @@ def deploy_daemon(
     deployment_type: DeploymentType = DeploymentType.DEFAULT,
     endpoints: Optional[List[EndPoint]] = None,
     init_containers: Optional[List['InitContainer']] = None,
+    sidecars: Optional[List[SidecarContainer]] = None,
 ) -> None:
     endpoints = endpoints or []
     daemon_type = ident.daemon_type
@@ -3088,6 +1035,7 @@ def deploy_daemon(
                     osd_fsid=osd_fsid,
                     endpoints=endpoints,
                     init_containers=init_containers,
+                    sidecars=sidecars,
                 )
             else:
                 raise RuntimeError('attempting to deploy a daemon without a container image')
@@ -3115,97 +1063,6 @@ def deploy_daemon(
         # up the new config
         call_throws(ctx, ['systemctl', 'reset-failed', ident.unit_name])
         call_throws(ctx, ['systemctl', 'restart', ident.unit_name])
-
-
-def _bash_cmd(
-    fh: IO[str],
-    cmd: List[str],
-    check: bool = True,
-    background: bool = False,
-    stderr: bool = True,
-) -> None:
-    line = ' '.join(shlex.quote(arg) for arg in cmd)
-    if not check:
-        line = f'! {line}'
-    if not stderr:
-        line = f'{line} 2> /dev/null'
-    if background:
-        line = f'{line} &'
-    fh.write(line)
-    fh.write('\n')
-
-
-def _write_container_cmd_to_bash(
-    ctx: CephadmContext,
-    file_obj: IO[str],
-    container: 'CephContainer',
-    comment: Optional[str] = None,
-    background: Optional[bool] = False,
-) -> None:
-    if comment:
-        # Sometimes adding a comment, especially if there are multiple containers in one
-        # unit file, makes it easier to read and grok.
-        assert '\n' not in comment
-        file_obj.write(f'# {comment}\n')
-    # Sometimes, adding `--rm` to a run_cmd doesn't work. Let's remove the container manually
-    _bash_cmd(
-        file_obj, container.rm_cmd(old_cname=True), check=False, stderr=False
-    )
-    _bash_cmd(file_obj, container.rm_cmd(), check=False, stderr=False)
-
-    # Sometimes, `podman rm` doesn't find the container. Then you'll have to add `--storage`
-    if isinstance(ctx.container_engine, Podman):
-        _bash_cmd(
-            file_obj,
-            container.rm_cmd(storage=True),
-            check=False,
-            stderr=False,
-        )
-        _bash_cmd(
-            file_obj,
-            container.rm_cmd(old_cname=True, storage=True),
-            check=False,
-            stderr=False,
-        )
-
-    # container run command
-    _bash_cmd(file_obj, container.run_cmd(), background=bool(background))
-
-
-def _write_init_container_cmds(
-    ctx: CephadmContext,
-    file_obj: IO[str],
-    index: int,
-    init_container: 'InitContainer',
-) -> None:
-    file_obj.write(f'# init container {index}: {init_container.cname}\n')
-    _bash_cmd(file_obj, init_container.run_cmd())
-    _write_init_container_cmds_clean(ctx, file_obj, init_container, comment='')
-
-
-def _write_init_container_cmds_clean(
-    ctx: CephadmContext,
-    file_obj: IO[str],
-    init_container: 'InitContainer',
-    comment: str = 'init container cleanup',
-) -> None:
-    if comment:
-        assert '\n' not in comment
-        file_obj.write(f'# {comment}\n')
-    _bash_cmd(
-        file_obj,
-        init_container.rm_cmd(),
-        check=False,
-        stderr=False,
-    )
-    # Sometimes, `podman rm` doesn't find the container. Then you'll have to add `--storage`
-    if isinstance(ctx.container_engine, Podman):
-        _bash_cmd(
-            file_obj,
-            init_container.rm_cmd(storage=True),
-            check=False,
-            stderr=False,
-        )
 
 
 def clean_cgroup(ctx: CephadmContext, fsid: str, unit_name: str) -> None:
@@ -3243,87 +1100,60 @@ def deploy_daemon_units(
     start: bool = True,
     osd_fsid: Optional[str] = None,
     endpoints: Optional[List[EndPoint]] = None,
-    init_containers: Optional[List['InitContainer']] = None,
+    init_containers: Optional[List[InitContainer]] = None,
+    sidecars: Optional[List[SidecarContainer]] = None,
 ) -> None:
-    # cmd
-
-    # unpack values from ident because they're used very frequently
-    fsid = ident.fsid
-    daemon_type = ident.daemon_type
-    daemon_id = ident.daemon_id
-
     data_dir = ident.data_dir(ctx.data_dir)
-    run_file_path = data_dir + '/unit.run'
-    meta_file_path = data_dir + '/unit.meta'
-    with write_new(run_file_path) as f, write_new(meta_file_path) as metaf:
+    pre_start_commands: List[runscripts.Command] = []
+    post_stop_commands: List[runscripts.Command] = []
 
-        f.write('set -e\n')
+    if ident.daemon_type in ceph_daemons():
+        install_path = find_program('install')
+        pre_start_commands.append('{install_path} -d -m0770 -o {uid} -g {gid} /var/run/ceph/{fsid}\n'.format(install_path=install_path, fsid=ident.fsid, uid=uid, gid=gid))
+    if ident.daemon_type == 'osd':
+        assert osd_fsid
+        pre_start_commands.extend(_osd_unit_run_commands(
+            ctx, ident, osd_fsid, data_dir, uid, gid
+        ))
+        post_stop_commands.extend(
+            _osd_unit_poststop_commands(ctx, ident, osd_fsid)
+        )
+    if ident.daemon_type == CephIscsi.daemon_type:
+        pre_start_commands.append(
+            CephIscsi.configfs_mount_umount(data_dir, mount=True)
+        )
+        post_stop_commands.append(
+            CephIscsi.configfs_mount_umount(data_dir, mount=False)
+        )
 
-        if daemon_type in ceph_daemons():
-            install_path = find_program('install')
-            f.write('{install_path} -d -m0770 -o {uid} -g {gid} /var/run/ceph/{fsid}\n'.format(install_path=install_path, fsid=fsid, uid=uid, gid=gid))
-
-        # pre-start cmd(s)
-        if daemon_type == 'osd':
-            assert osd_fsid
-            _write_osd_unit_run_commands(
-                ctx, f, ident, osd_fsid, data_dir, uid, gid
-            )
-        elif daemon_type == CephIscsi.daemon_type:
-            _write_iscsi_unit_run_commands(ctx, f, ident, data_dir)
-        init_containers = init_containers or []
-        if init_containers:
-            _write_init_container_cmds_clean(ctx, f, init_containers[0])
-        for idx, ic in enumerate(init_containers):
-            _write_init_container_cmds(ctx, f, idx, ic)
-
-        _write_container_cmd_to_bash(ctx, f, container, '%s.%s' % (daemon_type, str(daemon_id)))
-
-        # some metadata about the deploy
-        meta: Dict[str, Any] = fetch_meta(ctx)
-        meta.update({
-            'memory_request': int(ctx.memory_request) if ctx.memory_request else None,
-            'memory_limit': int(ctx.memory_limit) if ctx.memory_limit else None,
-        })
-        if not meta.get('ports'):
-            if endpoints:
-                meta['ports'] = [e.port for e in endpoints]
-            else:
-                meta['ports'] = []
-        metaf.write(json.dumps(meta, indent=4) + '\n')
-
-    timeout = 30 if daemon_type == 'osd' else None
-    # post-stop command(s)
-    with write_new(data_dir + '/unit.poststop') as f:
-        # this is a fallback to eventually stop any underlying container that was not stopped properly by unit.stop,
-        # this could happen in very slow setups as described in the issue https://tracker.ceph.com/issues/58242.
-        _write_stop_actions(ctx, cast(TextIO, f), container, timeout)
-        if daemon_type == 'osd':
-            assert osd_fsid
-            _write_osd_unit_poststop_commands(ctx, f, ident, osd_fsid)
-        elif daemon_type == CephIscsi.daemon_type:
-            _write_iscsi_unit_poststop_commands(ctx, f, ident, data_dir)
-
-    # post-stop command(s)
-    with write_new(data_dir + '/unit.stop') as f:
-        _write_stop_actions(ctx, cast(TextIO, f), container, timeout)
-
-    if container:
-        with write_new(data_dir + '/unit.image') as f:
-            f.write(container.image + '\n')
+    runscripts.write_service_scripts(
+        ctx,
+        ident,
+        container=container,
+        init_containers=init_containers,
+        sidecars=sidecars,
+        endpoints=endpoints,
+        pre_start_commands=pre_start_commands,
+        post_stop_commands=post_stop_commands,
+        timeout=30 if ident.daemon_type == 'osd' else None,
+    )
 
     # sysctl
-    install_sysctl(ctx, fsid, daemon_form_create(ctx, ident))
+    install_sysctl(ctx, ident.fsid, daemon_form_create(ctx, ident))
 
     # systemd
-    install_base_units(ctx, fsid)
-    unit = get_unit_file(ctx, fsid)
-    unit_file = 'ceph-%s@.service' % (fsid)
-    with write_new(ctx.unit_dir + '/' + unit_file, perms=None) as f:
-        f.write(unit)
+    ic_ids = [
+        DaemonSubIdentity.must(ic.identity) for ic in init_containers or []
+    ]
+    sc_ids = [
+        DaemonSubIdentity.must(sc.identity) for sc in sidecars or []
+    ]
+    systemd_unit.update_files(
+        ctx, ident, init_container_ids=ic_ids, sidecar_ids=sc_ids
+    )
     call_throws(ctx, ['systemctl', 'daemon-reload'])
 
-    unit_name = get_unit_name(fsid, daemon_type, daemon_id)
+    unit_name = get_unit_name(ident.fsid, ident.daemon_type, ident.daemon_id)
     call(ctx, ['systemctl', 'stop', unit_name],
          verbosity=CallVerbosity.DEBUG)
     call(ctx, ['systemctl', 'reset-failed', unit_name],
@@ -3331,38 +1161,27 @@ def deploy_daemon_units(
     if enable:
         call_throws(ctx, ['systemctl', 'enable', unit_name])
     if start:
-        clean_cgroup(ctx, fsid, unit_name)
+        clean_cgroup(ctx, ident.fsid, unit_name)
         call_throws(ctx, ['systemctl', 'start', unit_name])
 
 
-def _write_stop_actions(
-    ctx: CephadmContext, f: TextIO, container: 'CephContainer', timeout: Optional[int]
-) -> None:
-    # following generated script basically checks if the container exists
-    # before stopping it. Exit code will be success either if it doesn't
-    # exist or if it exists and is stopped successfully.
-    container_exists = f'{ctx.container_engine.path} inspect %s &>/dev/null'
-    f.write(f'! {container_exists % container.old_cname} || {" ".join(container.stop_cmd(old_cname=True, timeout=timeout))} \n')
-    f.write(f'! {container_exists % container.cname} || {" ".join(container.stop_cmd(timeout=timeout))} \n')
-
-
-def _write_osd_unit_run_commands(
+def _osd_unit_run_commands(
     ctx: CephadmContext,
-    f: IO,
     ident: 'DaemonIdentity',
     osd_fsid: str,
     data_dir: str,
     uid: int,
     gid: int,
-) -> None:
+) -> List[runscripts.Command]:
+    cmds: List[runscripts.Command] = []
     # osds have a pre-start step
     simple_fn = os.path.join('/etc/ceph/osd',
                              '%s-%s.json.adopted-by-cephadm' % (ident.daemon_id, osd_fsid))
     if os.path.exists(simple_fn):
-        f.write('# Simple OSDs need chown on startup:\n')
+        cmds.append('# Simple OSDs need chown on startup:\n')
         for n in ['block', 'block.db', 'block.wal']:
             p = os.path.join(data_dir, n)
-            f.write('[ ! -L {p} ] || chown {uid}:{gid} {p}\n'.format(p=p, uid=uid, gid=gid))
+            cmds.append('[ ! -L {p} ] || chown {uid}:{gid} {p}\n'.format(p=p, uid=uid, gid=gid))
     else:
         # if ceph-volume does not support 'ceph-volume activate', we must
         # do 'ceph-volume lvm activate'.
@@ -3402,21 +1221,13 @@ def _write_osd_unit_run_commands(
             bind_mounts=get_container_binds(ctx, ident),
             cname='ceph-%s-%s.%s-activate' % (fsid, daemon_type, daemon_id),
         )
-        _write_container_cmd_to_bash(ctx, f, prestart, 'LVM OSDs use ceph-volume lvm activate')
+        cmds.append(runscripts.ContainerCommand(prestart, comment='LVM OSDs use ceph-volume lvm activate'))
+    return cmds
 
 
-def _write_iscsi_unit_run_commands(
-    ctx: CephadmContext, f: IO, ident: 'DaemonIdentity', data_dir: str
-) -> None:
-    f.write(' '.join(CephIscsi.configfs_mount_umount(data_dir, mount=True)) + '\n')
-    ceph_iscsi = CephIscsi.init(ctx, ident.fsid, ident.daemon_id)
-    tcmu_container = ceph_iscsi.get_tcmu_runner_container()
-    _write_container_cmd_to_bash(ctx, f, tcmu_container, 'iscsi tcmu-runner container', background=True)
-
-
-def _write_osd_unit_poststop_commands(
-    ctx: CephadmContext, f: IO, ident: 'DaemonIdentity', osd_fsid: str
-) -> None:
+def _osd_unit_poststop_commands(
+    ctx: CephadmContext, ident: 'DaemonIdentity', osd_fsid: str
+) -> List[runscripts.Command]:
     poststop = get_ceph_volume_container(
         ctx,
         args=[
@@ -3427,118 +1238,8 @@ def _write_osd_unit_poststop_commands(
         bind_mounts=get_container_binds(ctx, ident),
         cname='ceph-%s-%s.%s-deactivate' % (ident.fsid, ident.daemon_type, ident.daemon_id),
     )
-    _write_container_cmd_to_bash(ctx, f, poststop, 'deactivate osd')
+    return [runscripts.ContainerCommand(poststop, comment='deactivate osd')]
 
-
-def _write_iscsi_unit_poststop_commands(
-    ctx: CephadmContext, f: IO, ident: 'DaemonIdentity', data_dir: str
-) -> None:
-    # make sure we also stop the tcmu container
-    runtime_dir = '/run'
-    ceph_iscsi = CephIscsi.init(ctx, ident.fsid, ident.daemon_id)
-    tcmu_container = ceph_iscsi.get_tcmu_runner_container()
-    f.write('! ' + ' '.join(tcmu_container.stop_cmd()) + '\n')
-    f.write('! ' + 'rm ' + runtime_dir + '/ceph-%s@%s.%s.service-pid' % (ident.fsid, ident.daemon_type, ident.daemon_id + '.tcmu') + '\n')
-    f.write('! ' + 'rm ' + runtime_dir + '/ceph-%s@%s.%s.service-cid' % (ident.fsid, ident.daemon_type, ident.daemon_id + '.tcmu') + '\n')
-    f.write(' '.join(CephIscsi.configfs_mount_umount(data_dir, mount=False)) + '\n')
-
-
-def install_base_units(ctx, fsid):
-    # type: (CephadmContext, str) -> None
-    """
-    Set up ceph.target and ceph-$fsid.target units.
-    """
-    # global unit
-    existed = os.path.exists(ctx.unit_dir + '/ceph.target')
-    with write_new(ctx.unit_dir + '/ceph.target', perms=None) as f:
-        f.write('[Unit]\n'
-                'Description=All Ceph clusters and services\n'
-                '\n'
-                '[Install]\n'
-                'WantedBy=multi-user.target\n')
-    if not existed:
-        # we disable before enable in case a different ceph.target
-        # (from the traditional package) is present; while newer
-        # systemd is smart enough to disable the old
-        # (/lib/systemd/...) and enable the new (/etc/systemd/...),
-        # some older versions of systemd error out with EEXIST.
-        call_throws(ctx, ['systemctl', 'disable', 'ceph.target'])
-        call_throws(ctx, ['systemctl', 'enable', 'ceph.target'])
-        call_throws(ctx, ['systemctl', 'start', 'ceph.target'])
-
-    # cluster unit
-    existed = os.path.exists(ctx.unit_dir + '/ceph-%s.target' % fsid)
-    with write_new(ctx.unit_dir + f'/ceph-{fsid}.target', perms=None) as f:
-        f.write(
-            '[Unit]\n'
-            'Description=Ceph cluster {fsid}\n'
-            'PartOf=ceph.target\n'
-            'Before=ceph.target\n'
-            '\n'
-            '[Install]\n'
-            'WantedBy=multi-user.target ceph.target\n'.format(
-                fsid=fsid)
-        )
-    if not existed:
-        call_throws(ctx, ['systemctl', 'enable', 'ceph-%s.target' % fsid])
-        call_throws(ctx, ['systemctl', 'start', 'ceph-%s.target' % fsid])
-
-    # don't overwrite file in order to allow users to manipulate it
-    if os.path.exists(ctx.logrotate_dir + f'/ceph-{fsid}'):
-        return
-
-    # logrotate for the cluster
-    with write_new(ctx.logrotate_dir + f'/ceph-{fsid}', perms=None) as f:
-        """
-        This is a bit sloppy in that the killall/pkill will touch all ceph daemons
-        in all containers, but I don't see an elegant way to send SIGHUP *just* to
-        the daemons for this cluster.  (1) systemd kill -s will get the signal to
-        podman, but podman will exit.  (2) podman kill will get the signal to the
-        first child (bash), but that isn't the ceph daemon.  This is simpler and
-        should be harmless.
-        """
-        targets: List[str] = [
-            'ceph-mon',
-            'ceph-mgr',
-            'ceph-mds',
-            'ceph-osd',
-            'ceph-fuse',
-            'radosgw',
-            'rbd-mirror',
-            'cephfs-mirror',
-            'tcmu-runner'
-        ]
-
-        f.write("""# created by cephadm
-/var/log/ceph/%s/*.log {
-    rotate 7
-    daily
-    compress
-    sharedscripts
-    postrotate
-        killall -q -1 %s || pkill -1 -x '%s' || true
-    endscript
-    missingok
-    notifempty
-    su root root
-}
-""" % (fsid, ' '.join(targets), '|'.join(targets)))
-
-
-def get_unit_file(ctx: CephadmContext, fsid: str) -> str:
-    has_docker_engine = isinstance(ctx.container_engine, Docker)
-    has_podman_engine = isinstance(ctx.container_engine, Podman)
-    has_podman_split_version = (
-        has_podman_engine and ctx.container_engine.supports_split_cgroups
-    )
-    return templating.render(
-        ctx,
-        templating.Templates.ceph_service,
-        fsid=fsid,
-        has_docker_engine=has_docker_engine,
-        has_podman_engine=has_podman_engine,
-        has_podman_split_version=has_podman_split_version,
-    )
 
 ##################################
 
@@ -3584,12 +1285,13 @@ class MgrListener(Thread):
                         conn.send(err_str.encode())
                         logger.error(err_str)
                     else:
-                        conn.send(b'ACK')
-                        if 'config' in data:
-                            self.agent.wakeup()
-                        self.agent.ls_gatherer.wakeup()
-                        self.agent.volume_gatherer.wakeup()
-                        logger.debug(f'Got mgr message {data}')
+                        if 'counter' in data:
+                            conn.send(b'ACK')
+                            if 'config' in data:
+                                self.agent.wakeup()
+                            self.agent.ls_gatherer.wakeup()
+                            self.agent.volume_gatherer.wakeup()
+                            logger.debug(f'Got mgr message {data}')
             except Exception as e:
                 logger.error(f'Mgr Listener encountered exception: {e}')
 
@@ -3597,17 +1299,20 @@ class MgrListener(Thread):
         self.stop = True
 
     def handle_json_payload(self, data: Dict[Any, Any]) -> None:
-        self.agent.ack = int(data['counter'])
-        if 'config' in data:
-            logger.info('Received new config from mgr')
-            config = data['config']
-            for filename in config:
-                if filename in self.agent.required_files:
-                    file_path = os.path.join(self.agent.daemon_dir, filename)
-                    with write_new(file_path) as f:
-                        f.write(config[filename])
-            self.agent.pull_conf_settings()
-            self.agent.wakeup()
+        if 'counter' in data:
+            self.agent.ack = int(data['counter'])
+            if 'config' in data:
+                logger.info('Received new config from mgr')
+                config = data['config']
+                for filename in config:
+                    if filename in self.agent.required_files:
+                        file_path = os.path.join(self.agent.daemon_dir, filename)
+                        with write_new(file_path) as f:
+                            f.write(config[filename])
+                self.agent.pull_conf_settings()
+                self.agent.wakeup()
+        else:
+            raise RuntimeError('No valid data received.')
 
 
 @register_daemon_form
@@ -3662,6 +1367,9 @@ class CephadmAgent(DaemonForm):
         self.recent_iteration_run_times: List[float] = [0.0, 0.0, 0.0]
         self.recent_iteration_index: int = 0
         self.cached_ls_values: Dict[str, Dict[str, str]] = {}
+        self.ssl_ctx = ssl.create_default_context()
+        self.ssl_ctx.check_hostname = True
+        self.ssl_ctx.verify_mode = ssl.CERT_REQUIRED
 
     def validate(self, config: Dict[str, str] = {}) -> None:
         # check for the required files
@@ -3691,19 +1399,19 @@ class CephadmAgent(DaemonForm):
         with write_new(meta_file_path) as f:
             f.write(json.dumps(meta, indent=4) + '\n')
 
-        unit_file_path = os.path.join(self.ctx.unit_dir, self.unit_name())
+        unit_file_path = os.path.join(self.ctx.unit_dir, self._service_name())
         with write_new(unit_file_path) as f:
             f.write(self.unit_file())
 
         call_throws(self.ctx, ['systemctl', 'daemon-reload'])
-        call(self.ctx, ['systemctl', 'stop', self.unit_name()],
+        call(self.ctx, ['systemctl', 'stop', self._service_name()],
              verbosity=CallVerbosity.DEBUG)
-        call(self.ctx, ['systemctl', 'reset-failed', self.unit_name()],
+        call(self.ctx, ['systemctl', 'reset-failed', self._service_name()],
              verbosity=CallVerbosity.DEBUG)
-        call_throws(self.ctx, ['systemctl', 'enable', '--now', self.unit_name()])
+        call_throws(self.ctx, ['systemctl', 'enable', '--now', self._service_name()])
 
-    def unit_name(self) -> str:
-        return '{}.service'.format(get_unit_name(self.fsid, self.daemon_type, self.daemon_id))
+    def _service_name(self) -> str:
+        return self.identity.service_name
 
     def unit_run(self) -> str:
         py3 = shutil.which('python3')
@@ -3757,6 +1465,7 @@ class CephadmAgent(DaemonForm):
 
     def run(self) -> None:
         self.pull_conf_settings()
+        self.ssl_ctx.load_verify_locations(self.ca_path)
 
         try:
             for _ in range(1001):
@@ -3777,11 +1486,6 @@ class CephadmAgent(DaemonForm):
 
         if not self.volume_gatherer.is_alive():
             self.volume_gatherer.start()
-
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = True
-        ssl_ctx.verify_mode = ssl.CERT_REQUIRED
-        ssl_ctx.load_verify_locations(self.ca_path)
 
         while not self.stop:
             start_time = time.monotonic()
@@ -3808,15 +1512,19 @@ class CephadmAgent(DaemonForm):
                                'port': self.listener_port})
             data = data.encode('ascii')
 
-            url = f'https://{self.target_ip}:{self.target_port}/data/'
             try:
-                req = Request(url, data, {'Content-Type': 'application/json'})
                 send_time = time.monotonic()
-                with urlopen(req, context=ssl_ctx) as response:
-                    response_str = response.read()
-                    response_json = json.loads(response_str)
-                    total_request_time = datetime.timedelta(seconds=(time.monotonic() - send_time)).total_seconds()
-                    logger.info(f'Received mgr response: "{response_json["result"]}" {total_request_time} seconds after sending request.')
+                status, response = http_query(addr=self.target_ip,
+                                              port=self.target_port,
+                                              data=data,
+                                              endpoint='/data',
+                                              ssl_ctx=self.ssl_ctx)
+                response_json = json.loads(response)
+                if status != 200:
+                    logger.error(f'HTTP error {status} while querying agent endpoint: {response}')
+                    raise RuntimeError
+                total_request_time = datetime.timedelta(seconds=(time.monotonic() - send_time)).total_seconds()
+                logger.info(f'Received mgr response: "{response_json["result"]}" {total_request_time} seconds after sending request.')
             except Exception as e:
                 logger.error(f'Failed to send metadata to mgr: {e}')
 
@@ -3870,7 +1578,7 @@ class CephadmAgent(DaemonForm):
         )
         name_id_mapping: Dict[str, str] = self._parse_container_id_name(code, out)
         for i in os.listdir(data_dir):
-            if i in ['mon', 'osd', 'mds', 'mgr']:
+            if i in ['mon', 'osd', 'mds', 'mgr', 'rgw']:
                 daemon_type = i
                 for j in os.listdir(os.path.join(data_dir, i)):
                     if '-' not in j:
@@ -5222,6 +2930,10 @@ def command_bootstrap(ctx):
                 'For more information see:\n\n'
                 '\thttps://docs.ceph.com/en/latest/mgr/telemetry/\n')
     logger.info('Bootstrap complete.')
+
+    if getattr(ctx, 'deploy_cephadm_agent', None):
+        cli(['config', 'set', 'mgr', 'mgr/cephadm/use_agent', 'true'])
+
     return ctx.error_code
 
 ##################################
@@ -5255,36 +2967,6 @@ def command_registry_login(ctx: CephadmContext) -> int:
 
 
 ##################################
-
-
-def to_deployment_container(
-    ctx: CephadmContext, ctr: CephContainer
-) -> CephContainer:
-    """Given a standard ceph container instance return a CephContainer
-    prepared for a deployment as a daemon, having the extra args and
-    custom configurations added.
-    NOTE: The `ctr` object is mutated before being returned.
-    """
-    if 'extra_container_args' in ctx and ctx.extra_container_args:
-        ctr.container_args.extend(ctx.extra_container_args)
-    if 'extra_entrypoint_args' in ctx and ctx.extra_entrypoint_args:
-        ctr.args.extend(ctx.extra_entrypoint_args)
-    ccfiles = fetch_custom_config_files(ctx)
-    if ccfiles:
-        mandatory_keys = ['mount_path', 'content']
-        for conf in ccfiles:
-            if all(k in conf for k in mandatory_keys):
-                mount_path = conf['mount_path']
-                assert ctr.identity
-                file_path = os.path.join(
-                    ctx.data_dir,
-                    ctr.identity.fsid,
-                    'custom_config_files',
-                    ctr.identity.daemon_name,
-                    os.path.basename(mount_path)
-                )
-                ctr.volume_mounts[file_path] = mount_path
-    return ctr
 
 
 def get_deployment_type(
@@ -5405,6 +3087,7 @@ def _deploy_daemon_container(
     daemon.customize_container_endpoints(daemon_endpoints, deployment_type)
     ctr = daemon.container(ctx)
     ics = daemon.init_containers(ctx)
+    sccs = daemon.sidecar_containers(ctx)
     config, keyring = daemon.config_and_keyring(ctx)
     uid, gid = daemon.uid_gid(ctx)
     deploy_daemon(
@@ -5419,6 +3102,7 @@ def _deploy_daemon_container(
         endpoints=daemon_endpoints,
         osd_fsid=daemon.osd_fsid,
         init_containers=ics,
+        sidecars=sccs,
     )
 
 ##################################
@@ -5621,21 +3305,16 @@ def command_ceph_volume(ctx):
 ##################################
 
 
+@infer_fsid
 def command_unit_install(ctx):
     # type: (CephadmContext) -> int
-    if not ctx.fsid:
+    if not getattr(ctx, 'fsid', None):
         raise Error('must pass --fsid to specify cluster')
-
-    fsid = ctx.fsid
-    install_base_units(ctx, fsid)
-    unit = get_unit_file(ctx, fsid)
-    unit_file = 'ceph-%s@.service' % (fsid)
-    with open(ctx.unit_dir + '/' + unit_file + '.new', 'w') as f:
-        f.write(unit)
-        os.rename(ctx.unit_dir + '/' + unit_file + '.new',
-                  ctx.unit_dir + '/' + unit_file)
+    if not getattr(ctx, 'name', None):
+        raise Error('daemon name required')
+    ident = DaemonIdentity.from_context(ctx)
+    systemd_unit.update_files(ctx, ident)
     call_throws(ctx, ['systemctl', 'daemon-reload'])
-
     return 0
 
 
@@ -5645,7 +3324,7 @@ def command_unit(ctx):
     if not ctx.fsid:
         raise Error('must pass --fsid to specify cluster')
 
-    unit_name = get_unit_name_by_daemon_name(ctx, ctx.fsid, ctx.name)
+    unit_name = lookup_unit_name_by_daemon_name(ctx, ctx.fsid, ctx.name)
 
     _, _, code = call(
         ctx,
@@ -5664,7 +3343,7 @@ def command_logs(ctx):
     if not ctx.fsid:
         raise Error('must pass --fsid to specify cluster')
 
-    unit_name = get_unit_name_by_daemon_name(ctx, ctx.fsid, ctx.name)
+    unit_name = lookup_unit_name_by_daemon_name(ctx, ctx.fsid, ctx.name)
 
     cmd = [find_program('journalctl')]
     cmd.extend(['-u', unit_name])
@@ -5734,7 +3413,7 @@ def list_daemons(ctx, detail=True, legacy_dir=None):
     # /var/lib/ceph
     if os.path.exists(data_dir):
         for i in os.listdir(data_dir):
-            if i in ['mon', 'osd', 'mds', 'mgr']:
+            if i in ['mon', 'osd', 'mds', 'mgr', 'rgw']:
                 daemon_type = i
                 for j in os.listdir(os.path.join(data_dir, i)):
                     if '-' not in j:
@@ -6475,40 +4154,59 @@ def command_rm_daemon(ctx):
     lock = FileLock(ctx, ctx.fsid)
     lock.acquire()
 
-    (daemon_type, daemon_id) = ctx.name.split('.', 1)
-    unit_name = get_unit_name_by_daemon_name(ctx, ctx.fsid, ctx.name)
+    ident = DaemonIdentity.from_context(ctx)
+    try:
+        # attempt a fast-path conversion that maps the fsid+name to
+        # the systemd service name, verifying that there is such a service
+        call_throws(ctx, ['systemctl', 'status', ident.service_name])
+        unit_name = ident.service_name
+    except RuntimeError:
+        # fall back to looking up all possible services that might match
+        # (JJM) Preserved this operation in case theres some backwards compat
+        # issues where the DaemonIdentity derived name is not correct.
+        unit_name = lookup_unit_name_by_daemon_name(ctx, ctx.fsid, ctx.name)
 
-    if daemon_type in ['mon', 'osd'] and not ctx.force:
+    if ident.daemon_type in ['mon', 'osd'] and not ctx.force:
         raise Error('must pass --force to proceed: '
                     'this command may destroy precious data!')
 
-    call(ctx, ['systemctl', 'stop', unit_name],
-         verbosity=CallVerbosity.DEBUG)
-    call(ctx, ['systemctl', 'reset-failed', unit_name],
-         verbosity=CallVerbosity.DEBUG)
-    call(ctx, ['systemctl', 'disable', unit_name],
-         verbosity=CallVerbosity.DEBUG)
+    terminate_service(ctx, unit_name)
+
+    # clean up any extra systemd unit files
+    sd_path_info = systemd_unit.sidecars_from_dropin(
+        systemd_unit.PathInfo(ctx.unit_dir, ident), missing_ok=True
+    )
+    for sc_unit in sd_path_info.sidecar_unit_files.values():
+        terminate_service(ctx, sc_unit.name)
+        unlink_file(sc_unit, missing_ok=True)
+    terminate_service(ctx, sd_path_info.init_ctr_unit_file.name)
+    unlink_file(sd_path_info.init_ctr_unit_file, missing_ok=True)
+    unlink_file(sd_path_info.drop_in_file, missing_ok=True)
+    try:
+        sd_path_info.drop_in_file.parent.rmdir()
+    except OSError:
+        pass
 
     # force remove rgw admin socket file if leftover
-    if daemon_type in ['rgw']:
+    if ident.daemon_type in ['rgw']:
         rgw_asok_path = f'/var/run/ceph/{ctx.fsid}/ceph-client.{ctx.name}.*.asok'
         call(ctx, ['rm', '-rf', rgw_asok_path],
              verbosity=CallVerbosity.DEBUG)
 
-    ident = DaemonIdentity(ctx.fsid, daemon_type, daemon_id)
     data_dir = ident.data_dir(ctx.data_dir)
-    if daemon_type in ['mon', 'osd', 'prometheus'] and \
+    if ident.daemon_type in ['mon', 'osd', 'prometheus'] and \
        not ctx.force_delete_data:
         # rename it out of the way -- do not delete
         backup_dir = os.path.join(ctx.data_dir, ctx.fsid, 'removed')
         if not os.path.exists(backup_dir):
             makedirs(backup_dir, 0, 0, DATA_DIR_MODE)
-        dirname = '%s.%s_%s' % (daemon_type, daemon_id,
-                                datetime.datetime.utcnow().strftime(DATEFMT))
+        dirname = '%s_%s' % (
+            ident.daemon_name, datetime.datetime.utcnow().strftime(DATEFMT)
+        )
         os.rename(data_dir,
                   os.path.join(backup_dir, dirname))
     else:
-        call_throws(ctx, ['rm', '-rf', data_dir])
+        shutil.rmtree(data_dir, ignore_errors=True)
 
     endpoints = fetch_endpoints(ctx)
     ports: List[int] = [e.port for e in endpoints]
@@ -6601,27 +4299,29 @@ def _rm_cluster(ctx: CephadmContext, keep_logs: bool, zap_osds: bool) -> None:
     if not ctx.fsid:
         raise Error('must select the cluster to delete by passing --fsid to proceed')
 
-    def disable_systemd_service(unit_name: str) -> None:
-        call(ctx, ['systemctl', 'stop', unit_name],
-             verbosity=CallVerbosity.DEBUG)
-        call(ctx, ['systemctl', 'reset-failed', unit_name],
-             verbosity=CallVerbosity.DEBUG)
-        call(ctx, ['systemctl', 'disable', unit_name],
-             verbosity=CallVerbosity.DEBUG)
-
     logger.info(f'Deleting cluster with fsid: {ctx.fsid}')
 
     # stop + disable individual daemon units
+    sd_paths = []
     for d in list_daemons(ctx, detail=False):
         if d['fsid'] != ctx.fsid:
             continue
         if d['style'] != 'cephadm:v1':
             continue
-        disable_systemd_service('ceph-%s@%s' % (ctx.fsid, d['name']))
+        terminate_service(ctx, 'ceph-%s@%s' % (ctx.fsid, d['name']))
+        # terminate sidecar & other supplemental services
+        ident = DaemonIdentity.from_name(ctx.fsid, d['name'])
+        sd_path_info = systemd_unit.sidecars_from_dropin(
+            systemd_unit.PathInfo(ctx.unit_dir, ident), missing_ok=True
+        )
+        for sc_unit in sd_path_info.sidecar_unit_files.values():
+            terminate_service(ctx, sc_unit.name)
+        terminate_service(ctx, sd_path_info.init_ctr_unit_file.name)
+        sd_paths.append(sd_path_info)
 
     # cluster units
     for unit_name in ['ceph-%s.target' % ctx.fsid]:
-        disable_systemd_service(unit_name)
+        terminate_service(ctx, unit_name)
 
     slice_name = 'system-ceph\\x2d{}.slice'.format(ctx.fsid.replace('-', '\\x2d'))
     call(ctx, ['systemctl', 'stop', slice_name],
@@ -6632,34 +4332,41 @@ def _rm_cluster(ctx: CephadmContext, keep_logs: bool, zap_osds: bool) -> None:
         _zap_osds(ctx)
 
     # rm units
-    call_throws(ctx, ['rm', '-f', ctx.unit_dir
-                      + '/ceph-%s@.service' % ctx.fsid])
-    call_throws(ctx, ['rm', '-f', ctx.unit_dir
-                      + '/ceph-%s.target' % ctx.fsid])
-    call_throws(ctx, ['rm', '-rf',
-                      ctx.unit_dir + '/ceph-%s.target.wants' % ctx.fsid])
+    for sd_path_info in sd_paths:
+        for sc_unit in sd_path_info.sidecar_unit_files.values():
+            unlink_file(sc_unit, missing_ok=True)
+        unlink_file(sd_path_info.init_ctr_unit_file, missing_ok=True)
+        shutil.rmtree(sd_path_info.drop_in_file.parent, ignore_errors=True)
+    unit_dir = Path(ctx.unit_dir)
+    unlink_file(unit_dir / f'ceph-{ctx.fsid}@.service', missing_ok=True)
+    unlink_file(unit_dir / f'ceph-{ctx.fsid}.target', missing_ok=True)
+    shutil.rmtree(unit_dir / f'ceph-{ctx.fsid}.target.wants', ignore_errors=True)
+
     # rm data
-    call_throws(ctx, ['rm', '-rf', ctx.data_dir + '/' + ctx.fsid])
+    shutil.rmtree(Path(ctx.data_dir) / ctx.fsid, ignore_errors=True)
 
     if not keep_logs:
         # rm logs
-        call_throws(ctx, ['rm', '-rf', ctx.log_dir + '/' + ctx.fsid])
-        call_throws(ctx, ['rm', '-rf', ctx.log_dir
-                          + '/*.wants/ceph-%s@*' % ctx.fsid])
+        shutil.rmtree(Path(ctx.log_dir) / ctx.fsid, ignore_errors=True)
 
     # rm logrotate config
-    call_throws(ctx, ['rm', '-f', ctx.logrotate_dir + '/ceph-%s' % ctx.fsid])
+    unlink_file(
+        Path(ctx.logrotate_dir) / ('ceph-%s' % ctx.fsid), ignore_errors=True
+    )
 
     # if last cluster on host remove shared files
     if get_ceph_cluster_count(ctx) == 0:
-        disable_systemd_service('ceph.target')
+        terminate_service(ctx, 'ceph.target')
 
         # rm shared ceph target files
-        call_throws(ctx, ['rm', '-f', ctx.unit_dir + '/multi-user.target.wants/ceph.target'])
-        call_throws(ctx, ['rm', '-f', ctx.unit_dir + '/ceph.target'])
+        unlink_file(
+            Path(ctx.unit_dir) / 'multi-user.target.wants/ceph.target',
+            ignore_errors=True
+        )
+        unlink_file(Path(ctx.unit_dir) / 'ceph.target', ignore_errors=True)
 
         # rm cephadm logrotate config
-        call_throws(ctx, ['rm', '-f', ctx.logrotate_dir + '/cephadm'])
+        unlink_file(Path(ctx.logrotate_dir) / 'cephadm', ignore_errors=True)
 
         if not keep_logs:
             # remove all cephadm logs
@@ -7302,7 +5009,7 @@ def _get_parser():
         '--volume', '-v',
         action='append',
         default=[],
-        help='set environment variable')
+        help='mount a volume')
     parser_shell.add_argument(
         'command', nargs=argparse.REMAINDER,
         help='command (optional)')
@@ -7381,6 +5088,13 @@ def _get_parser():
     parser_unit_install = subparsers.add_parser(
         'unit-install', help="Install the daemon's systemd unit")
     parser_unit_install.set_defaults(func=command_unit_install)
+    parser_unit_install.add_argument(
+        '--fsid',
+        help='cluster FSID')
+    parser_unit_install.add_argument(
+        '--name', '-n',
+        required=True,
+        help='daemon name (type.id)')
 
     parser_logs = subparsers.add_parser(
         'logs', help='print journald logs for a daemon container')
@@ -7579,6 +5293,10 @@ def _get_parser():
         '--log-to-file',
         action='store_true',
         help='configure cluster to log to traditional log files in /var/log/ceph/$fsid')
+    parser_bootstrap.add_argument(
+        '--deploy-cephadm-agent',
+        action='store_true',
+        help='deploy the cephadm-agent')
 
     parser_deploy = subparsers.add_parser(
         'deploy', help='deploy a daemon')

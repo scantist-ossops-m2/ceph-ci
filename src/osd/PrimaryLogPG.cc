@@ -5902,7 +5902,7 @@ int PrimaryLogPG::do_sparse_read(OpContext *ctx, OSDOp& osd_op) {
     }
 
     bufferlist data_bl;
-    r = pgbackend->objects_readv_sync(soid, std::move(m), op.flags, &data_bl);
+    r = pgbackend->objects_readv_sync(soid, m, op.flags, &data_bl);
     if (r == -EIO) {
       r = rep_repair_primary_object(soid, ctx);
     }
@@ -8186,8 +8186,7 @@ inline int PrimaryLogPG::_delete_oid(
   // in luminous or later, we can't delete the head if there are
   // clones. we trust the caller passing no_whiteout has already
   // verified they don't exist.
-  if (!snapset.clones.empty() ||
-      (!ctx->snapc.snaps.empty() && ctx->snapc.snaps[0] > snapset.seq)) {
+  if (should_whiteout(snapset, ctx->snapc)) {
     if (no_whiteout) {
       dout(20) << __func__ << " has or will have clones but no_whiteout=1"
 	       << dendl;
@@ -12879,8 +12878,7 @@ void PrimaryLogPG::on_shutdown()
     osd->clear_queued_recovery(this);
   }
 
-  m_scrubber->scrub_clear_state();
-  m_scrubber->rm_from_osd_scrubbing();
+  m_scrubber->on_new_interval();
 
   vector<ceph_tid_t> tids;
   cancel_copy_ops(false, &tids);
@@ -13028,8 +13026,7 @@ void PrimaryLogPG::on_change(ObjectStore::Transaction &t)
     finish_degraded_object(p->first);
   }
 
-  // requeues waiting_for_scrub
-  m_scrubber->scrub_clear_state();
+  ceph_assert(waiting_for_scrub.empty());
 
   for (auto p = waiting_for_blocked_object.begin();
        p != waiting_for_blocked_object.end();
@@ -15605,8 +15602,10 @@ PrimaryLogPG::AwaitAsyncWork::AwaitAsyncWork(my_context ctx)
     NamedState(nullptr, "Trimming/AwaitAsyncWork")
 {
   auto *pg = context< SnapTrimmer >().pg;
+  // Determine cost in terms of the average object size
+  uint64_t cost_per_object = pg->get_average_object_size();
   context< SnapTrimmer >().log_enter(state_name);
-  context< SnapTrimmer >().pg->osd->queue_for_snap_trim(pg);
+  context< SnapTrimmer >().pg->osd->queue_for_snap_trim(pg, cost_per_object);
   pg->state_set(PG_STATE_SNAPTRIM);
   pg->state_clear(PG_STATE_SNAPTRIM_ERROR);
   pg->publish_stats_to_osd();
