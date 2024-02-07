@@ -176,7 +176,6 @@ def test_cache_methods(r, client, obj):
         log.info("NOTICE: datacache test object not found, inspect if datacache was bypassed or disabled during this check.")
     if chk_cache_dir != 1:
         log.info("ERROR: not all the parts of the datacache test object were found in the cache.")
-        return
 
     # list the files in the cache dir for troubleshooting
     out = exec_cmd('ls -l %s' % (cache_dir))
