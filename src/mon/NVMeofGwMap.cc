@@ -492,11 +492,15 @@ struct CMonRequestProposal : public Context {
   NVMeofGwMap *m;
   CMonRequestProposal(NVMeofGwMap *mon) : m(mon) {}
   void finish(int r) {
-      dout(4) << "osdmon is  writable " << dendl;
-      m->mon->nvmegwmon()->request_proposal(m->mon->osdmon());
+      dout(4) << "osdmon is  writable? " << m->mon->osdmon()->is_writeable() << dendl;
+      if(m->mon->osdmon()->is_writeable()){
+        m->mon->nvmegwmon()->request_proposal(m->mon->osdmon());
+      }
+      else {
+          m->mon->osdmon()->wait_for_writeable_ctx( new CMonRequestProposal(m));
+      }
   }
 };
-
 
 int NVMeofGwMap::blocklist_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T grpid, epoch_t &epoch)
 {

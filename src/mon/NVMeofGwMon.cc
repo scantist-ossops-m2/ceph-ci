@@ -19,6 +19,7 @@ using std::string;
 
 void NVMeofGwMon::init(){
     dout(4) <<  "called " << dendl;
+    g_conf().add_observer(this);
 }
 
 void NVMeofGwMon::on_restart(){
@@ -27,7 +28,10 @@ void NVMeofGwMon::on_restart(){
     last_tick = ceph::coarse_mono_clock::now();
 }
 
-void NVMeofGwMon::on_shutdown() {}
+void NVMeofGwMon::on_shutdown() {
+     g_conf().remove_observer(this);
+}
+
 
 void NVMeofGwMon::tick(){
    // static int cnt=0;
