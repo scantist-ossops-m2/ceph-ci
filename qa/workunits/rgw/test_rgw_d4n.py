@@ -82,65 +82,6 @@ def get_cmd_output(cmd_out):
     out = out.strip('\n')
     return out
 
-def test_directory_methods(r, client, obj):
-    test_txt = 'test'
-
-    response_put = obj.put(Body=test_txt)
-
-    assert(response_put.get('ResponseMetadata').get('HTTPStatusCode') == 200)
-
-    # first get call
-    response_get = obj.get()
-
-    assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
-
-    # list the permissions for the tmp dir
-    dir_tmp = "/tmp/"
-    out = exec_cmd('ls -lA %s' % (dir_tmp))
-    list_perm = get_cmd_output(out)
-    log.debug("Print permissions for tmp dir: %s", list_perm)
-
-    data = r.hgetall('bkt_test.txt_0_4')
-    print("Redis data check: ")
-    print(data)
-    output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
-    attrs = json.loads(output.decode('latin-1'))
-
-    assert(data.get('blockID') == '0')
-    assert(data.get('version') == attrs.get('tag'))
-    assert(data.get('size') == '4')
-    assert(data.get('globalWeight') == '0')
-    assert(data.get('blockHosts') == '127.0.0.1:6379')
-    assert(data.get('objName') == 'test.txt')
-    assert(data.get('bucketName') == 'bkt')
-    assert(data.get('creationTime') == attrs.get('mtime'))
-    assert(data.get('dirty') == '0')
-    assert(data.get('objHosts') == '')
-
-    # second get call
-    response_get = obj.get()
-
-    assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
-
-    data = r.hgetall('bkt_test.txt_0_4')
-    print("Redis data check: ")
-    print(data)
-    output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
-    attrs = json.loads(output.decode('latin-1'))
-
-    assert(data.get('blockID') == '0')
-    assert(data.get('version') == attrs.get('tag'))
-    assert(data.get('size') == '4')
-    assert(data.get('globalWeight') == '0')
-    assert(data.get('blockHosts') == '127.0.0.1:6379')
-    assert(data.get('objName') == 'test.txt')
-    assert(data.get('bucketName') == 'bkt')
-    assert(data.get('creationTime') == attrs.get('mtime'))
-    assert(data.get('dirty') == '0')
-    assert(data.get('objHosts') == '')
-
-    r.flushall()
-
 def get_body(response):
     body = response['Body']
     got = body.read()
@@ -148,22 +89,8 @@ def get_body(response):
         got = got.decode()
     return got
 
-def test_cache_methods(r, client, obj):
+def test_small_object(r, client, obj):
     test_txt = 'test'
-
-    # list the permissions for the tmp dir
-    dir_tmp = "/tmp/"
-    out = exec_cmd('ls -lA %s' % (dir_tmp))
-    list_perm = get_cmd_output(out)
-    log.debug("Print permissions for tmp dir: %s", list_perm)
-
-    # setup for test
-    cache_dir = "/tmp/rgw_d4n_datacache/"
-    out = exec_cmd('find %s -type f | wc -l' % (cache_dir))
-    chk_cache_dir = int(get_cmd_output(out))
-    log.debug("Check cache dir content: %s", chk_cache_dir)
-    if chk_cache_dir != 0:
-        log.info("ERROR: cache directory is not empty, please ensure that it is empty before running this test.")
 
     response_put = obj.put(Body=test_txt)
 
@@ -171,29 +98,39 @@ def test_cache_methods(r, client, obj):
 
     # first get call
     response_get = obj.get()
-    body = get_body(response_get)
+
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
+
+    # list the permissions for the tmp dir
+    tmp_dir = "/tmp/"
+    out = exec_cmd('ls -lA %s' % (tmp_dir))
+    list_perm = get_cmd_output(out)
+    log.debug("Print permissions for tmp dir: %s", list_perm)
+
+    data = r.hgetall('bkt_test.txt_0_4')
+    output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
+    attrs = json.loads(output.decode('latin-1'))
+
+    # directory entry comparisons
+    assert(data.get('blockID') == '0')
+    assert(data.get('version') == attrs.get('tag'))
+    assert(data.get('size') == '4')
+    assert(data.get('globalWeight') == '0')
+    assert(data.get('blockHosts') == '127.0.0.1:6379')
+    assert(data.get('objName') == 'test.txt')
+    assert(data.get('bucketName') == 'bkt')
+    assert(data.get('creationTime') == attrs.get('mtime'))
+    assert(data.get('dirty') == '0')
+    assert(data.get('objHosts') == '')
 
     # check logs to ensure object was retrieved from storage backend
     res = subprocess.call(['grep', '"D4NFilterObject::iterate:: iterate(): Fetching object from backend store"', '/var/log/ceph/rgw.ceph.client.0.log'])
 
     assert(res >= 1)
 
-    # check if the cache directory is populated with the correct number of parts
-    out = exec_cmd('find %s -type f | wc -l' % (cache_dir))
-    chk_cache_dir = int(get_cmd_output(out))
-    log.debug("Check cache dir content: %s", chk_cache_dir)
-    if chk_cache_dir == 0:
-        log.info("NOTICE: datacache test object not found, inspect if datacache was bypassed or disabled during this check.")
-    if chk_cache_dir != 1:
-        log.info("ERROR: not all the parts of the datacache test object were found in the cache.")
-
-    # list the files in the cache dir for troubleshooting
-    out = exec_cmd('ls -l %s' % (cache_dir))
-    list_dir_out = get_cmd_output(out)
-    log.debug("Listing of datacache directory is: %s", list_dir_out)
-
     # retrieve and compare cache contents
+    body = get_body(response_get)
+
     assert(body == "test")
     data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
     data = data.decode('latin-1').strip()
@@ -203,14 +140,32 @@ def test_cache_methods(r, client, obj):
 
     # second get call
     response_get = obj.get()
-    body = get_body(response_get)
+
     assert(response_get.get('ResponseMetadata').get('HTTPStatusCode') == 200)
+
+    data = r.hgetall('bkt_test.txt_0_4')
+    output = subprocess.check_output(['radosgw-admin', 'object', 'stat', '--bucket=bkt', '--object=test.txt'])
+    attrs = json.loads(output.decode('latin-1'))
+
+    # directory entries should remain consistent
+    assert(data.get('blockID') == '0')
+    assert(data.get('version') == attrs.get('tag'))
+    assert(data.get('size') == '4')
+    assert(data.get('globalWeight') == '0')
+    assert(data.get('blockHosts') == '127.0.0.1:6379')
+    assert(data.get('objName') == 'test.txt')
+    assert(data.get('bucketName') == 'bkt')
+    assert(data.get('creationTime') == attrs.get('mtime'))
+    assert(data.get('dirty') == '0')
+    assert(data.get('objHosts') == '')
 
     # check logs to ensure object was retrieved from cache
     res = subprocess.call(['grep', '"SSDCache: get_async(): ::aio_read(), ret=0"', '/var/log/ceph/rgw.ceph.client.0.log'])
     assert(res >= 1)
 
     # retrieve and compare cache contents
+    body = get_body(response_get)
+
     assert(body == "test")
     data = subprocess.check_output(['ls', '/tmp/rgw_d4n_datacache/'])
     data = data.decode('latin-1').strip()
@@ -266,13 +221,10 @@ def main():
 
     r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
 
-    log.info("D4NFilterTest: testing directory methods")
-    test_directory_methods(r, client, obj)
+    # Run small object test
+    test_small_object(r, client, obj)
 
-    log.info("D4NFilterTest: testing cache methods")
-    test_cache_methods(r, client, obj)
-
-    log.info("D4NFilterTest successfully completed.")
+    log.info("D4NFilterTest completed.")
 
 main()
 log.info("Completed D4N tests")
