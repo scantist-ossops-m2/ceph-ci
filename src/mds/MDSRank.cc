@@ -1064,6 +1064,10 @@ bool MDSRankDispatcher::ms_dispatch(const cref_t<Message> &m)
 
 bool MDSRank::_dispatch(const cref_t<Message> &m, bool new_msg)
 {
+  if (quiesce_dispatch(m)) {
+    return true;
+  }
+
   if (is_stale_message(m)) {
     return true;
   }
@@ -1214,6 +1218,7 @@ bool MDSRank::is_valid_message(const cref_t<Message> &m) {
     return true;
   }
 
+  dout(10) << "invalid message type: " << std::hex << type << std::dec << dendl;
   return false;
 }
 
@@ -1279,6 +1284,13 @@ void MDSRank::handle_message(const cref_t<Message> &m)
         }
       }
       break;
+
+    case MSG_MDS_QUIESCE_DB_LISTING:
+    case MSG_MDS_QUIESCE_DB_ACK:
+      ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MDS);
+      quiesce_dispatch(m);
+      break;
+
 
     case MSG_MDS_LOCK:
     case MSG_MDS_INODEFILECAPS:
