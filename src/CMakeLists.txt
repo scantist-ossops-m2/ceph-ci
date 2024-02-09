@@ -386,7 +386,8 @@ if(WITH_SEASTAR)
     "-Wno-attributes"
     "-Wno-pessimizing-move"
     "-Wno-address-of-packed-member"
-    "-Wno-non-virtual-dtor")
+    "-Wno-non-virtual-dtor"
+    "--param" "asan-use-after-return=0")
   set(Seastar_CXX_FLAGS "${Seastar_CXX_FLAGS}" CACHE STRING "" FORCE)
   add_subdirectory(seastar)
   # create the directory so cmake won't complain when looking at the imported
