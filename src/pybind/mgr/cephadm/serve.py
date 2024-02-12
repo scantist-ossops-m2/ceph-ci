@@ -888,6 +888,13 @@ class CephadmServe:
                         hosts_altered.add(d.hostname)
                         break
 
+                # do not attempt to deploy node-proxy agent when oob details are not provided.
+                if slot.daemon_type == 'node-proxy' and not slot.hostname in self.mgr.node_proxy_cache.oob.keys():
+                    self.log.debug(
+                        f'Not deploying {slot.daemon_type} agent on {slot.hostname} as oob details are not present.'
+                    )
+                    continue
+
                 # deploy new daemon
                 daemon_id = slot.name
 
