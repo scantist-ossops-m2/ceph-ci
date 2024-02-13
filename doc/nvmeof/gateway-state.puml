@@ -8,8 +8,7 @@ package "MNVMeofGwMap" #DDDDDD {
     }
 
     note top
-        The data structure broadcasted by the monitor
-        to all NVMeoF gateways in the cluster encompasses
+        The data structure distributed by the Monitors to NVMEoF gateways includes
         a mapping of the <b>GatewayState</b> objects.
 
         NVMeoF gateways are segmented into groups identified

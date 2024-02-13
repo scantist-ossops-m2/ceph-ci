@@ -13,7 +13,7 @@ package "MNVMeofGwBeacon" #DDDDDD {
     note top
         NVMeoF gateways regularly transmit
         a Beacon message to the monitor,
-        conveying the current state of the gateway.
+        conveying their current state.
     end note
 
     class Subsystem {
