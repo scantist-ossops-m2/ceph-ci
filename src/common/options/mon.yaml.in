@@ -66,7 +66,7 @@ options:
 - name: mon_nvmeofgw_beacon_grace
   type: secs
   level: advanced
-  desc: Period in seconds from last beacon to monitor marking a manager daemon as
+  desc: Period in seconds from last beacon to monitor marking a  NVMeoF gateway as
     failed
   default: 10
   services:
