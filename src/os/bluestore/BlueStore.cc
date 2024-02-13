@@ -2225,8 +2225,6 @@ BlueStore::Blob::~Blob()
     }
     coll_cache->rm_blob();
   }
-  SharedBlob* sb = shared_blob.get();
-  ceph_assert(sb || (!sb && bc.buffer_map.empty()));
 }
 
 void BlueStore::Blob::dump(Formatter* f) const
@@ -3131,7 +3129,7 @@ void BlueStore::ExtentMap::make_range_shared_maybe_merge(
         uint32_t b_logical_length = b->merge_blob(store->cct, e.blob.get());
         for (auto p : blob.get_extents()) {
           if (p.is_valid()) {
-            b->shared_blob->get_ref(p.offset, p.length);
+            b->get_dirty_shared_blob()->get_ref(p.offset, p.length);
           }
         }
         // reblob extents might erase e
@@ -11621,7 +11619,7 @@ void BlueStore::_read_cache(
     ready_regions_t cache_res;
     interval_set<uint32_t> cache_interval;
     o->bc.read(
-      bptr->shared_blob->get_cache(), pos, b_len, cache_res, cache_interval,
+      o->c->cache, pos, b_len, cache_res, cache_interval,
       read_cache_policy);
     dout(20) << __func__ << "  blob " << *bptr << std::hex
              << " need 0x" << pos << "~" << b_len
@@ -11792,7 +11790,7 @@ int BlueStore::_generate_read_result_bl(
       if (buffered) {
         bufferlist region_buffer;
         region_buffer.substr_of(raw_bl, blob_offset, length);
-        o->bc.did_read(bptr->shared_blob->get_cache(), offset, region_buffer.length(), std::move(region_buffer));
+        o->bc.did_read(o->c->cache, offset, region_buffer.length(), std::move(region_buffer));
       }
       for (auto& req : r2r) {
         for (auto& r : req.regs) {
@@ -11814,7 +11812,7 @@ int BlueStore::_generate_read_result_bl(
             bufferlist region_buffer;
             region_buffer.substr_of(req.bl, r.front, r.length);
             // need offset before padding
-            o->bc.did_read(bptr->shared_blob->get_cache(), r.logical_offset, r.length, std::move(region_buffer));
+            o->bc.did_read(o->c->cache, r.logical_offset, r.length, std::move(region_buffer));
           }
           ready_regions[r.logical_offset].substr_of(req.bl, r.front, r.length);
         }

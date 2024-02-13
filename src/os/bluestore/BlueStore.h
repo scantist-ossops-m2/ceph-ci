@@ -2901,8 +2901,7 @@ private:
     uint32_t offset,
     ceph::buffer::list&& bl,
     unsigned flags) {
-    onode->bc.write(blob->shared_blob->get_cache(), txc->seq, offset, std::move(bl),
-			     flags);
+    onode->bc.write(onode->c->cache, txc->seq, offset, std::move(bl), flags);
     txc->buffers_written.insert({onode.get(), txc->seq});
   }
 
@@ -2913,8 +2912,7 @@ private:
     uint32_t offset,
     ceph::buffer::list& bl,
     unsigned flags) {
-    onode->bc.write(blob->shared_blob->get_cache(), txc->seq, offset, bl,
-			     flags);
+    onode->bc.write(onode->c->cache, txc->seq, offset, bl, flags);
     txc->buffers_written.insert({onode.get(), txc->seq});
   }
 
