@@ -7509,6 +7509,11 @@ class TestSubvolumeSnapshotClones(TestVolumesHelper):
         max_concurrent_clones = int(self.config_get('mgr', 'mgr/volumes/max_concurrent_clones'))
         self.assertEqual(max_concurrent_clones, 2)
 
+        # Disable the snapshot_clone_no_wait config option
+        self.config_set('mgr', 'mgr/volumes/snapshot_clone_no_wait', True)
+        threads_available = self.config_get('mgr', 'mgr/volumes/snapshot_clone_no_wait')
+        self.assertEqual(threads_available, 'true')
+
         # Insert delay of 15 seconds at the beginning of the snapshot clone
         self.config_set('mgr', 'mgr/volumes/snapshot_clone_delay', 15)
 
@@ -7617,9 +7622,9 @@ class TestSubvolumeSnapshotClones(TestVolumesHelper):
         self._verify_clone(subvolume, snapshot, clone3)
 
         # set the snapshot_clone_no_wait config option to default
-        self.config_set('mgr', 'mgr/volumes/snapshot_clone_no_wait', True)
-        threads_available = self.config_get('mgr', 'mgr/volumes/snapshot_clone_no_wait')
-        self.assertEqual(threads_available, 'true')
+        # self.config_set('mgr', 'mgr/volumes/snapshot_clone_no_wait', True)
+        # threads_available = self.config_get('mgr', 'mgr/volumes/snapshot_clone_no_wait')
+        # self.assertEqual(threads_available, 'true')
 
         # set number of cloner threads to default
         self.config_set('mgr', 'mgr/volumes/max_concurrent_clones', 4)
