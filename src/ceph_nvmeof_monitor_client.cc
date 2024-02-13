@@ -28,7 +28,13 @@
 
 static void usage()
 {
-  std::cout << "usage: ceph-nvmeof -i <ID> [flags]\n"
+  std::cout << "usage: ceph-nvmeof-monitor-client\n"
+               "        --gateway-name <GW_NAME>\n"
+               "        --gateway-address <GW_ADDRESS>\n"
+               "        --gateway-pool <CEPH_POOL>\n"
+               "        --gateway-group <GW_GROUP>\n"
+               "        --monitor-address <MONITOR_GROUP_ADDRESS>\n"
+               "        [flags]\n"
 	    << std::endl;
   generic_server_usage();
 }
@@ -39,7 +45,7 @@ static void usage()
  */
 int main(int argc, const char **argv)
 {
-  ceph_pthread_setname(pthread_self(), "ceph-nvmeof");
+  ceph_pthread_setname(pthread_self(), "ceph-nvmeof-monitor-client");
 
   auto args = argv_to_vec(argc, argv);
   if (args.empty()) {
