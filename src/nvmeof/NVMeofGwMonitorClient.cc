@@ -128,7 +128,6 @@ int NVMeofGwMonitorClient::init()
   // We must register our config callback before calling init(), so
   // that we see the initial configuration message
   monc.register_config_callback([this](const std::string &k, const std::string &v){
-      // removing value to hide sensitive data going into mgr logs
       // leaving this for debugging purposes
       dout(10) << "nvmeof config_callback: " << k << " : " << v << dendl;
       
@@ -157,10 +156,6 @@ int NVMeofGwMonitorClient::init()
     return r;
   }
   dout(0) << "monc.authentication done" << dendl;
-  // only forward monmap updates after authentication finishes, otherwise
-  // monc.authenticate() will be waiting for MgrStandy::ms_dispatch()
-  // to acquire the lock forever, as it is already locked in the beginning of
-  // this method.
   monc.set_passthrough_monmap();
 
   client_t whoami = monc.get_global_id();
@@ -268,11 +263,10 @@ void NVMeofGwMonitorClient::shutdown()
     // Stop asio threads, so leftover events won't call into shut down
     // monclient/objecter.
     poolctx.finish();
-    // stop monc, so mon won't be able to instruct me to shutdown/activate after
-    // the active_mgr is stopped
+    // stop monc
     monc.shutdown();
 
-    // objecter is used by monc and active_mgr
+    // objecter is used by monc
     objecter.shutdown();
     // client_messenger is used by all of them, so stop it in the end
     client_messenger->shutdown();
