@@ -597,15 +597,15 @@ parliament cluster that provides extremely reliable and durable storage
 of cluster membership, configuration, and state.
 
 %package mon-client-nvmeof
-Summary:	Ceph NVMe-oF Gateway Monitor Client
+Summary:	Ceph NVMeoF Gateway Monitor Client
 %if 0%{?suse_version}
 Group:		System/Filesystems
 %endif
 Provides:	ceph-test:/usr/bin/ceph-nvmeof-monitor-client
 Requires:	librados2 = %{_epoch_prefix}%{version}-%{release}
 %description mon-client-nvmeof
-Ceph NVMe-oF Gateway Monitor Client distributes Paxos ANA info
-to NVMe-oF Gateway and provides beacons to the monitor daemon
+Ceph NVMeoF Gateway Monitor Client distributes Paxos ANA info
+to NVMeoF Gateway and provides beacons to the monitor daemon
 
 %package mgr
 Summary:        Ceph Manager Daemon
