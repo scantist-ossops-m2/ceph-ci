@@ -571,12 +571,14 @@ void LazyOmapStatsTest::wait_for_active_clean()
   int num_not_clean;
   do {
     string dump_output = get_output(command, true);
+    cout << __func__ << " dump_output: " << dump_output << endl;
     if (index == -1) {
       regex ireg(
           "\n"
           R"((PG_STAT\s.*))"
           "\n");
       index = find_index(dump_output, ireg, "STATE");
+      cout << __func__ << " index: " << index << endl;
     }
     smatch match;
     regex_search(dump_output, match, reg);
@@ -584,11 +586,13 @@ void LazyOmapStatsTest::wait_for_active_clean()
     string line;
     num_not_clean = 0;
     while (std::getline(buffer, line)) {
+      cout << __func__ << " line: " << line << endl;
       if (line.compare(0, 1, "P") == 0) continue;
       boost::char_separator<char> sep{" "};
       boost::tokenizer<boost::char_separator<char>> tok(line, sep);
       vector<string> tokens(tok.begin(), tok.end());
       num_not_clean += tokens.at(index).compare("active+clean");
+      cout << __func__ << " num_not_clean: " << num_not_clean << endl;
     }
     cout << "." << flush;
     this_thread::sleep_for(chrono::milliseconds(250));
