@@ -563,10 +563,7 @@ void LazyOmapStatsTest::wait_for_active_clean()
   cout << "Waiting for active+clean" << endl;
 
   int index = -1;
-  regex reg(
-      "\n"
-      R"((PG_STAT[\s\S]*))"
-      "\n +\n[0-9]");
+  regex reg(R"(PG_STAT[^\n]*\n)");
   string command = R"({"prefix": "pg dump"})";
   int num_not_clean;
   do {
