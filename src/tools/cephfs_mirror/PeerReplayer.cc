@@ -1380,12 +1380,17 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
       dout(0) << ": backing off r=" << r << dendl;
       break;
     }
+    r = pre_sync_check_and_open_handles(dir_root, current, prev, &fh);
+    if (r < 0) {
+      dout(5) << ": cannot proceeed with sync: " << cpp_strerror(r) << dendl;
+      return r;
+    }
 
     dout(20) << ": " << sync_queue.size() << " entries in queue" << dendl;
     const auto &queue_entry = sync_queue.front();
     epath = queue_entry.epath;
     dout(20) << ": syncing entry, path=" << epath << dendl;
-    r = ceph_open_snapdiff(m_local_mount, dir_root.c_str(), epath.c_str(),
+    r = ceph_open_snapdiff(fh.p_mnt, dir_root.c_str(), epath.c_str(),
                            stringify((*prev).first).c_str(), current.first.c_str(), &sd_info);
     if (r != 0) {
       derr << ": failed to open snapdiff, r=" << r << dendl;
@@ -1397,6 +1402,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
         ceph_close_snapdiff(&sd_info);
         return r;
       }
+      //sleep(10);
 
       //New entry found
       nname = sd_entry.dir_entry.d_name;
