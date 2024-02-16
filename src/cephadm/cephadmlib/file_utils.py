@@ -64,11 +64,13 @@ def populate_files(config_dir, config_files, uid, gid):
 
 
 def touch(
-    file_path: str, uid: Optional[int] = None, gid: Optional[int] = None
+    file_path: str, uid: Optional[int] = None, gid: Optional[int] = None, mode: Optional[int] = None
 ) -> None:
     Path(file_path).touch()
     if uid and gid:
         os.chown(file_path, uid, gid)
+    if mode:
+        os.chmod(file_path, mode)
 
 
 def write_tmp(s, uid, gid):

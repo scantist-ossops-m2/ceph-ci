@@ -736,8 +736,9 @@ def create_daemon_dirs(
             makedirs(os.path.join(data_dir_root, config_dir), uid, gid, 0o755)
             makedirs(os.path.join(data_dir_root, config_dir, 'certs'), uid, gid, 0o755)
             makedirs(os.path.join(data_dir_root, config_dir, 'provisioning/datasources'), uid, gid, 0o755)
-            makedirs(os.path.join(data_dir_root, 'data'), uid, gid, 0o755)
-            touch(os.path.join(data_dir_root, 'data', 'grafana.db'), uid, gid)
+            makedirs(os.path.join(data_dir_root, config_dir, 'provisioning/dashboards'), uid, gid, 0o755)
+            makedirs(os.path.join(data_dir_root, 'data'), uid, gid, 0o472)
+            touch(os.path.join(data_dir_root, 'data', 'grafana.db'), uid, gid, 0o472)
         elif daemon_type == 'alertmanager':
             data_dir_root = ident.data_dir(ctx.data_dir)
             config_dir = 'etc/alertmanager'
