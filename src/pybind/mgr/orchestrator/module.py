@@ -95,8 +95,9 @@ class HostDetails:
 
         if self._facts:
             self.server = f"{self._facts.get('vendor', '').strip()} {self._facts.get('model', '').strip()}"
-            _cores = self._facts.get('cpu_cores', 0) * self._facts.get('cpu_count', 0)
-            _threads = self._facts.get('cpu_threads', 0) * _cores
+            _cpu_count = self._facts.get('cpu_count', 1)
+            _cores = self._facts.get('cpu_cores', 0) * _cpu_count
+            _threads = self._facts.get('cpu_threads', 0) * _cpu_count
             self.os = self._facts.get('operating_system', 'N/A')
             self.cpu_summary = f"{_cores}C/{_threads}T" if _cores > 0 else 'N/A'
 
@@ -635,7 +636,8 @@ class OrchestratorCli(OrchestratorClientMixin, MgrModule,
                       hostname: Optional[List[str]] = None,
                       format: Format = Format.plain,
                       refresh: bool = False,
-                      wide: bool = False) -> HandleCommandResult:
+                      wide: bool = False,
+                      summary: bool = False) -> HandleCommandResult:
         """
         List devices on a host
         """
@@ -682,8 +684,22 @@ class OrchestratorCli(OrchestratorClientMixin, MgrModule,
             table.left_padding_width = 0
             table.right_padding_width = 2
             now = datetime_now()
+            host_count = 0
+            available_count = 0
+            device_count = {
+                "hdd": 0,
+                "ssd": 0}
+
             for host_ in natsorted(inv_hosts, key=lambda h: h.name):  # type: InventoryHost
+                host_count += 1
                 for d in sorted(host_.devices.devices, key=lambda d: d.path):  # type: Device
+
+                    if d.available:
+                        available_count += 1
+                    try:
+                        device_count[d.human_readable_type] += 1
+                    except KeyError:
+                        device_count[d.human_readable_type] = 1
 
                     led_ident = 'N/A'
                     led_fail = 'N/A'
@@ -723,6 +739,11 @@ class OrchestratorCli(OrchestratorClientMixin, MgrModule,
                             )
                         )
             out.append(table.get_string())
+
+            if summary:
+                device_summary = [f"{device_count[devtype]} {devtype.upper()}" for devtype in sorted(device_count.keys())]
+                out.append(f"{host_count} host(s), {', '.join(device_summary)}, {available_count} available")
+
             return HandleCommandResult(stdout='\n'.join(out))
 
     @_cli_write_command('orch device zap')
@@ -1350,6 +1371,21 @@ Usage:
                             self.get_foreign_ceph_option('mon', k)
                         except KeyError:
                             raise SpecValidationError(f'Invalid config option {k} in spec')
+
+                # There is a general "osd" service with no service id, but we use
+                # that to dump osds created individually with "ceph orch daemon add osd"
+                # and those made with "ceph orch apply osd --all-available-devices"
+                # For actual user created OSD specs, we should promote users having a
+                # service id so it doesn't get mixed in with those other OSDs. This
+                # check is being done in this spot in particular as this is the only
+                # place we can 100% differentiate between an actual user created OSD
+                # spec and a spec we made ourselves to cover the all-available-devices case
+                if (
+                    isinstance(spec, DriveGroupSpec)
+                    and spec.service_type == 'osd'
+                    and not spec.service_id
+                ):
+                    raise SpecValidationError('Please provide the service_id field in your OSD spec')
 
                 if dry_run and not isinstance(spec, HostSpec):
                     spec.preview_only = dry_run

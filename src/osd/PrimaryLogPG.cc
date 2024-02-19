@@ -5902,7 +5902,7 @@ int PrimaryLogPG::do_sparse_read(OpContext *ctx, OSDOp& osd_op) {
     }
 
     bufferlist data_bl;
-    r = pgbackend->objects_readv_sync(soid, std::move(m), op.flags, &data_bl);
+    r = pgbackend->objects_readv_sync(soid, m, op.flags, &data_bl);
     if (r == -EIO) {
       r = rep_repair_primary_object(soid, ctx);
     }
@@ -12879,8 +12879,7 @@ void PrimaryLogPG::on_shutdown()
     osd->clear_queued_recovery(this);
   }
 
-  m_scrubber->scrub_clear_state();
-  m_scrubber->rm_from_osd_scrubbing();
+  m_scrubber->on_new_interval();
 
   vector<ceph_tid_t> tids;
   cancel_copy_ops(false, &tids);
@@ -13028,8 +13027,7 @@ void PrimaryLogPG::on_change(ObjectStore::Transaction &t)
     finish_degraded_object(p->first);
   }
 
-  // requeues waiting_for_scrub
-  m_scrubber->scrub_clear_state();
+  ceph_assert(waiting_for_scrub.empty());
 
   for (auto p = waiting_for_blocked_object.begin();
        p != waiting_for_blocked_object.end();

@@ -319,10 +319,12 @@ struct ScrubPgIF {
   /// the OSD scrub queue
   virtual void on_new_interval() = 0;
 
+  /// we are peered as primary, and the PG is active and clean
+  /// Scrubber's internal FSM should be ActivePrimary
+  virtual void on_primary_active_clean() = 0;
+
   /// we are peered as a replica
   virtual void on_replica_activate() = 0;
-
-  virtual void scrub_clear_state() = 0;
 
   virtual void handle_query_state(ceph::Formatter* f) = 0;
 
@@ -378,8 +380,13 @@ struct ScrubPgIF {
 					const hobject_t& soid) = 0;
 
   /**
-   * the version of 'scrub_clear_state()' that does not try to invoke FSM
-   * services (thus can be called from FSM reactions)
+   * clears both internal scrub state, and some PG-visible flags:
+   * - the two scrubbing PG state flags;
+   * - primary/replica scrub position (chunk boundaries);
+   * - primary/replica interaction state;
+   * - the backend state
+   * Also runs pending callbacks, and clears the active flags.
+   * Does not try to invoke FSM events.
    */
   virtual void clear_pgscrub_state() = 0;
 
@@ -406,12 +413,6 @@ struct ScrubPgIF {
   virtual bool reserve_local() = 0;
 
   /**
-   * if activated as a Primary - register the scrub job with the OSD
-   * scrub queue
-   */
-  virtual void on_pg_activate(const requested_scrub_t& request_flags) = 0;
-
-  /**
    * Recalculate the required scrub time.
    *
    * This function assumes that the queue registration status is up-to-date,
@@ -426,8 +427,6 @@ struct ScrubPgIF {
    * send all relevant messages to the ScrubMachine.
    */
   virtual void handle_scrub_reserve_msgs(OpRequestRef op) = 0;
-
-  virtual void rm_from_osd_scrubbing() = 0;
 
   virtual scrub_level_t scrub_requested(
       scrub_level_t scrub_level,

@@ -252,7 +252,7 @@ class PgScrubber : public ScrubPgIF,
 
   void rm_from_osd_scrubbing() final;
 
-  void on_pg_activate(const requested_scrub_t& request_flags) final;
+  void schedule_scrub_with_osd() final;
 
   scrub_level_t scrub_requested(
       scrub_level_t scrub_level,
@@ -314,9 +314,9 @@ class PgScrubber : public ScrubPgIF,
 
   void on_new_interval() final;
 
-  void on_replica_activate() final;
+  void on_primary_active_clean() final;
 
-  void scrub_clear_state() final;
+  void on_replica_activate() final;
 
   bool is_queued_or_active() const final;
 
@@ -419,10 +419,7 @@ class PgScrubber : public ScrubPgIF,
   void on_replica_init() final;
   void replica_handling_done() final;
 
-  /// the version of 'scrub_clear_state()' that does not try to invoke FSM
-  /// services (thus can be called from FSM reactions)
   void clear_pgscrub_state() final;
-
 
   std::chrono::milliseconds get_scrub_sleep_time() const final;
   void queue_for_scrub_resched(Scrub::scrub_prio_t prio) final;
@@ -554,7 +551,7 @@ class PgScrubber : public ScrubPgIF,
    *  - the epoch when started;
    *  - the depth of the scrub requested (from the PG_STATE variable)
    */
-  void reset_epoch(epoch_t epoch_queued);
+  void reset_epoch() final;
 
   void run_callbacks();
 
@@ -620,8 +617,12 @@ class PgScrubber : public ScrubPgIF,
    */
   std::unique_ptr<Scrub::LocalResourceWrapper> m_local_osd_resource;
 
-  void cleanup_on_finish();  // scrub_clear_state() as called for a Primary when
-			     // Active->NotActive
+  /**
+   * clearing the scrubber state & the PG's scrub-related flags
+   * (calls clear_pgscrub_state()).
+   * Also - publishes the PG stats.
+   */
+  void cleanup_on_finish();
 
  protected:
   PG* const m_pg;

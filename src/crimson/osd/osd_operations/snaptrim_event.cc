@@ -31,36 +31,11 @@ namespace crimson {
 namespace crimson::osd {
 
 PG::interruptible_future<>
-PG::SnapTrimMutex::lock(SnapTrimEvent &st_event) noexcept
+PG::BackgroundProcessLock::lock_with_op(SnapTrimEvent &st_event) noexcept
 {
-  return st_event.enter_stage<interruptor>(wait_pg
+  return st_event.enter_stage<interruptor>(wait
   ).then_interruptible([this] {
     return mutex.lock();
-  });
-}
-
-void SnapTrimEvent::SubOpBlocker::dump_detail(Formatter *f) const
-{
-  f->open_array_section("dependent_operations");
-  {
-    for (const auto &kv : subops) {
-      f->dump_unsigned("op_id", kv.first->get_id());
-    }
-  }
-  f->close_section();
-}
-
-template <class... Args>
-void SnapTrimEvent::SubOpBlocker::emplace_back(Args&&... args)
-{
-  subops.emplace_back(std::forward<Args>(args)...);
-};
-
-SnapTrimEvent::remove_or_update_iertr::future<>
-SnapTrimEvent::SubOpBlocker::wait_completion()
-{
-  return interruptor::do_for_each(subops, [](auto&& kv) {
-    return std::move(kv.second);
   });
 }
 
@@ -85,19 +60,11 @@ CommonPGPipeline& SnapTrimEvent::client_pp()
   return pg->request_pg_pipeline;
 }
 
-SnapTrimEvent::snap_trim_ertr::future<seastar::stop_iteration>
+SnapTrimEvent::snap_trim_event_ret_t
 SnapTrimEvent::start()
 {
   ShardServices &shard_services = pg->get_shard_services();
-  IRef ref = this;
-  return interruptor::with_interruption(
-    // SnapTrimEvent is a background operation,
-    // it's lifetime is not guarnteed since the caller
-    // returned future is being ignored. We should capture
-    // a self reference thourhgout the entire execution
-    // progress (not only on finally() continuations).
-    // See: PG::on_active_actmap()
-    [&shard_services, this, ref] {
+  return interruptor::with_interruption([&shard_services, this] {
     return enter_stage<interruptor>(
       client_pp().wait_for_active
     ).then_interruptible([this] {
@@ -115,7 +82,7 @@ SnapTrimEvent::start()
       return enter_stage<interruptor>(
         client_pp().get_obc);
     }).then_interruptible([this] {
-      return pg->snaptrim_mutex.lock(*this);
+      return pg->background_process_lock.lock_with_op(*this);
     }).then_interruptible([this] {
       return enter_stage<interruptor>(
         client_pp().process);
@@ -147,31 +114,28 @@ SnapTrimEvent::start()
         if (to_trim.empty()) {
           // the legit ENOENT -> done
           logger().debug("{}: to_trim is empty! Stopping iteration", *this);
-	  pg->snaptrim_mutex.unlock();
+	  pg->background_process_lock.unlock();
           return snap_trim_iertr::make_ready_future<seastar::stop_iteration>(
             seastar::stop_iteration::yes);
         }
         return [&shard_services, this](const auto &to_trim) {
 	  for (const auto& object : to_trim) {
 	    logger().debug("{}: trimming {}", *this, object);
-	    auto [op, fut] = shard_services.start_operation_may_interrupt<
-	      interruptor, SnapTrimObjSubEvent>(
-	      pg,
-	      object,
-	      snapid);
 	    subop_blocker.emplace_back(
-	      std::move(op),
-	      std::move(fut)
-	    );
+	      shard_services.start_operation_may_interrupt<
+	      interruptor, SnapTrimObjSubEvent>(
+	        pg,
+	        object,
+	        snapid));
 	  }
 	  return interruptor::now();
 	}(to_trim).then_interruptible([this] {
 	  return enter_stage<interruptor>(wait_subop);
 	}).then_interruptible([this] {
           logger().debug("{}: awaiting completion", *this);
-          return subop_blocker.wait_completion();
+          return subop_blocker.interruptible_wait_completion();
         }).finally([this] {
-	  pg->snaptrim_mutex.unlock();
+	  pg->background_process_lock.unlock();
 	}).si_then([this] {
           if (!needs_pause) {
             return interruptor::now();
@@ -200,11 +164,12 @@ SnapTrimEvent::start()
         });
       });
     });
-  }, [this, ref]
-     (std::exception_ptr eptr) -> snap_trim_ertr::future<seastar::stop_iteration> {
+  }, [this](std::exception_ptr eptr) -> snap_trim_event_ret_t {
     logger().debug("{}: interrupted {}", *this, eptr);
     return crimson::ct_error::eagain::make();
-  }, pg).finally([this, ref=std::move(ref)] {
+  }, pg).finally([this] {
+    // This SnapTrimEvent op lifetime is maintained within
+    // PerShardState::start_operation() implementation.
     logger().debug("{}: exit", *this);
     handle.exit();
   });
@@ -216,7 +181,7 @@ CommonPGPipeline& SnapTrimObjSubEvent::client_pp()
   return pg->request_pg_pipeline;
 }
 
-SnapTrimObjSubEvent::remove_or_update_iertr::future<>
+SnapTrimObjSubEvent::snap_trim_obj_subevent_ret_t
 SnapTrimObjSubEvent::remove_clone(
   ObjectContextRef obc,
   ObjectContextRef head_obc,
@@ -463,7 +428,7 @@ SnapTrimObjSubEvent::remove_or_update(
   });
 }
 
-SnapTrimObjSubEvent::remove_or_update_iertr::future<>
+SnapTrimObjSubEvent::snap_trim_obj_subevent_ret_t
 SnapTrimObjSubEvent::start()
 {
   return enter_stage<interruptor>(
