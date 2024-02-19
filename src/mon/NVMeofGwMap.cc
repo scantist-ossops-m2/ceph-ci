@@ -188,7 +188,7 @@ void  NVMeofGwMap::set_failover_gw_for_ANA_group(const GW_ID_T &failed_gw_id, co
     gw_state.failover_peer[ANA_groupid] = failed_gw_id;
     epoch_t epoch;
     dout(4) << "Found failower GW " << gw_id << " for ANA group " << (int)ANA_groupid << dendl;
-    int rc = blocklist_gw (failed_gw_id, group_key, ANA_groupid, epoch);
+    int rc = blocklist_gw (failed_gw_id, group_key, ANA_groupid, epoch, true);
     if(rc){
         gw_state.active_state(ANA_groupid); //TODO check whether it is valid to  start failover when nonces are empty !
         //ceph_assert(false);
@@ -227,6 +227,7 @@ void  NVMeofGwMap::find_failback_gw(const GW_ID_T &gw_id, const GROUP_KEY& group
 
             dout(4)  << "Found Failback GW " << failback_gw_id << " that previously took over the ANAGRP " << gw_state.ana_grp_id << " of the available GW " << gw_id << dendl;
             st.sm_state[gw_state.ana_grp_id] = GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED;
+            st.copied_nonce_map = st.nonce_map; // preserve the nonce map that should be blocklisted after expiration of GW_WAIT_FAILBACK_PREPARED timer
             start_timer(failback_gw_id, group_key, gw_state.ana_grp_id, 6);// Add timestamp of start Failback preparation
             gw_state.sm_state[gw_state.ana_grp_id] = GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED;
             propose = true;
@@ -450,7 +451,11 @@ void NVMeofGwMap::fsm_handle_to_expired(const GW_ID_T &gw_id, const GROUP_KEY& g
             {
                 fbp_gw_state.standby_state(grpid);// Previous failover GW  set to standby
                 epoch_t epoch;
-                blocklist_gw (gw_id, group_key, grpid, epoch);
+                int rc = blocklist_gw (gw_id, group_key, grpid, epoch, false);
+                if(rc){
+                    dout(4) << "Error : probably empty nonce-map upon calling blocklist for Failback usecase" << dendl;
+                    ceph_assert(false);
+                }
                 //st.active_state(grpid);
                 st.sm_state[grpid] = GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL;
                 start_timer(gw_state.first, group_key, grpid, 30);
@@ -502,12 +507,15 @@ struct CMonRequestProposal : public Context {
   }
 };
 
-int NVMeofGwMap::blocklist_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T grpid, epoch_t &epoch)
+int NVMeofGwMap::blocklist_gw(const GW_ID_T &gw_id, const GROUP_KEY& group_key, ANA_GRP_ID_T grpid, epoch_t &epoch, bool failover)
 {
     GW_CREATED_T& gw_map =  Created_gws[group_key][gw_id];  //find_already_created_gw(gw_id, group_key);
 
      if (gw_map.nonce_map[grpid].size() > 0){
-        NONCE_VECTOR_T &nonce_vector = gw_map.nonce_map[grpid];
+        NONCE_VECTOR_T &nonce_vector = gw_map.nonce_map[grpid];;
+        if(failover == false)
+           nonce_vector = gw_map.copied_nonce_map[grpid];
+
         std::string str = "[";
         entity_addrvec_t addr_vect;
         //auto until = ceph_clock_now();  // until += g_conf().get_val<double>("mon_mgr_blocklist_interval"); // 1day - TODO

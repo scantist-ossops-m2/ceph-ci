@@ -407,8 +407,13 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     }
 
     // deep copy the whole nonce map of this GW
-    pending_map.Created_gws[group_key][gw_id].nonce_map = m->get_nonce_map();
-    dout(4) << "nonce map of GW " << gw_id << " "<< pending_map.Created_gws[group_key][gw_id].nonce_map  << dendl;
+    if(m->get_nonce_map().size()) {
+        pending_map.Created_gws[group_key][gw_id].nonce_map = m->get_nonce_map();
+        dout(4) << "nonce map of GW " << gw_id << " "<< pending_map.Created_gws[group_key][gw_id].nonce_map  << dendl;
+    }
+    else  {
+        dout(4) << "Warning: received empty nonce map in the beacon of GW " << gw_id << " "<< dendl;
+    }
 
     //pending_map.handle_removed_subsystems(gw_id, group_key, configured_subsystems, propose);
 

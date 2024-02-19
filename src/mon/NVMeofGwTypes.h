@@ -72,6 +72,7 @@ struct GW_CREATED_T {
     GW_AVAILABILITY_E  availability;                  // in absence of  beacon  heartbeat messages it becomes inavailable
     BeaconSubsystems   subsystems;                    // gateway susbsystem and their state machine states
     GW_ANA_NONCE_MAP   nonce_map;
+    GW_ANA_NONCE_MAP   copied_nonce_map;
     SM_STATE           sm_state;                      // state machine states per ANA group
     GW_ID_T            failover_peer[MAX_SUPPORTED_ANA_GROUPS];
     struct{
