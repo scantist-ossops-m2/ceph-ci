@@ -1263,6 +1263,17 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
   std::stack<SyncEntry> sync_stack;
   sync_stack.emplace(SyncEntry(".", tdirp, tstx));
   while (!sync_stack.empty()) {
+    // check if dir_root exists
+    r = ceph_statx(m_local_mount, dir_root.c_str(), &tstx,
+                   CEPH_STATX_MODE | CEPH_STATX_UID | CEPH_STATX_GID |
+                   CEPH_STATX_SIZE | CEPH_STATX_ATIME | CEPH_STATX_MTIME,
+                   AT_STATX_DONT_SYNC | AT_SYMLINK_NOFOLLOW);
+    if (r < 0) {
+      derr << ": failed to stat dir_root=" << dir_root << ": " << cpp_strerror(r)
+           << dendl;
+      remove_directory(dir_root);
+    }
+
     if (should_backoff(dir_root, &r)) {
       dout(0) << ": backing off r=" << r << dendl;
       break;
