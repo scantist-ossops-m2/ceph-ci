@@ -41,7 +41,6 @@ NVMeofGwMonitorClient::NVMeofGwMonitorClient(int argc, const char **argv) :
   client_messenger(Messenger::create(g_ceph_context, "async", entity_name_t::CLIENT(-1), "client", getpid())),
   objecter{g_ceph_context, client_messenger.get(), &monc, poolctx},
   client{client_messenger.get(), &monc, &objecter},
-  finisher(g_ceph_context, "Nvmeof", "nvme-fin"),
   timer(g_ceph_context, lock),
   orig_argc(argc),
   orig_argv(argv)
@@ -101,9 +100,6 @@ int NVMeofGwMonitorClient::init()
   register_async_signal_handler(SIGHUP, sighup_handler);
 
   std::lock_guard l(lock);
-
-  // Start finisher
-  finisher.start();
 
   // Initialize Messenger
   client_messenger->add_dispatcher_tail(this);
@@ -250,32 +246,25 @@ void NVMeofGwMonitorClient::tick()
 
 void NVMeofGwMonitorClient::shutdown()
 {
-  finisher.queue(new LambdaContext([&](int) {
-    std::lock_guard l(lock);
+  std::lock_guard l(lock);
 
-    dout(4) << "nvmeof Shutting down" << dendl;
+  dout(4) << "nvmeof Shutting down" << dendl;
 
 
-    // stop sending beacon first, I use monc to talk with monitors
-    timer.shutdown();
-    // client uses monc and objecter
-    client.shutdown();
-    // Stop asio threads, so leftover events won't call into shut down
-    // monclient/objecter.
-    poolctx.finish();
-    // stop monc
-    monc.shutdown();
+  // stop sending beacon first, I use monc to talk with monitors
+  timer.shutdown();
+  // client uses monc and objecter
+  client.shutdown();
+  // Stop asio threads, so leftover events won't call into shut down
+  // monclient/objecter.
+  poolctx.finish();
+  // stop monc
+  monc.shutdown();
 
-    // objecter is used by monc
-    objecter.shutdown();
-    // client_messenger is used by all of them, so stop it in the end
-    client_messenger->shutdown();
-  }));
-
-  // Then stop the finisher to ensure its enqueued contexts aren't going
-  // to touch references to the things we're about to tear down
-  finisher.wait_for_empty();
-  finisher.stop();
+  // objecter is used by monc
+  objecter.shutdown();
+  // client_messenger is used by all of them, so stop it in the end
+  client_messenger->shutdown();
 }
 
 void NVMeofGwMonitorClient::handle_nvmeof_gw_map(ceph::ref_t<MNVMeofGwMap> nmap)
