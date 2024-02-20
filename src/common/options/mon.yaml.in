@@ -1346,15 +1346,13 @@ options:
   with_legacy: true
   see_also:
   - osd_heartbeat_use_min_delay_socket
-- name: nvmf_mon_log_level
-  type: int
+- name: nvmeof_mon_client_tick_period
+  type: secs
   level: advanced
-  desc: log level of the nvmeofMon 
-  fmt_desc: Monitor will set the log level.
-  default: 5
+  desc: Period in seconds of nvmeof gateway beacon messages to monitor
+  default: 2
   services:
   - mon
-  with_legacy: true
 - name: nvmf_mon_mapdump
   type: bool
   level: advanced

@@ -241,7 +241,7 @@ void NVMeofGwMonitorClient::tick()
   send_beacon();
 
   timer.add_event_after(
-      g_conf().get_val<std::chrono::seconds>("mgr_tick_period").count(),
+      g_conf().get_val<std::chrono::seconds>("nvmeof_mon_client_tick_period").count(),
       new LambdaContext([this](int r){
           tick();
       }
