@@ -119,9 +119,6 @@ void NVMeofGwMon::handle_conf_change(const ConfigProxy& conf,
   if (changed.count("nvmf_mon_mapdump")) {
       dout(4) << "pending_map " << pending_map << dendl;
   }
-  if (changed.count("nvmf_mon_log_level")){
-      dout(4) << "TODO SET LOG LEVEL >= " << g_conf()->nvmf_mon_log_level << dendl;
-  }
 }
 
 void NVMeofGwMon::create_pending(){
