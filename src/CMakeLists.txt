@@ -303,6 +303,11 @@ endif(WITH_BLKIN)
 
 if(WITH_JAEGER)
   find_package(thrift 0.13.0 REQUIRED)
+  # absl is installed as grpc dependency
+  find_package(absl REQUIRED)
+  if(absl_FOUND)
+      add_definitions(-DHAVE_ABSEIL)
+  endif()
   include(BuildOpentelemetry)
   build_opentelemetry()
   add_library(jaeger_base INTERFACE)
