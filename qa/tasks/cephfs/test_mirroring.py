@@ -624,6 +624,7 @@ class TestMirroring(CephFSTestCase):
 
         self.remove_directory(self.primary_fs_name, self.primary_fs_id, '/d0')
 
+        time.sleep(30)
         snap_list = self.mount_b.ls(path='d0/.snap')
         self.assertTrue('snap0' not in snap_list)
         self.disable_mirroring(self.primary_fs_name, self.primary_fs_id)
