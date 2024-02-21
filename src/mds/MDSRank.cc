@@ -18,6 +18,7 @@
 #include "common/errno.h"
 #include "common/likely.h"
 #include "common/async/blocked_completion.h"
+#include "common/cmdparse.h"
 
 #include "messages/MClientRequestForward.h"
 #include "messages/MMDSLoadTargets.h"
@@ -42,8 +43,12 @@
 #include "events/ELid.h"
 #include "Mutation.h"
 
-
 #include "MDSRank.h"
+
+#include "QuiesceDbManager.h"
+#include "QuiesceAgent.h"
+
+#include <cmath>
 
 #define dout_context g_ceph_context
 #define dout_subsys ceph_subsys_mds
@@ -548,6 +553,8 @@ MDSRank::MDSRank(
   server = new Server(this, &metrics_handler);
   locker = new Locker(this, mdcache);
 
+  quiesce_db_manager.reset(new QuiesceDbManager());
+
   _heartbeat_reset_grace = g_conf().get_val<uint64_t>("mds_heartbeat_reset_grace");
   heartbeat_grace = g_conf().get_val<double>("mds_heartbeat_grace");
   op_tracker.set_complaint_and_threshold(cct->_conf->mds_op_complaint_time,
@@ -859,12 +866,21 @@ void MDSRankDispatcher::shutdown()
 
   progress_thread.shutdown();
 
+  if (quiesce_db_manager) {
+    // shutdown the manager
+    quiesce_db_manager->update_membership({});
+  }
+
   // release mds_lock for finisher/messenger threads (e.g.
   // MDSDaemon::ms_handle_reset called from Messenger).
   mds_lock.unlock();
 
   // shut down messenger
   messenger->shutdown();
+  if (quiesce_agent) {
+    // reset any tracked roots
+    quiesce_agent->shutdown();
+  }
 
   mds_lock.lock();
 
@@ -1049,6 +1065,10 @@ bool MDSRankDispatcher::ms_dispatch(const cref_t<Message> &m)
 
 bool MDSRank::_dispatch(const cref_t<Message> &m, bool new_msg)
 {
+  if (quiesce_dispatch(m)) {
+    return true;
+  }
+
   if (is_stale_message(m)) {
     return true;
   }
@@ -1200,6 +1220,7 @@ bool MDSRank::is_valid_message(const cref_t<Message> &m) {
     return true;
   }
 
+  dout(10) << "invalid message type: " << std::hex << type << std::dec << dendl;
   return false;
 }
 
@@ -1266,6 +1287,13 @@ void MDSRank::handle_message(const cref_t<Message> &m)
         }
       }
       break;
+
+    case MSG_MDS_QUIESCE_DB_LISTING:
+    case MSG_MDS_QUIESCE_DB_ACK:
+      ALLOW_MESSAGES_FROM(CEPH_ENTITY_TYPE_MDS);
+      quiesce_dispatch(m);
+      break;
+
 
     case MSG_MDS_LOCK:
     case MSG_MDS_INODEFILECAPS:
@@ -1450,15 +1478,15 @@ private:
 };
 
 
-void MDSRank::send_message_mds(const ref_t<Message>& m, mds_rank_t mds)
+int MDSRank::send_message_mds(const ref_t<Message>& m, mds_rank_t mds)
 {
   if (!mdsmap->is_up(mds)) {
     dout(10) << "send_message_mds mds." << mds << " not up, dropping " << *m << dendl;
-    return;
+    return ENOENT;
   } else if (mdsmap->is_bootstrapping(mds)) {
     dout(5) << __func__ << "mds." << mds << " is bootstrapping, deferring " << *m << dendl;
     wait_for_bootstrapped_peer(mds, new C_MDS_RetrySendMessageMDS(this, mds, m));
-    return;
+    return 0;
   }
 
   // send mdsmap first?
@@ -1470,12 +1498,12 @@ void MDSRank::send_message_mds(const ref_t<Message>& m, mds_rank_t mds)
   }
 
   // send message
-  send_message_mds(m, addrs);
+  return send_message_mds(m, addrs);
 }
 
-void MDSRank::send_message_mds(const ref_t<Message>& m, const entity_addrvec_t &addr)
+int MDSRank::send_message_mds(const ref_t<Message>& m, const entity_addrvec_t &addr)
 {
-  messenger->send_to_mds(ref_t<Message>(m).detach(), addr);
+  return messenger->send_to_mds(ref_t<Message>(m).detach(), addr);
 }
 
 void MDSRank::forward_message_mds(const MDRequestRef& mdr, mds_rank_t mds)
@@ -2131,6 +2159,8 @@ void MDSRank::active_start()
   mdcache->reissue_all_caps();
 
   finish_contexts(g_ceph_context, waiting_for_active);  // kick waiters
+
+  quiesce_agent_setup();
 }
 
 void MDSRank::recovery_done(int oldstate)
@@ -2588,6 +2618,8 @@ void MDSRankDispatcher::handle_mds_map(
     metric_aggregator->notify_mdsmap(*mdsmap);
   }
   metrics_handler.notify_mdsmap(*mdsmap);
+
+  quiesce_cluster_update();
 }
 
 void MDSRank::handle_mds_recovery(mds_rank_t who)
@@ -2935,6 +2967,9 @@ void MDSRankDispatcher::handle_asok_command(
       goto out;
     }
     damage_table.erase(id);
+  } else if (command == "quiesce db") {
+    command_quiesce_db(cmdmap, on_finish);
+    return;
   } else {
     r = -CEPHFS_ENOSYS;
   }

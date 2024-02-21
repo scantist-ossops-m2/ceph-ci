@@ -1707,7 +1707,7 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
 
         return r
 
-    def tell_command(self, daemon_type: str, daemon_id: str, cmd_dict: dict, inbuf: Optional[str] = None) -> Tuple[int, str, str]:
+    def tell_command(self, daemon_type: str, daemon_id: str, cmd_dict: dict, inbuf: Optional[str] = None, one_shot: bool = False) -> Tuple[int, str, str]:
         """
         Helper for `ceph tell` command execution.
 
@@ -1722,7 +1722,7 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
         """
         t1 = time.time()
         result = CommandResult()
-        self.send_command(result, daemon_type, daemon_id, json.dumps(cmd_dict), "", inbuf)
+        self.send_command(result, daemon_type, daemon_id, json.dumps(cmd_dict), "", inbuf, one_shot=one_shot)
         r = result.wait()
         t2 = time.time()
 
@@ -1731,6 +1731,62 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
         ))
 
         return r
+    
+    MDS_STATE_ORD = {
+        "down:dne":              0, # CEPH_MDS_STATE_DNE,
+        "down:stopped":         -1, # CEPH_MDS_STATE_STOPPED,
+        "down:damaged":         15, # CEPH_MDS_STATE_DAMAGED,
+        "up:boot":              -4, # CEPH_MDS_STATE_BOOT,
+        "up:standby":           -5, # CEPH_MDS_STATE_STANDBY,
+        "up:standby-replay":    -8, # CEPH_MDS_STATE_STANDBY_REPLAY,
+        "up:oneshot-replay":    -9, # CEPH_MDS_STATE_REPLAYONCE,
+        "up:creating":          -6, # CEPH_MDS_STATE_CREATING,
+        "up:starting":          -7, # CEPH_MDS_STATE_STARTING,
+        "up:replay":             8, # CEPH_MDS_STATE_REPLAY,
+        "up:resolve":            9, # CEPH_MDS_STATE_RESOLVE,
+        "up:reconnect":         10, # CEPH_MDS_STATE_RECONNECT,
+        "up:rejoin":            11, # CEPH_MDS_STATE_REJOIN,
+        "up:clientreplay":      12, # CEPH_MDS_STATE_CLIENTREPLAY,
+        "up:active":            13, # CEPH_MDS_STATE_ACTIVE,
+        "up:stopping":          14, # CEPH_MDS_STATE_STOPPING,
+    }
+    MDS_STATE_ACTIVE_ORD = MDS_STATE_ORD["up:active"]
+
+    def get_quiesce_leader_info(self, fscid: str) -> Optional[dict]:
+        leader_info: Optional[dict] = None
+
+        for fs in self.get("fs_map")['filesystems']:
+            if fscid != fs["id"]:
+                continue
+            
+            # quiesce leader is the lowest rank
+            # with the highest state
+            mdsmap = fs["mdsmap"]
+            for info in mdsmap['info'].values():
+                if info['rank'] == -1:
+                    continue
+                if leader_info is None:
+                    leader_info = info
+                else:
+                    if info['rank'] < leader_info['rank']:
+                        leader_info = info
+                    elif info['rank'] == leader_info['rank']:
+                        state_ord = self.MDS_STATE_ORD.get(info['state'])
+                        # if there are more than one daemons with the same rank
+                        # only one of them can be active
+                        if state_ord == self.MDS_STATE_ACTIVE_ORD:
+                            leader_info = info
+            break
+
+        return leader_info
+
+    def tell_quiesce_leader(self, fscid: str, cmd_dict: dict) -> Tuple[int, str, str]:
+        qleader = self.get_quiesce_leader_info(fscid)
+        if qleader is None:
+            self.log.warn("Couldn't resolve the quiesce leader for fscid %s" % fscid)
+            return (-errno.ENOENT, "", "Couldn't resolve the quiesce leader for fscid %s" % fscid)
+        self.log.debug("resolved quiesce leader for fscid {fscid} at daemon '{name}' gid {gid} rank {rank} ({state})".format(fscid=fscid, **qleader))
+        return self.tell_command('mds', str(qleader['gid']), cmd_dict, one_shot=True)
 
     def send_command(
             self,
@@ -1739,7 +1795,9 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
             svc_id: str,
             command: str,
             tag: str,
-            inbuf: Optional[str] = None) -> None:
+            inbuf: Optional[str] = None,
+            *, # kw-only args go below
+            one_shot: bool = False) -> None:
         """
         Called by the plugin to send a command to the mon
         cluster.
@@ -1760,8 +1818,10 @@ class MgrModule(ceph_module.BaseMgrModule, MgrModuleLoggingMixin):
             triggered, with notify_type set to "command", and notify_id set to
             the tag of the command.
         :param str inbuf: input buffer for sending additional data.
+        :param bool one_shot: a keyword-only param to make the command abort
+            with EPIPE when the target resets or refuses to reconnect
         """
-        self._ceph_send_command(result, svc_type, svc_id, command, tag, inbuf)
+        self._ceph_send_command(result, svc_type, svc_id, command, tag, inbuf, one_shot=one_shot)
 
     def tool_exec(
         self,
