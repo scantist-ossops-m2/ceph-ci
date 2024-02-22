@@ -1902,6 +1902,8 @@ TEST_F(TestLibRBD, TestGetSnapShotTimeStamp)
   ASSERT_EQ(0, create_image(ioctx, name.c_str(), size, &order));
   ASSERT_EQ(0, rbd_open(ioctx, name.c_str(), &image, NULL));
 
+  ASSERT_EQ(-ENOENT, rbd_snap_get_timestamp(image, 0, NULL));
+
   ASSERT_EQ(0, rbd_snap_create(image, "snap1"));
   num_snaps = rbd_snap_list(image, snaps, &max_size);
   ASSERT_EQ(1, num_snaps);
@@ -8200,6 +8202,83 @@ TYPED_TEST(DiffIterateTest, DiffIterateUnaligned)
     ASSERT_EQ(diff_extent(12582912, 54321, true, 0), extents[2]);
 
     ASSERT_PASSED(this->validate_object_map, image);
+  }
+
+  ioctx.close();
+}
+
+TYPED_TEST(DiffIterateTest, DiffIterateTryAcquireLock)
+{
+  REQUIRE_FEATURE(RBD_FEATURE_EXCLUSIVE_LOCK);
+
+  librados::IoCtx ioctx;
+  ASSERT_EQ(0, this->_rados.ioctx_create(this->m_pool_name.c_str(), ioctx));
+
+  {
+    librbd::RBD rbd;
+    int order = 22;
+    std::string name = this->get_temp_image_name();
+    ssize_t size = 20 << 20;
+
+    uint64_t object_size = 0;
+    if (this->whole_object) {
+      object_size = 1 << order;
+    }
+
+    ASSERT_EQ(0, create_image_pp(rbd, ioctx, name.c_str(), size, &order));
+
+    librbd::Image image1;
+    ASSERT_EQ(0, rbd.open(ioctx, image1, name.c_str(), NULL));
+
+    ceph::bufferlist bl;
+    bl.append(std::string(256, '1'));
+    ASSERT_EQ(256, image1.write(0, 256, bl));
+    ASSERT_EQ(0, image1.flush());
+
+    bool lock_owner;
+    ASSERT_EQ(0, image1.is_exclusive_lock_owner(&lock_owner));
+    ASSERT_TRUE(lock_owner);
+
+    librbd::Image image2;
+    ASSERT_EQ(0, rbd.open(ioctx, image2, name.c_str(), NULL));
+
+    std::vector<diff_extent> extents;
+    ASSERT_EQ(0, image2.diff_iterate2(NULL, 0, size, true, this->whole_object,
+                                      vector_iterate_cb, &extents));
+    ASSERT_EQ(1u, extents.size());
+    ASSERT_EQ(diff_extent(0, 256, true, object_size), extents[0]);
+    extents.clear();
+
+    ASSERT_EQ(0, image2.is_exclusive_lock_owner(&lock_owner));
+    ASSERT_FALSE(lock_owner);
+
+    ASSERT_EQ(0, image1.close());
+    ASSERT_EQ(0, image2.diff_iterate2(NULL, 0, size, true, this->whole_object,
+                                      vector_iterate_cb, &extents));
+    ASSERT_EQ(1u, extents.size());
+    ASSERT_EQ(diff_extent(0, 256, true, object_size), extents[0]);
+    extents.clear();
+
+    ASSERT_EQ(0, image2.is_exclusive_lock_owner(&lock_owner));
+    ASSERT_FALSE(lock_owner);
+
+    sleep(5);
+    ASSERT_EQ(0, image2.diff_iterate2(NULL, 0, size, true, this->whole_object,
+                                      vector_iterate_cb, &extents));
+    ASSERT_EQ(1u, extents.size());
+    ASSERT_EQ(diff_extent(0, 256, true, object_size), extents[0]);
+    extents.clear();
+
+    ASSERT_EQ(0, image2.is_exclusive_lock_owner(&lock_owner));
+    if (this->whole_object &&
+        (is_feature_enabled(RBD_FEATURE_OBJECT_MAP) ||
+         is_feature_enabled(RBD_FEATURE_FAST_DIFF))) {
+      ASSERT_TRUE(lock_owner);
+    } else {
+      ASSERT_FALSE(lock_owner);
+    }
+
+    ASSERT_PASSED(this->validate_object_map, image2);
   }
 
   ioctx.close();

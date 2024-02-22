@@ -1,3 +1,15 @@
+>=18.2.2
+--------
+
+* RBD: When diffing against the beginning of time (`fromsnapname == NULL`) in
+  fast-diff mode (`whole_object == true` with `fast-diff` image feature enabled
+  and valid), diff-iterate is now guaranteed to execute locally if exclusive
+  lock is available.  This brings a dramatic performance improvement for QEMU
+  live disk synchronization and backup use cases.
+* RADOS: `get_pool_is_selfmanaged_snaps_mode` C++ API has been deprecated
+  due to being prone to false negative results.  It's safer replacement is
+  `pool_is_in_selfmanaged_snaps_mode`.
+
 >=19.0.0
 
 * RGW: S3 multipart uploads using Server-Side Encryption now replicate correctly in
@@ -75,6 +87,8 @@
 * CephFS: The period specifier ``m`` now implies minutes and the period specifier
   ``M`` now implies months. This has been made consistent with the rest
   of the system.
+* CephFS: Full support for subvolumes and subvolume groups is now available
+  for snap_schedule Manager module.
 
 >=18.0.0
 
@@ -82,6 +96,10 @@
   mirroring policies between RGW and AWS, you may wish to set
   "rgw policy reject invalid principals" to "false". This affects only newly set
   policies, not policies that are already in place.
+* The CephFS automatic metadata load (sometimes called "default") balancer is
+  now disabled by default. The new file system flag `balance_automate`
+  can be used to toggle it on or off. It can be enabled or disabled via
+  `ceph fs set <fs_name> balance_automate <bool>`.
 * RGW's default backend for `rgw_enable_ops_log` changed from RADOS to file.
   The default value of `rgw_ops_log_rados` is now false, and `rgw_ops_log_file_path`
   defaults to "/var/log/ceph/ops-log-$cluster-$name.log".
