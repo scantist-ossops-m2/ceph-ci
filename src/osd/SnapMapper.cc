@@ -752,7 +752,10 @@ int SnapMapper::_lookup_purged_snap(
 	     << " key '" << k << "' lower_bound not found" << dendl;
     return -ENOENT;
   }
-  if (kv.first.find(PURGED_SNAP_PREFIX) != 0) {
+  std::string prefix = fmt::sprintf("%s_%lld",
+		      PURGED_SNAP_PREFIX,
+		      pool);
+  if (kv.first.find(prefix.c_str()) != 0) {
     dout(20) << __func__ << " pool " << pool << " snap " << snap
 	     << " key '" << k << "' lower_bound got mismatched prefix '"
 	     << kv.first << "'" << dendl;
