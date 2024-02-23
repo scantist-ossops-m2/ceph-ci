@@ -130,29 +130,23 @@ SnapTrimEvent::start()
 	  }
 	  return interruptor::now();
 	}(to_trim).then_interruptible([this] {
-	  return enter_stage<interruptor>(wait_subop);
-	}).then_interruptible([this] {
           logger().debug("{}: awaiting completion", *this);
           return subop_blocker.interruptible_wait_completion();
         }).finally([this] {
 	  pg->background_process_lock.unlock();
 	}).si_then([this] {
           if (!needs_pause) {
-            return interruptor::now();
+            return seastar::now();
           }
-          // let's know operators we're waiting
-          return enter_stage<interruptor>(
-            wait_trim_timer
-          ).then_interruptible([this] {
-            using crimson::common::local_conf;
-            const auto time_to_sleep =
-              local_conf().template get_val<double>("osd_snap_trim_sleep");
-            logger().debug("{}: time_to_sleep {}", *this, time_to_sleep);
-            // TODO: this logic should be more sophisticated and distinguish
-            // between SSDs, HDDs and the hybrid case
-            return seastar::sleep(
-              std::chrono::milliseconds(std::lround(time_to_sleep * 1000)));
-          });
+
+	  using crimson::common::local_conf;
+	  const auto time_to_sleep =
+	    local_conf().template get_val<double>("osd_snap_trim_sleep");
+	  logger().debug("{}: time_to_sleep {}", *this, time_to_sleep);
+	  // TODO: this logic should be more sophisticated and distinguish
+	  // between SSDs, HDDs and the hybrid case
+	  return seastar::sleep(
+	    std::chrono::milliseconds(std::lround(time_to_sleep * 1000)));
         }).si_then([this] {
           logger().debug("{}: all completed", *this);
           return snap_trim_iertr::make_ready_future<seastar::stop_iteration>(
@@ -469,12 +463,8 @@ SnapTrimObjSubEvent::start()
             std::move(osd_op_p),
             std::move(log_entries));
           return submitted.then_interruptible(
-            [all_completed=std::move(all_completed), this] () mutable {
-            return enter_stage<interruptor>(
-              wait_repop
-            ).then_interruptible([all_completed=std::move(all_completed)] () mutable {
+            [all_completed=std::move(all_completed)] () mutable {
               return std::move(all_completed);
-            });
           });
         });
       });
