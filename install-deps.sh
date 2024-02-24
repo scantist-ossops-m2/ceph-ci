@@ -257,6 +257,34 @@ function install_cortx_motr_on_ubuntu {
     fi
 }
 
+function install_grpc_on_ubuntu {
+    # binary Ubuntu package is broken
+    # https://github.com/grpc/grpc/issues/29977
+    if [ -d "/usr/include/grpc" ]; then
+        echo "Directory /usr/include/grpc exists"
+        return
+    fi
+
+    local grpc_ver=v1.62.0
+    local grpc_url=https://github.com/grpc/grpc
+    local src_base=$(mktemp -d)
+    pushd $src_base
+    git clone --recurse-submodules -b $grpc_ver --depth 1 --shallow-submodules $grpc_url
+    pushd $(basename $grpc_url)
+    mkdir -p cmake/build
+    pushd cmake/build
+    cmake -DgRPC_INSTALL=ON \
+      -DgRPC_BUILD_TESTS=OFF \
+      -DCMAKE_INSTALL_PREFIX=/usr \
+      ../..
+    make -j $(cat /proc/cpuinfo | egrep ^processor | wc -l)
+    $SUDO make install
+    popd
+    popd
+    popd
+    rm -rf $src_base
+}
+
 function version_lt {
     test $1 != $(echo -e "$1\n$2" | sort -rV | head -n 1)
 }
@@ -501,6 +529,8 @@ else
         if $with_rgw_motr; then
             install_cortx_motr_on_ubuntu
         fi
+        # grpc from sources
+        install_grpc_on_ubuntu
         ;;
     rocky|centos|fedora|rhel|ol|virtuozzo)
         builddepcmd="dnf -y builddep --allowerasing"
