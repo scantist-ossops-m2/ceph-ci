@@ -2,6 +2,7 @@ overrides:
   ceph:
     log-ignorelist:
       - MON_DOWN
+      - OSDMAP_FLAGS
 tasks:
 - install:
 - cephadm:
