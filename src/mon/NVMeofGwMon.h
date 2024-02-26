@@ -43,7 +43,7 @@ class NVMeofGwMon: public PaxosService,
     std::vector<MonCommand> pending_command_descs;
 
 public:
-    NVMeofGwMon(Monitor &mn, Paxos &p, const std::string& service_name): PaxosService(mn, p, service_name) {map.mon = &mn; }
+    NVMeofGwMon(Monitor &mn, Paxos &p, const std::string& service_name): PaxosService(mn, p, service_name) {map.mon = &mn; last_leader = false;}
     ~NVMeofGwMon() override {}
 
 
@@ -74,11 +74,15 @@ public:
     bool prepare_beacon(MonOpRequestRef op);
 
     void tick() override;
-
     void print_summary(ceph::Formatter *f, std::ostream *ss) const;
 
     void check_subs(bool type);
     void check_sub(Subscription *sub);
+
+private:
+    bool last_leader;
+    void synchronize_last_beacon();
+
 };
 
 #endif /* MON_NVMEGWMONITOR_H_ */
