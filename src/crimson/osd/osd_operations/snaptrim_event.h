@@ -75,11 +75,6 @@ public:
 
   std::tuple<
     StartEvent,
-    CommonPGPipeline::WaitForActive::BlockingEvent,
-    PGActivationBlocker::BlockingEvent,
-    CommonPGPipeline::RecoverMissing::BlockingEvent,
-    CommonPGPipeline::GetOBC::BlockingEvent,
-    CommonPGPipeline::Process::BlockingEvent,
     PG::BackgroundProcessLock::Wait::BlockingEvent,
     CompletionEvent
   > tracking_events;
@@ -176,9 +171,6 @@ public:
 
   std::tuple<
     StartEvent,
-    CommonPGPipeline::WaitForActive::BlockingEvent,
-    PGActivationBlocker::BlockingEvent,
-    CommonPGPipeline::RecoverMissing::BlockingEvent,
     CommonPGPipeline::GetOBC::BlockingEvent,
     CommonPGPipeline::Process::BlockingEvent,
     CompletionEvent

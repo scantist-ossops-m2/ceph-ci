@@ -65,28 +65,10 @@ SnapTrimEvent::start()
 {
   ShardServices &shard_services = pg->get_shard_services();
   return interruptor::with_interruption([&shard_services, this] {
-    return enter_stage<interruptor>(
-      client_pp().wait_for_active
-    ).then_interruptible([this] {
-      return with_blocking_event<PGActivationBlocker::BlockingEvent,
-                                 interruptor>([this] (auto&& trigger) {
-        return pg->wait_for_active_blocker.wait(std::move(trigger));
-      });
-    }).then_interruptible([this] {
-      return enter_stage<interruptor>(
-        client_pp().recover_missing);
-    }).then_interruptible([] {
-      //return do_recover_missing(pg, get_target_oid());
-      return seastar::now();
-    }).then_interruptible([this] {
-      return enter_stage<interruptor>(
-        client_pp().get_obc);
-    }).then_interruptible([this] {
-      return pg->background_process_lock.lock_with_op(*this);
-    }).then_interruptible([this] {
-      return enter_stage<interruptor>(
-        client_pp().process);
-    }).then_interruptible([&shard_services, this] {
+    assert(pg->peering_state.is_active());
+    return pg->background_process_lock.lock_with_op(
+      *this
+    ).then_interruptible([&shard_services, this] {
       return interruptor::async([this] {
         std::vector<hobject_t> to_trim;
         using crimson::common::local_conf;
@@ -425,26 +407,11 @@ SnapTrimObjSubEvent::remove_or_update(
 SnapTrimObjSubEvent::snap_trim_obj_subevent_ret_t
 SnapTrimObjSubEvent::start()
 {
+  assert(pg->peering_state.is_active());
   return enter_stage<interruptor>(
-    client_pp().wait_for_active
+    client_pp().get_obc
   ).then_interruptible([this] {
-    return with_blocking_event<PGActivationBlocker::BlockingEvent,
-                               interruptor>([this] (auto&& trigger) {
-      return pg->wait_for_active_blocker.wait(std::move(trigger));
-    });
-  }).then_interruptible([this] {
-    return enter_stage<interruptor>(
-      client_pp().recover_missing);
-  }).then_interruptible([] {
-    //return do_recover_missing(pg, get_target_oid());
-    return seastar::now();
-  }).then_interruptible([this] {
-    return enter_stage<interruptor>(
-      client_pp().get_obc);
-  }).then_interruptible([this] {
     logger().debug("{}: getting obc for {}", *this, coid);
-    // end of commonality
-    // with_clone_obc_direct lock both clone's and head's obcs
     return pg->obc_loader.with_clone_obc_direct<RWState::RWWRITE>(
       coid,
       [this](auto head_obc, auto clone_obc) {
