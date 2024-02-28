@@ -27,6 +27,7 @@ seastar::future<core_id_t> PGShardMapping::get_or_create_pg_mapping(
   } else {
     return container().invoke_on(0,[pgid, core, FNAME]
       (auto &primary_mapping) {
+      DEBUG("primary mapping pg {} to core: {}", pgid, core);
       auto [insert_iter, inserted] = primary_mapping.pg_to_core.emplace(pgid, core);
       ceph_assert_always(inserted);
       ceph_assert_always(primary_mapping.core_to_num_pgs.size() > 0);
