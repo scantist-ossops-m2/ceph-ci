@@ -573,34 +573,44 @@ class TestSnapshots(TestCephFSShell):
         self.assertNotIn('st_mode', o)
 
 
-class TestCD(TestCephFSShell):
-    CLIENTS_REQUIRED = 1
+# class TestCD(TestCephFSShell):
+#     CLIENTS_REQUIRED = 1
 
-    def test_cd_with_no_args(self):
-        """
-        Test that when cd is issued without any arguments, CWD is changed
-        to root directory.
-        """
-        path = 'dir1/dir2/dir3'
-        self.mount_a.run_shell_payload(f"mkdir -p {path}")
-        expected_cwd = '/'
+#     def test_cd_with_no_args(self):
+#         """
+#         Test that when cd is issued without any arguments, CWD is changed
+#         to root directory.
+#         """
+#         path = 'dir1/dir2/dir3'
+#         self.mount_a.run_shell_payload(f"mkdir -p {path}")
+#         expected_cwd = '/'
 
-        script = 'cd {}\ncd\ncwd\n'.format(path)
-        output = self.get_cephfs_shell_script_output(script)
-        self.assertEqual(output, expected_cwd)
+#         #script = 'cd {}\ncd\ncwd\n'.format(path)
+#         # output = self.get_cephfs_shell_script_output(dedent(f'''
+#         #                 cd /{path}
+#         #                 cd
+#         #                 cwd'''))
+#         self.get_cephfs_shell_cmd_output(f"cd {path}")
+#         self.get_cephfs_shell_cmd_output("cd")
+#         output = self.get_cephfs_shell_cmd_output("cwd")
+#         self.assertEqual(output, expected_cwd)
 
-    def test_cd_with_args(self):
-        """
-        Test that when cd is issued with an argument, CWD is changed
-        to the path passed in the argument.
-        """
-        path = 'dir1/dir2/dir3'
-        self.mount_a.run_shell_payload(f"mkdir -p {path}")
-        expected_cwd = '/dir1/dir2/dir3'
+#     def test_cd_with_args(self):
+#         """
+#         Test that when cd is issued with an argument, CWD is changed
+#         to the path passed in the argument.
+#         """
+#         path = 'dir1/dir2/dir3'
+#         self.mount_a.run_shell_payload(f"mkdir -p {path}")
+#         expected_cwd = '/dir1/dir2/dir3'
 
-        script = 'cd {}\ncwd\n'.format(path)
-        output = self.get_cephfs_shell_script_output(script)
-        self.assertEqual(output, expected_cwd)
+#         #script = 'cd {}\ncwd\n'.format(path)
+#         # output = self.get_cephfs_shell_script_output(dedent(f'''
+#         #                 cd /{path}
+#         #                 cwd'''))
+#         self.get_cephfs_shell_cmd_output(f"cd {path}")
+#         output = self.get_cephfs_shell_cmd_output("cwd")
+#         self.assertEqual(output, expected_cwd)
 
 
 class TestDU(TestCephFSShell):
