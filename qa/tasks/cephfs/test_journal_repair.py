@@ -86,7 +86,7 @@ class TestJournalRepair(CephFSTestCase):
 
         # Now check the MDS can read what we wrote: truncate the journal
         # and start the mds.
-        self.fs.journal_tool(['journal', 'reset'], 0)
+        self.fs.journal_tool(['journal', 'reset', '--yes-i-really-really-mean-it'], 0)
         self.fs.set_joinable()
         self.fs.wait_for_daemons()
 
