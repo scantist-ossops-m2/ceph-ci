@@ -65,28 +65,10 @@ SnapTrimEvent::start()
 {
   ShardServices &shard_services = pg->get_shard_services();
   return interruptor::with_interruption([&shard_services, this] {
-    return enter_stage<interruptor>(
-      client_pp().wait_for_active
-    ).then_interruptible([this] {
-      return with_blocking_event<PGActivationBlocker::BlockingEvent,
-                                 interruptor>([this] (auto&& trigger) {
-        return pg->wait_for_active_blocker.wait(std::move(trigger));
-      });
-    }).then_interruptible([this] {
-      return enter_stage<interruptor>(
-        client_pp().recover_missing);
-    }).then_interruptible([] {
-      //return do_recover_missing(pg, get_target_oid());
-      return seastar::now();
-    }).then_interruptible([this] {
-      return enter_stage<interruptor>(
-        client_pp().get_obc);
-    }).then_interruptible([this] {
-      return pg->background_process_lock.lock_with_op(*this);
-    }).then_interruptible([this] {
-      return enter_stage<interruptor>(
-        client_pp().process);
-    }).then_interruptible([&shard_services, this] {
+    assert(pg->peering_state.is_active());
+    return pg->background_process_lock.lock_with_op(
+      *this
+    ).then_interruptible([&shard_services, this] {
       return interruptor::async([this] {
         std::vector<hobject_t> to_trim;
         using crimson::common::local_conf;
@@ -130,29 +112,23 @@ SnapTrimEvent::start()
 	  }
 	  return interruptor::now();
 	}(to_trim).then_interruptible([this] {
-	  return enter_stage<interruptor>(wait_subop);
-	}).then_interruptible([this] {
           logger().debug("{}: awaiting completion", *this);
           return subop_blocker.interruptible_wait_completion();
         }).finally([this] {
 	  pg->background_process_lock.unlock();
 	}).si_then([this] {
           if (!needs_pause) {
-            return interruptor::now();
+            return seastar::now();
           }
-          // let's know operators we're waiting
-          return enter_stage<interruptor>(
-            wait_trim_timer
-          ).then_interruptible([this] {
-            using crimson::common::local_conf;
-            const auto time_to_sleep =
-              local_conf().template get_val<double>("osd_snap_trim_sleep");
-            logger().debug("{}: time_to_sleep {}", *this, time_to_sleep);
-            // TODO: this logic should be more sophisticated and distinguish
-            // between SSDs, HDDs and the hybrid case
-            return seastar::sleep(
-              std::chrono::milliseconds(std::lround(time_to_sleep * 1000)));
-          });
+
+	  using crimson::common::local_conf;
+	  const auto time_to_sleep =
+	    local_conf().template get_val<double>("osd_snap_trim_sleep");
+	  logger().debug("{}: time_to_sleep {}", *this, time_to_sleep);
+	  // TODO: this logic should be more sophisticated and distinguish
+	  // between SSDs, HDDs and the hybrid case
+	  return seastar::sleep(
+	    std::chrono::milliseconds(std::lround(time_to_sleep * 1000)));
         }).si_then([this] {
           logger().debug("{}: all completed", *this);
           return snap_trim_iertr::make_ready_future<seastar::stop_iteration>(
@@ -431,26 +407,11 @@ SnapTrimObjSubEvent::remove_or_update(
 SnapTrimObjSubEvent::snap_trim_obj_subevent_ret_t
 SnapTrimObjSubEvent::start()
 {
+  assert(pg->peering_state.is_active());
   return enter_stage<interruptor>(
-    client_pp().wait_for_active
+    client_pp().get_obc
   ).then_interruptible([this] {
-    return with_blocking_event<PGActivationBlocker::BlockingEvent,
-                               interruptor>([this] (auto&& trigger) {
-      return pg->wait_for_active_blocker.wait(std::move(trigger));
-    });
-  }).then_interruptible([this] {
-    return enter_stage<interruptor>(
-      client_pp().recover_missing);
-  }).then_interruptible([] {
-    //return do_recover_missing(pg, get_target_oid());
-    return seastar::now();
-  }).then_interruptible([this] {
-    return enter_stage<interruptor>(
-      client_pp().get_obc);
-  }).then_interruptible([this] {
     logger().debug("{}: getting obc for {}", *this, coid);
-    // end of commonality
-    // with_clone_obc_direct lock both clone's and head's obcs
     return pg->obc_loader.with_clone_obc_direct<RWState::RWWRITE>(
       coid,
       [this](auto head_obc, auto clone_obc) {
@@ -469,12 +430,12 @@ SnapTrimObjSubEvent::start()
             std::move(osd_op_p),
             std::move(log_entries));
           return submitted.then_interruptible(
-            [all_completed=std::move(all_completed), this] () mutable {
-            return enter_stage<interruptor>(
-              wait_repop
-            ).then_interruptible([all_completed=std::move(all_completed)] () mutable {
-              return std::move(all_completed);
-            });
+            [this, all_completed=std::move(all_completed)]() mutable {
+	      return enter_stage<interruptor>(
+		client_pp().wait_repop
+	      ).then_interruptible([all_completed=std::move(all_completed)]() mutable{
+		return std::move(all_completed);
+	      });
           });
         });
       });
