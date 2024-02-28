@@ -16744,6 +16744,7 @@ int BlueStore::_do_write_v2(
   for (auto b: wr.shared_changed) {
     txc->write_shared_blob(b);
   }
+  o->extent_map.compress_extent_map(offset, length);
   o->extent_map.dirty_range(offset, length);
   o->extent_map.maybe_reshard(offset, offset + length);
   return r;
