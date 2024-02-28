@@ -415,12 +415,9 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     const BeaconSubsystems& sub = m->get_subsystems();
 
     if (avail == GW_AVAILABILITY_E::GW_CREATED){
-        // new created gw detected
         if (gw == group_gws.end()) {
-           pending_map.cfg_add_gw(gw_id, group_key);
-           dout(4) << "GW " << gw_id << " group_key " << group_key << " added to the pending Created_gws "<< pending_map.Created_gws <<dendl;
+           dout(4) << "Warning: GW " << gw_id << " group_key " << group_key << " was not found in the pending Created_gws "<< pending_map.Created_gws <<dendl;
         }
-        propose = true;
         goto set_propose;
     }
 
