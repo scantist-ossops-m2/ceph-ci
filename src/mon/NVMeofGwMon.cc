@@ -60,7 +60,7 @@ void NVMeofGwMon::tick(){
     }
 
     if (!is_active() || !mon.is_leader()){
-        dout(4) << "NVMeofGwMon leader : " << mon.is_leader() << "active : " << is_active()  << dendl;
+        dout(10) << "NVMeofGwMon leader : " << mon.is_leader() << "active : " << is_active()  << dendl;
         last_leader = false;
         return;
     }
@@ -68,7 +68,7 @@ void NVMeofGwMon::tick(){
   
     const auto now = ceph::coarse_mono_clock::now();
     const auto nvmegw_beacon_grace = g_conf().get_val<std::chrono::seconds>("mon_nvmeofgw_beacon_grace"); 
-    dout(4) <<  "NVMeofGwMon leader got a real tick, pending epoch "<< pending_map.epoch     << dendl;
+    dout(10) <<  "NVMeofGwMon leader got a real tick, pending epoch "<< pending_map.epoch     << dendl;
 
     const auto mgr_tick_period = g_conf().get_val<std::chrono::seconds>("mgr_tick_period");
 
@@ -103,7 +103,7 @@ void NVMeofGwMon::tick(){
             last_beacon.erase(lb);
         }
         else {
-           dout(4) << "beacon live for GW key: " << lb.gw_id << dendl;
+           dout(20) << "beacon live for GW key: " << lb.gw_id << dendl;
         }
     }
 
@@ -155,7 +155,7 @@ void NVMeofGwMon::create_pending(){
 
 void NVMeofGwMon::encode_pending(MonitorDBStore::TransactionRef t){
 
-    dout(4) <<  dendl;
+    dout(10) <<  dendl;
     bufferlist bl;
     pending_map.encode(bl);
     put_version(t, pending_map.epoch, bl);
@@ -180,7 +180,6 @@ void NVMeofGwMon::update_from_paxos(bool *need_bootstrap){
             dout(4) << "leader map: " << map <<  dendl;
         }
         check_subs(true);
-
     }
 }
 
@@ -188,7 +187,7 @@ void NVMeofGwMon::check_sub(Subscription *sub)
 {
    /* MgrMonitor::check_sub*/
     //if (sub->type == "NVMeofGw") {
-    dout(4) << "sub->next , map-epoch " << sub->next << " " << map.epoch << dendl;
+    dout(10) << "sub->next , map-epoch " << sub->next << " " << map.epoch << dendl;
     if (sub->next <= map.epoch)
     {
       dout(4) << "Sending map to subscriber " << sub->session->con << " " << sub->session->con->get_peer_addr() << dendl;
@@ -218,7 +217,7 @@ void NVMeofGwMon::check_subs(bool t)
 }
 
 bool NVMeofGwMon::preprocess_query(MonOpRequestRef op){
-    dout(4) << dendl;
+    dout(20) << dendl;
 
     auto m = op->get_req<PaxosServiceMessage>();
       switch (m->get_type()) {
@@ -243,7 +242,6 @@ bool NVMeofGwMon::preprocess_query(MonOpRequestRef op){
 }
 
 bool NVMeofGwMon::prepare_update(MonOpRequestRef op){
-    //dout(4) << dendl;
     auto m = op->get_req<PaxosServiceMessage>();
       switch (m->get_type()) {
         case MSG_MNVMEOF_GW_BEACON:
@@ -260,7 +258,7 @@ bool NVMeofGwMon::prepare_update(MonOpRequestRef op){
 
         default:
           mon.no_reply(op);
-          derr << "Unhandled message type " << m->get_type() << dendl;
+          dout(1) << "Unhandled message type " << m->get_type() << dendl;
           return false; /* nothing to propose! */
       }
     return true;
@@ -349,7 +347,7 @@ bool NVMeofGwMon::prepare_command(MonOpRequestRef op)
         else{
             rc = pending_map.cfg_delete_gw(id, group_key);
             if(rc== -EINVAL){
-                dout (4) << "Error: GW not found in the database " << id << " " << pool << " " << group << dendl;
+                dout (1) << "Error: GW not found in the database " << id << " " << pool << " " << group << dendl;
             }
         }
         if(rc != -EEXIST){
@@ -366,7 +364,7 @@ bool NVMeofGwMon::prepare_command(MonOpRequestRef op)
     if (err < 0 && rs.length() == 0)
     {
         rs = cpp_strerror(err);
-        dout(4) << "Error command  err : "<< err  << " rs-len: " << rs.length() <<  dendl;
+        dout(1) << "Error command  err : "<< err  << " rs-len: " << rs.length() <<  dendl;
     }
     mon.reply_command(op, err, rs, rdata, get_last_committed());
     return false; /* nothing to propose */
@@ -383,7 +381,7 @@ bool NVMeofGwMon::preprocess_beacon(MonOpRequestRef op){
     //dout(4)   << dendl;
     auto m = op->get_req<MNVMeofGwBeacon>();
      //mon.no_reply(op); // we never reply to beacons
-     dout(4) << "beacon from " << m->get_type() << dendl;
+     dout(10) << "beacon from " << m->get_type() << " GW : " << m->get_gw_id()  << dendl;
      MonSession *session = op->get_session();
      if (!session){
          dout(4) << "beacon no session "  << dendl;
@@ -400,7 +398,7 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     //dout(4)  << dendl;
     auto m = op->get_req<MNVMeofGwBeacon>();
 
-    dout(4) << "availability " <<  m->get_availability() << " GW : " << m->get_gw_id() <<
+    dout(20) << "availability " <<  m->get_availability() << " GW : " << m->get_gw_id() <<
         " osdmap_epoch " << m->get_last_osd_epoch() << " subsystems " << m->get_subsystems() << dendl;
 
     GW_ID_T gw_id = m->get_gw_id();
@@ -423,7 +421,7 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
 
     // At this stage the gw has to be in the Created_gws
     if(gw == group_gws.end()){
-        dout(4) << "Error : Administratively deleted GW sends beacon " << gw_id <<dendl;
+        dout(1) << "Error : Administratively deleted GW sends beacon " << gw_id <<dendl;
         goto false_return; // not sending ack to this beacon
     }
 
@@ -480,7 +478,6 @@ set_propose:
     if(!propose) {
       ack_map.Created_gws[group_key][gw_id] = map.Created_gws[group_key][gw_id];// respond with a map slice correspondent to the same GW
       ack_map.epoch = map.epoch;
-      //dout(4) << "Ack map! "<< ack_map.Created_gws << dendl;
       auto msg = make_message<MNVMeofGwMap>(ack_map);
       mon.send_reply(op, msg.detach());
     }
