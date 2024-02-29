@@ -1481,7 +1481,7 @@ public:
         }
         if (complete->timestamp != ceph::real_time{}) {
           tn->log(10, SSTR("writing " << *complete << " to error repo for retry"));
-          yield call(rgw::error_repo::write_cr(sync_env->driver->getRados()->get_rados_handle(), error_repo,
+          yield call(rgw::error_repo::write_cr(sync_env->driver->svc()->rados, error_repo,
                                               rgw::error_repo::encode_key(complete->bs, complete->gen),
                                               complete->timestamp));
           if (retcode < 0) {
@@ -1489,7 +1489,7 @@ public:
           }
         }
       } else if (complete->retry) {
-        yield call(rgw::error_repo::remove_cr(sync_env->driver->getRados()->get_rados_handle(), error_repo,
+        yield call(rgw::error_repo::remove_cr(sync_env->driver->svc()->rados, error_repo,
                                               rgw::error_repo::encode_key(complete->bs, complete->gen),
                                               complete->timestamp));
         if (retcode < 0) {
@@ -1553,7 +1553,7 @@ public:
       if (retcode == -ENOENT) {
         // don't retry if bucket instance does not exist
         tn->log(10, SSTR("bucket instance or log layout does not exist on source for bucket " << source_bs.bucket));
-        yield call(rgw::error_repo::remove_cr(sync_env->driver->getRados()->get_rados_handle(), error_repo,
+        yield call(rgw::error_repo::remove_cr(sync_env->driver->svc()->rados, error_repo,
                                             error_marker, timestamp));
         return set_cr_done();
       } else if (retcode < 0) {
@@ -1568,7 +1568,7 @@ public:
 	  pool = sync_env->svc->zone->get_zone_params().log_pool;
           error_repo = datalog_oid_for_error_repo(sc, sync_env->driver, pool, source_bs);
           tn->log(10, SSTR("writing shard_id " << sid << " of gen " << each->gen << " to error repo for retry"));
-          yield_spawn_window(rgw::error_repo::write_cr(sync_env->driver->getRados()->get_rados_handle(), error_repo,
+          yield_spawn_window(rgw::error_repo::write_cr(sync_env->driver->svc()->rados, error_repo,
                             rgw::error_repo::encode_key(bs, each->gen),
 			    timestamp), sc->lcc.adj_concurrency(cct->_conf->rgw_data_sync_spawn_window),
                             [&](uint64_t stack_id, int ret) {
@@ -1587,7 +1587,7 @@ public:
                  });
 
       // once everything succeeds, remove the full sync obligation from the error repo
-      yield call(rgw::error_repo::remove_cr(sync_env->driver->getRados()->get_rados_handle(), error_repo,
+      yield call(rgw::error_repo::remove_cr(sync_env->driver->svc()->rados, error_repo,
                                             error_marker, timestamp));
       return set_cr_done();
     }
@@ -1672,7 +1672,7 @@ public:
       if (retcode < 0) {
         tn->log(10, SSTR("full sync: failed to read remote bucket info. Writing "
                         << source_bs.shard_id << " to error repo for retry"));
-        yield call(rgw::error_repo::write_cr(sync_env->driver->getRados()->get_rados_handle(), error_repo,
+        yield call(rgw::error_repo::write_cr(sync_env->driver->svc()->rados, error_repo,
                                             rgw::error_repo::encode_key(source_bs, std::nullopt),
                                             timestamp));
         if (retcode < 0) {
@@ -1694,7 +1694,7 @@ public:
           timestamp = timestamp_for_bucket_shard(sync_env->driver, sync_status, source_bs);
           if (retcode < 0) {
             tn->log(10, SSTR("Write " << source_bs.shard_id << " to error repo for retry"));
-            yield_spawn_window(rgw::error_repo::write_cr(sync_env->driver->getRados()->get_rados_handle(), error_repo,
+            yield_spawn_window(rgw::error_repo::write_cr(sync_env->driver->svc()->rados, error_repo,
                 rgw::error_repo::encode_key(source_bs, each->gen),
 		timestamp), sc->lcc.adj_concurrency(cct->_conf->rgw_data_sync_spawn_window), std::nullopt);
           } else {
@@ -2040,7 +2040,7 @@ public:
             }
             if (retcode < 0) {
               tn->log(1, SSTR("failed to parse bucket shard: " << error_marker));
-              spawn(rgw::error_repo::remove_cr(sc->env->driver->getRados()->get_rados_handle(),
+              spawn(rgw::error_repo::remove_cr(sc->env->driver->svc()->rados,
 					       error_repo, error_marker,
 					       entry_timestamp),
 		    false);
@@ -5182,11 +5182,8 @@ int RGWBucketShardIncrementalSyncCR::operate(const DoutPrefixProvider *dpp)
       }
       yield {
         // delete the shard status object
-        rgw_rados_ref status_obj;
-        retcode = rgw_get_rados_ref(dpp,
-				    sync_env->driver->getRados()->get_rados_handle(),
-				    marker_tracker.get_obj(),
-				    &status_obj);
+        auto status_obj = sync_env->svc->rados->obj(marker_tracker.get_obj());
+        retcode = status_obj.open(dpp);
         if (retcode < 0) {
           return set_cr_error(retcode);
         }
@@ -6034,7 +6031,7 @@ int RGWSyncBucketCR::operate(const DoutPrefixProvider *dpp)
 	      // use the error repo and sync status timestamp from the datalog shard corresponding to source_bs
               error_repo = datalog_oid_for_error_repo(sc, sc->env->driver,
 			   pool, source_bs);
-              yield call(rgw::error_repo::write_cr(sc->env->driver->getRados()->get_rados_handle(), error_repo,
+              yield call(rgw::error_repo::write_cr(sc->env->driver->svc()->rados, error_repo,
                                               rgw::error_repo::encode_key(source_bs, current_gen),
                                               ceph::real_clock::zero()));
               if (retcode < 0) {

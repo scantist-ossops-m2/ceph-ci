@@ -18,6 +18,7 @@
 #include <optional>
 
 #include "rgw_putobj.h"
+#include "services/svc_rados.h"
 #include "services/svc_tier_rados.h"
 #include "rgw_sal.h"
 #include "rgw_obj_manifest.h"
@@ -68,8 +69,8 @@ class RadosWriter : public rgw::sal::DataProcessor {
   RGWRados *const store;
   const RGWBucketInfo& bucket_info;
   RGWObjectCtx& obj_ctx;
-  rgw_obj head_obj;
-  rgw_rados_ref stripe_obj; // current stripe object
+  const rgw_obj head_obj;
+  RGWSI_RADOS::Obj stripe_obj; // current stripe object
   RawObjSet written; // set of written objects for deletion
   const DoutPrefixProvider *dpp;
   optional_yield y;

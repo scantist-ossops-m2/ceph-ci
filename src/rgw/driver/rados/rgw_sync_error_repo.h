@@ -19,6 +19,7 @@
 #include "include/buffer_fwd.h"
 #include "common/ceph_time.h"
 
+class RGWSI_RADOS;
 class RGWCoroutine;
 struct rgw_raw_obj;
 struct rgw_bucket_shard;
@@ -41,7 +42,7 @@ ceph::real_time decode_value(const ceph::bufferlist& bl);
 int write(librados::ObjectWriteOperation& op,
           const std::string& key,
           ceph::real_time timestamp);
-RGWCoroutine* write_cr(librados::Rados* rados,
+RGWCoroutine* write_cr(RGWSI_RADOS* rados,
                        const rgw_raw_obj& obj,
                        const std::string& key,
                        ceph::real_time timestamp);
@@ -50,7 +51,7 @@ RGWCoroutine* write_cr(librados::Rados* rados,
 int remove(librados::ObjectWriteOperation& op,
            const std::string& key,
            ceph::real_time timestamp);
-RGWCoroutine* remove_cr(librados::Rados* rados,
+RGWCoroutine* remove_cr(RGWSI_RADOS* rados,
                         const rgw_raw_obj& obj,
                         const std::string& key,
                         ceph::real_time timestamp);

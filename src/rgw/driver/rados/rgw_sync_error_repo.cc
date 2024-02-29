@@ -15,6 +15,7 @@
 #include "rgw_sync_error_repo.h"
 #include "rgw_coroutine.h"
 #include "rgw_sal.h"
+#include "services/svc_rados.h"
 #include "cls/cmpomap/client.h"
 
 namespace rgw::error_repo {
@@ -117,17 +118,16 @@ int remove(librados::ObjectWriteOperation& op,
 }
 
 class RGWErrorRepoWriteCR : public RGWSimpleCoroutine {
-  librados::Rados* rados;
-  rgw_raw_obj raw_obj;
+  RGWSI_RADOS::Obj obj;
   std::string key;
   ceph::real_time timestamp;
 
   boost::intrusive_ptr<RGWAioCompletionNotifier> cn;
  public:
-  RGWErrorRepoWriteCR(librados::Rados* rados, const rgw_raw_obj& raw_obj,
+  RGWErrorRepoWriteCR(RGWSI_RADOS* rados, const rgw_raw_obj& raw_obj,
                       const std::string& key, ceph::real_time timestamp)
-    : RGWSimpleCoroutine(static_cast<CephContext*>(rados->cct())),
-      rados(rados), raw_obj(raw_obj),
+    : RGWSimpleCoroutine(rados->ctx()),
+      obj(rados->obj(raw_obj)),
       key(key), timestamp(timestamp)
   {}
 
@@ -137,14 +137,13 @@ class RGWErrorRepoWriteCR : public RGWSimpleCoroutine {
     if (r < 0) {
       return r;
     }
-    rgw_rados_ref ref;
-    r = rgw_get_rados_ref(dpp, rados, raw_obj, &ref);
+    r = obj.open(dpp);
     if (r < 0) {
       return r;
     }
 
     cn = stack->create_completion_notifier();
-    return ref.aio_operate(cn->completion(), &op);
+    return obj.aio_operate(cn->completion(), &op);
   }
 
   int request_complete() override {
@@ -152,7 +151,7 @@ class RGWErrorRepoWriteCR : public RGWSimpleCoroutine {
   }
 };
 
-RGWCoroutine* write_cr(librados::Rados* rados,
+RGWCoroutine* write_cr(RGWSI_RADOS* rados,
                        const rgw_raw_obj& obj,
                        const std::string& key,
                        ceph::real_time timestamp)
@@ -162,17 +161,16 @@ RGWCoroutine* write_cr(librados::Rados* rados,
 
 
 class RGWErrorRepoRemoveCR : public RGWSimpleCoroutine {
-  librados::Rados* rados;
-  rgw_raw_obj raw_obj;
+  RGWSI_RADOS::Obj obj;
   std::string key;
   ceph::real_time timestamp;
 
   boost::intrusive_ptr<RGWAioCompletionNotifier> cn;
  public:
-  RGWErrorRepoRemoveCR(librados::Rados* rados, const rgw_raw_obj& raw_obj,
+  RGWErrorRepoRemoveCR(RGWSI_RADOS* rados, const rgw_raw_obj& raw_obj,
                        const std::string& key, ceph::real_time timestamp)
-    : RGWSimpleCoroutine(static_cast<CephContext*>(rados->cct())),
-      rados(rados), raw_obj(raw_obj),
+    : RGWSimpleCoroutine(rados->ctx()),
+      obj(rados->obj(raw_obj)),
       key(key), timestamp(timestamp)
   {}
 
@@ -182,14 +180,13 @@ class RGWErrorRepoRemoveCR : public RGWSimpleCoroutine {
     if (r < 0) {
       return r;
     }
-    rgw_rados_ref ref;
-    r = rgw_get_rados_ref(dpp, rados, raw_obj, &ref);
+    r = obj.open(dpp);
     if (r < 0) {
       return r;
     }
 
     cn = stack->create_completion_notifier();
-    return ref.aio_operate(cn->completion(), &op);
+    return obj.aio_operate(cn->completion(), &op);
   }
 
   int request_complete() override {
@@ -197,7 +194,7 @@ class RGWErrorRepoRemoveCR : public RGWSimpleCoroutine {
   }
 };
 
-RGWCoroutine* remove_cr(librados::Rados* rados,
+RGWCoroutine* remove_cr(RGWSI_RADOS* rados,
                         const rgw_raw_obj& obj,
                         const std::string& key,
                         ceph::real_time timestamp)

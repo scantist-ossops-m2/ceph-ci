@@ -7,6 +7,7 @@
 #include "rgw_tools.h"
 #include "rgw_service.h"
 
+#include "svc_rados.h"
 #include "svc_sys_obj_types.h"
 
 

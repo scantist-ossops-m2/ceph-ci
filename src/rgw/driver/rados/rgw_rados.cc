@@ -1022,7 +1022,7 @@ void RGWRados::finalize()
 {
   /* Before joining any sync threads, drain outstanding requests &
    * mark the async_processor as going_down() */
-  if (svc.async_processor) {
+  if (svc.rados) {
     svc.async_processor->stop();
   }
 
@@ -1174,7 +1174,7 @@ int RGWRados::update_service_map(const DoutPrefixProvider *dpp, std::map<std::st
   return 0;
 }
 
-/**
+/** 
  * Initialize the RADOS instance and prepare to do other ops
  * Returns 0 on success, -ERR# on failure.
  */
@@ -1182,7 +1182,7 @@ int RGWRados::init_complete(const DoutPrefixProvider *dpp, optional_yield y)
 {
   int ret;
 
-  /*
+  /* 
    * create sync module instance even if we don't run sync thread, might need it for radosgw-admin
    */
   sync_module = svc.sync_modules->get_sync_module();
@@ -2402,9 +2402,7 @@ bool RGWRados::obj_to_raw(const rgw_placement_rule& placement_rule, const rgw_ob
 
 std::string RGWRados::get_cluster_fsid(const DoutPrefixProvider *dpp, optional_yield y)
 {
-  std::string s;
-  rados.cluster_fsid(&s);
-  return s;
+  return svc.rados->cluster_fsid();
 }
 
 int RGWRados::get_obj_head_ioctx(const DoutPrefixProvider *dpp,
@@ -4832,10 +4830,8 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
       ref_tag = tag + '\0';
       cls_refcount_get(op, ref_tag, true);
 
-      rgw_rados_ref obj;
-      ret = rgw_get_rados_ref(dpp, driver->getRados()->get_rados_handle(),
-			      miter.get_location().get_raw_obj(this),
-			      &obj);
+      auto obj = svc.rados->obj(miter.get_location().get_raw_obj(this));
+      ret = obj.open(dpp);
       if (ret < 0) {
         ldpp_dout(dpp, 0) << "failed to open rados context for " << obj << dendl;
         goto done_ret;
@@ -4843,9 +4839,8 @@ int RGWRados::copy_obj(RGWObjectCtx& obj_ctx,
 
       static constexpr uint64_t cost = 1; // 1 throttle unit per request
       static constexpr uint64_t id = 0; // ids unused
-      rgw::AioResultList completed =
-	aio->get(obj.obj, rgw::Aio::librados_op(obj.ioctx, std::move(op), y),
-		 cost, id);
+      auto& ref = obj.get_ref();
+      rgw::AioResultList completed = aio->get(ref.obj, rgw::Aio::librados_op(ref.pool.ioctx(), std::move(op), y), cost, id);
       ret = rgw::check_for_errors(completed);
       all_results.splice(all_results.end(), completed);
       if (ret < 0) {
@@ -4912,20 +4907,19 @@ done_ret:
       if (r.result < 0) {
         continue; // skip errors
       }
-      rgw_rados_ref obj;
-      ret2 = rgw_get_rados_ref(dpp, get_rados_handle(), r.obj, &obj);
+      auto obj = svc.rados->obj(r.obj);
+      ret2 = obj.open(dpp);
       if (ret2 < 0) {
         continue;
       }
+      auto& ref = obj.get_ref();
 
       ObjectWriteOperation op;
       cls_refcount_put(op, ref_tag, true);
 
       static constexpr uint64_t cost = 1; // 1 throttle unit per request
       static constexpr uint64_t id = 0; // ids unused
-      rgw::AioResultList completed =
-	aio->get(obj.obj, rgw::Aio::librados_op(obj.ioctx, std::move(op), y),
-		 cost, id);
+      rgw::AioResultList completed = aio->get(ref.obj, rgw::Aio::librados_op(ref.pool.ioctx(), std::move(op), y), cost, id);
       ret2 = rgw::check_for_errors(completed);
       if (ret2 < 0) {
         ldpp_dout(dpp, 0) << "ERROR: cleanup after error failed to drop reference on obj=" << r.obj << dendl;
@@ -7245,9 +7239,8 @@ int RGWRados::get_obj_iterate_cb(const DoutPrefixProvider *dpp,
     }
   }
 
-  rgw_rados_ref obj;
-  int r = rgw_get_rados_ref(dpp, d->rgwrados->get_rados_handle(), read_obj,
-			    &obj);
+  auto obj = d->rgwrados->svc.rados->obj(read_obj);
+  int r = obj.open(dpp);
   if (r < 0) {
     ldpp_dout(dpp, 4) << "failed to open rados context for " << read_obj << dendl;
     return r;
@@ -7259,7 +7252,8 @@ int RGWRados::get_obj_iterate_cb(const DoutPrefixProvider *dpp,
   const uint64_t cost = len;
   const uint64_t id = obj_ofs; // use logical object offset for sorting replies
 
-  auto completed = d->aio->get(obj.obj, rgw::Aio::librados_op(obj.ioctx, std::move(op), d->yield), cost, id);
+  auto& ref = obj.get_ref();
+  auto completed = d->aio->get(ref.obj, rgw::Aio::librados_op(ref.pool.ioctx(), std::move(op), d->yield), cost, id);
 
   return d->flush(std::move(completed));
 }
