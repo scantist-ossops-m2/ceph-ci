@@ -446,7 +446,8 @@ public:
     op.read(0, -1, &bl, nullptr);
 
     cn = stack->create_completion_notifier();
-    return ref.ioctx.aio_operate(ref.obj.oid, cn->completion(), &op, nullptr);
+    return ref.pool.ioctx().aio_operate(ref.obj.oid, cn->completion(), &op,
+					nullptr);
   }
 
   int request_complete() {
@@ -556,7 +557,7 @@ public:
     op.write_full(bl);
 
     cn = stack->create_completion_notifier();
-    return ref.ioctx.aio_operate(ref.obj.oid, cn->completion(), &op);
+    return ref.pool.ioctx().aio_operate(ref.obj.oid, cn->completion(), &op);
   }
 
   int request_complete() override {
@@ -623,7 +624,7 @@ public:
       return 0;
     }
 
-    return ref.ioctx.aio_operate(ref.obj.oid, cn->completion(), &op);
+    return ref.pool.ioctx().aio_operate(ref.obj.oid, cn->completion(), &op);
   }
 
   int request_complete() override {
