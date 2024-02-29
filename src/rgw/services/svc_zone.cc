@@ -6,7 +6,6 @@
 #include "svc_sys_obj.h"
 #include "svc_sync_modules.h"
 
-#include "rgw_tools.h"
 #include "rgw_zone.h"
 #include "rgw_rest_conn.h"
 #include "rgw_bucket_sync.h"
@@ -24,12 +23,12 @@ RGWSI_Zone::RGWSI_Zone(CephContext *cct) : RGWServiceInstance(cct)
 }
 
 void RGWSI_Zone::init(RGWSI_SysObj *_sysobj_svc,
-                      librados::Rados* rados_,
+                      RGWSI_RADOS * _rados_svc,
                       RGWSI_SyncModules * _sync_modules_svc,
 		      RGWSI_Bucket_Sync *_bucket_sync_svc)
 {
   sysobj_svc = _sysobj_svc;
-  rados = rados_;
+  rados_svc = _rados_svc;
   sync_modules_svc = _sync_modules_svc;
   bucket_sync_svc = _bucket_sync_svc;
 
@@ -134,6 +133,11 @@ int RGWSI_Zone::do_start(optional_yield y, const DoutPrefixProvider *dpp)
   }
 
   assert(sysobj_svc->is_started()); /* if not then there's ordering issue */
+
+  ret = rados_svc->start(y, dpp);
+  if (ret < 0) {
+    return ret;
+  }
 
   ret = realm->init(dpp, cct, sysobj_svc, y);
   if (ret < 0 && ret != -ENOENT) {
