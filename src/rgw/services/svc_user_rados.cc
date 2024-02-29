@@ -67,14 +67,14 @@ RGWSI_User_RADOS::RGWSI_User_RADOS(CephContext *cct): RGWSI_User(cct) {
 RGWSI_User_RADOS::~RGWSI_User_RADOS() {
 }
 
-void RGWSI_User_RADOS::init(librados::Rados* rados_,
+void RGWSI_User_RADOS::init(RGWSI_RADOS *_rados_svc,
                             RGWSI_Zone *_zone_svc, RGWSI_SysObj *_sysobj_svc,
                             RGWSI_SysObj_Cache *_cache_svc, RGWSI_Meta *_meta_svc,
                             RGWSI_MetaBackend *_meta_be_svc,
                             RGWSI_SyncModules *_sync_modules_svc)
 {
   svc.user = this;
-  rados = rados_;
+  svc.rados = _rados_svc;
   svc.zone = _zone_svc;
   svc.sysobj = _sysobj_svc;
   svc.cache = _cache_svc;
@@ -621,8 +621,8 @@ int RGWSI_User_RADOS::get_user_info_by_access_key(RGWSI_MetaBackend::Context *ct
 
 int RGWSI_User_RADOS::cls_user_update_buckets(const DoutPrefixProvider *dpp, rgw_raw_obj& obj, list<cls_user_bucket_entry>& entries, bool add, optional_yield y)
 {
-  rgw_rados_ref rados_obj;
-  int r = rgw_get_rados_ref(dpp, rados, obj, &rados_obj);
+  auto rados_obj = svc.rados->obj(obj);
+  int r = rados_obj.open(dpp);
   if (r < 0) {
     return r;
   }
@@ -647,8 +647,8 @@ int RGWSI_User_RADOS::cls_user_add_bucket(const DoutPrefixProvider *dpp, rgw_raw
 
 int RGWSI_User_RADOS::cls_user_remove_bucket(const DoutPrefixProvider *dpp, rgw_raw_obj& obj, const cls_user_bucket& bucket, optional_yield y)
 {
-  rgw_rados_ref rados_obj;
-  int r = rgw_get_rados_ref(dpp, rados, obj, &rados_obj);
+  auto rados_obj = svc.rados->obj(obj);
+  int r = rados_obj.open(dpp);
   if (r < 0) {
     return r;
   }
@@ -735,8 +735,8 @@ int RGWSI_User_RADOS::cls_user_list_buckets(const DoutPrefixProvider *dpp,
                                             bool * const truncated,
 					    optional_yield y)
 {
-  rgw_rados_ref rados_obj;
-  int r = rgw_get_rados_ref(dpp, rados, obj, &rados_obj);
+  auto rados_obj = svc.rados->obj(obj);
+  int r = rados_obj.open(dpp);
   if (r < 0) {
     return r;
   }
@@ -823,13 +823,11 @@ int RGWSI_User_RADOS::reset_bucket_stats(const DoutPrefixProvider *dpp,
 int RGWSI_User_RADOS::cls_user_reset_stats(const DoutPrefixProvider *dpp, const rgw_user& user, optional_yield y)
 {
   rgw_raw_obj obj = get_buckets_obj(user);
-  rgw_rados_ref rados_obj;
-  int r = rgw_get_rados_ref(dpp, rados, obj, &rados_obj);
+  auto rados_obj = svc.rados->obj(obj);
+  int rval, r = rados_obj.open(dpp);
   if (r < 0) {
     return r;
   }
-
-  int rval;
 
   cls_user_reset_stats2_op call;
   cls_user_reset_stats2_ret ret;
@@ -862,12 +860,11 @@ int RGWSI_User_RADOS::complete_flush_stats(const DoutPrefixProvider *dpp,
                                            const rgw_user& user, optional_yield y)
 {
   rgw_raw_obj obj = get_buckets_obj(user);
-  rgw_rados_ref rados_obj;
-  int r = rgw_get_rados_ref(dpp, rados, obj, &rados_obj);
+  auto rados_obj = svc.rados->obj(obj);
+  int r = rados_obj.open(dpp);
   if (r < 0) {
     return r;
   }
-
   librados::ObjectWriteOperation op;
   ::cls_user_complete_stats_sync(op);
   return rados_obj.operate(dpp, &op, y);
@@ -878,8 +875,8 @@ int RGWSI_User_RADOS::cls_user_get_header(const DoutPrefixProvider *dpp,
 					  optional_yield y)
 {
   rgw_raw_obj obj = get_buckets_obj(user);
-  rgw_rados_ref rados_obj;
-  int r = rgw_get_rados_ref(dpp, rados, obj, &rados_obj);
+  auto rados_obj = svc.rados->obj(obj);
+  int r = rados_obj.open(dpp);
   if (r < 0) {
     return r;
   }
@@ -893,13 +890,15 @@ int RGWSI_User_RADOS::cls_user_get_header(const DoutPrefixProvider *dpp,
 int RGWSI_User_RADOS::cls_user_get_header_async(const DoutPrefixProvider *dpp, const string& user_str, RGWGetUserHeader_CB *cb)
 {
   rgw_raw_obj obj = get_buckets_obj(rgw_user(user_str));
-  rgw_rados_ref ref;
-  int r = rgw_get_rados_ref(dpp, rados, obj, &ref);
+  auto rados_obj = svc.rados->obj(obj);
+  int r = rados_obj.open(dpp);
   if (r < 0) {
     return r;
   }
 
-  r = ::cls_user_get_header_async(ref.ioctx, ref.obj.oid, cb);
+  auto& ref = rados_obj.get_ref();
+
+  r = ::cls_user_get_header_async(ref.pool.ioctx(), ref.obj.oid, cb);
   if (r < 0) {
     return r;
   }
