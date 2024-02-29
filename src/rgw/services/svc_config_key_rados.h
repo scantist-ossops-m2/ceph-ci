@@ -1,3 +1,5 @@
+
+
 // -*- mode:C++; tab-width:8; c-basic-offset:2; indent-tabs-mode:t -*-
 // vim: ts=8 sw=2 smarttab ft=cpp
 
@@ -22,6 +24,8 @@
 
 #include "svc_config_key.h"
 
+class RGWSI_RADOS;
+
 class RGWSI_ConfigKey_RADOS : public RGWSI_ConfigKey
 {
   bool maybe_insecure_mon_conn{false};
@@ -32,10 +36,12 @@ class RGWSI_ConfigKey_RADOS : public RGWSI_ConfigKey
   void warn_if_insecure();
 
 public:
-  librados::Rados* rados{nullptr};
+  struct Svc {
+    RGWSI_RADOS *rados{nullptr};
+  } svc;
 
-  void init(librados::Rados* rados_) {
-    rados = rados_;
+  void init(RGWSI_RADOS *rados_svc) {
+    svc.rados = rados_svc;
   }
 
   RGWSI_ConfigKey_RADOS(CephContext *cct) : RGWSI_ConfigKey(cct) {}
@@ -44,3 +50,5 @@ public:
 
   int get(const std::string& key, bool secure, bufferlist *result) override;
 };
+
+
