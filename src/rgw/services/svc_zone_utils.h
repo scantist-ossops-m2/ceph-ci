@@ -6,20 +6,21 @@
 #include "rgw_service.h"
 
 
+class RGWSI_RADOS;
 class RGWSI_Zone;
 
 class RGWSI_ZoneUtils : public RGWServiceInstance
 {
   friend struct RGWServices_Def;
 
-  librados::Rados* rados{nullptr};
+  RGWSI_RADOS *rados_svc{nullptr};
   RGWSI_Zone *zone_svc{nullptr};
 
   std::string trans_id_suffix;
 
-  void init(librados::Rados* rados_,
+  void init(RGWSI_RADOS *_rados_svc,
             RGWSI_Zone *_zone_svc) {
-    rados = rados_;
+    rados_svc = _rados_svc;
     zone_svc = _zone_svc;
   }
 
