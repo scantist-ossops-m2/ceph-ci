@@ -353,7 +353,6 @@ bool NVMeofGwMon::prepare_command(MonOpRequestRef op)
             }
         }
         if(rc != -EEXIST){
-            propose_pending();
             goto update;
         }
         else {
