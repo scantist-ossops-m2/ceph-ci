@@ -29,15 +29,19 @@
 class RGWSI_Cls : public RGWServiceInstance
 {
   RGWSI_Zone *zone_svc{nullptr};
-  librados::Rados* rados{nullptr};
+  RGWSI_RADOS *rados_svc{nullptr};
 
   class ClsSubService : public RGWServiceInstance {
     friend class RGWSI_Cls;
 
-    RGWSI_Cls *cls{nullptr};
+    RGWSI_Cls *cls_svc{nullptr};
+    RGWSI_Zone *zone_svc{nullptr};
+    RGWSI_RADOS *rados_svc{nullptr};
 
-    void init(RGWSI_Cls *cls_) {
-      cls = cls_;
+    void init(RGWSI_Cls *_cls_svc, RGWSI_Zone *_zone_svc, RGWSI_RADOS *_rados_svc) {
+      cls_svc = _cls_svc;
+      zone_svc = _cls_svc->zone_svc;
+      rados_svc = _cls_svc->rados_svc;
     }
 
   public:
@@ -46,6 +50,7 @@ class RGWSI_Cls : public RGWServiceInstance
 
 public:
   class MFA : public ClsSubService {
+    int get_mfa_obj(const DoutPrefixProvider *dpp, const rgw_user& user, std::optional<RGWSI_RADOS::Obj> *obj);
     int get_mfa_ref(const DoutPrefixProvider *dpp, const rgw_user& user, rgw_rados_ref *ref);
 
     void prepare_mfa_write(librados::ObjectWriteOperation *op,
@@ -78,7 +83,7 @@ public:
   } mfa;
 
   class TimeLog : public ClsSubService {
-    int init_obj(const DoutPrefixProvider *dpp, const std::string& oid, rgw_rados_ref& obj);
+    int init_obj(const DoutPrefixProvider *dpp, const std::string& oid, RGWSI_RADOS::Obj& obj);
   public:
     TimeLog(CephContext *cct): ClsSubService(cct) {}
 
@@ -114,7 +119,7 @@ public:
              cls_log_header *header,
              optional_yield y);
     int info_async(const DoutPrefixProvider *dpp,
-                   rgw_rados_ref& obj,
+                   RGWSI_RADOS::Obj& obj,
                    const std::string& oid,
                    cls_log_header *header,
                    librados::AioCompletion *completion);
@@ -129,7 +134,7 @@ public:
   } timelog;
 
   class Lock : public ClsSubService {
-    int init_obj(const std::string& oid, rgw_rados_ref& obj);
+    int init_obj(const std::string& oid, RGWSI_RADOS::Obj& obj);
     public:
     Lock(CephContext *cct): ClsSubService(cct) {}
     int lock_exclusive(const DoutPrefixProvider *dpp,
@@ -149,14 +154,15 @@ public:
 
   RGWSI_Cls(CephContext *cct): RGWServiceInstance(cct), mfa(cct), timelog(cct), lock(cct) {}
 
-  void init(RGWSI_Zone *_zone_svc, librados::Rados* rados_) {
-    rados = rados_;
+  void init(RGWSI_Zone *_zone_svc, RGWSI_RADOS *_rados_svc) {
+    rados_svc = _rados_svc;
     zone_svc = _zone_svc;
 
-    mfa.init(this);
-    timelog.init(this);
-    lock.init(this);
+    mfa.init(this, zone_svc, rados_svc);
+    timelog.init(this, zone_svc, rados_svc);
+    lock.init(this, zone_svc, rados_svc);
   }
 
   int do_start(optional_yield, const DoutPrefixProvider *dpp) override;
 };
+
