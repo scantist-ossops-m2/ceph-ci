@@ -40,7 +40,6 @@
 #include "rgw_cache.h"
 #include "rgw_sal_fwd.h"
 #include "rgw_pubsub.h"
-#include "rgw_tools.h"
 
 struct D3nDataCache;
 
@@ -1030,13 +1029,14 @@ public:
         rgw_obj_key end_marker;
         std::string ns;
         bool enforce_ns;
-	rgw::AccessListFilter access_list_filter;
+        RGWAccessListFilter* access_list_filter;
 	RGWBucketListNameFilter force_check_filter;
         bool list_versions;
 	bool allow_unordered;
 
         Params() :
 	  enforce_ns(true),
+	  access_list_filter(nullptr),
 	  list_versions(false),
 	  allow_unordered(false)
 	{}
@@ -1654,7 +1654,7 @@ public:
    */
   int pool_iterate(const DoutPrefixProvider *dpp, RGWPoolIterCtx& ctx, uint32_t num,
 		   std::vector<rgw_bucket_dir_entry>& objs,
-                   bool *is_truncated, const rgw::AccessListFilter& filter);
+                   bool *is_truncated, RGWAccessListFilter *filter);
 
   uint64_t next_bucket_id();
 

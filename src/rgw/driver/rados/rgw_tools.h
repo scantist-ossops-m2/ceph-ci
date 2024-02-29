@@ -3,9 +3,7 @@
 
 #pragma once
 
-#include <functional>
 #include <string>
-#include <string_view>
 
 #include "include/types.h"
 #include "include/ceph_hash.h"
@@ -180,11 +178,3 @@ std::map<std::string, ceph::buffer::list>* no_change_attrs();
 
 bool rgw_check_secure_mon_conn(const DoutPrefixProvider *dpp);
 int rgw_clog_warn(librados::Rados* h, const std::string& msg);
-
-int rgw_list_pool(const DoutPrefixProvider *dpp,
-		  librados::IoCtx& ioctx,
-		  uint32_t max,
-		  const rgw::AccessListFilter& filter,
-		  std::string& marker,
-		  std::vector<std::string> *oids,
-		  bool *is_truncated);

@@ -246,12 +246,12 @@ public:
   friend class Pool::Op;
 
 protected:
-  librados::Rados* rados{nullptr};
+  RGWSI_RADOS *rados_svc{nullptr};
   RGWSI_SysObj_Core *core_svc{nullptr};
 
-  void init(librados::Rados* rados_,
+  void init(RGWSI_RADOS *_rados_svc,
             RGWSI_SysObj_Core *_core_svc) {
-    rados = rados_;
+    rados_svc = _rados_svc;
     core_svc = _core_svc;
   }
 

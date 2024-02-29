@@ -16,22 +16,22 @@ struct rgw_cache_entry_info;
 
 class RGWSI_SysObj_Core : public RGWServiceInstance
 {
-  friend struct RGWServices_Def;
+  friend class RGWServices_Def;
   friend class RGWSI_SysObj;
 
 protected:
-  librados::Rados* rados{nullptr};
+  RGWSI_RADOS *rados_svc{nullptr};
   RGWSI_Zone *zone_svc{nullptr};
 
   using GetObjState = RGWSI_SysObj_Core_GetObjState;
   using PoolListImplInfo = RGWSI_SysObj_Core_PoolListImplInfo;
 
-  void core_init(librados::Rados* rados_,
+  void core_init(RGWSI_RADOS *_rados_svc,
                  RGWSI_Zone *_zone_svc) {
-    rados = rados_;
+    rados_svc = _rados_svc;
     zone_svc = _zone_svc;
   }
-  int get_rados_obj(const DoutPrefixProvider *dpp, RGWSI_Zone *zone_svc, const rgw_raw_obj& obj, rgw_rados_ref* pobj);
+  int get_rados_obj(const DoutPrefixProvider *dpp, RGWSI_Zone *zone_svc, const rgw_raw_obj& obj, RGWSI_RADOS::Obj *pobj);
 
   virtual int raw_stat(const DoutPrefixProvider *dpp, const rgw_raw_obj& obj,
                        uint64_t *psize, real_time *pmtime,

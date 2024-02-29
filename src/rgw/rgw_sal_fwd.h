@@ -15,21 +15,8 @@
 
 #pragma once
 
-#include <functional>
-#include <string>
 
-namespace rgw {
-using AccessListFilter =
-  std::function<bool(const std::string&, std::string&)>;
-
-inline auto AccessListFilterPrefix(std::string prefix) {
-  return [prefix = std::move(prefix)](const std::string& name,
-				      std::string& key) {
-    return (prefix.compare(key.substr(0, prefix.size())) == 0);
-  };
-}
-
-namespace sal {
+namespace rgw { namespace sal {
 
   class Driver;
   class User;

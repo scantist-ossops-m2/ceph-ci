@@ -3,9 +3,11 @@
 
 #include "svc_tier_rados.h"
 
+using namespace std;
+
 const std::string MP_META_SUFFIX = ".meta";
 
-bool MultipartMetaFilter(const std::string& name, std::string& key) {
+bool MultipartMetaFilter::filter(const string& name, string& key) {
   // the length of the suffix so we can skip past it
   static const size_t MP_META_SUFFIX_LEN = MP_META_SUFFIX.length();
 
@@ -17,11 +19,11 @@ bool MultipartMetaFilter(const std::string& name, std::string& key) {
     return false;
 
   size_t pos = name.find(MP_META_SUFFIX, len - MP_META_SUFFIX_LEN);
-  if (pos == std::string::npos)
+  if (pos == string::npos)
     return false;
 
   pos = name.rfind('.', pos - 1);
-  if (pos == std::string::npos)
+  if (pos == string::npos)
     return false;
 
   key = name.substr(0, pos);
