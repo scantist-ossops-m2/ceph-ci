@@ -760,10 +760,6 @@ public:
 		      RGWSI_RADOS::Obj&& obj,
 		      RGWObjVersionTracker* objv_tracker = nullptr);
 
-  RGWRadosRemoveOidCR(rgw::sal::RadosStore* store,
-		      rgw_rados_ref&& obj,
-		      RGWObjVersionTracker* objv_tracker = nullptr);
-
   int send_request(const DoutPrefixProvider *dpp) override;
   int request_complete() override;
 };

@@ -53,7 +53,6 @@ int RGWServices_Def::init(CephContext *cct,
 			  bool have_cache,
                           bool raw,
 			  bool run_sync,
-			  librados::Rados* radoshandle,
 			  optional_yield y,
                           const DoutPrefixProvider *dpp)
 {
@@ -88,7 +87,7 @@ int RGWServices_Def::init(CephContext *cct,
   vector<RGWSI_MetaBackend *> meta_bes{meta_be_sobj.get(), meta_be_otp.get()};
 
   finisher->init();
-  bi_rados->init(zone.get(), radoshandle, bilog_rados.get(), datalog_rados.get());
+  bi_rados->init(zone.get(), rados.get(), bilog_rados.get(), datalog_rados.get());
   bilog_rados->init(bi_rados.get());
   bucket_sobj->init(zone.get(), sysobj.get(), sysobj_cache.get(),
                     bi_rados.get(), meta.get(), meta_be_sobj.get(),
@@ -304,13 +303,12 @@ void RGWServices_Def::shutdown()
 
 }
 
-int RGWServices::do_init(CephContext *_cct, bool have_cache, bool raw,
-			 bool run_sync, librados::Rados* radoshandle,
-			 optional_yield y, const DoutPrefixProvider *dpp)
+
+int RGWServices::do_init(CephContext *_cct, bool have_cache, bool raw, bool run_sync, optional_yield y, const DoutPrefixProvider *dpp)
 {
   cct = _cct;
 
-  int r = _svc.init(cct, have_cache, raw, run_sync, radoshandle, y, dpp);
+  int r = _svc.init(cct, have_cache, raw, run_sync, y, dpp);
   if (r < 0) {
     return r;
   }
