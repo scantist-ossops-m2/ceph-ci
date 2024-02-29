@@ -31,7 +31,6 @@
 #include "common/errno.h"
 
 #include "rgw_bucket.h"
-#include "rgw_cr_rados.h"
 #include "rgw_datalog.h"
 #include "rgw_metadata.h"
 #include "rgw_otp.h"
@@ -81,8 +80,6 @@ int RGWServices_Def::init(CephContext *cct,
   sysobj_core = std::make_unique<RGWSI_SysObj_Core>(cct);
   user_rados = std::make_unique<RGWSI_User_RADOS>(cct);
   role_rados = std::make_unique<RGWSI_Role_RADOS>(cct);
-  async_processor = std::make_unique<RGWAsyncRadosProcessor>(
-    cct, cct->_conf->rgw_num_async_rados_threads);
 
   if (have_cache) {
     sysobj_cache = std::make_unique<RGWSI_SysObj_Cache>(dpp, cct);
@@ -90,7 +87,6 @@ int RGWServices_Def::init(CephContext *cct,
 
   vector<RGWSI_MetaBackend *> meta_bes{meta_be_sobj.get(), meta_be_otp.get()};
 
-  async_processor->start();
   finisher->init();
   bi_rados->init(zone.get(), radoshandle, bilog_rados.get(), datalog_rados.get());
   bilog_rados->init(bi_rados.get());
@@ -103,8 +99,7 @@ int RGWServices_Def::init(CephContext *cct,
                          bucket_sobj.get());
   cls->init(zone.get(), radoshandle);
   config_key_rados->init(radoshandle);
-  mdlog->init(radoshandle, zone.get(), sysobj.get(), cls.get(),
-	      async_processor.get());
+  mdlog->init(rados.get(), zone.get(), sysobj.get(), cls.get());
   meta->init(sysobj.get(), mdlog.get(), meta_bes);
   meta_be_sobj->init(sysobj.get(), mdlog.get());
   meta_be_otp->init(sysobj.get(), mdlog.get(), cls.get());
@@ -303,10 +298,10 @@ void RGWServices_Def::shutdown()
   quota->shutdown();
   zone_utils->shutdown();
   zone->shutdown();
-  async_processor->stop();
   rados->shutdown();
 
   has_shutdown = true;
+
 }
 
 int RGWServices::do_init(CephContext *_cct, bool have_cache, bool raw,
@@ -348,7 +343,6 @@ int RGWServices::do_init(CephContext *_cct, bool have_cache, bool raw,
   core = _svc.sysobj_core.get();
   user = _svc.user_rados.get();
   role = _svc.role_rados.get();
-  async_processor = _svc.async_processor.get();
 
   return 0;
 }

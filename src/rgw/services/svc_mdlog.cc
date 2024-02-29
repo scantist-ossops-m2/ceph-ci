@@ -30,16 +30,13 @@ RGWSI_MDLog::RGWSI_MDLog(CephContext *cct, bool _run_sync) : RGWServiceInstance(
 RGWSI_MDLog::~RGWSI_MDLog() {
 }
 
-int RGWSI_MDLog::init(librados::Rados* rados_, RGWSI_Zone *_zone_svc,
-		      RGWSI_SysObj *_sysobj_svc, RGWSI_Cls *_cls_svc,
-		      RGWAsyncRadosProcessor* async_processor_)
+int RGWSI_MDLog::init(RGWSI_RADOS *_rados_svc, RGWSI_Zone *_zone_svc, RGWSI_SysObj *_sysobj_svc, RGWSI_Cls *_cls_svc)
 {
   svc.zone = _zone_svc;
   svc.sysobj = _sysobj_svc;
   svc.mdlog = this;
-  rados = rados_;
+  svc.rados = _rados_svc;
   svc.cls = _cls_svc;
-  async_processor = async_processor_;
 
   return 0;
 }
@@ -265,12 +262,11 @@ class ReadHistoryCR : public RGWCoroutine {
   ReadHistoryCR(const DoutPrefixProvider *dpp, 
                 const Svc& svc,
                 Cursor *cursor,
-                RGWObjVersionTracker *objv_tracker,
-		RGWAsyncRadosProcessor* async_processor)
+                RGWObjVersionTracker *objv_tracker)
     : RGWCoroutine(svc.zone->ctx()), dpp(dpp), svc(svc),
       cursor(cursor),
       objv_tracker(objv_tracker),
-      async_processor(async_processor)
+      async_processor(svc.rados->get_async_processor())
   {}
 
   int operate(const DoutPrefixProvider *dpp) {
@@ -316,11 +312,10 @@ class WriteHistoryCR : public RGWCoroutine {
   WriteHistoryCR(const DoutPrefixProvider *dpp, 
                  Svc& svc,
                  const Cursor& cursor,
-                 RGWObjVersionTracker *objv,
-		 RGWAsyncRadosProcessor* async_processor)
+                 RGWObjVersionTracker *objv)
     : RGWCoroutine(svc.zone->ctx()), dpp(dpp), svc(svc),
       cursor(cursor), objv(objv),
-      async_processor(async_processor)
+      async_processor(svc.rados->get_async_processor())
   {}
 
   int operate(const DoutPrefixProvider *dpp) {
@@ -358,22 +353,18 @@ class TrimHistoryCR : public RGWCoroutine {
   RGWObjVersionTracker *objv; //< to prevent racing updates
   Cursor next; //< target cursor for oldest log period
   Cursor existing; //< existing cursor read from disk
-  RGWAsyncRadosProcessor* async_processor;
 
  public:
-  TrimHistoryCR(const DoutPrefixProvider *dpp, const Svc& svc, Cursor cursor,
-		RGWObjVersionTracker *objv,
-		RGWAsyncRadosProcessor* async_processor)
+  TrimHistoryCR(const DoutPrefixProvider *dpp, const Svc& svc, Cursor cursor, RGWObjVersionTracker *objv)
     : RGWCoroutine(svc.zone->ctx()), dpp(dpp), svc(svc),
-      cursor(cursor), objv(objv), next(cursor),
-      async_processor(async_processor) {
+      cursor(cursor), objv(objv), next(cursor) {
     next.next(); // advance past cursor
   }
 
   int operate(const DoutPrefixProvider *dpp) {
     reenter(this) {
       // read an existing history, and write the new history if it's newer
-      yield call(new ReadHistoryCR(dpp, svc, &existing, objv, async_processor));
+      yield call(new ReadHistoryCR(dpp, svc, &existing, objv));
       if (retcode < 0) {
         return set_cr_error(retcode);
       }
@@ -384,7 +375,7 @@ class TrimHistoryCR : public RGWCoroutine {
         return set_cr_error(-ECANCELED);
       }
       // overwrite with updated history
-      yield call(new WriteHistoryCR(dpp, svc, next, objv, async_processor));
+      yield call(new WriteHistoryCR(dpp, svc, next, objv));
       if (retcode < 0) {
         return set_cr_error(retcode);
       }
@@ -521,13 +512,13 @@ Cursor RGWSI_MDLog::read_oldest_log_period(optional_yield y, const DoutPrefixPro
 RGWCoroutine* RGWSI_MDLog::read_oldest_log_period_cr(const DoutPrefixProvider *dpp, 
         Cursor *period, RGWObjVersionTracker *objv) const
 {
-  return new mdlog::ReadHistoryCR(dpp, svc, period, objv, async_processor);
+  return new mdlog::ReadHistoryCR(dpp, svc, period, objv);
 }
 
 RGWCoroutine* RGWSI_MDLog::trim_log_period_cr(const DoutPrefixProvider *dpp, 
         Cursor period, RGWObjVersionTracker *objv) const
 {
-  return new mdlog::TrimHistoryCR(dpp, svc, period, objv, async_processor);
+  return new mdlog::TrimHistoryCR(dpp, svc, period, objv);
 }
 
 RGWMetadataLog* RGWSI_MDLog::get_log(const std::string& period)

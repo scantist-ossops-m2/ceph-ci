@@ -29,6 +29,7 @@ class RGWCoroutine;
 
 class RGWSI_Zone;
 class RGWSI_SysObj;
+class RGWSI_RADOS;
 
 namespace mdlog {
   class ReadHistoryCR;
@@ -57,21 +58,18 @@ public:
   RGWSI_MDLog(CephContext *cct, bool run_sync);
   virtual ~RGWSI_MDLog();
 
-  librados::Rados* rados{nullptr};
-  RGWAsyncRadosProcessor* async_processor{nullptr};
-
   struct Svc {
+    RGWSI_RADOS *rados{nullptr};
     RGWSI_Zone *zone{nullptr};
     RGWSI_SysObj *sysobj{nullptr};
     RGWSI_MDLog *mdlog{nullptr};
     RGWSI_Cls *cls{nullptr};
   } svc;
 
-  int init(librados::Rados* rados_,
+  int init(RGWSI_RADOS *_rados_svc,
            RGWSI_Zone *_zone_svc,
            RGWSI_SysObj *_sysobj_svc,
-           RGWSI_Cls *_cls_svc,
-	   RGWAsyncRadosProcessor* async_processor_);
+           RGWSI_Cls *_cls_svc);
 
   int do_start(optional_yield y, const DoutPrefixProvider *dpp) override;
 
