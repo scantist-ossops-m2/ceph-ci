@@ -201,9 +201,8 @@ protected:
   }
 
   template <class StageT>
-  std::optional<seastar::future<>>
-  enter_stage_maybe_sync(StageT& stage) {
-    return that()->get_handle().template enter_maybe_sync<T>(
+  void enter_stage_sync(StageT& stage) {
+    that()->get_handle().template enter_sync<T>(
         stage, this->template get_trigger<typename StageT::BlockingEvent>());
   }
 

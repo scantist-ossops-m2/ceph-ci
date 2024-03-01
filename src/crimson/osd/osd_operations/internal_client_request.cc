@@ -85,16 +85,8 @@ seastar::future<> InternalClientRequest::start()
               std::as_const(osd_ops), pg->get_pgid().pgid, *pg->get_osdmap());
             assert(ret == 0);
             // call process_lock_obc() in order, but wait concurrently for loading.
-            auto maybe_fut = enter_stage_maybe_sync(client_pp().lock_obc);
-            if (maybe_fut.has_value()) {
-              return interruptor::make_interruptible(
-                std::move(maybe_fut.value())
-              ).then_interruptible([this, &osd_ops] {
-                return process_lock_obc(osd_ops);
-              });
-            } else {
-              return process_lock_obc(osd_ops);
-            }
+            enter_stage_sync(client_pp().lock_obc);
+            return process_lock_obc(osd_ops);
           });
         }).si_then([this] {
           logger().debug("{}: complete", *this);

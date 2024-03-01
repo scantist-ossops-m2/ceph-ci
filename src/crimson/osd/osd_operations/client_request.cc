@@ -279,17 +279,9 @@ ClientRequest::process_op(
       std::move(snaps),
       [pg, this, &ihref](auto &snaps) {
       // call recover_missing_snaps() in order, but wait concurrently for loading.
-      auto maybe_fut = ihref.enter_stage_maybe_sync(
+      ihref.enter_stage_sync(
           client_pp(*pg).recover_missing_lock_obc, *this);
-      if (maybe_fut.has_value()) {
-        return interruptor::make_interruptible(
-          std::move(maybe_fut.value())
-        ).then_interruptible([pg, this, &ihref, &snaps] {
-          return recover_missing_snaps(pg, ihref, snaps);
-        });
-      } else {
-        return recover_missing_snaps(pg, ihref, snaps);
-      }
+      return recover_missing_snaps(pg, ihref, snaps);
     });
   }).then_interruptible([FNAME, this, pg, this_instance_id, &ihref]() mutable {
     DEBUGDPP("{}.{}: checking already_complete",
@@ -329,17 +321,9 @@ ClientRequest::process_op(
             DEBUGDPP("{}.{}: past scrub blocker, getting obc",
                      *pg, *this, this_instance_id);
             // call process_lock_obc() in order, but wait concurrently for loading.
-            auto maybe_fut = ihref.enter_stage_maybe_sync(
+            ihref.enter_stage_sync(
                 client_pp(*pg).lock_obc, *this);
-            if (maybe_fut.has_value()) {
-              return interruptor::make_interruptible(
-                std::move(maybe_fut.value())
-              ).then_interruptible([this, pg, this_instance_id, &ihref] {
-                return process_lock_obc(ihref, pg, this_instance_id);
-              });
-            } else {
-              return process_lock_obc(ihref, pg, this_instance_id);
-            }
+            return process_lock_obc(ihref, pg, this_instance_id);
 	  });
         });
       }
