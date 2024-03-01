@@ -27,6 +27,7 @@
 #endif
 
 #include "mgr/MgrContext.h"
+#include "mgr/MgrOpRequest.h"
 
 #include "DaemonServer.h"
 #include "messages/MMgrDigest.h"
@@ -66,7 +67,9 @@ Mgr::Mgr(MonClient *monc_, const MgrMap& mgrmap,
   clog(clog_),
   audit_clog(audit_clog_),
   initialized(false),
-  initializing(false)
+  initializing(false),
+  op_tracker(g_ceph_context, g_ceph_context->_conf->mgr_enable_op_tracker,
+                             g_ceph_context->_conf->mgr_num_op_tracker_shard)
 {
   cluster_state.set_objecter(objecter);
 }
