@@ -13,3 +13,5 @@ overrides:
       - POOL_APP_NOT_ENABLED
       - overall HEALTH_
       - Replacing daemon
+      - PG_DEGRADED
+      - PG_AVAILABILITY
