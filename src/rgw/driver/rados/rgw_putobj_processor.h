@@ -69,7 +69,7 @@ class RadosWriter : public rgw::sal::DataProcessor {
   RGWRados *const store;
   const RGWBucketInfo& bucket_info;
   RGWObjectCtx& obj_ctx;
-  const rgw_obj head_obj;
+  rgw_obj head_obj;
   RGWSI_RADOS::Obj stripe_obj; // current stripe object
   RawObjSet written; // set of written objects for deletion
   const DoutPrefixProvider *dpp;
@@ -79,7 +79,7 @@ class RadosWriter : public rgw::sal::DataProcessor {
  public:
   RadosWriter(Aio *aio, RGWRados *store,
               const RGWBucketInfo& bucket_info,
-              RGWObjectCtx& obj_ctx, const rgw_obj& _head_obj,
+              RGWObjectCtx& obj_ctx, rgw_obj& _head_obj,
               const DoutPrefixProvider *dpp, optional_yield y, jspan_context& _trace)
     : aio(aio), store(store), bucket_info(bucket_info),
       obj_ctx(obj_ctx), head_obj(_head_obj), dpp(dpp), y(y), trace(_trace)
@@ -90,7 +90,7 @@ class RadosWriter : public rgw::sal::DataProcessor {
   void add_write_hint(librados::ObjectWriteOperation& op);
 
   // change the head object
-  void set_head_obj(const rgw_obj& head);
+  void set_head_obj(rgw_obj& head);
 
   // change the current stripe object
   int set_stripe_obj(const rgw_raw_obj& obj);

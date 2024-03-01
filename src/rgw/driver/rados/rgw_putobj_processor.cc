@@ -124,7 +124,7 @@ void RadosWriter::add_write_hint(librados::ObjectWriteOperation& op) {
   op.set_alloc_hint2(0, 0, alloc_hint_flags);
 }
 
-void RadosWriter::set_head_obj(const rgw_obj& head)
+void RadosWriter::set_head_obj(rgw_obj& head)
 {
   head_obj = head;
 }

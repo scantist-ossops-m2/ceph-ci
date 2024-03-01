@@ -49,7 +49,6 @@ RGWServices_Def::~RGWServices_Def()
 }
 
 int RGWServices_Def::init(CephContext *cct,
-			  rgw::sal::RadosStore* driver,
 			  bool have_cache,
                           bool raw,
 			  bool run_sync,

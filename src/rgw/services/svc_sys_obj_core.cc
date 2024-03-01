@@ -619,7 +619,7 @@ int RGWSI_SysObj_Core::pool_list_objects_init(const DoutPrefixProvider *dpp,
                                               const string& prefix,
                                               RGWSI_SysObj::Pool::ListCtx *_ctx)
 {
-  _ctx->impl.emplace<PoolListImplInfo>(prefix, marker);
+  _ctx->impl.emplace<PoolListImplInfo>(prefix);
 
   auto& ctx = static_cast<PoolListImplInfo&>(*_ctx->impl);
 
