@@ -151,9 +151,8 @@ public:
     }
 
     template <typename StageT>
-    std::optional<seastar::future<>>
-    enter_stage_maybe_sync(StageT &stage, ClientRequest &op) {
-      return handle.template enter_maybe_sync<ClientRequest>(
+    void enter_stage_sync(StageT &stage, ClientRequest &op) {
+      return handle.template enter_sync<ClientRequest>(
           stage, get_trigger<typename StageT::BlockingEvent>(op));
     }
 
