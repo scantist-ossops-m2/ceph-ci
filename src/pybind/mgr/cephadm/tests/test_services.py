@@ -2062,7 +2062,7 @@ class TestIngressService:
                                 'http-request use-service prometheus-exporter if { path /metrics }\n    '
                                 'monitor-uri /health\n'
                                 '\nfrontend frontend\n    '
-                                'bind *:8089\n    '
+                                'bind [..]:8089\n    '
                                 'default_backend backend\n\n'
                                 'backend backend\n    '
                                 'option forwardfor\n    '
