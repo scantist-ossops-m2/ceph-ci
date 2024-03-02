@@ -137,6 +137,9 @@
 %{!?python3_version_nodots: %global python3_version_nodots 3}
 %{!?python3_version: %global python3_version 3}
 %{!?gts_prefix: %global gts_prefix gcc-toolset-13}
+%if 0%{with seastar}
+%global toolchain clang
+%endif
 
 %if ! 0%{?suse_version}
 # use multi-threaded xz compression: xz level 7 using ncpus threads
