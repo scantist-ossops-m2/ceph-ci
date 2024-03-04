@@ -879,8 +879,13 @@ if(WITH_FUSE)
 endif(WITH_FUSE)
 
 # NVMEOF GATEWAY MONITOR CLIENT
+# Supported on RPM-based platforms only, depends on grpc devel libraries/tools
+if(EXISTS "/etc/redhat-release" OR EXISTS "/etc/fedora-release")
+  option(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT "build nvmeof gateway monitor client" ON)
+else()
+  option(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT "build nvmeof gateway monitor client" OFF)
+endif()
 
-option(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT "build nvmeof gateway monitor client" ON)
 if(WITH_NVMEOF_GATEWAY_MONITOR_CLIENT)
 
   # Find Protobuf installation
