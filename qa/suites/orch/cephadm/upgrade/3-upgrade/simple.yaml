@@ -7,6 +7,8 @@ tasks:
       - radosgw-admin zone create --rgw-zonegroup=default --rgw-zone=z --master --default
       - radosgw-admin period update --rgw-realm=r --commit
       - ceph orch apply rgw r z --placement=2 --port=8000
+      # simple rgw spec (will have no "spec" field) to make sure that works with rgw spec migration
+      - ceph orch apply rgw smpl
       - sleep 120
       - ceph config set mon mon_warn_on_insecure_global_id_reclaim false --force
       - ceph config set mon mon_warn_on_insecure_global_id_reclaim_allowed false --force
