@@ -66,27 +66,23 @@ private:
     void cancel_timer(const NvmeGwId &gw_id, const NvmeGroupKey& group_key, NvmeAnaGrpId anagrpid);
 
 public:
-    void encode(ceph::buffer::list &bl, bool full_encode = true) const {
+    void encode(ceph::buffer::list &bl) const {
         using ceph::encode;
         ENCODE_START(1, 1, bl);
         encode(epoch, bl);// global map epoch
 
         encode(Created_gws, bl); //Encode created GWs
-        if (full_encode) {
-            encode(Gmetadata, bl);
-        }
+        encode(Gmetadata, bl);
         ENCODE_FINISH(bl);
     }
 
-    void decode(ceph::buffer::list::const_iterator &bl, bool full_decode = true) {
+    void decode(ceph::buffer::list::const_iterator &bl) {
         using ceph::decode;
         DECODE_START(1, bl);
         decode(epoch, bl);
 
         decode(Created_gws, bl);
-        if (full_decode) {
-            decode(Gmetadata, bl);
-        }
+        decode(Gmetadata, bl);
         DECODE_FINISH(bl);
     }
 };
