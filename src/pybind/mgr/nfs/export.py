@@ -543,7 +543,8 @@ class ExportMgr:
         except Exception as ex:
             msg = f'Failed to apply export: {ex}'
             log.exception(msg)
-            return {"state": "error", "msg": msg}
+            return {"state": "error", "msg": msg, "exception": ex,
+                    "pseudo": export['pseudo']}
 
     def _update_user_id(
             self,
