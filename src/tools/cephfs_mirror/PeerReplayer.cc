@@ -1334,6 +1334,7 @@ int PeerReplayer::do_synchronize(const std::string &dir_root, const Snapshot &cu
         sync_stack.emplace(SyncEntry(epath, stx));
       }
     } else {
+      std::scoped_lock locker(m_lock);
       bool need_data_sync = true;
       bool need_attr_sync = true;
       r = should_sync_entry(entry.epath, entry.stx, fh,
