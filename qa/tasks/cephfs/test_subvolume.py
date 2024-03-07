@@ -1,5 +1,6 @@
 import logging
 
+from io import StringIO
 from tasks.cephfs.cephfs_test_case import CephFSTestCase
 from teuthology.exceptions import CommandFailedError
 
@@ -28,6 +29,9 @@ class TestSubvolume(CephFSTestCase):
 
     def cleanup_test(self):
         self.mount_a.run_shell(['rm', '-rf', 'group'])
+
+    def _fs_cmd(self, *args):
+        return self.get_ceph_cmd_stdout("fs", *args)
 
     def test_subvolume_move_out_file(self):
         """
@@ -168,3 +172,33 @@ class TestSubvolume(CephFSTestCase):
 
         # clean up
         self.mount_a.run_shell(['rmdir', 'group/subvol2/dir/.snap/s2'])
+
+    def test_subvolume_vxattr(self):
+        """
+        To test presence and absence of ceph.dir.subvolume xattr on a subvolume
+        """
+        # create a subvolume
+        self._fs_cmd('subvolumegroup', 'create', self.fs.name, 'grp1')
+        self._fs_cmd('subvolume', 'create', self.fs.name, 'sv1', 'grp1')
+
+        # verify that ceph.dir.subvolume has value "1"
+        stdo = StringIO()
+        self.mount_a.run_shell(['getfattr', '-n', 'ceph.dir.subvolume',
+                                '--only-values', 'volumes/grp1/sv1'],
+                               stdout=stdo)
+        o = stdo.getvalue().strip()
+        self.assertTrue(o == "1")
+
+        # clear the ceph.dir.subvolume vxattr value
+        self.mount_a.run_shell(['sudo', 'setfattr', '-n', 'ceph.dir.subvolume',
+                                '-v', '0', 'volumes/grp1/sv1'])
+        stdo = StringIO()
+        # verify that ceph.dir.subvolume has value "0"
+        self.mount_a.run_shell(['getfattr', '-n', 'ceph.dir.subvolume',
+                                '--only-values', 'volumes/grp1/sv1'],
+                               stdout=stdo)
+        o = stdo.getvalue().strip()
+        self.assertTrue(o == "0")
+
+        self._fs_cmd('subvolume', 'rm', self.fs.name, 'sv1', 'grp1')
+        self._fs_cmd('subvolumegroup', 'rm', self.fs.name, 'grp1')
