@@ -58,6 +58,7 @@ typedef int32_t mds_rank_t;
 constexpr mds_rank_t MDS_RANK_NONE		= -1;
 constexpr mds_rank_t MDS_RANK_EPHEMERAL_DIST	= -2;
 constexpr mds_rank_t MDS_RANK_EPHEMERAL_RAND	= -3;
+constexpr mds_rank_t MDS_RANK_MASK              = -4;
 
 struct scatter_info_t {
   version_t version = 0;
@@ -734,6 +735,7 @@ void inode_t<Allocator>::decode(ceph::buffer::list::const_iterator &p)
   if (struct_v >= 19) {
     decode(fscrypt_last_block, p);
   }
+
   DECODE_FINISH(p);
 }
 
