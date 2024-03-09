@@ -12,8 +12,6 @@ usr/bin/ceph_psim
 usr/bin/ceph_radosacl
 usr/bin/ceph_rgw_jsonparser
 usr/bin/ceph_rgw_multiparser
-usr/bin/ceph_scratchtool
-usr/bin/ceph_scratchtoolpp
 usr/bin/ceph_test_*
 usr/bin/ceph-dedup-tool
 usr/lib/ceph/ceph-monstore-update-crush.sh

@@ -2508,8 +2508,6 @@ fi
 %{_bindir}/ceph_radosacl
 %{_bindir}/ceph_rgw_jsonparser
 %{_bindir}/ceph_rgw_multiparser
-%{_bindir}/ceph_scratchtool
-%{_bindir}/ceph_scratchtoolpp
 %{_bindir}/ceph_test_*
 %{_bindir}/ceph-coverage
 %{_bindir}/ceph-debugpack
