@@ -1350,7 +1350,9 @@ done
 export CPPFLAGS="$java_inc"
 export CFLAGS="$RPM_OPT_FLAGS"
 export CXXFLAGS="$RPM_OPT_FLAGS"
-export LDFLAGS="$RPM_LD_FLAGS"
+# to assure that linker links against libstdc++, as gts always uses the
+# static library.
+export LDFLAGS="$RPM_LD_FLAGS -lstdc++"
 
 %if 0%{with seastar}
 # seastar uses longjmp() to implement coroutine. and this annoys longjmp_chk()
