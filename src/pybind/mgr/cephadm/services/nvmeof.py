@@ -65,8 +65,8 @@ class NvmeofService(CephService):
             'pool': spec.pool
         }
         _, _, err = self.mgr.mon_command(cmd)
-        if err:
-            self.mgr.log.error(f"Unable to send monitor command {cmd}, error {err}")
+        # if send command failed, raise assertion exception, failing the daemon creation
+        assert not err, f"Unable to send monitor command {cmd}, error {err}"
         return daemon_spec
 
     def config_dashboard(self, daemon_descrs: List[DaemonDescription]) -> None:
