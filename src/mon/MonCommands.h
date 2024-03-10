@@ -1380,6 +1380,12 @@ COMMAND("nvme-gw delete"
     "delete nvmeof gateway id for (pool, group)",
     "mgr", "rw")
 
+COMMAND("nvme-gw show"
+   " name=pool,type=CephString"
+   " name=group,type=CephString",
+   " show nvmeof gateways within (pool, group)",
+   "mgr", "rw")
+
 // these are tell commands that were implemented as CLI commands in
 // the broken pre-octopus way that we want to allow to work when a
 // monitor has upgraded to octopus+ but the monmap min_mon_release is

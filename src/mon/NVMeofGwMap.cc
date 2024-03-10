@@ -240,8 +240,7 @@ void  NVMeofGwMap::find_failback_gw(const NvmeGwId &gw_id, const NvmeGroupKey& g
 
             dout(10)  << "Found Failback GW " << failback_gw_id << " that previously took over the ANAGRP " << gw_state.ana_grp_id << " of the available GW " << gw_id << dendl;
             st.sm_state[gw_state.ana_grp_id] = GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED;
-            st.copied_nonce_map = st.nonce_map; // preserve the nonce map that should be blocklisted after expiration of GW_WAIT_FAILBACK_PREPARED timer
-            start_timer(failback_gw_id, group_key, gw_state.ana_grp_id, 6);// Add timestamp of start Failback preparation
+            start_timer(failback_gw_id, group_key, gw_state.ana_grp_id, 3);// Add timestamp of start Failback preparation
             gw_state.sm_state[gw_state.ana_grp_id] = GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED;
             propose = true;
             break;
@@ -463,20 +462,8 @@ void NVMeofGwMap::fsm_handle_to_expired(const NvmeGwId &gw_id, const NvmeGroupKe
             if (st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED && st.availability == GW_AVAILABILITY_E::GW_AVAILABLE )
             {
                 fbp_gw_state.standby_state(grpid);// Previous failover GW  set to standby
-                epoch_t epoch;
-                int rc = blocklist_gw (gw_id, group_key, grpid, epoch, false);
-                if(rc){
-                    dout(1) << "Error : probably empty nonce-map upon calling blocklist for Failback usecase" << dendl;
-                    ceph_assert(false);
-                }
-                //st.active_state(grpid);
-                st.sm_state[grpid] = GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL;
-                start_timer(gw_state.first, group_key, grpid, 30);
-                st.blocklist_data[grpid].osd_epoch = epoch;
-                st.blocklist_data[grpid].is_failover = false;
-                dout(10)  << "Expired Failback-preparation timer from GW " << gw_id << " ANA groupId "<< grpid << "osd epoch "  << st.blocklist_data[grpid].osd_epoch  << dendl;
-
-                dout(10) << "Starting blocklist: Failback from GW " << gw_id << " to " << gw_state.first << dendl;
+                st.active_state(grpid);
+                dout(10)  << "Expired Failback-preparation timer from GW " << gw_id << " ANA groupId "<< grpid << dendl;
                 map_modified = true;
                 break;
             }
@@ -526,13 +513,10 @@ int NVMeofGwMap::blocklist_gw(const NvmeGwId &gw_id, const NvmeGroupKey& group_k
 
      if (gw_map.nonce_map[grpid].size() > 0){
         NvmeNonceVector &nonce_vector = gw_map.nonce_map[grpid];;
-        if(failover == false)
-           nonce_vector = gw_map.copied_nonce_map[grpid];
-
         std::string str = "[";
         entity_addrvec_t addr_vect;
         //auto until = ceph_clock_now();  // until += g_conf().get_val<double>("mon_mgr_blocklist_interval"); // 1day - TODO
-        utime_t until(30, 0);
+        utime_t until(600, 0);// 1hour delay
         dout(10) << "until timestamp before now " << until << dendl;
         until += ceph_clock_now();
         dout(10) << "until timestamp " << until << dendl;
@@ -541,8 +525,9 @@ int NVMeofGwMap::blocklist_gw(const NvmeGwId &gw_id, const NvmeGroupKey& group_k
             str += it;
         }
         str += "]";
-        int rc = addr_vect.parse(&str[0]);
+        bool rc = addr_vect.parse(&str[0]);
         dout(10) << str << " rc " << rc <<  " network vector: " << addr_vect << " " << addr_vect.size() << dendl;
+        ceph_assert(rc);
         epoch = mon->osdmon()->blocklist(addr_vect, until);
 
         if (!mon->osdmon()->is_writeable()) {
