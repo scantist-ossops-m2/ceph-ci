@@ -21,6 +21,9 @@ class NvmeofService(CephService):
     def config(self, spec: NvmeofServiceSpec) -> None:  # type: ignore
         assert self.TYPE == spec.service_type
         assert spec.pool
+        self.pool = spec.pool
+        assert spec.group is not None
+        self.group =  spec.group
         self.mgr._check_pool_exists(spec.pool, spec.service_name())
 
     def prepare_create(self, daemon_spec: CephadmDaemonDeploySpec) -> CephadmDaemonDeploySpec:
@@ -134,14 +137,15 @@ class NvmeofService(CephService):
         if not ret:
             logger.info(f'{daemon.hostname} removed from nvmeof gateways dashboard config')
 
-        spec = cast(NvmeofServiceSpec, self.mgr.spec_store[daemon.service_name].spec)
-        name = '{}.{}'.format(utils.name_to_config_section('nvmeof'), daemon.daemon_id)
+        # Assert configured
+        assert self.pool
+        assert self.group is not None
         # Notify monitor about this gateway deletion
         cmd = {
             'prefix': 'nvme-gw delete',
-            'id': name,
-            'group': spec.group,
-            'pool': spec.pool
+            'id': daemon.hostname,
+            'group': self.group,
+            'pool': self.pool
         }
         _, _, err = self.mgr.mon_command(cmd)
         if err:
