@@ -20,6 +20,8 @@
 # please read this for explanation of bcond syntax:
 # https://rpm-software-management.github.io/rpm/manual/conditionalbuilds.html
 #################################################################################
+%define _lto_cflags %{nil}
+
 %bcond_with make_check
 %bcond_with cmake_verbose_logging
 %bcond_without ceph_test_package
@@ -141,7 +143,7 @@
 %{!?python3_pkgversion: %global python3_pkgversion 3}
 %{!?python3_version_nodots: %global python3_version_nodots 3}
 %{!?python3_version: %global python3_version 3}
-%{!?gts_prefix: %global gts_prefix gcc-toolset-11}
+%{!?gts_prefix: %global gts_prefix gcc-toolset-13}
 
 %if ! 0%{?suse_version}
 # use multi-threaded xz compression: xz level 7 using ncpus threads
@@ -173,8 +175,8 @@
 # do not provide gcc-annobin.so anymore, despite that they provide annobin.so. but
 # redhat-rpm-config still passes -fplugin=gcc-annobin to the compiler.
 %undefine _annotated_build
-%if 0%{?rhel} == 8 && 0%{?enable_devtoolset11:1}
-%enable_devtoolset11
+%if 0%{?rhel} >= 8 && 0%{?enable_devtoolset13:1}
+%enable_devtoolset13
 %endif
 
 #################################################################################
@@ -229,9 +231,9 @@ BuildRequires:	gcc-c++ >= 11
 %if 0%{?suse_version} == 1500
 BuildRequires: gcc11-c++
 %endif
-%if 0%{?rhel} == 8
+%if 0%{?rhel} >= 8
 BuildRequires:	%{gts_prefix}-gcc-c++
-BuildRequires:	%{gts_prefix}-build
+BuildRequires:	%{gts_prefix}-runtime
 BuildRequires:	%{gts_prefix}-libatomic-devel
 %endif
 %if 0%{?fedora} || 0%{?rhel} == 9 || 0%{?openEuler}
@@ -358,9 +360,8 @@ BuildRequires:  libubsan
 BuildRequires:  libasan
 BuildRequires:  protobuf-devel
 BuildRequires:  protobuf-compiler
-%if 0%{?rhel} == 8
-BuildRequires:  %{gts_prefix}-annobin
-BuildRequires:  %{gts_prefix}-annobin-plugin-gcc
+%if 0%{?rhel} >= 8
+BuildRequires:  %{gts_prefix}-gcc-plugin-annobin
 BuildRequires:  %{gts_prefix}-libubsan-devel
 BuildRequires:  %{gts_prefix}-libasan-devel
 %endif
@@ -1334,11 +1335,6 @@ This package provides a Ceph hardware monitoring agent.
 %autosetup -p1 -n @TARBALL_BASENAME@
 
 %build
-# Disable lto on systems that do not support symver attribute
-# See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=48200 for details
-%if ( 0%{?rhel} && 0%{?rhel} < 9 ) || ( 0%{?suse_version} && 0%{?suse_version} <= 1500 )
-%define _lto_cflags %{nil}
-%endif
 
 %if 0%{with cephfs_java}
 # Find jni.h
@@ -1375,6 +1371,9 @@ cmake .. \
 %if 0%{?suse_version} == 1500
     -DCMAKE_C_COMPILER=gcc-11 \
     -DCMAKE_CXX_COMPILER=g++-11 \
+%endif
+%if 0%{?rhel} >= 8
+    -DCMAKE_EXE_LINKER_FLAGS=-lstdc++ \
 %endif
     -DCMAKE_INSTALL_PREFIX=%{_prefix} \
     -DCMAKE_INSTALL_LIBDIR:PATH=%{_libdir} \
