@@ -519,7 +519,7 @@ else
                 if test $ID = centos -a $MAJOR_VERSION = 8 ; then
                     # for grpc-devel
                     # See https://copr.fedorainfracloud.org/coprs/ceph/grpc/
-                    $SUDO yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+                    # epel is enabled for all major versions couple of lines above
                     $SUDO dnf copr enable -y ceph/grpc
 
                     # Enable 'powertools' or 'PowerTools' repo
