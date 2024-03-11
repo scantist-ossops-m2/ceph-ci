@@ -126,7 +126,7 @@ def create_users(ctx, config, s3tests_conf):
                         '--cluster', cluster_name,
                         'account', 'create',
                         '--account-id', account_id,
-                        '--account-name', 'Mr. {user}'.format(user=account_id),
+                        '--account-name', 'Mr.{user}'.format(user=account_id),
                         '--email', account_email,
                     ]
                 if section == 's3 tenant':
