@@ -316,7 +316,7 @@ public:
     if (i != queue_pointers.end()) {
       unsigned prio = i->second.first;
       const Reservation& r = *i->second.second;
-      rdout(10) << __func__ << " cancel " << r << " (was queued)" << dendl;
+      rdout(11) << __func__ << " cancel " << r << " (was queued)" << dendl;
       delete r.grant;
       delete r.preempt;
       queues[prio].erase(i->second.second);
@@ -335,7 +335,7 @@ public:
 	}
 	in_progress.erase(p);
       } else {
-	rdout(10) << __func__ << " cancel " << item << " (not found)" << dendl;
+	rdout(11) << __func__ << " cancel " << item << " (not found)" << dendl;
       }
     }
     do_queues();
