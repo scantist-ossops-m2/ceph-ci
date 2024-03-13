@@ -2,13 +2,7 @@ from __future__ import print_function
 import argparse
 import logging
 from textwrap import dedent
-from ceph_volume import process, conf, decorators, terminal, configuration, objectstore
-from ceph_volume.util import system, disk
-from ceph_volume.util import prepare as prepare_utils
-from ceph_volume.util import encryption as encryption_utils
-from ceph_volume.systemd import systemctl
-from ceph_volume.api import lvm as api
-from .listing import direct_report
+from ceph_volume import objectstore
 
 
 logger = logging.getLogger(__name__)
