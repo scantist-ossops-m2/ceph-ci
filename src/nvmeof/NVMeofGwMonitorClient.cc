@@ -74,7 +74,7 @@ int NVMeofGwMonitorClient::init()
       group = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--gateway-address", (char*)NULL)) {
       gateway_address = val;
-    } else if (ceph_argparse_witharg(args, i, &val, "--monitor-address", (char*)NULL)) {
+    } else if (ceph_argparse_witharg(args, i, &val, "--monitor-group-address", (char*)NULL)) {
       monitor_address = val;
     } else if (ceph_argparse_witharg(args, i, &val, "--server-key", (char*)NULL)) {
       server_key = val;

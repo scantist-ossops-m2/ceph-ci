@@ -33,7 +33,7 @@ static void usage()
                "        --gateway-address <GW_ADDRESS>\n"
                "        --gateway-pool <CEPH_POOL>\n"
                "        --gateway-group <GW_GROUP>\n"
-               "        --monitor-address <MONITOR_GROUP_ADDRESS>\n"
+               "        --monitor-group-address <MONITOR_GROUP_ADDRESS>\n"
                "        [flags]\n"
 	    << std::endl;
   generic_server_usage();
