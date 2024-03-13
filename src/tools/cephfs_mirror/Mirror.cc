@@ -590,6 +590,9 @@ void Mirror::schedule_mirror_update_task() {
 
   m_timer_task = new LambdaContext([this](int _) {
                                      m_timer_task = nullptr;
+                                     auto safe_timer = &(m_cct->lookup_or_create_singleton_object<SafeTimerSingleton>
+							 ("cephfs::mirror::safe_timer", false, m_cct));
+                                     m_timer_lock = &safe_timer->timer_lock;
                                      update_fs_mirrors();
                                    });
   double after = g_ceph_context->_conf.get_val<std::chrono::seconds>
