@@ -328,9 +328,6 @@ void NVMeofGwMonitorClient::handle_nvmeof_gw_map(ceph::ref_t<MNVMeofGwMap> nmap)
           blocklist_epoch != 0) {
         // Check if we need to wait for a newer OSD map before starting
         dout(0) << "Check if ready for blocklist osd map epoch: " << blocklist_epoch << dendl;
-        std::set<entity_addr_t> newly_blocklisted;
-        objecter.consume_blocklist_events(&newly_blocklisted);
-        dout(0) << "Consumed new blocklists: " << newly_blocklisted << dendl;
         objecter.maybe_request_map(); // we might also consider this under tick()?
         bool const ready = objecter.with_osdmap(
           [blocklist_epoch](const OSDMap& o) {
