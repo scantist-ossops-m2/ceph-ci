@@ -760,8 +760,6 @@ ReplicaActive::ReplicaActive(my_context ctx)
   dout(10) << "-- state -->> ReplicaActive" << dendl;
   m_pg = scrbr->get_pg();
   m_osds = m_pg->get_pg_osd(ScrubberPasskey());
-  clear_shallow_history<ReplicaIdle, 0>();
-  clear_shallow_history<ReplicaActive, 0>();
 }
 
 ReplicaActive::~ReplicaActive()
@@ -886,7 +884,7 @@ void ReplicaActive::clear_remote_reservation(bool warn_if_no_reservation)
   dout(10) << fmt::format(
 		  "ReplicaActive::clear_remote_reservation(): "
 		  "pending_reservation_nonce {}, reservation_granted {}",
-		  reservation_granted, pending_reservation_nonce)
+		  pending_reservation_nonce, reservation_granted)
 	   << dendl;
   if (reservation_granted || pending_reservation_nonce) {
     m_osds->get_scrub_reserver().cancel_reservation(pg_id);
@@ -1048,7 +1046,6 @@ sc::result ReplicaWaitingReservation::react(const StartReplica& ev)
       "reservation",
       scrbr->get_whoami(), scrbr->get_spgid());
   context<ReplicaActive>().clear_remote_reservation(true);
-  clear_shallow_history<ReplicaIdle, 0>();
   post_event(ReplicaPushesUpd{});
   return transit<ReplicaActiveOp>();
 }
@@ -1113,6 +1110,33 @@ sc::result ReplicaReserved::react(const StartReplica& ev)
   return transit<ReplicaActiveOp>();
 }
 
+// ---------------- ReplicaIdle/ReplicaAfterChunk -------------------------------
+
+ReplicaAfterChunk::ReplicaAfterChunk(my_context ctx)
+    : my_base(ctx)
+    , NamedSimply(
+	  context<ScrubMachine>().m_scrbr,
+	  "ReplicaActive/ReplicaIdle/ReplicaAfterChunk")
+{
+  dout(10) << "-- state -->> ReplicaActive/ReplicaIdle/ReplicaAfterChunk"
+	   << dendl;
+}
+
+sc::result ReplicaAfterChunk::react(const InternalOnIdle&)
+{
+  DECLARE_LOCALS;  // 'scrbr' & 'pg_id' aliases
+  const bool is_reserved = context<ReplicaActive>().is_reserved();
+  dout(10) << fmt::format(
+		  "ReplicaAfterChunk::react(const InternalOnIdle&) with "
+		  "reservation_granted:{}",
+		  is_reserved)
+	   << dendl;
+  if (is_reserved) {
+    return transit<ReplicaReserved>();
+  }
+  return transit<ReplicaUnreserved>();
+}
+
 
 // ------------- ReplicaActive/ReplicaActiveOp --------------------------
 
@@ -1148,6 +1172,18 @@ sc::result ReplicaActiveOp::react(const StartReplica&)
   post_event(ReplicaPushesUpd{});
   return transit<ReplicaActiveOp>();
 }
+
+sc::result ReplicaActiveOp::react(const ReplicaRelease& ev)
+{
+  dout(10) << "ReplicaActiveOp::react(const ReplicaRelease&)" << dendl;
+  // affect a selection of either ReplicaReserved or ReplicaUnreserved
+  // when the transition is made.
+  post_event(InternalOnIdle{});
+  // the 'release' event is to be handled by the selected target state
+  post_event(ev);
+  return transit<ReplicaAfterChunk>();
+}
+
 
 // ------------- ReplicaActive/ReplicaWaitUpdates ------------------------
 
@@ -1202,9 +1238,12 @@ sc::result ReplicaBuildingMap::react(const SchedReplica&)
 
   if (scrbr->get_preemptor().was_preempted()) {
     dout(10) << "replica scrub job preempted" << dendl;
-
     scrbr->send_preempted_replica();
-    return transit<sc::shallow_history<ReplicaReserved>>();
+
+    // affect a selection of either ReplicaReserved or ReplicaUnreserved
+    // when the transition is made.
+    post_event(InternalOnIdle{});
+    return transit<ReplicaAfterChunk>();
   }
 
   // start or check progress of build_replica_map_chunk()
@@ -1212,7 +1251,10 @@ sc::result ReplicaBuildingMap::react(const SchedReplica&)
   if (ret_init != -EINPROGRESS) {
     dout(10) << "ReplicaBuildingMap::react(const SchedReplica&): back to idle"
 	     << dendl;
-    return transit<sc::shallow_history<ReplicaReserved>>();
+    // affect a selection of either ReplicaReserved or ReplicaUnreserved
+    // when the transition is made.
+    post_event(InternalOnIdle{});
+    return transit<ReplicaAfterChunk>();
   }
 
   dout(20) << "ReplicaBuildingMap::react(const SchedReplica&): discarded"
