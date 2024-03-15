@@ -99,6 +99,15 @@
   See https://docs.ceph.com/en/latest/cephfs/administration/#file-systems
   docs for more information.
 
+* CephFS: The `subvolume snapshot clone` command now depends on the config option
+  `snapshot_clone_no_wait` which is used to reject the clone operation when
+  all the cloner threads are busy. This config option is enabled by default which means 
+  that if no cloner threads are free, the clone request errors out with EAGAIN.
+  The value of the config option can be fetched by using:
+   `ceph config get mgr mgr/volumes/snapshot_clone_no_wait`
+  and it can be disabled by using:
+   `ceph config set mgr mgr/volumes/snapshot_clone_no_wait false`
+
 >=18.0.0
 
 * The RGW policy parser now rejects unknown principals by default. If you are
