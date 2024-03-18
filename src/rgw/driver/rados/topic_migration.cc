@@ -236,9 +236,9 @@ int migrate(const DoutPrefixProvider* dpp,
     for (const std::string& oid : oids) {
       if (oid.find(rgw::sal::pubsub_bucket_oid_infix) != oid.npos) {
         const auto obj = rgw_raw_obj{pool, oid};
-        ldpp_dout(dpp, 4) << "migrating v1 topics " << oid << dendl;
+        ldpp_dout(dpp, 4) << "migrating v1 bucket notifications " << oid << dendl;
         r = migrate_notification(dpp, y, driver, obj);
-        ldpp_dout(dpp, 4) << "migrating v1 topics " << oid << " completed with: "
+        ldpp_dout(dpp, 4) << "migrating v1 bucket notifications " << oid << " completed with: "
                           << ((r == 0)? "successful": cpp_strerror(r)) << dendl;
       } else {
         // topics will be migrated after we complete migrating the notifications
@@ -253,9 +253,9 @@ int migrate(const DoutPrefixProvider* dpp,
 
   for (const std::string& oid : topics_oid) {
     const auto obj = rgw_raw_obj{pool, oid};
-    ldpp_dout(dpp, 4) << "migrating v1 bucket topics " << oid << dendl;
+    ldpp_dout(dpp, 4) << "migrating v1 topics " << oid << dendl;
     r = migrate_topics(dpp, y, driver, obj);
-    ldpp_dout(dpp, 4) << "migrating v1 bucket topics " << oid << " completed with: "
+    ldpp_dout(dpp, 4) << "migrating v1 topics " << oid << " completed with: "
                       << ((r == 0) ? "successful" : cpp_strerror(r)) << dendl;
   }
 
