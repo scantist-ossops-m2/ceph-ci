@@ -304,6 +304,7 @@ void NVMeofGwMonitorClient::handle_nvmeof_gw_map(ceph::ref_t<MNVMeofGwMap> nmap)
 
   // Gather all state changes
   ana_info ai;
+  epoch_t max_blocklist_epoch = 0;
   for (const auto& nqn_state_pair: new_gw_state.subsystems) {
     auto& sub = nqn_state_pair.second;
     const auto& nqn = nqn_state_pair.first;
@@ -326,26 +327,7 @@ void NVMeofGwMonitorClient::handle_nvmeof_gw_map(ceph::ref_t<MNVMeofGwMap> nmap)
 
       if (new_agroup_state == GW_EXPORTED_STATES_PER_AGROUP_E::GW_EXPORTED_OPTIMIZED_STATE &&
           blocklist_epoch != 0) {
-        // Check if we need to wait for a newer OSD map before starting
-        dout(0) << "Check if ready for blocklist osd map epoch: " << blocklist_epoch << dendl;
-        std::set<entity_addr_t> newly_blocklisted;
-        objecter.consume_blocklist_events(&newly_blocklisted);
-        dout(0) << "Consumed new blocklists: " << newly_blocklisted << dendl;
-        objecter.maybe_request_map(); // we might also consider this under tick()?
-        bool const ready = objecter.with_osdmap(
-          [blocklist_epoch](const OSDMap& o) {
-            dout(0) << "o.get_epoch:: " << o.get_epoch() << dendl;
-            return o.get_epoch() >= blocklist_epoch;
-          });
-        if (!ready) {
-          dout(0) << "Not ready for blocklist osd map epoch: " << blocklist_epoch << dendl;
-          return;
-        }
-        // Update latest accepted osdmap epoch, for beacons
-        if (blocklist_epoch > osdmap_epoch) {
-          osdmap_epoch = blocklist_epoch;
-	}
-        dout(0) << "Ready for blocklist osd map epoch: " << osdmap_epoch << dendl;
+        if (blocklist_epoch > max_blocklist_epoch) max_blocklist_epoch = blocklist_epoch;
       }
       gs.set_state(new_agroup_state == GW_EXPORTED_STATES_PER_AGROUP_E::GW_EXPORTED_OPTIMIZED_STATE ? OPTIMIZED : INACCESSIBLE); // Set the ANA state
       nas.mutable_states()->Add(std::move(gs));
@@ -365,6 +347,11 @@ void NVMeofGwMonitorClient::handle_nvmeof_gw_map(ceph::ref_t<MNVMeofGwMap> nmap)
 	dout(0) << "GRPC set_ana_state failed" << dendl;
 	usleep(1000); // TODO conf option
       }
+    }
+    // Update latest accepted osdmap epoch, for beacons
+    if (max_blocklist_epoch > osdmap_epoch) {
+      osdmap_epoch = max_blocklist_epoch;
+      dout(0) << "Ready for blocklist osd map epoch: " << osdmap_epoch << dendl;
     }
   }
   map = new_map;
