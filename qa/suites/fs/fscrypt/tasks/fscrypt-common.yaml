@@ -1,0 +1,12 @@
+teuthology:
+  postmerge:
+    # Once can we make sure the distro kernels have included the fscrypt feature
+    # or the ceph-fuse have supported the fscrypt feature we can remove this
+    # restriction.
+    - if not is_kupstream() then reject() end
+tasks:
+  - cephfs_test_runner:
+      fail_on_skip: false
+      modules:
+        - tasks.cephfs.test_fscrypt
+
