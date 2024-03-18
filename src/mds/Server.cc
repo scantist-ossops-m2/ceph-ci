@@ -4518,8 +4518,10 @@ void Server::handle_client_open(const MDRequestRef& mdr)
     mdr->getattr_caps = mask;
   }
 
+  bool do_fscrypt_check = false;
   if (!session->info.has_feature(CEPHFS_FEATURE_ALTERNATE_NAME)) {
-      lov.add_rdlock(&cur->authlock);
+    lov.add_rdlock(&cur->authlock);
+    do_fscrypt_check = true;
   }
 
   if (mask) {
@@ -4532,10 +4534,23 @@ void Server::handle_client_open(const MDRequestRef& mdr)
   if (!mds->locker->acquire_locks(mdr, lov))
     return;
 
+  if (do_fscrypt_check && (cmode & CEPH_FILE_MODE_WR) &&
+      !cur->get_inode()->fscrypt_auth.empty()) {
+    dout(10) << "blocking open write in encrypted node " << *cur << dendl;
+    respond_to_request(mdr, -CEPHFS_EROFS);
+    return;
+  }
+
   // O_TRUNC
   if ((flags & CEPH_O_TRUNC) && !mdr->has_completed) {
     if (!check_access(mdr, cur, MAY_WRITE))
       return;
+
+    if (do_fscrypt_check && !cur->get_inode()->fscrypt_auth.empty()) {
+      dout(10) << "blocking open trunc in encrypted node " << *cur << dendl;
+      respond_to_request(mdr, -CEPHFS_EROFS);
+      return;
+    }
 
     // wait for pending truncate?
     const auto& pi = cur->get_projected_inode();
