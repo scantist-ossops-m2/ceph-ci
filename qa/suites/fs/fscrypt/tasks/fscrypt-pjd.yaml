@@ -4,4 +4,10 @@ teuthology:
     # or the ceph-fuse have supported the fscrypt feature we can remove this
     # restriction.
     - if not is_kupstream() then reject() end
-task:
+tasks:
+- workunit:
+    timeout: 6h
+    clients:
+      client.0:
+        - fs/fscrypt.sh none pjd
+        - fs/fscrypt.sh unlocked pjd
