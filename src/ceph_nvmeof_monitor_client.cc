@@ -3,7 +3,7 @@
 /*
  * Ceph - scalable distributed file system
  *
- * Copyright (C) 2023 Red Hat Inc
+ * Copyright (C) 2023 IBM Inc
  *
  * Author: Alexander Indenbaum <aindenba@redhat.com>
  *
