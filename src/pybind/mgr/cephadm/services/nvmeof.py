@@ -67,6 +67,9 @@ class NvmeofService(CephService):
         _, _, err = self.mgr.mon_command(cmd)
         # if send command failed, raise assertion exception, failing the daemon creation
         assert not err, f"Unable to send monitor command {cmd}, error {err}"
+        if not hasattr(self, 'gws'):
+            self.gws = {} # id -> name map of gateways for this service.
+        self.gws[nvmeof_gw_id] = name # add to map of service's gateway names
         return daemon_spec
 
     def config_dashboard(self, daemon_descrs: List[DaemonDescription]) -> None:
@@ -140,10 +143,13 @@ class NvmeofService(CephService):
         # Assert configured
         assert self.pool
         assert self.group is not None
+        assert deamon.daemon_id in self.gws
+        name = self.gws[deamon.daemon_id]
+        self.gws.pop(deamon.daemon_id)
         # Notify monitor about this gateway deletion
         cmd = {
             'prefix': 'nvme-gw delete',
-            'id': daemon.hostname,
+            'id': name,
             'group': self.group,
             'pool': self.pool
         }
