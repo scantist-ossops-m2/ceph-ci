@@ -39,11 +39,11 @@ class NvmeofService(CephService):
 
         # TODO: check if we can force jinja2 to generate dicts with double quotes instead of using json.dumps
         transport_tcp_options = json.dumps(spec.transport_tcp_options) if spec.transport_tcp_options else None
-        name = '{}.{}'.format(utils.name_to_config_section('nvmeof'), nvmeof_gw_id)
-        rados_id = name[len('client.'):] if name.startswith('client.') else name
+        self.name = '{}.{}'.format(utils.name_to_config_section('nvmeof'), nvmeof_gw_id)
+        rados_id = self.name[len('client.'):] if self.name.startswith('client.') else self.name
         context = {
             'spec': spec,
-            'name': name,
+            'name': self.name,
             'addr': host_ip,
             'port': spec.port,
             'log_level': 'WARN',
@@ -60,7 +60,7 @@ class NvmeofService(CephService):
         # Notify monitor about this gateway creation
         cmd = {
             'prefix': 'nvme-gw create',
-            'id': name,
+            'id': self.name,
             'group': spec.group,
             'pool': spec.pool
         }
@@ -138,12 +138,13 @@ class NvmeofService(CephService):
             logger.info(f'{daemon.hostname} removed from nvmeof gateways dashboard config')
 
         # Assert configured
+        assert self.name
         assert self.pool
         assert self.group is not None
         # Notify monitor about this gateway deletion
         cmd = {
             'prefix': 'nvme-gw delete',
-            'id': daemon.hostname,
+            'id': self.name,
             'group': self.group,
             'pool': self.pool
         }
