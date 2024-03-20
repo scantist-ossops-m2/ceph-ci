@@ -100,12 +100,27 @@ int migrate_notification(const DoutPrefixProvider* dpp, optional_yield y,
       return r;
     }
 
-    if (bucket->get_marker() != marker || bucket->get_attrs().contains(RGW_ATTR_BUCKET_NOTIFICATION)) {
+    if (bucket->get_marker() != marker) {
       break;
     }
 
+    rgw_pubsub_bucket_topics v2_bucket_topics;
+    if(bucket->get_attrs().contains(RGW_ATTR_BUCKET_NOTIFICATION)) {
+      r = get_bucket_notifications(dpp, bucket.get(), v2_bucket_topics);
+      if (r < 0) {
+        ldpp_dout(dpp, 1) << "ERROR: failed to decode bucket topics for bucket: "
+                          << bucket->get_name() << ", discarding the current v2 bucket topics" << dendl;
+      }
+    }
+
+    // merge v1 and v2 bucket topics
+    for (auto& [topic_name, bucket_topic]: bucket_topics.topics) {
+      bucket_topic.topic.name = bucket_topic.topic.dest.arn_topic;
+      v2_bucket_topics.topics.insert({topic_name, bucket_topic});
+    }
+
     bufferlist bl;
-    bucket_topics.encode(bl);
+    v2_bucket_topics.encode(bl);
     bucket->get_attrs()[RGW_ATTR_BUCKET_NOTIFICATION] = std::move(bl);
     r = bucket->put_info(dpp, false, real_time(), y);
     if (r != -ECANCELED && r < 0) {
@@ -162,6 +177,9 @@ int migrate_topics(const DoutPrefixProvider* dpp, optional_yield y,
 
   constexpr bool exclusive = true; // don't overwrite any existing v2 metadata
   for (const auto& [name, topic] : topics.topics) {
+    if (topic.name != topic.dest.arn_topic) {
+      continue;
+    }
     // write the v2 topic
     RGWObjVersionTracker objv;
     objv.generate_new_write_ver(dpp->get_cct());
