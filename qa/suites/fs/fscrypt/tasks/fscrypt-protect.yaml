@@ -1,0 +1,15 @@
+teuthology:
+  postmerge:
+    # Once can we make sure the distro kernels have included the fscrypt feature
+    # or the ceph-fuse have supported the fscrypt feature we can remove this
+    # restriction.
+    - if not is_kupstream() or not is_fuse() then reject() end
+tasks:
+  sequential:
+  - kclient: [client.0]
+  - ceph-fuse: [client.1]
+  - workunit:
+      clients:
+         client.0:
+           - suites/iozone.sh
+
