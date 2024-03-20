@@ -1,0 +1,27 @@
+teuthology:
+  postmerge:
+    # Once can we make sure the distro kernels have included the fscrypt feature
+    # or the ceph-fuse have supported the fscrypt feature we can remove this
+    # restriction.
+    - if not is_kupstream() or not is_fuse() then reject() end
+overrides:
+  kclient:
+    mntopts: [test_dummy_encryption]
+tasks:
+  sequential:
+  - kclient: [client.0]
+  - ceph-fuse: [client.1]
+  - workunit:
+      clients:
+         client.0:
+           - mkdir fscrypt_dir
+           - echo "hello" > fscrypt_dir/fscrypt_test_file
+         client.1:
+           - echo > ffscrypt_dir/*
+         client.0:
+           if grep -q "hello" fscrypt_dir/fscrypt_test_file; then
+             echo "Fscrypt test successfully!"
+           else
+             echo "Fscrypt test failed!"
+             exit 1;
+           fi
