@@ -3,45 +3,47 @@
 
 #pragma once
 
+#include <optional>
+
 #include <seastar/core/future.hh>
 #include <seastar/core/circular_buffer.hh>
 
 class read_lock {
 public:
-  seastar::future<> lock();
+  std::optional<seastar::future<>> lock();
   void unlock();
 };
 
 class write_lock {
 public:
-  seastar::future<> lock();
+  std::optional<seastar::future<>> lock();
   void unlock();
 };
 
 class excl_lock {
 public:
-  seastar::future<> lock();
+  std::optional<seastar::future<>> lock();
   void unlock();
 };
 
 // promote from read to excl
 class excl_lock_from_read {
 public:
-  seastar::future<> lock();
+  std::optional<seastar::future<>> lock();
   void unlock();
 };
 
 // promote from write to excl
 class excl_lock_from_write {
 public:
-  seastar::future<> lock();
+  std::optional<seastar::future<>> lock();
   void unlock();
 };
 
 // promote from excl to excl
 class excl_lock_from_excl {
 public:
-  seastar::future<> lock();
+  std::optional<seastar::future<>> lock();
   void unlock();
 };
 
@@ -51,7 +53,8 @@ public:
 /// independent of the conventional reader/writer lock usage. Here, what we
 /// mean is that we can pipeline reads, and we can pipeline writes, but we
 /// cannot allow a read while writes are in progress or a write while reads are
-/// in progress. Any rmw operation is therefore exclusive.
+/// in progress. Any rmw operation is therefore exclusive. Note that multiple
+/// writers are allowed by tri_mutex.
 ///
 /// tri_mutex is based on seastar::shared_mutex, but instead of two kinds of
 /// waiters, tri_mutex keeps track of three kinds of lock users:
@@ -89,7 +92,7 @@ public:
   }
 
   // for shared readers
-  seastar::future<> lock_for_read();
+  std::optional<seastar::future<>> lock_for_read();
   bool try_lock_for_read() noexcept;
   void unlock_for_read();
   void promote_from_read();
@@ -99,7 +102,7 @@ public:
   }
 
   // for shared writers
-  seastar::future<> lock_for_write();
+  std::optional<seastar::future<>> lock_for_write();
   bool try_lock_for_write() noexcept;
   void unlock_for_write();
   void promote_from_write();
@@ -109,7 +112,7 @@ public:
   }
 
   // for exclusive users
-  seastar::future<> lock_for_excl();
+  std::optional<seastar::future<>> lock_for_excl();
   bool try_lock_for_excl() noexcept;
   void unlock_for_excl();
   bool is_excl_acquired() const {
