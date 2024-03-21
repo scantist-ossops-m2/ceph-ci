@@ -61,6 +61,8 @@ private:
   std::string* m_buff_ptr=nullptr;
   uint64_t total_bytes_returned;
   uint64_t processed_size;
+  uint32_t m_success_header_size;
+
 
   enum class header_name_En {
     EVENT_TYPE,
@@ -231,6 +233,11 @@ private:
   std::function<void(const char*)> fp_debug_mesg;
   std::function<void(void)> fp_chunked_transfer_encoding;
   int m_header_size;
+
+  const char* s3select_processTime_error = "s3select-ProcessingTime-Error";
+  const char* s3select_syntax_error = "s3select-Syntax-Error";
+  const char* s3select_resource_id = "resourcse-id";
+  const char* s3select_json_error = "json-Format-Error";
 
 public:
   unsigned int chunk_number;

@@ -167,17 +167,12 @@ void aws_response_handler::init_response()
 void aws_response_handler::init_success_response()
 {
   get_buffer()->clear();
-  header_size = create_header_records();
-  sql_result.append(get_buffer()->c_str(), header_size);
-#ifdef PAYLOAD_TAG
-  sql_result.append(PAYLOAD_LINE);
-#endif
+  m_success_header_size = create_header_records();
+  sql_result.append(get_buffer()->c_str(), m_success_header_size);
 }
 
 void aws_response_handler::send_continuation_response()
 {
-  ldout(s->cct, 10) << "aws_response_handler::send_continuation_response" << dendl;
-
   set_continue_buffer();
   continue_result.resize(header_crc_size, '\0');
   get_buffer()->clear();
@@ -192,7 +187,6 @@ void aws_response_handler::send_continuation_response()
 
 void aws_response_handler::init_progress_response()
 {
-  ldout(s->cct, 10) << "aws_response_handler::init_progress_response" << dendl;
   sql_result.resize(header_crc_size, '\0');
   get_buffer()->clear();
   header_size = create_header_progress();
@@ -201,7 +195,6 @@ void aws_response_handler::init_progress_response()
 
 void aws_response_handler::init_stats_response()
 {
-  ldout(s->cct, 10) << "aws_response_handler::init_stats_response" << dendl;
   sql_result.resize(header_crc_size, '\0');
   get_buffer()->clear();
   header_size = create_header_stats();
@@ -210,7 +203,6 @@ void aws_response_handler::init_stats_response()
 
 void aws_response_handler::init_end_response()
 {
-  ldout(s->cct, 10) << "aws_response_handler::init_end_response" << dendl;
   sql_result.resize(header_crc_size, '\0');
   get_buffer()->clear();
   header_size = create_header_end();
@@ -222,8 +214,7 @@ void aws_response_handler::init_end_response()
 
 void aws_response_handler::send_error_response(const char* error_message)
 {
-  //currently not in use. the headers in the case of error, are not extracted by AWS-cli.
-  ldout(s->cct, 10) << "aws_response_handler::send_error_response" << dendl;
+  //currently not in use. need to change the s3-test, this error-response raises a boto3 exception
   error_result.resize(header_crc_size, '\0');
   get_buffer()->clear();
   header_size = create_error_header_records(error_message);
@@ -236,11 +227,10 @@ void aws_response_handler::send_error_response(const char* error_message)
 
 void aws_response_handler::send_success_response()
 {
-  ldout(s->cct, 10) << "aws_response_handler::send_success_response" << dendl;
 #ifdef PAYLOAD_TAG
   sql_result.append(END_PAYLOAD_LINE);
 #endif
-  int buff_len = create_message(header_size);
+  int buff_len = create_message(m_success_header_size);
   s->formatter->write_bin_data(sql_result.data(), buff_len);
   rgw_flush_formatter_and_reset(s, s->formatter);
 }
@@ -249,7 +239,6 @@ void aws_response_handler::send_error_response_rgw_formatter(const char* error_c
     const char* error_message,
     const char* resource_id)
 {
-  ldout(s->cct, 10) << "aws_response_handler::send_error_response" << dendl;
   set_req_state_err(s, 0);
   dump_errno(s, 400);
   end_header(s, m_rgwop, "application/xml", CHUNKED_TRANSFER_ENCODING);
@@ -265,7 +254,6 @@ void aws_response_handler::send_error_response_rgw_formatter(const char* error_c
 
 void aws_response_handler::send_progress_response()
 {
-  ldout(s->cct, 10) << "aws_response_handler::send_progress_response" << dendl;
   std::string progress_payload = fmt::format("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Progress><BytesScanned>{}</BytesScanned><BytesProcessed>{}</BytesProcessed><BytesReturned>{}</BytesReturned></Progress>"
                                  , get_processed_size(), get_processed_size(), get_total_bytes_returned());
   sql_result.append(progress_payload);
@@ -276,7 +264,6 @@ void aws_response_handler::send_progress_response()
 
 void aws_response_handler::send_stats_response()
 {
-  ldout(s->cct, 10) << "aws_response_handler::send_stats_response" << dendl;
   std::string stats_payload = fmt::format("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Stats><BytesScanned>{}</BytesScanned><BytesProcessed>{}</BytesProcessed><BytesReturned>{}</BytesReturned></Stats>"
                                           , get_processed_size(), get_processed_size(), get_total_bytes_returned());
   sql_result.append(stats_payload);
@@ -322,10 +309,8 @@ RGWSelectObj_ObjStore_S3::RGWSelectObj_ObjStore_S3():
     return 0;
   };
   fp_s3select_continue = [this](std::string& result) {
-    return 0;
     fp_chunked_transfer_encoding();
     m_aws_response_handler.send_continuation_response();
-    ldout(s->cct, 10) << "calling fp_s3select_continue " << dendl;
     return 0;
   };
 
@@ -444,8 +429,7 @@ int RGWSelectObj_ObjStore_S3::run_s3select_on_csv(const char* query, const char*
 
   if (s3select_syntax.get_error_description().empty() == false) {
     //error-flow (syntax-error)
-    fp_chunked_transfer_encoding();
-    m_aws_response_handler.send_error_response(s3select_syntax.get_error_description().c_str());
+    m_aws_response_handler.send_error_response_rgw_formatter(s3select_syntax_error,s3select_syntax.get_error_description().c_str(),s3select_resource_id);
     ldpp_dout(this, 10) << "s3-select query: failed to prase the following query {" << query << "}" << dendl;
     ldpp_dout(this, 10) << "s3-select query: syntax-error {" << s3select_syntax.get_error_description() << "}" << dendl;
     return -1;
@@ -456,15 +440,13 @@ int RGWSelectObj_ObjStore_S3::run_s3select_on_csv(const char* query, const char*
     fp_result_header_format(m_aws_response_handler.get_sql_result());
     length_before_processing = m_s3_csv_object.get_return_result_size();
     //query is correct(syntax), processing is starting.
-    fp_chunked_transfer_encoding();
     status = m_s3_csv_object.run_s3select_on_stream(m_aws_response_handler.get_sql_result(), input, input_length, m_object_size_for_processing);
     length_post_processing = m_s3_csv_object.get_return_result_size();
     m_aws_response_handler.update_total_bytes_returned( m_s3_csv_object.get_return_result_size() );
 
     if (status < 0) {
       //error flow(processing-time)
-      fp_chunked_transfer_encoding();
-       m_aws_response_handler.send_error_response(m_s3_csv_object.get_error_description().c_str());
+      m_aws_response_handler.send_error_response_rgw_formatter(s3select_processTime_error,m_s3_csv_object.get_error_description().c_str(),s3select_resource_id);
       
       ldpp_dout(this, 10) << "s3-select query: failed to process query; {" << m_s3_csv_object.get_error_description() << "}" << dendl;
       return -1;
@@ -534,11 +516,6 @@ int RGWSelectObj_ObjStore_S3::run_s3select_on_json(const char* query, const char
 {
   int status = 0;
   
-  const char* s3select_processTime_error = "s3select-ProcessingTime-Error";
-  const char* s3select_syntax_error = "s3select-Syntax-Error";
-  const char* s3select_resource_id = "resourcse-id";
-  const char* s3select_json_error = "json-Format-Error";
-
   m_s3_csv_object.set_external_system_functions(fp_s3select_continue,
 						fp_s3select_result_format,
 						fp_result_header_format,
