@@ -121,13 +121,23 @@ private:
   bool recovery_read_marker = false;
 
   template <typename Lock, typename Func>
-  auto _with_lock(Lock&& lock, Func&& func) {
+  auto _with_lock(Lock& lock, Func&& func) {
     Ref obc = this;
-    return lock.lock().then([&lock, func = std::forward<Func>(func), obc]() mutable {
-      return seastar::futurize_invoke(func).finally([&lock, obc] {
-	lock.unlock();
+    auto maybe_fut = lock.lock();
+    if (maybe_fut) {
+      return (*maybe_fut).then(
+        [&lock, func = std::forward<Func>(func), obc]() mutable {
+        return seastar::futurize_invoke(func
+        ).finally([&lock, obc] {
+          lock.unlock();
+        });
       });
-    });
+    } else {
+      return seastar::futurize_invoke(func
+      ).finally([&lock, obc] {
+        lock.unlock();
+      });
+    }
   }
 
   boost::intrusive::list_member_hook<> obc_accessing_hook;
