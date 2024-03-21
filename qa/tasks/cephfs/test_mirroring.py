@@ -31,6 +31,7 @@ class TestMirroring(CephFSTestCase):
         self.primary_fs_id = self.fs.id
         self.secondary_fs_name = self.backup_fs.name
         self.secondary_fs_id = self.backup_fs.id
+        self.config_set('cephfs-mirror', 'debug client', 20)
         self.enable_mirroring_module()
 
     def tearDown(self):
