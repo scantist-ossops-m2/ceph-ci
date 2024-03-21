@@ -3,7 +3,7 @@ from textwrap import dedent
 import logging
 from ceph_volume.util import system
 from ceph_volume.util.arg_validators import exclude_group_options
-from ceph_volume import decorators, terminal
+from ceph_volume import decorators, terminal, objectstore
 from .common import create_parser, rollback_osd
 from .prepare import Prepare
 from .activate import Activate
@@ -15,27 +15,33 @@ class Create(object):
 
     help = 'Create a new OSD from an LVM device'
 
-    def __init__(self, argv):
+    def __init__(self, argv, args=None):
+        self.objectstore = None
         self.argv = argv
+        self.args = args
+        if self.args is not None:
+            if getattr(self.args, 'activate_all', None) is None:
+                self.args.activate_all = False
 
     @decorators.needs_root
-    def create(self, args):
-        if not args.osd_fsid:
-            args.osd_fsid = system.generate_uuid()
-        prepare_step = Prepare([])
-        prepare_step.safe_prepare(args)
+    def create(self):
+        if not self.args.osd_fsid:
+            self.args.osd_fsid = system.generate_uuid()
+        prepare_step = Prepare([], args=self.args)
+        prepare_step.main()
         osd_id = prepare_step.osd_id
         try:
             # we try this for activate only when 'creating' an OSD, because a rollback should not
             # happen when doing normal activation. For example when starting an OSD, systemd will call
             # activate, which would never need to be rolled back.
-            Activate([]).activate(args)
+            activate = Activate([], args=self.args)
+            activate.main()
         except Exception:
             logger.exception('lvm activate was unable to complete, while creating the OSD')
             logger.info('will rollback OSD ID creation')
-            rollback_osd(args, osd_id)
+            rollback_osd(self.args, osd_id)
             raise
-        terminal.success("ceph-volume lvm create successful for: %s" % args.data)
+        terminal.success("ceph-volume lvm create successful for: %s" % self.args.data)
 
     def main(self):
         sub_command_help = dedent("""
@@ -69,9 +75,12 @@ class Create(object):
             print(sub_command_help)
             return
         exclude_group_options(parser, groups=['bluestore'], argv=self.argv)
-        args = parser.parse_args(self.argv)
+        if self.args is None:
+            self.args = parser.parse_args(self.argv)
         # Default to bluestore here since defaulting it in add_argument may
         # cause both to be True
-        if not args.bluestore:
-            args.bluestore = True
-        self.create(args)
+        if not self.args.bluestore:
+            self.args.bluestore = True
+        self.objectstore = objectstore.mapping['LVM'][self.args.objectstore]
+        self.args.activate_all = False
+        self.create()

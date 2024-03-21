@@ -234,9 +234,17 @@ class Batch(object):
                   'are passed in DEVICES'),
         )
         parser.add_argument(
+            '--objectstore',
+            dest='objectstore',
+            help='The OSD objectstore.',
+            default='bluestore',
+            choices=['bluestore', 'seastore'],
+            type=str,
+        )
+        parser.add_argument(
             '--bluestore',
             action='store_true',
-            help='bluestore objectstore (default)',
+            help='bluestore objectstore (default). (DEPRECATED: use --objectstore instead)',
         )
         parser.add_argument(
             '--report',
@@ -425,11 +433,11 @@ class Batch(object):
         for osd in plan:
             args = osd.get_args(defaults)
             if self.args.prepare:
-                p = Prepare([])
-                p.safe_prepare(argparse.Namespace(**args))
+                p = Prepare([], args=argparse.Namespace(**args))
+                p.main()
             else:
-                c = Create([])
-                c.create(argparse.Namespace(**args))
+                c = Create([], args=argparse.Namespace(**args))
+                c.create()
 
 
     def get_plan(self, args):
