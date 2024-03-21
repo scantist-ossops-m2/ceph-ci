@@ -792,6 +792,7 @@ class TestMonitoring:
                             'retention_time': '15d',
                             'retention_size': '0',
                             'ip_to_bind_to': '1.2.3.1',
+                            'enable_admin_api': False,
                         },
                     }),
                 )
@@ -969,6 +970,7 @@ class TestMonitoring:
                             'retention_time': '15d',
                             'retention_size': '0',
                             'ip_to_bind_to': '',
+                            'enable_admin_api': False,
                             'web_config': '/etc/prometheus/web.yml',
                         },
                     }),
