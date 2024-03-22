@@ -335,13 +335,14 @@ DaemonMetricCollector::add_fixed_name_metrics(std::string metric_name) {
   labels_t labels;
   new_metric_name = metric_name;
 
-  std::regex re("^data_sync_from_(.*)\\.");
-    std::smatch match;
-    if (std::regex_search(metric_name, match, re) == true) {
-      new_metric_name = std::regex_replace(metric_name, re, "from_([^.]*)', 'from_zone");
-      labels["source_zone"] = quote(match.str(1));
-      return {labels, new_metric_name};
-    }
+  std::regex re("data_sync_from_zone[-_a-zA-Z0-9]*");
+  std::smatch match;
+  if (std::regex_search(metric_name, match, re)) {
+    new_metric_name = std::regex_replace(metric_name, re, "data_sync_from_zone");
+    labels["source_zone"] = quote(match.str(0)); // Using the entire matched substring
+    return {labels, new_metric_name};
+}
+  }
   return {};
 }
 
