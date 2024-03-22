@@ -389,7 +389,7 @@ CMAKE_DEPENDENT_OPTION(WITH_CEPH_DEBUG_MUTEX "Use debug ceph::mutex with lockdep
   "CMAKE_BUILD_TYPE STREQUAL Debug" OFF)
 
 #if allocator is set on command line make sure it matches below strings
-set(ALLOCATOR "" CACHE STRING
+set(ALLOCATOR "libc" CACHE STRING
   "specify memory allocator to use. currently tcmalloc, tcmalloc_minimal, \
 jemalloc, and libc is supported. if not specified, will try to find tcmalloc, \
 and then jemalloc. If neither of then is found. use the one in libc.")
