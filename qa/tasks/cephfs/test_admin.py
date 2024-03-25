@@ -5,6 +5,7 @@ import uuid
 from io import StringIO
 from os.path import join as os_path_join
 from time import sleep
+from subprocess import TimeoutExpired
 
 from teuthology.exceptions import CommandFailedError
 from teuthology.contextutil import safe_while
@@ -90,6 +91,25 @@ class TestAdminCommands(CephFSTestCase):
         self.run_ceph_cmd('osd', 'pool', 'create', n+"-data", "8", "erasure", n+"-profile")
         if overwrites:
             self.run_ceph_cmd('osd', 'pool', 'set', n+"-data", 'allow_ec_overwrites', 'true')
+
+    def wait_till_health_warn(self, health_warn, active_mds_id, sleep=3,
+                              tries=10):
+        errmsg = (f'Expected health warning "{health_warn}" to eventually '
+                  'show up in output of command "ceph health detail". Tried '
+                  f'{tries} times with interval of {sleep} seconds but the '
+                  'health warning didn\'t turn up.')
+
+        with safe_while(sleep=sleep, tries=tries, action=errmsg) as proceed:
+            while proceed():
+                cache_report = self.get_ceph_cmd_stdout(
+                    f'tell mds.{active_mds_id} cache status')
+                log.info(f'cache_report -\n{cache_report}')
+
+                health_report = self.get_ceph_cmd_stdout('health detail')
+                log.info(f'health_report -\n{health_report}')
+
+                if health_warn in health_report:
+                    return True
 
 @classhook('_add_valid_tell')
 class TestValidTell(TestAdminCommands):
@@ -2011,3 +2031,58 @@ class TestPermErrMsg(CephFSTestCase):
                 args=(f'fs authorize {self.fs.name} {self.CLIENT_NAME} / '
                       f'{wrong_perm}'), retval=self.EXPECTED_ERRNO,
                 errmsgs=self.EXPECTED_ERRMSG)
+
+
+class TestMDSFail(TestAdminCommands):
+
+    CLIENTS_REQUIRED = 1
+
+    def test_with_health_warn_oversize_cache(self):
+        self.fs.set_max_mds(1)
+        self.fs.wait_for_daemons()
+        self.run_ceph_cmd('config set mds mds_cache_memory_limit 1K')
+        self.run_ceph_cmd('config set mds mds_health_cache_threshold 1.00000')
+
+        health_warn = 'MDS_CACHE_OVERSIZED'
+        active_mds_id = self.fs.get_active_names()[0]
+        open_proc = self.mount_a.open_n_background(".", 4000)
+        self.wait_till_health_warn(health_warn, active_mds_id)
+
+        # actual testing begins now.
+        # test that "fs fail" fails without confirmation flag.
+        errmsg = 'mds_health_cache_oversized'
+        self.negtest_ceph_cmd(args=f'mds fail {active_mds_id}',
+                              retval=1, errmsgs=errmsg)
+        # test that "fs fail" passes with confirmation flag.
+        self.run_ceph_cmd(f'mds fail {self.fs.name} --yes-i-really-mean-it')
+
+        # teardown
+        open_proc.stdin.close()
+        # XXX: run this beforehand because unmounting attempted during
+        # teardown will get stuck after "ceph fs fail --yes-i-really-mean-it"
+        # runs successfully.
+        self.mount_a.umount_wait()
+
+    def test_with_health_warn_trim(self):
+        self.fs.set_max_mds(1)
+        self.fs.wait_for_daemons()
+
+        health_warn = 'MDS_TRIM'
+        active_mds_id = self.fs.get_active_names()[0]
+        open_proc = self.mount_a.open_n_background(".", 4000)
+        self.wait_till_health_warn(health_warn, active_mds_id)
+
+        # actual testing begins now.
+        # test that "fs fail" fails without confirmation flag.
+        errmsg = 'mds_health_trim'
+        self.negtest_ceph_cmd(args=f'mds fail {active_mds_id}',
+                              retval=1, errmsgs=errmsg)
+        # test that "fs fail" passes with confirmation flag.
+        self.run_ceph_cmd(f'mds fail {self.fs.name} --yes-i-really-mean-it')
+
+        # teardown
+        open_proc.stdin.close()
+        # XXX: run this beforehand because unmounting attempted during
+        # teardown will get stuck after "ceph fs fail --yes-i-really-mean-it"
+        # runs successfully.
+        self.mount_a.umount_wait()
