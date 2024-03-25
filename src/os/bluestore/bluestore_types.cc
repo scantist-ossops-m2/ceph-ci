@@ -463,9 +463,9 @@ void bluestore_blob_use_tracker_t::init(
   ceph_assert(_au_size > 0);
   ceph_assert(full_length > 0);
   clear();  
-  uint32_t _num_au = round_up_to(full_length, _au_size) / _au_size;
+  au_size_exponent = std::countr_zero(_au_size);
+  uint32_t _num_au = round_up_to(full_length, _au_size) >> au_size_exponent;
   au_size = _au_size;
-  au_size_exponent = std::countr_zero(au_size);
   if ( _num_au > 1 ) {
     // in case of more than one allocation we assume that allocation unit is a power of 2
     // so that we can optimize division.
