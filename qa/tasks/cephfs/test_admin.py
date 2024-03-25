@@ -5,7 +5,6 @@ import uuid
 from io import StringIO
 from os.path import join as os_path_join
 from time import sleep
-from subprocess import TimeoutExpired
 
 from teuthology.exceptions import CommandFailedError
 from teuthology.contextutil import safe_while
@@ -2031,6 +2030,56 @@ class TestPermErrMsg(CephFSTestCase):
                 args=(f'fs authorize {self.fs.name} {self.CLIENT_NAME} / '
                       f'{wrong_perm}'), retval=self.EXPECTED_ERRNO,
                 errmsgs=self.EXPECTED_ERRMSG)
+
+
+class TestFSFail(TestAdminCommands):
+
+    CLIENTS_REQUIRED = 1
+
+    def test_with_health_warn_oversize_cache(self):
+        health_warn = 'MDS_CACHE_OVERSIZED'
+        self.run_ceph_cmd('config set mds mds_cache_memory_limit 1K')
+        self.run_ceph_cmd('config set mds mds_health_cache_threshold 1.00000')
+
+        active_mds_id = self.fs.get_active_names()[0]
+        open_proc = self.mount_a.open_n_background(".", 4000)
+        self.wait_till_health_warn(health_warn, active_mds_id)
+
+        # actual testing begins now.
+        # test that "fs fail" fails without confirmation flag.
+        errmsg = 'mds_health_cache_oversized'
+        self.negtest_ceph_cmd(args=f'fs fail {self.fs.name}',
+                              retval=1, errmsgs=errmsg)
+        # test that "fs fail" passes with confirmation flag.
+        self.run_ceph_cmd(f'fs fail {self.fs.name} --yes-i-really-mean-it')
+
+        # teardown
+        open_proc.stdin.close()
+        # XXX: run this beforehand because unmounting attempted during
+        # teardown will get stuck after "ceph fs fail --yes-i-really-mean-it"
+        # runs successfully.
+        self.mount_a.umount_wait()
+
+    def test_with_health_warn_trim(self):
+        health_warn = 'MDS_TRIM'
+        active_mds_id = self.fs.get_active_names()[0]
+        open_proc = self.mount_a.open_n_background(".", 4000)
+        self.wait_till_health_warn(health_warn, active_mds_id)
+
+        # actual testing begins now.
+        # test that "fs fail" fails without confirmation flag.
+        errmsg = 'mds_health_trim'
+        self.negtest_ceph_cmd(args=f'fs fail {self.fs.name}',
+                              retval=1, errmsgs=errmsg)
+        # test that "fs fail" passes with confirmation flag.
+        self.run_ceph_cmd(f'fs fail {self.fs.name} --yes-i-really-mean-it')
+
+        # teardown
+        open_proc.stdin.close()
+        # XXX: run this beforehand because unmounting attempted during
+        # teardown will get stuck after "ceph fs fail --yes-i-really-mean-it"
+        # runs successfully.
+        self.mount_a.umount_wait()
 
 
 class TestMDSFail(TestAdminCommands):
