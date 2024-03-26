@@ -91,6 +91,14 @@ public:
     return m_addrs;
   }
 
+  bool get_init_finished() {
+    std::scoped_lock locker(m_lock);
+    if (m_on_init_finish == nullptr) {
+      return true;
+    }
+    return false;
+  }
+
   // admin socket helpers
   void mirror_status(Formatter *f);
 
