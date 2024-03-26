@@ -355,16 +355,15 @@ class LvmBlueStore(BlueStore):
         configuration.load()
 
         # mount on tmpfs the osd directory
-        osd_path = '/var/lib/ceph/osd/%s-%s' % (conf.cluster, osd_id)
-        if not system.path_is_mounted(osd_path):
+        self.osd_path = '/var/lib/ceph/osd/%s-%s' % (conf.cluster, osd_id)
+        if not system.path_is_mounted(self.osd_path):
             # mkdir -p and mount as tmpfs
             prepare_utils.create_osd_path(osd_id, tmpfs=not no_tmpfs)
+
         # XXX This needs to be removed once ceph-bluestore-tool can deal with
         # symlinks that exist in the osd dir
-        for link_name in ['block', 'block.db', 'block.wal']:
-            link_path = os.path.join(osd_path, link_name)
-            if os.path.exists(link_path):
-                os.unlink(os.path.join(osd_path, link_name))
+        self.unlink_bs_symlinks()
+
         # encryption is handled here, before priming the OSD dir
         if is_encrypted:
             osd_lv_path = '/dev/mapper/%s' % osd_block_lv.__dict__['lv_uuid']
@@ -391,11 +390,11 @@ class LvmBlueStore(BlueStore):
         # chown first, regardless of what currently exists so that
         # ``prime-osd-dir`` can succeed even if permissions are
         # somehow messed up.
-        system.chown(osd_path)
+        system.chown(self.osd_path)
         prime_command = [
             'ceph-bluestore-tool', '--cluster=%s' % conf.cluster,
             'prime-osd-dir', '--dev', osd_lv_path,
-            '--path', osd_path, '--no-mon-config']
+            '--path', self.osd_path, '--no-mon-config']
 
         process.run(prime_command)
         # always re-do the symlink regardless if it exists, so that the block,
@@ -404,16 +403,16 @@ class LvmBlueStore(BlueStore):
         process.run(['ln',
                      '-snf',
                      osd_lv_path,
-                     os.path.join(osd_path, 'block')])
-        system.chown(os.path.join(osd_path, 'block'))
-        system.chown(osd_path)
+                     os.path.join(self.osd_path, 'block')])
+        system.chown(os.path.join(self.osd_path, 'block'))
+        system.chown(self.osd_path)
         if db_device_path:
-            destination = os.path.join(osd_path, 'block.db')
+            destination = os.path.join(self.osd_path, 'block.db')
             process.run(['ln', '-snf', db_device_path, destination])
             system.chown(db_device_path)
             system.chown(destination)
         if wal_device_path:
-            destination = os.path.join(osd_path, 'block.wal')
+            destination = os.path.join(self.osd_path, 'block.wal')
             process.run(['ln', '-snf', wal_device_path, destination])
             system.chown(wal_device_path)
             system.chown(destination)

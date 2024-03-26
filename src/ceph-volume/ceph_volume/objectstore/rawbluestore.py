@@ -114,26 +114,24 @@ class RawBlueStore(BlueStore):
         osd_uuid = meta['osd_uuid']
 
         # mount on tmpfs the osd directory
-        osd_path = '/var/lib/ceph/osd/%s-%s' % (conf.cluster, osd_id)
-        if not system.path_is_mounted(osd_path):
+        self.osd_path = '/var/lib/ceph/osd/%s-%s' % (conf.cluster, osd_id)
+        if not system.path_is_mounted(self.osd_path):
             # mkdir -p and mount as tmpfs
             prepare_utils.create_osd_path(osd_id, tmpfs=tmpfs)
 
         # XXX This needs to be removed once ceph-bluestore-tool can deal with
         # symlinks that exist in the osd dir
-        for link_name in ['block', 'block.db', 'block.wal']:
-            link_path = os.path.join(osd_path, link_name)
-            if os.path.exists(link_path):
-                os.unlink(os.path.join(osd_path, link_name))
+
+        self.unlink_bs_symlinks()
 
         # Once symlinks are removed, the osd dir can be 'primed again. chown
         # first, regardless of what currently exists so that ``prime-osd-dir``
         # can succeed even if permissions are somehow messed up
-        system.chown(osd_path)
+        system.chown(self.osd_path)
         prime_command = [
             'ceph-bluestore-tool',
             'prime-osd-dir',
-            '--path', osd_path,
+            '--path', self.osd_path,
             '--no-mon-config',
             '--dev', meta['device'],
         ]
@@ -150,7 +148,7 @@ class RawBlueStore(BlueStore):
         if 'device_wal' in meta:
             prepare_utils.link_wal(meta['device_wal'], osd_id, osd_uuid)
 
-        system.chown(osd_path)
+        system.chown(self.osd_path)
         terminal.success("ceph-volume raw activate "
                          "successful for osd ID: %s" % osd_id)
 
