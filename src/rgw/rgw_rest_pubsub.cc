@@ -594,7 +594,8 @@ class RGWPSSetTopicAttributesOp : public RGWOp {
       };
       const std::unordered_set<std::string> push_endpoint_args = {
           "verify-ssl",    "use-ssl",         "ca-location", "amqp-ack-level",
-          "amqp-exchange", "kafka-ack-level", "mechanism",   "cloudevents"};
+          "amqp-exchange", "kafka-ack-level", "mechanism",   "cloudevents",
+          "user-name",     "password"};
       if (push_endpoint_args.count(attribute_name) == 1) {
         replace_str(attribute_name, s->info.args.get("AttributeValue"));
         return 0;

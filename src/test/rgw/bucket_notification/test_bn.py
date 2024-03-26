@@ -4579,7 +4579,7 @@ def test_ps_s3_topic_no_permissions():
     conn2.delete_bucket(bucket_name)
 
 
-def kafka_security(security_type, mechanism='PLAIN'):
+def kafka_security(security_type, mechanism='PLAIN', use_topic_attrs_for_creds=False):
     """ test pushing kafka s3 notification securly to master """
     conn = connection()
     zonegroup = 'default'
@@ -4590,7 +4590,10 @@ def kafka_security(security_type, mechanism='PLAIN'):
     topic_name = bucket_name+'_topic'
     # create s3 topic
     if security_type == 'SASL_SSL':
-        endpoint_address = 'kafka://alice:alice-secret@' + kafka_server + ':9094'
+        if not use_topic_attrs_for_creds:
+            endpoint_address = 'kafka://alice:alice-secret@' + kafka_server + ':9094'
+        else:
+            endpoint_address = 'kafka://' + kafka_server + ':9094'
     elif security_type == 'SSL':
         endpoint_address = 'kafka://' + kafka_server + ':9093'
     elif security_type == 'SASL_PLAINTEXT':
@@ -4603,6 +4606,8 @@ def kafka_security(security_type, mechanism='PLAIN'):
     elif security_type == 'SASL_SSL':
         KAFKA_DIR = os.environ['KAFKA_DIR']
         endpoint_args = 'push-endpoint='+endpoint_address+'&kafka-ack-level=broker&use-ssl=true&ca-location='+KAFKA_DIR+'/y-ca.crt&mechanism='+mechanism
+        if use_topic_attrs_for_creds:
+            endpoint_args += '&user-name=alice&password=alice-secret'
     else:
         KAFKA_DIR = os.environ['KAFKA_DIR']
         endpoint_args = 'push-endpoint='+endpoint_address+'&kafka-ack-level=broker&use-ssl=true&ca-location='+KAFKA_DIR+'/y-ca.crt'
@@ -4673,6 +4678,11 @@ def test_ps_s3_notification_push_kafka_security_ssl():
 @attr('kafka_security_test')
 def test_ps_s3_notification_push_kafka_security_ssl_sasl():
     kafka_security('SASL_SSL')
+
+
+@attr('kafka_security_test')
+def test_ps_s3_notification_push_kafka_security_ssl_sasl_attrs():
+    kafka_security('SASL_SSL', use_topic_attrs_for_creds=True)
 
 
 @attr('kafka_security_test')
