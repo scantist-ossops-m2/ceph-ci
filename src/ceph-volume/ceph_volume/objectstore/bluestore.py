@@ -1,4 +1,5 @@
 import logging
+import os
 from .baseobjectstore import BaseObjectStore
 from ceph_volume.util import system
 from typing import Optional, TYPE_CHECKING
@@ -16,6 +17,7 @@ class BlueStore(BaseObjectStore):
         self.objectstore = 'bluestore'
         self.osd_id: str = ''
         self.osd_fsid: str = ''
+        self.osd_path: str = ''
         self.key: Optional[str] = None
         self.block_device_path: str = ''
         self.wal_device_path: str = ''
@@ -51,3 +53,9 @@ class BlueStore(BaseObjectStore):
         if self.get_osdspec_affinity():
             self.osd_mkfs_cmd.extend(['--osdspec-affinity',
                                       self.get_osdspec_affinity()])
+
+    def unlink_bs_symlinks(self) -> None:
+        for link_name in ['block', 'block.db', 'block.wal']:
+            link_path = os.path.join(self.osd_path, link_name)
+            if os.path.exists(link_path):
+                os.unlink(os.path.join(self.osd_path, link_name))
