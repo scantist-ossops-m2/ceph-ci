@@ -1012,6 +1012,7 @@ int publish_reserve(const DoutPrefixProvider* dpp,
   if (all_zonegroups_support(site, zone_features::notification_v2) &&
       res.store->stat_topics_v1(res.user_tenant, res.yield, res.dpp) == -ENOENT) {
     auto ret = 0;
+#if 0
     if (!res.s) {
       //  for non S3-request caller (e.g., lifecycle, ObjectSync), bucket attrs
       //  are not loaded, so force to reload the bucket, that reloads the attr.
@@ -1025,6 +1026,7 @@ int publish_reserve(const DoutPrefixProvider* dpp,
         return ret;
       }
     }
+#endif
     ret = get_bucket_notifications(dpp, res.bucket, bucket_topics);
     if (ret < 0) {
       return ret;
