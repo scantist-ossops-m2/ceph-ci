@@ -123,6 +123,7 @@ local_shared_foreign_ptr<T> make_local_shared_foreign(
 /// Wraps ptr in a local_shared_foreign_ptr<>.
 template <typename T>
 local_shared_foreign_ptr<T> make_local_shared_foreign(T &&ptr) {
+  assert(ptr);
   return make_local_shared_foreign<T>(
     ptr ? seastar::make_foreign(std::forward<T>(ptr)) : nullptr);
 }

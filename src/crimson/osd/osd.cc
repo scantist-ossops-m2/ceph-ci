@@ -774,6 +774,7 @@ OSD::do_ms_dispatch(
       ).then([this, m=std::move(m)](auto f_conn) {
         return seastar::smp::submit_to(PRIMARY_CORE,
             [f_conn=std::move(f_conn), m=std::move(m), this]() mutable {
+          ceph_assert_always(f_conn);
           auto conn = make_local_shared_foreign(std::move(f_conn));
           auto ret = do_ms_dispatch(conn, std::move(m));
           assert(ret.has_value());

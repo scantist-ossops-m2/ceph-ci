@@ -771,6 +771,7 @@ IOHandler::to_new_sid(
 
     ceph_assert_always(!conn_ref);
     // assign even if already dropping
+    ceph_assert_always(conn_fref);
     conn_ref = make_local_shared_foreign(std::move(conn_fref));
 
     if (get_io_state() != io_state_t::drop) {
@@ -806,6 +807,7 @@ seastar::future<> IOHandler::set_accepted_sid(
     ceph_assert_always(get_io_state() == io_state_t::none);
     assert(maybe_prv_shard_states == nullptr);
     ceph_assert_always(!conn_ref);
+    ceph_assert_always(conn_fref);
     conn_ref = make_local_shared_foreign(std::move(conn_fref));
   });
 }
