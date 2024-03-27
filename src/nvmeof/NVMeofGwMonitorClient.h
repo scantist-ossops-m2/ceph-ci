@@ -38,6 +38,7 @@ private:
   std::string server_cert;
   std::string client_cert;
   epoch_t     osdmap_epoch; // last awaited osdmap_epoch
+  epoch_t     gwmap_epoch; // last received gw map epoch
 
 protected:
   ceph::async::io_context_pool poolctx;

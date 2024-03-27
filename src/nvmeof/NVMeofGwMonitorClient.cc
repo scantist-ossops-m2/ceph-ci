@@ -37,6 +37,7 @@
 NVMeofGwMonitorClient::NVMeofGwMonitorClient(int argc, const char **argv) :
   Dispatcher(g_ceph_context),
   osdmap_epoch(0),
+  gwmap_epoch(0),
   monc{g_ceph_context, poolctx},
   client_messenger(Messenger::create(g_ceph_context, "async", entity_name_t::CLIENT(-1), "client", getpid())),
   objecter{g_ceph_context, client_messenger.get(), &monc, poolctx},
@@ -220,14 +221,15 @@ void NVMeofGwMonitorClient::send_beacon()
   if (get_gw_state("old map", map, group_key, name, old_gw_state))
     gw_availability = ok ? GW_AVAILABILITY_E::GW_AVAILABLE : GW_AVAILABILITY_E::GW_UNAVAILABLE;
   dout(0) << "sending beacon as gid " << monc.get_global_id() << " availability " << (int)gw_availability <<
-    " osdmap_epoch " << osdmap_epoch << dendl;
+    " osdmap_epoch " << osdmap_epoch << " gwmap_epoch " << gwmap_epoch << dendl;
   auto m = ceph::make_message<MNVMeofGwBeacon>(
       name,
       pool,
       group,
       subs,
       gw_availability,
-      osdmap_epoch);
+      osdmap_epoch,
+      gwmap_epoch);
   monc.send_mon_message(std::move(m));
 }
 
@@ -270,6 +272,7 @@ void NVMeofGwMonitorClient::shutdown()
 void NVMeofGwMonitorClient::handle_nvmeof_gw_map(ceph::ref_t<MNVMeofGwMap> nmap)
 {
   auto &new_map = nmap->get_map();
+  gwmap_epoch = nmap->get_gwmap_epoch();
   auto group_key = std::make_pair(pool, group);
   dout(0) << "handle nvmeof gw map: " << new_map << dendl;
 

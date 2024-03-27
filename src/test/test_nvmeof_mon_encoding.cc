@@ -130,6 +130,7 @@ void test_MNVMeofGwBeacon() {
   BeaconSubsystem sub = { nqn, {}, {} };
   BeaconSubsystems subs = { sub };
   epoch_t osd_epoch = 17;
+  epoch_t gwmap_epoch = 42;
 
   auto msg = make_message<MNVMeofGwBeacon>(
       gw_id,
@@ -137,7 +138,8 @@ void test_MNVMeofGwBeacon() {
       gw_group,
       subs,
       availability,
-      osd_epoch);
+      osd_epoch,
+      gwmap_epoch);
   msg->encode_payload(0);
   msg->decode_payload();
   dout(0) << "decode msg: " << *msg << dendl;
@@ -146,6 +148,7 @@ void test_MNVMeofGwBeacon() {
   ceph_assert(msg->get_gw_group() == gw_group);
   ceph_assert(msg->get_availability() == availability);
   ceph_assert(msg->get_last_osd_epoch() == osd_epoch);
+  ceph_assert(msg->get_last_gwmap_epoch() == gwmap_epoch);
   const auto& dsubs = msg->get_subsystems();
   auto it = std::find_if(dsubs.begin(), dsubs.end(),
                            [&nqn](const auto& element) {

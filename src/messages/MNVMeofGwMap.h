@@ -21,15 +21,17 @@
 class MNVMeofGwMap final : public Message {
 protected:
   std::map<NvmeGroupKey, NvmeGwMap> map;
+  epoch_t                           gwmap_epoch;
 
 public:
   const std::map<NvmeGroupKey, NvmeGwMap>& get_map() {return map;}
+  const epoch_t& get_gwmap_epoch() {return gwmap_epoch;}
 
 private:
   MNVMeofGwMap() :
     Message{MSG_MNVMEOF_GW_MAP} {}
   MNVMeofGwMap(const NVMeofGwMap &map_) :
-    Message{MSG_MNVMEOF_GW_MAP}
+    Message{MSG_MNVMEOF_GW_MAP}, gwmap_epoch(map_.epoch)
   {
     map_.to_gmap(map);
   }
@@ -40,10 +42,12 @@ public:
 
   void decode_payload() override {
     auto p = payload.cbegin();
+    decode(gwmap_epoch, p);
     decode(map, p);
   }
   void encode_payload(uint64_t features) override {
     using ceph::encode;
+    encode(gwmap_epoch, payload);
     encode(map, payload);
   }
 private:
