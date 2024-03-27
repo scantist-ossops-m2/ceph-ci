@@ -394,6 +394,7 @@ bool NVMeofGwMon::prepare_command(MonOpRequestRef op)
                  f->open_object_section("stat");
                  f->dump_string("gw-id", gw_id);
                  f->dump_unsigned("anagrp-id",state.ana_grp_id+1);
+                 f->dump_unsigned("last-gw_map-epoch-valid",state.last_gw_map_epoch_valid);
                  std::stringstream  ss1;
                  ss1 << state.availability;
                  f->dump_string("Availability", ss1.str());
@@ -503,7 +504,10 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
         avail = GW_AVAILABILITY_E::GW_UNAVAILABLE;
     }
     pending_map.Created_gws[group_key][gw_id].subsystems =  sub;
-
+    pending_map.Created_gws[group_key][gw_id].last_gw_map_epoch_valid = ( map.epoch == m->get_last_gwmap_epoch() );
+    if( pending_map.Created_gws[group_key][gw_id].last_gw_map_epoch_valid == false ){
+      dout(1) <<  "map epoch of gw is not up-to-date " << gw_id << " epoch " << map.epoch << " beacon_epoch " << m->get_last_gwmap_epoch() <<  dendl;
+    }
     if(avail == GW_AVAILABILITY_E::GW_AVAILABLE)
     {
         //dout(4) <<"subsystems from beacon " << pending_map.Created_gws << dendl;

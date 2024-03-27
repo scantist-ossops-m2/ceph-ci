@@ -454,30 +454,37 @@ void NVMeofGwMap::fsm_handle_gw_delete (const NvmeGwId &gw_id, const NvmeGroupKe
 void NVMeofGwMap::fsm_handle_to_expired(const NvmeGwId &gw_id, const NvmeGroupKey& group_key, NvmeAnaGrpId grpid,  bool &map_modified)
 {
     auto& fbp_gw_state = Created_gws[group_key][gw_id];// GW in Fail-back preparation state fbp
-
+    bool grp_owner_found = false;
     if (fbp_gw_state.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_WAIT_FAILBACK_PREPARED) {
-        cancel_timer(gw_id, group_key, grpid);
         for (auto& gw_state: Created_gws[group_key]) {
             auto& st = gw_state.second;
-            if (st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED && st.availability == GW_AVAILABILITY_E::GW_AVAILABLE )
-            {
-                fbp_gw_state.standby_state(grpid);// Previous failover GW  set to standby
-                st.active_state(grpid);
-                dout(10)  << "Expired Failback-preparation timer from GW " << gw_id << " ANA groupId "<< grpid << dendl;
-                map_modified = true;
-                break;
-            }
-            else if (st.ana_grp_id == grpid){
-                if(st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE  &&  st.availability == GW_AVAILABILITY_E::GW_AVAILABLE) {
-                    st.active_state(grpid);// GW failed and started during the persistency interval
-                    dout(4)  << "Failback unsuccessfull. GW: " << gw_state.first << "becomes Active for the ana group " << grpid  << dendl;
+            if (st.ana_grp_id == grpid){// group owner
+                grp_owner_found = true;
+                if( ! (fbp_gw_state.last_gw_map_epoch_valid  && st.last_gw_map_epoch_valid) ){
+                   //Timer is not cancelled so it would expire over and over as long as both gws are not updated
+                   dout(1) << "gw " << gw_id  <<" or gw " << gw_state.first  << "map epochs are not updated "<< dendl;
+                   return;
+                }
+                cancel_timer(gw_id, group_key, grpid);
+                if (st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_OWNER_WAIT_FAILBACK_PREPARED && st.availability == GW_AVAILABILITY_E::GW_AVAILABLE )
+                {
+                    fbp_gw_state.standby_state(grpid);// Previous failover GW  set to standby
+                    st.active_state(grpid);
+                    dout(10)  << "Expired Failback-preparation timer from GW " << gw_id << " ANA groupId "<< grpid << dendl;
+                    map_modified = true;
+                    break;
+                }
+                else if(st.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_STANDBY_STATE  &&  st.availability == GW_AVAILABILITY_E::GW_AVAILABLE) {
+                   st.active_state(grpid);// GW failed and started during the persistency interval
+                   dout(4)  << "Failback unsuccessfull. GW: " << gw_state.first << "becomes Active for the ana group " << grpid  << dendl;
                 }
                 fbp_gw_state.standby_state(grpid);
                 dout(4) << "Failback unsuccessfull GW: " << gw_id << "becomes standby for the ana group " << grpid  << dendl;
                 map_modified = true;
                 break;
             }
-        }
+       }
+      ceph_assert(grp_owner_found);// when  GW group owner is deleted the fbk gw is put to standby
     }
     else if(fbp_gw_state.sm_state[grpid] == GW_STATES_PER_AGROUP_E::GW_WAIT_BLOCKLIST_CMPL){
         dout(1) << " Expired GW_WAIT_FAILOVER_PREPARED timer from GW " << gw_id << " ANA groupId: "<< grpid << dendl;
