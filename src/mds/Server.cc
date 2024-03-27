@@ -4752,6 +4752,8 @@ void Server::handle_client_openc(const MDRequestRef& mdr)
   // created null dn.
   CDir *dir = dn->get_dir();
   CInode *diri = dir->get_inode();
+  if (!fscrypt_create_permission_check(mdr, diri))
+    return;
   if (!check_access(mdr, diri, access))
     return;
   if (!check_fragment_space(mdr, dir))
@@ -7055,6 +7057,8 @@ void Server::handle_client_mknod(const MDRequestRef& mdr)
 
   CDir *dir = dn->get_dir();
   CInode *diri = dir->get_inode();
+  if (!fscrypt_create_permission_check(mdr, diri))
+    return;
   if (!check_access(mdr, diri, MAY_WRITE))
     return;
   if (!check_fragment_space(mdr, dir))
@@ -7142,7 +7146,19 @@ void Server::handle_client_mknod(const MDRequestRef& mdr)
   mds->balancer->maybe_fragment(dn->get_dir(), false);
 }
 
+bool Server::fscrypt_create_permission_check(const MDRequestRef& mdr, CInode *in)
+{
+  const cref_t<MClientRequest> &req = mdr->client_request;
+  Session *session = mds->get_session(req);
 
+  if (!in->get_inode()->fscrypt_auth.empty() &&
+      !session->info.has_feature(CEPHFS_FEATURE_ALTERNATE_NAME)) {
+      respond_to_request(mdr, -CEPHFS_EROFS);
+      return false;
+  }
+
+  return true;
+}
 
 // MKDIR
 /* This function takes responsibility for the passed mdr*/
@@ -7157,6 +7173,9 @@ void Server::handle_client_mkdir(const MDRequestRef& mdr)
 
   CDir *dir = dn->get_dir();
   CInode *diri = dir->get_inode();
+
+  if (!fscrypt_create_permission_check(mdr, diri))
+    return;
 
   // mkdir check access
   if (!check_access(mdr, diri, MAY_WRITE))
@@ -7252,6 +7271,8 @@ void Server::handle_client_symlink(const MDRequestRef& mdr)
   CDir *dir = dn->get_dir();
   CInode *diri = dir->get_inode();
 
+  if (!fscrypt_create_permission_check(mdr, diri))
+    return;
   if (!check_access(mdr, diri, MAY_WRITE))
     return;
   if (!check_fragment_space(mdr, dir))
@@ -7395,10 +7416,15 @@ void Server::handle_client_link(const MDRequestRef& mdr)
   }
 
   if ((!mdr->has_more() || mdr->more()->witnessed.empty())) {
+    CInode *diri = dir->get_inode();
+
     if (!check_access(mdr, targeti, MAY_WRITE))
       return;
 
-    if (!check_access(mdr, dir->get_inode(), MAY_WRITE))
+    if (!fscrypt_create_permission_check(mdr, diri))
+      return;
+
+    if (!check_access(mdr, diri, MAY_WRITE))
       return;
 
     if (!check_fragment_space(mdr, dir))
