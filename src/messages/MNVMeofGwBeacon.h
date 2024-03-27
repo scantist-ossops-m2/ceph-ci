@@ -34,6 +34,7 @@ protected:
     BeaconSubsystems  subsystems;                           // gateway susbsystem and their state machine states
     GW_AVAILABILITY_E availability;                         // in absence of  beacon  heartbeat messages it becomes inavailable
     epoch_t           last_osd_epoch;
+    epoch_t           last_gwmap_epoch;
 
 public:
   MNVMeofGwBeacon()
@@ -47,11 +48,12 @@ public:
         const std::string& gw_group_,
         const BeaconSubsystems& subsystems_,
         const GW_AVAILABILITY_E& availability_,
-        const epoch_t& last_osd_epoch_
+        const epoch_t& last_osd_epoch_,
+        const epoch_t& last_gwmap_epoch_
   )
     : PaxosServiceMessage{MSG_MNVMEOF_GW_BEACON, 0, HEAD_VERSION, COMPAT_VERSION},
       gw_id(gw_id_), gw_pool(gw_pool_), gw_group(gw_group_), subsystems(subsystems_),
-      availability(availability_), last_osd_epoch(last_osd_epoch_)
+      availability(availability_), last_osd_epoch(last_osd_epoch_), last_gwmap_epoch(last_gwmap_epoch_)
   {
     set_priority(CEPH_MSG_PRIO_HIGH);
   }
@@ -71,9 +73,10 @@ public:
     return nonce_map;
   }
 
-  const GW_AVAILABILITY_E& get_availability()   const { return availability; }
-  const epoch_t&           get_last_osd_epoch() const { return last_osd_epoch; }
-  const BeaconSubsystems&  get_subsystems()     const { return subsystems; };
+  const GW_AVAILABILITY_E& get_availability()   const   { return availability; }
+  const epoch_t&           get_last_osd_epoch() const   { return last_osd_epoch; }
+  const epoch_t&           get_last_gwmap_epoch() const { return last_gwmap_epoch; }
+  const BeaconSubsystems&  get_subsystems()     const   { return subsystems; };
 
 private:
   ~MNVMeofGwBeacon() final {}
@@ -88,12 +91,13 @@ public:
     encode(gw_id, payload);
     encode(gw_pool, payload);
     encode(gw_group, payload);
-    encode(subsystems.size(), payload);
+    encode((uint32_t)subsystems.size(), payload);
     for (const auto& st: subsystems) {
       encode(st, payload);
     }
-    encode((int)availability, payload);
-    encode(last_osd_epoch , payload);
+    encode((uint32_t)availability, payload);
+    encode(last_osd_epoch, payload);
+    encode(last_gwmap_epoch, payload);
   }
 
   void decode_payload() override {
@@ -104,18 +108,19 @@ public:
     decode(gw_id, p);
     decode(gw_pool, p);
     decode(gw_group, p);
-    size_t n;
+    uint32_t n;
     decode(n, p);
     subsystems.clear();
-    for (size_t i = 0; i < n; i++) {
+    for (uint32_t i = 0; i < n; i++) {
       BeaconSubsystem sub;
       decode(sub, p);
       subsystems.push_back(sub);
     }
-    int tmp;
+    uint32_t tmp;
     decode(tmp, p);
     availability = static_cast<GW_AVAILABILITY_E>(tmp);
     decode(last_osd_epoch, p);
+    decode(last_gwmap_epoch, p);
   }
 
 private:
