@@ -60,12 +60,6 @@ void NVMeofGwMon::on_shutdown() {
 }
 
 void NVMeofGwMon::tick(){
-   // static int cnt=0;
-    if(map.delay_propose){
-       check_subs(false);  // to send map to clients
-       map.delay_propose = false;
-    }
-
     if (!is_active() || !mon.is_leader()){
         dout(10) << "NVMeofGwMon leader : " << mon.is_leader() << "active : " << is_active()  << dendl;
         last_leader = false;
@@ -75,7 +69,7 @@ void NVMeofGwMon::tick(){
   
     const auto now = ceph::coarse_mono_clock::now();
     const auto nvmegw_beacon_grace = g_conf().get_val<std::chrono::seconds>("mon_nvmeofgw_beacon_grace"); 
-    dout(10) <<  "NVMeofGwMon leader got a real tick, pending epoch "<< pending_map.epoch     << dendl;
+    dout(15) <<  "NVMeofGwMon leader got a real tick, pending epoch "<< pending_map.epoch     << dendl;
 
     const auto mgr_tick_period = g_conf().get_val<std::chrono::seconds>("mgr_tick_period");
 
@@ -119,7 +113,7 @@ void NVMeofGwMon::tick(){
 
     if(_propose_pending){
        //pending_map.delay_propose = true; // not to send map to clients immediately in "update_from_paxos"
-       dout(4) << "decision to delayed_map" <<dendl;
+       dout(4) << "propose pending " <<dendl;
        propose_pending();
     }
 
@@ -210,10 +204,8 @@ void NVMeofGwMon::check_subs(bool t)
   if (mon.session_map.subs.count(type) == 0){
       return;
   }
-  for (auto sub : *(mon.session_map.subs[type])) {
-    dout(4) << "sub-type "<< sub->type <<  " delay_propose until next tick" << t << dendl;
-    if (t) map.delay_propose = true;
-    else  check_sub(sub);
+  for (auto sub : *(mon.session_map.subs[type])){
+    check_sub(sub);
   }
 }
 
@@ -436,7 +428,7 @@ bool NVMeofGwMon::preprocess_beacon(MonOpRequestRef op){
     auto m = op->get_req<MNVMeofGwBeacon>();
     const BeaconSubsystems& sub = m->get_subsystems();
      //mon.no_reply(op); // we never reply to beacons
-     dout(10) << "beacon from " << m->get_type() << " GW : " << m->get_gw_id()  << " num subsystems " << sub.size() <<  dendl;
+     dout(15) << "beacon from " << m->get_type() << " GW : " << m->get_gw_id()  << " num subsystems " << sub.size() <<  dendl;
      MonSession *session = op->get_session();
      if (!session){
          dout(4) << "beacon no session "  << dendl;
@@ -546,7 +538,7 @@ set_propose:
     }
 false_return:
     if (propose){
-      dout(4) << "decision to delayed_map in prepare_beacon" <<dendl;
+      dout(4) << "decision in prepare_beacon" <<dendl;
       return true;
     }
     else 
