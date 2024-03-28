@@ -1472,21 +1472,22 @@ public:
   /**
    * pg_committed_to
    *
-   * Maintained on the primary while pg is at least peered.
+   * Maintained on the primary while pg is active (and not merely peered).
    *
    * Forall e <= pg_committed_to, e has been committed on all replicas.
    *
-   * As a consequence, if the pg is active (and not merely peered):
+   * As a consequence:
    * - No version e <= pg_committed_to can become divergent
    * - It is safe for replicas to read any object whose most recent update is
    *   <= pg_committed_to
    *
    * Additionally, pg_committed_to is updated prior to sending a reply to
    * the replicas, so replicas will not consider any version e > pg_committed_to
-   * to be committed if the pg is active (and not merely peered).
+   * to be committed.
    *
-   * Note that if the OSD is only peered, it is in fact possible for
-   * pg_committed_to to become divergent.
+   * Note that if the OSD is only peered, pg_committed_to not be maintained
+   * and will remain eversion_t{} as we cannot guarantee that last_update
+   * at activation will not later become divergent.
    */
   eversion_t  pg_committed_to;
 
