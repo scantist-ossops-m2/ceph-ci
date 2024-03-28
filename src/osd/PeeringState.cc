@@ -2672,6 +2672,10 @@ void PeeringState::activate(
     if (info.last_epoch_started < activation_epoch) {
       info.last_epoch_started = activation_epoch;
       info.last_interval_started = info.history.same_interval_since;
+
+      // updating last_epoch_started ensures that last_update will not
+      // become divergent after activation completes.
+      pg_committed_to = info.last_update;
     }
   }
 
@@ -7572,7 +7576,8 @@ ostream &operator<<(ostream &out, const PeeringState &ps) {
   if (ps.last_complete_ondisk != ps.info.last_complete)
     out << " lcod " << ps.last_complete_ondisk;
 
-  out << " mlcod " << ps.min_last_complete_ondisk;
+  if (ps.is_primary())
+    out << " mlcod " << ps.min_last_complete_ondisk;
 
   out << " " << pg_state_string(ps.get_state());
   if (ps.should_send_notify())
