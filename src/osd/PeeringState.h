@@ -1469,8 +1469,28 @@ public:
 
   epoch_t last_peering_reset = 0;   ///< epoch of last peering reset
 
-  /// last_update that has committed; ONLY DEFINED WHEN is_active()
-  eversion_t  last_update_ondisk;
+  /**
+   * pg_committed_to
+   *
+   * Maintained on the primary while pg is active (and not merely peered).
+   *
+   * Forall e <= pg_committed_to, e has been committed on all replicas.
+   *
+   * As a consequence:
+   * - No version e <= pg_committed_to can become divergent
+   * - It is safe for replicas to read any object whose most recent update is
+   *   <= pg_committed_to
+   *
+   * Additionally, pg_committed_to is updated prior to sending a reply to
+   * the replicas, so replicas will not consider any version e > pg_committed_to
+   * to be committed.
+   *
+   * Note that if the OSD is only peered, pg_committed_to not be maintained
+   * and will remain eversion_t{} as we cannot guarantee that last_update
+   * at activation will not later become divergent.
+   */
+  eversion_t  pg_committed_to;
+
   eversion_t  last_complete_ondisk; ///< last_complete that has committed.
   eversion_t  last_update_applied;  ///< last_update readable
   /// last version to which rollback_info trimming has been applied
@@ -1898,18 +1918,7 @@ public:
     const mempool::osd_pglog::list<pg_log_entry_t> &entries,
     ObjectStore::Transaction &t,
     std::optional<eversion_t> trim_to,
-    std::optional<eversion_t> roll_forward_to);
-
-  void append_log_with_trim_to_updated(
-    std::vector<pg_log_entry_t>&& log_entries,
-    eversion_t roll_forward_to,
-    ObjectStore::Transaction &t,
-    bool transaction_applied,
-    bool async) {
-    update_trim_to();
-    append_log(std::move(log_entries), pg_trim_to, roll_forward_to,
-	min_last_complete_ondisk, t, transaction_applied, async);
-  }
+    std::optional<eversion_t> pg_committed_to);
 
   /**
    * Updates local log to reflect new write from primary.
@@ -1918,7 +1927,7 @@ public:
     std::vector<pg_log_entry_t>&& logv,
     eversion_t trim_to,
     eversion_t roll_forward_to,
-    eversion_t min_last_complete_ondisk,
+    eversion_t pg_committed_to,
     ObjectStore::Transaction &t,
     bool transaction_applied,
     bool async);
@@ -1936,7 +1945,7 @@ public:
     const mempool::osd_pglog::list<pg_log_entry_t> &entries,
     ObjectStore::Transaction &t,
     std::optional<eversion_t> trim_to,
-    std::optional<eversion_t> roll_forward_to);
+    std::optional<eversion_t> pg_committed_to);
 
   /// Update missing set to reflect e (TODOSAM: not sure why this is needed)
   void add_local_next_event(const pg_log_entry_t& e) {
@@ -2423,8 +2432,8 @@ public:
     return last_update_applied;
   }
 
-  eversion_t get_last_update_ondisk() const {
-    return last_update_ondisk;
+  eversion_t get_pg_committed_to() const {
+    return pg_committed_to;
   }
 
   bool debug_has_dirty_state() const {

@@ -496,12 +496,12 @@ public:
     const std::optional<pg_hit_set_history_t> &hset_history,
     const eversion_t &trim_to,
     const eversion_t &roll_forward_to,
-    const eversion_t &min_last_complete_ondisk,
+    const eversion_t &pg_committed_to,
     bool transaction_applied,
     ObjectStore::Transaction &t,
     bool async = false) override {
     if (is_primary()) {
-      ceph_assert(trim_to <= recovery_state.get_last_update_ondisk());
+      ceph_assert(trim_to <= pg_committed_to);
     }
     if (hset_history) {
       recovery_state.update_hset(*hset_history);
@@ -518,7 +518,7 @@ public:
       replica_clear_repop_obc(logv, t);
     }
     recovery_state.append_log(
-      std::move(logv), trim_to, roll_forward_to, min_last_complete_ondisk,
+      std::move(logv), trim_to, roll_forward_to, pg_committed_to,
       t, transaction_applied, async);
   }
 
