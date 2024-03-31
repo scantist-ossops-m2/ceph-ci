@@ -26,7 +26,6 @@ using std::string;
 
 void NVMeofGwMon::init(){
     dout(4) <<  "called " << dendl;
-    g_conf().add_observer(this);
 }
 
 void NVMeofGwMon::on_restart(){
@@ -56,7 +55,7 @@ void NVMeofGwMon::synchronize_last_beacon(){
 }
 
 void NVMeofGwMon::on_shutdown() {
-     g_conf().remove_observer(this);
+    dout(4) <<  "called " << dendl;
 }
 
 void NVMeofGwMon::tick(){
