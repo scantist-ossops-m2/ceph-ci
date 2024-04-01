@@ -94,34 +94,6 @@
           </div>
         </div>
 
-        <!-- Placement target -->
-        <div class="form-group row"
-             *ngIf="!editing">
-          <label class="cd-col-form-label"
-                 for="placement-target"
-                 i18n>Placement target</label>
-          <div class="cd-col-form-input">
-            <select id="placement-target"
-                    name="placement-target"
-                    formControlName="placement-target"
-                    class="form-select">
-              <option i18n
-                      *ngIf="placementTargets === null"
-                      [ngValue]="null">Loading...</option>
-              <option i18n
-                      *ngIf="placementTargets !== null"
-                      [ngValue]="null">-- Select a placement target --</option>
-              <option *ngFor="let placementTarget of placementTargets"
-                      [value]="placementTarget.name">{{ placementTarget.description }}</option>
-            </select>
-            <cd-help-text>
-              <span i18n>
-                When creating a bucket, a placement target can be provided as part of the LocationConstraint to override the default placement targets from the user and zonegroup.
-              </span>
-            </cd-help-text>
-          </div>
-        </div>
-
         <!-- Versioning -->
         <fieldset *ngIf="editing">
           <legend class="cd-header"
@@ -308,30 +280,30 @@
           </div>
         </fieldset>
 
-        <!-- Security -->
+        <!-- Encryption -->
         <fieldset>
           <legend class="cd-header"
-                  i18n>Security</legend>
+                  i18n>Encryption</legend>
           <div class="form-group row">
-            <div class="cd-col-form-offset">
-              <div class="custom-control custom-checkbox">
-                <input class="form-check-input"
-                       id="encryption_enabled"
-                       name="encryption_enabled"
-                       formControlName="encryption_enabled"
-                       type="checkbox"
-                       [attr.disabled]="!kmsVaultConfig && !s3VaultConfig ? true : null">
-                <label class="form-check-label"
-                       for="encryption_enabled"
-                       i18n>Encryption</label>
-                <cd-helper aria-label="toggle encryption helper">
-                  <span i18n>Enables encryption for the objects in the bucket.
-                     To enable encryption on a bucket you need to set the configuration values for SSE-S3 or SSE-KMS.
-                     To set the configuration values <a href="#/rgw/bucket/create"
-                                                        (click)="openConfigModal()"
-                                                        aria-label="click here">Click here</a></span>
-                </cd-helper>
-              </div>
+            <label class="cd-col-form-label pt-0"
+                   for="encryption_enabled"
+                   i18n>
+                    Enable
+            </label>
+            <div class="cd-col-form-input">
+              <input class="form-check-input"
+                     id="encryption_enabled"
+                     name="encryption_enabled"
+                     formControlName="encryption_enabled"
+                     type="checkbox"
+                     [attr.disabled]="!kmsVaultConfig && !s3VaultConfig ? true : null"/>
+              <cd-help-text aria-label="encryption helper">
+                <span i18n>Enables encryption for the objects in the bucket.
+                    To enable encryption on a bucket you need to set the configuration values for SSE-S3 or SSE-KMS.
+                    To set the configuration values <a href="#/rgw/bucket/create"
+                                                       (click)="openConfigModal()"
+                                                       aria-label="click here">Click here</a></span>
+              </cd-help-text>
             </div>
           </div>
 
@@ -419,7 +391,7 @@
         <fieldset>
           <legend class="cd-header"
                   i18n>Tags
-            <cd-helper>Tagging gives you a way to categorize storage</cd-helper>
+            <cd-help-text>Tagging provides a way to categorize storage</cd-help-text>
           </legend>
           <span *ngFor="let tag of tags; let i=index;">
             <ng-container *ngTemplateOutlet="tagTpl; context:{index: i, tag: tag}"></ng-container>
@@ -547,6 +519,36 @@
             </div>
           </div>
         </fieldset>
+
+        <!--Advanced-->
+        <cd-form-advanced-fieldset *ngIf="!editing">
+          <!-- Placement target -->
+          <div class="form-group row">
+            <label class="cd-col-form-label"
+                   for="placement-target"
+                   i18n>Placement target</label>
+            <div class="cd-col-form-input">
+              <select id="placement-target"
+                      name="placement-target"
+                      formControlName="placement-target"
+                      class="form-select">
+                <option i18n
+                        *ngIf="placementTargets === null"
+                        [ngValue]="null">Loading...</option>
+                <option i18n
+                        *ngIf="placementTargets !== null"
+                        [ngValue]="null">-- Select a placement target --</option>
+                <option *ngFor="let placementTarget of placementTargets"
+                        [value]="placementTarget.name">{{ placementTarget.description }}</option>
+              </select>
+              <cd-help-text>
+                <span i18n>
+                  When creating a bucket, a placement target can be provided as part of the LocationConstraint to override the default placement targets from the user and zonegroup.
+                </span>
+              </cd-help-text>
+            </div>
+          </div>
+        </cd-form-advanced-fieldset>
       </div>
 
       <div class="card-footer">
