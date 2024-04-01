@@ -33,11 +33,11 @@ ReplicatedRecoveryBackend::recover_object(
   // start tracking the recovery of soid
   return maybe_pull_missing_obj(soid, need).then_interruptible([this, soid, need] {
     logger().debug("recover_object: loading obc: {}", soid);
-    return pg.obc_loader.with_obc<RWState::RWREAD>(soid,
-      [this, soid, need](auto head, auto obc) {
-      logger().debug("recover_object: loaded obc: {}", obc->obs.oi.soid);
+    return pg.obc_loader.with_obc<RWState::RWREAD>(soid.get_head(),
+      [this, soid, need](auto head, auto) {
+      logger().debug("recover_object: loaded obc: {}", head->obs.oi.soid);
       auto& recovery_waiter = get_recovering(soid);
-      recovery_waiter.obc = obc;
+      recovery_waiter.obc = head;
       recovery_waiter.obc->wait_recovery_read();
       return maybe_push_shards(head, soid, need);
     }).handle_error_interruptible(
@@ -798,29 +798,29 @@ ReplicatedRecoveryBackend::_handle_pull_response(
       seastar::make_ready_future<>());
   if (pull_info.recovery_progress.first) {
     prepare_waiter = pg.obc_loader.with_obc<RWState::RWNONE>(
-      pull_info.recovery_info.soid,
-      [this, &pull_info, &recovery_waiter, &push_op](auto, auto obc) {
-        pull_info.obc = obc;
-        recovery_waiter.obc = obc;
-        obc->obs.oi.decode_no_oid(push_op.attrset.at(OI_ATTR),
+      pull_info.recovery_info.soid.get_head(),
+      [this, &pull_info, &recovery_waiter, &push_op](auto head, auto) {
+        pull_info.obc = head;
+        recovery_waiter.obc = head;
+        head->obs.oi.decode_no_oid(push_op.attrset.at(OI_ATTR),
                                   push_op.soid);
         auto ss_attr_iter = push_op.attrset.find(SS_ATTR);
         if (ss_attr_iter != push_op.attrset.end()) {
-          if (!obc->ssc) {
-            obc->ssc = new crimson::osd::SnapSetContext(
+          if (!head->ssc) {
+            head->ssc = new crimson::osd::SnapSetContext(
               push_op.soid.get_snapdir());
           }
           try {
-            obc->ssc->snapset = SnapSet(ss_attr_iter->second);
-            obc->ssc->exists = true;
+            head->ssc->snapset = SnapSet(ss_attr_iter->second);
+            head->ssc->exists = true;
           } catch (const buffer::error&) {
             logger().warn("unable to decode SnapSet");
             throw crimson::osd::invalid_argument();
           }
           assert(!pull_info.obc->ssc->exists ||
-                 obc->ssc->snapset.seq == pull_info.obc->ssc->snapset.seq);
+                 head->ssc->snapset.seq == pull_info.obc->ssc->snapset.seq);
         }
-        pull_info.recovery_info.oi = obc->obs.oi;
+        pull_info.recovery_info.oi = head->obs.oi;
         if (pull_info.recovery_info.soid.snap &&
             pull_info.recovery_info.soid.snap < CEPH_NOSNAP) {
             recalc_subsets(pull_info.recovery_info,
