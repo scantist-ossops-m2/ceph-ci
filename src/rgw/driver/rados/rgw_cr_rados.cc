@@ -833,9 +833,20 @@ int RGWAsyncFetchRemoteObj::_send_request(const DoutPrefixProvider *dpp)
   } else {
       // r >= 0
       if (bytes_transferred) {
-        send_sync_notification(
-            dpp, store, &dest_bucket, &dest_obj, attrs, *bytes_transferred,
-            {rgw::notify::ObjectSyncedCreate, rgw::notify::ReplicationCreate});
+        // bucket attrs are required for notification and since its not loaded,
+        // reload the bucket
+        int ret = dest_bucket.load_bucket(dpp, null_yield);
+        if (ret < 0) {
+          ldpp_dout(dpp, 1)
+              << "ERROR: failed to load bucket attrs for bucket:"
+              << dest_bucket.get_name() << " with error ret= " << ret
+              << " . Not sending notification" << dendl;
+        } else {
+          send_sync_notification(dpp, store, &dest_bucket, &dest_obj, attrs,
+                                 *bytes_transferred,
+                                 {rgw::notify::ObjectSyncedCreate,
+                                  rgw::notify::ReplicationCreate});
+        }
       }
 
       if (counters) {
@@ -943,10 +954,19 @@ int RGWAsyncRemoveObj::_send_request(const DoutPrefixProvider *dpp)
   if (ret < 0) {
     ldpp_dout(dpp, 20) << __func__ << "(): delete_obj() obj=" << obj << " returned ret=" << ret << dendl;
   } else {
-    send_sync_notification(
-        dpp, store, bucket.get(), obj.get(), obj->get_attrs(),
-        obj->get_obj_size(),
-        {rgw::notify::ObjectSyncedDelete, rgw::notify::ReplicationDelete});
+    // bucket attrs are required for notification and since its not loaded,
+    // reload the bucket
+    int r = bucket->load_bucket(dpp, null_yield);
+    if (r < 0) {
+      ldpp_dout(dpp, 1) << "ERROR: failed to load bucket attrs for bucket:"
+                        << bucket->get_name() << " with error ret= " << ret
+                        << " . Not sending notification" << dendl;
+    } else {
+      send_sync_notification(
+          dpp, store, bucket.get(), obj.get(), obj->get_attrs(),
+          obj->get_obj_size(),
+          {rgw::notify::ObjectSyncedDelete, rgw::notify::ReplicationDelete});
+    }
   }
   return ret;
 }
