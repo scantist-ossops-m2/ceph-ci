@@ -1005,6 +1005,22 @@ bool CInode::is_ancestor_of(const CInode *other, std::unordered_map<CInode const
   return false;
 }
 
+bool CInode::is_any_ancestor_a_replica() const {
+  const CDentry *pdn = get_parent_dn();
+  while (pdn) {
+    dout(20) << __func__ << ": pdn=" << *pdn << dendl;
+    const CInode *diri = pdn->get_dir()->get_inode();
+    if (!diri->is_auth()) {
+      dout(20) << __func__ < ": pdn=" << *pdn << ": is auth" << dendl;
+      return true;
+    }
+    pdn = diri->get_parent_dn();
+  }
+
+  dout(20) << __func__ << ": all ancestor inodes are replicas" << dendl;
+  return false;
+}
+
 bool CInode::is_projected_ancestor_of(const CInode *other) const
 {
   while (other) {
@@ -4831,11 +4847,14 @@ void CInode::validate_disk_state(CInode::validated_data *results,
          * most likely its a stray entry that's being purged and things are
          * well and there's no reason for alarm
          */
-        if (divergent && (in->is_dirty_parent() || in->get_inode()->nlink == 0)) {
+        if (divergent && (in->is_dirty_parent() ||
+			  in->get_inode()->nlink == 0 ||
+			  in->is_any_ancestor_a_replica())) {
           results->backtrace.passed = true;
           dout(20) << "divergent backtraces are acceptable when dn "
                       "is being purged or has been renamed or moved to a "
-                      "different directory " << *in << dendl;
+                      "different directory or some ancestor inodes are replicas "
+		   << *in << dendl;
         }
       } else {
         results->backtrace.passed = true;
