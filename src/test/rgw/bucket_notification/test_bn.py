@@ -1326,6 +1326,7 @@ def test_ps_s3_notification_push_amqp_on_master():
     receiver1.verify_s3_events(keys, exact_match=True, deletions=True)
     # check amqp receiver 2 has no deletions
     try:
+        # not sure if we can make this one true
         receiver1.verify_s3_events(keys, exact_match=False, deletions=True)
     except:
         pass
@@ -3855,7 +3856,7 @@ def test_ps_s3_persistent_multiple_endpoints():
     print('wait for '+str(delay)+'sec for the messages...')
     time.sleep(delay)
 
-    http_server.verify_s3_events(keys, exact_match=False, deletions=False)
+    http_server.verify_s3_events(keys, exact_match=True, deletions=False)
 
     # delete objects from the bucket
     client_threads = []
@@ -3869,7 +3870,7 @@ def test_ps_s3_persistent_multiple_endpoints():
     print('wait for '+str(delay)+'sec for the messages...')
     time.sleep(delay)
 
-    http_server.verify_s3_events(keys, exact_match=False, deletions=True)
+    http_server.verify_s3_events(keys, exact_match=True, deletions=True)
 
     # cleanup
     s3_notification_conf1.del_config()
@@ -4148,7 +4149,7 @@ def test_ps_s3_topic_update():
     #zone_bucket_checkpoint(ps_zone.zone, master_zone.zone, bucket_name)
     keys = list(bucket.list())
     # TODO: use exact match
-    receiver.verify_s3_events(keys, exact_match=False)
+    receiver.verify_s3_events(keys, exact_match=True)
     # update the same topic with new endpoint
     #topic_conf = PSTopic(ps_zone.conn, topic_name,endpoint='http://'+ hostname + ':' + str(port))
     topic_conf = PSTopicS3(conn, topic_name, endpoint_args='http://'+ hostname + ':' + str(port))
@@ -4814,7 +4815,7 @@ def test_persistent_ps_s3_data_path_v2_migration():
         assert_equal(result[1], 0)
         # verify events
         keys = list(bucket.list())
-        http_server.verify_s3_events(keys, exact_match=False)
+        http_server.verify_s3_events(keys, exact_match=True)
 
     except Exception as e:
         assert False, str(e)
@@ -4893,7 +4894,7 @@ def test_ps_s3_data_path_v2_migration():
     try:
         # verify events
         keys = list(bucket.list())
-        http_server.verify_s3_events(keys, exact_match=False)
+        http_server.verify_s3_events(keys, exact_match=True)
 
         # create topic to poll on
         topic_name_1 = topic_name + '_1'
