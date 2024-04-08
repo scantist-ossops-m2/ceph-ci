@@ -5052,6 +5052,7 @@ def test_ps_s3_data_path_v2_large_migration():
         else:
             topics_result = admin(['topic', 'list', '--tenant', tenant], get_config_cluster())
         topics_json = json.loads(topics_result[0])
+        print('Ali debugging: ', topics_json)
         assert_equal(len(topics_json['topics']), 1)
 
     # check if we migrated all the notifications
