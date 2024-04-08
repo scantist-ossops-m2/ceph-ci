@@ -331,14 +331,19 @@ int main(int argc, const char **argv, const char *envp[]) {
     cerr << "ceph-fuse[" << getpid() << "]: starting fuse" << std::endl;
     tester.init(cfuse, client);
     tester.create("tester");
+    cout << "ceph_fuse: starting fuse loop" << std::endl;
     r = cfuse->loop();
+    cout << "ceph_fuse: fuse loop returned - joining" << std::endl;
     tester.join(&tester_rp);
+    cout << "ceph_fuse: fuse loop returned - joined" << std::endl;
     tester_r = static_cast<int>(reinterpret_cast<uint64_t>(tester_rp));
     cerr << "ceph-fuse[" << getpid() << "]: fuse finished with error " << r
 	 << " and tester_r " << tester_r <<std::endl;
 
   out_client_unmount:
+    cout << "calling unmount" << std::endl;
     client->unmount();
+    cout << "calling finalize" << std::endl;
     cfuse->finalize();
   out_shutdown:
     icp.stop();
