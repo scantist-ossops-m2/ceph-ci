@@ -393,7 +393,7 @@ bool NVMeofGwMon::prepare_command(MonOpRequestRef op)
 bool NVMeofGwMon::preprocess_beacon(MonOpRequestRef op){
     auto m = op->get_req<MNVMeofGwBeacon>();
     const BeaconSubsystems& sub = m->get_subsystems();
-    dout(15) << "beacon from " << m->get_type() << " GW : " << m->get_gw_id()  << " num subsystems " << sub.size() <<  dendl;
+    dout(10) << "beacon from " << m->get_type() << " GW : " << m->get_gw_id()  << " num subsystems " << sub.size() <<  dendl;
 
     return false; // allways  return false to call leader's prepare beacon
 }
@@ -402,7 +402,7 @@ bool NVMeofGwMon::preprocess_beacon(MonOpRequestRef op){
 bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     auto m = op->get_req<MNVMeofGwBeacon>();
 
-    dout(20) << "availability " <<  m->get_availability() << " GW : " << m->get_gw_id() <<
+    dout(10) << "availability " <<  m->get_availability() << " GW : " << m->get_gw_id() <<
         " osdmap_epoch " << m->get_last_osd_epoch() << " subsystems " << m->get_subsystems() << dendl;
 
     NvmeGwId gw_id = m->get_gw_id();
@@ -448,7 +448,13 @@ bool NVMeofGwMon::prepare_beacon(MonOpRequestRef op){
     if(sub.size() == 0) {
         avail = GW_AVAILABILITY_E::GW_UNAVAILABLE;
     }
-    pending_map.Created_gws[group_key][gw_id].subsystems =  sub;
+    if(pending_map.Created_gws[group_key][gw_id].subsystems != sub)
+    {
+        dout(10) << "subsystems of GW changed, propose pending " << gw_id << dendl;
+        pending_map.Created_gws[group_key][gw_id].subsystems =  sub;
+        dout(10) << "subsystems of GW " << gw_id << " "<< pending_map.Created_gws[group_key][gw_id].subsystems << dendl;
+        nonce_propose = true;
+    }
     pending_map.Created_gws[group_key][gw_id].last_gw_map_epoch_valid = ( map.epoch == m->get_last_gwmap_epoch() );
     if( pending_map.Created_gws[group_key][gw_id].last_gw_map_epoch_valid == false ){
       dout(1) <<  "map epoch of gw is not up-to-date " << gw_id << " epoch " << map.epoch << " beacon_epoch " << m->get_last_gwmap_epoch() <<  dendl;
