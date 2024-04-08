@@ -439,6 +439,7 @@ def ceph_log(ctx, config):
             :param excludes: Patterns to ignore.
             :return: First line of text (or None if not found)
             """
+            log.warning(f'GUITS_DEBUG1={excludes}')
             args = [
                 'sudo',
                 'egrep', pattern,
@@ -448,9 +449,11 @@ def ceph_log(ctx, config):
             if excludes:
                 for exclude in excludes:
                     args.extend([run.Raw('|'), 'egrep', '-v', exclude])
+                    log.warning(f'GUITS_DEBUG2={args}')
             args.extend([
                 run.Raw('|'), 'head', '-n', '1',
             ])
+            log.warning(f'GUITS_DEBUG3={args}')
             r = ctx.ceph[cluster_name].bootstrap_remote.run(
                 stdout=StringIO(),
                 args=args,
