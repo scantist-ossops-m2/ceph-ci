@@ -900,7 +900,7 @@ void PeeringState::clear_primary_state()
 
   clear_recovery_state();
 
-  last_update_ondisk = eversion_t();
+  pg_committed_to = eversion_t();
   missing_loc.clear();
   pl->clear_primary_state();
 }
@@ -1404,9 +1404,8 @@ bool PeeringState::needs_backfill() const
 bool PeeringState::can_serve_replica_read(const hobject_t &hoid)
 {
   ceph_assert(!is_primary());
-  eversion_t min_last_complete_ondisk = get_min_last_complete_ondisk();
   if (!pg_log.get_log().has_write_since(
-      hoid, min_last_complete_ondisk)) {
+      hoid, pg_committed_to)) {
     psdout(20) << "can be safely read on this replica" << dendl;
     return true;
   } else {
@@ -2661,6 +2660,10 @@ void PeeringState::activate(
 	     info.last_epoch_started <= activation_epoch);
       info.last_epoch_started = activation_epoch;
       info.last_interval_started = info.history.same_interval_since;
+
+      // updating last_epoch_started ensures that last_update will not
+      // become divergent after activation completes.
+      pg_committed_to = info.last_update;
     }
   } else if (is_acting(pg_whoami)) {
     /* update last_epoch_started on acting replica to whatever the primary sent
@@ -2669,15 +2672,16 @@ void PeeringState::activate(
     if (info.last_epoch_started < activation_epoch) {
       info.last_epoch_started = activation_epoch;
       info.last_interval_started = info.history.same_interval_since;
+
+      // updating last_epoch_started ensures that last_update will not
+      // become divergent after activation completes.
+      pg_committed_to = info.last_update;
     }
   }
 
   auto &missing = pg_log.get_missing();
 
   min_last_complete_ondisk = eversion_t(0,0);  // we don't know (yet)!
-  if (is_primary()) {
-    last_update_ondisk = info.last_update;
-  }
   last_update_applied = info.last_update;
   last_rollback_info_trimmed_to_applied = pg_log.get_can_rollback_to();
 
@@ -4068,7 +4072,7 @@ void PeeringState::update_stats_wo_resched(
 bool PeeringState::append_log_entries_update_missing(
   const mempool::osd_pglog::list<pg_log_entry_t> &entries,
   ObjectStore::Transaction &t, std::optional<eversion_t> trim_to,
-  std::optional<eversion_t> roll_forward_to)
+  std::optional<eversion_t> pg_committed_to)
 {
   ceph_assert(!entries.empty());
   ceph_assert(entries.begin()->version > info.last_update);
@@ -4080,12 +4084,12 @@ bool PeeringState::append_log_entries_update_missing(
       entries,
       rollbacker.get());
 
-  if (roll_forward_to && entries.rbegin()->soid > info.last_backfill) {
+  if (pg_committed_to && entries.rbegin()->soid > info.last_backfill) {
     pg_log.roll_forward(rollbacker.get());
   }
-  if (roll_forward_to && *roll_forward_to > pg_log.get_can_rollback_to()) {
-    pg_log.roll_forward_to(*roll_forward_to, rollbacker.get());
-    last_rollback_info_trimmed_to_applied = *roll_forward_to;
+  if (pg_committed_to && *pg_committed_to > pg_log.get_can_rollback_to()) {
+    pg_log.roll_forward_to(*pg_committed_to, rollbacker.get());
+    last_rollback_info_trimmed_to_applied = *pg_committed_to;
   }
 
   info.last_update = pg_log.get_head();
@@ -4109,12 +4113,13 @@ void PeeringState::merge_new_log_entries(
   const mempool::osd_pglog::list<pg_log_entry_t> &entries,
   ObjectStore::Transaction &t,
   std::optional<eversion_t> trim_to,
-  std::optional<eversion_t> roll_forward_to)
+  std::optional<eversion_t> pg_committed_to)
 {
   psdout(10) << entries << dendl;
   ceph_assert(is_primary());
 
-  bool rebuild_missing = append_log_entries_update_missing(entries, t, trim_to, roll_forward_to);
+  bool rebuild_missing = append_log_entries_update_missing(
+    entries, t, trim_to, pg_committed_to);
   for (auto i = acting_recovery_backfill.begin();
        i != acting_recovery_backfill.end();
        ++i) {
@@ -4182,7 +4187,7 @@ void PeeringState::append_log(
   vector<pg_log_entry_t>&& logv,
   eversion_t trim_to,
   eversion_t roll_forward_to,
-  eversion_t mlcod,
+  eversion_t pct,
   ObjectStore::Transaction &t,
   bool transaction_applied,
   bool async)
@@ -4248,7 +4253,7 @@ void PeeringState::append_log(
   write_if_dirty(t);
 
   if (!is_primary())
-    min_last_complete_ondisk = mlcod;
+    pg_committed_to = pct;
 }
 
 void PeeringState::recover_got(
@@ -4435,7 +4440,7 @@ void PeeringState::recovery_committed_to(eversion_t version)
 
 void PeeringState::complete_write(eversion_t v, eversion_t lc)
 {
-  last_update_ondisk = v;
+  pg_committed_to = v;
   last_complete_ondisk = lc;
   calc_min_last_complete_ondisk();
 }
@@ -4482,7 +4487,7 @@ void PeeringState::calc_trim_to_aggressive()
   eversion_t limit = std::min({
     pg_log.get_head(),
     pg_log.get_can_rollback_to(),
-    last_update_ondisk});
+    pg_committed_to});
   psdout(10) << "limit = " << limit << dendl;
 
   if (limit != eversion_t() &&
@@ -7547,8 +7552,8 @@ ostream &operator<<(ostream &out, const PeeringState &ps) {
   }
 
   if (ps.is_peered()) {
-    if (ps.last_update_ondisk != ps.info.last_update)
-      out << " luod=" << ps.last_update_ondisk;
+    if (ps.pg_committed_to != ps.info.last_update)
+      out << " pct=" << ps.pg_committed_to;
     if (ps.last_update_applied != ps.info.last_update)
       out << " lua=" << ps.last_update_applied;
   }
@@ -7571,7 +7576,8 @@ ostream &operator<<(ostream &out, const PeeringState &ps) {
   if (ps.last_complete_ondisk != ps.info.last_complete)
     out << " lcod " << ps.last_complete_ondisk;
 
-  out << " mlcod " << ps.min_last_complete_ondisk;
+  if (ps.is_primary())
+    out << " mlcod " << ps.min_last_complete_ondisk;
 
   out << " " << pg_state_string(ps.get_state());
   if (ps.should_send_notify())
