@@ -42,7 +42,12 @@ PGRecovery::start_recovery_ops(
 {
   assert(pg->is_primary());
   assert(pg->is_peered());
-  assert(pg->is_recovering());
+
+  if (!pg->is_recovering() && !pg->is_backfilling()) {
+    logger().debug("recovery raced and were queued twice, ignoring!");
+    return seastar::make_ready_future<bool>(false);
+  }
+
   // in ceph-osd the do_recovery() path handles both the pg log-based
   // recovery and the backfill, albeit they are separated at the layer
   // of PeeringState. In crimson-osd backfill has been cut from it, so
