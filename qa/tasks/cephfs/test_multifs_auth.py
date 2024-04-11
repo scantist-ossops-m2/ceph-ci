@@ -259,6 +259,8 @@ class TestClientsWithoutAuth(TestMultiFS):
         osdcap = gen_osd_cap_str((('rw', self.fs1.name,),
                                   ('rw', self.fs2.name)))
         keyring = self.create_client(self.client_id, moncap, osdcap, mdscap)
+        log.info(f'remoteproc - {keyring}')
+        assert isinstance(keyring, str)
         keyring_path = self.mount_a.client_remote.mktemp(data=keyring)
 
         # mount the FS for which client has no auth...

@@ -415,6 +415,7 @@ class CephFSTestCase(CephTestCase):
     def create_client(self, client_id, moncap=None, osdcap=None, mdscap=None):
         if not (moncap or osdcap or mdscap):
             if self.fs:
+                log.info('remoteproc-read returning self.fs.authorize()')
                 return self.fs.authorize(client_id, ('/', 'rw'))
             else:
                 raise RuntimeError('no caps were passed and the default FS '
@@ -430,4 +431,5 @@ class CephFSTestCase(CephTestCase):
             cmd += ['mds', mdscap]
 
         self.run_ceph_cmd(*cmd)
+        log.info('remoteproc-read get_ceph_cmd_stdout("auth get")')
         return self.get_ceph_cmd_stdout(f'auth get {self.client_name}')
