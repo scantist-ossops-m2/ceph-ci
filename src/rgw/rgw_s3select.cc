@@ -446,7 +446,14 @@ int RGWSelectObj_ObjStore_S3::run_s3select_on_csv(const char* query, const char*
 
     if (status < 0) {
       //error flow(processing-time)
-      m_aws_response_handler.send_error_response_rgw_formatter(s3select_processTime_error,m_s3_csv_object.get_error_description().c_str(),s3select_resource_id);
+      //NOTE: in some cases the send_error_response_rgw_formatter causes 'InvalidChunkLength'. instead the erroe-flow uses the standard message.
+      //m_aws_response_handler.send_error_response_rgw_formatter(s3select_processTime_error,m_s3_csv_object.get_error_description().c_str(),s3select_resource_id);
+      std::string error_msg = std::string(s3select_processTime_error) + " : " + m_s3_csv_object.get_error_description().data() ;
+
+      m_aws_response_handler.send_error_response(error_msg.data());
+      //fp_result_header_format(m_aws_response_handler.get_sql_result());
+      //m_aws_response_handler.get_sql_result().append(error_msg);
+      //fp_s3select_result_format(m_aws_response_handler.get_sql_result());
       
       ldpp_dout(this, 10) << "s3-select query: failed to process query; {" << m_s3_csv_object.get_error_description() << "}" << dendl;
       return -1;
