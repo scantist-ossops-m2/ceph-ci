@@ -1239,6 +1239,24 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
 		     "{}object info inconsistent ",
 		     sep(error));
       obj_result.set_object_info_inconsistency();
+
+      std::optional<object_info_t> cand_oi = object_info_t{};
+      try {
+	auto bliter = can_bl.cbegin();
+	decode(*cand_oi, bliter);
+      } catch (...) {
+	cand_oi = std::nullopt;
+      }
+
+      dout(0) << fmt::format(
+	"{}: oi inconsistent, obj : {}, auth_oi: {}, cand_oi: {}, can_bl.length(): {}, auth_bl.length(): {}",
+	__func__,
+	auth_oi.soid,
+	auth_oi,
+	cand_oi,
+	can_bl.length(),
+	auth_bl.length())
+	<< dendl;
     }
   }
 
@@ -1260,6 +1278,32 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
 		       sep(error));
         obj_result.set_snapset_inconsistency();
       }
+
+      std::optional<SnapSet> auth_ss = SnapSet{};
+      try {
+	auto bliter = auth_bl.cbegin();
+	decode(*auth_ss, bliter);
+      } catch (...) {
+	auth_ss = std::nullopt;
+      }
+
+      std::optional<SnapSet> cand_ss = SnapSet{};
+      try {
+	auto bliter = can_bl.cbegin();
+	decode(*cand_ss, bliter);
+      } catch (...) {
+	cand_ss = std::nullopt;
+      }
+
+      dout(0) << fmt::format(
+	"{}: oi inconsistent, obj: {}, auth_ss: {}, cand_ss: {}, can_bl.length(): {}, auth_bl.length(): {}",
+	__func__,
+	auth_oi.soid,
+	auth_ss,
+	cand_ss,
+	can_bl.length(),
+	auth_bl.length())
+	<< dendl;
     }
   }
 
@@ -1347,6 +1391,14 @@ bool ScrubBackend::compare_obj_details(pg_shard_t auth_shard,
 		     sep(error),
 		     k);
       obj_result.set_attr_value_mismatch();
+
+      dout(0) << fmt::format(
+	"{}: key {} attr value mismatch, auth v.length(): {}, cand->second.length(): {}",
+	__func__,
+	k,
+	v.length(),
+	cand->second.length())
+	<< dendl;
     }
   }
 
