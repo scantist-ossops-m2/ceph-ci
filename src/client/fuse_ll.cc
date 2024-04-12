@@ -1628,7 +1628,7 @@ int CephFuse::Handle::loop()
     derr << "fuse_session_loop_mt 2 -- done" << dendl;
     return r;
 #else
-    int r = fuse_session_loop_mt(se);
+    int r = fuse_session_loop(se);
     derr << "fuse_session_loop_mt 3 -- done" << dendl;
     return r;
 #endif
