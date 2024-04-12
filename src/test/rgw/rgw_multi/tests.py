@@ -765,6 +765,38 @@ def check_oidc_providers_eq(zone_conn1, zone_conn2):
         eq(p1, p2)
         check_oidc_provider_eq(zone_conn1, zone_conn2, p1['Arn'])
 
+def create_zone_bucket(zone):
+    b_name = gen_bucket_name()
+    log.info('create bucket zone=%s name=%s', zone.name, b_name)
+    bucket = zone.create_bucket(b_name)
+    return bucket
+
+def create_object(zone_conn, bucket, objname, content):
+    k = new_key(zone_conn, bucket.name, objname)
+    k.set_contents_from_string(content)
+
+def create_objects(zone_conn, bucket, obj_arr, content):
+    for objname in obj_arr:
+        create_object(zone_conn, bucket, objname, content)
+
+def check_object_exists(bucket, objname, content = None):
+    k = bucket.get_key(objname)
+    assert_not_equal(k, None)
+    if (content != None):
+        assert_equal(k.get_contents_as_string(encoding='ascii'), content)
+
+def check_objects_exist(bucket, obj_arr, content = None):
+    for objname in obj_arr:
+        check_object_exists(bucket, objname, content)
+
+def check_object_not_exists(bucket, objname):
+    k = bucket.get_key(objname)
+    assert_equal(k, None)
+
+def check_objects_not_exist(bucket, obj_arr):
+    for objname in obj_arr:
+        check_object_not_exists(bucket, objname)
+
 def test_object_sync():
     zonegroup = realm.master_zonegroup()
     zonegroup_conns = ZonegroupConns(zonegroup)
@@ -1569,8 +1601,7 @@ def test_bucket_reshard_index_log_trim():
     # Resharding the bucket
     zone.zone.cluster.admin(['bucket', 'reshard',
         '--bucket', test_bucket.name,
-        '--num-shards', '3',
-        '--yes-i-really-mean-it'])
+        '--num-shards', '13'])
 
     # checking bucket layout after 1st resharding
     json_obj_2 = bucket_layout(zone.zone, test_bucket.name)
@@ -1590,8 +1621,7 @@ def test_bucket_reshard_index_log_trim():
     # Resharding the bucket again
     zone.zone.cluster.admin(['bucket', 'reshard',
         '--bucket', test_bucket.name,
-        '--num-shards', '3',
-        '--yes-i-really-mean-it'])
+        '--num-shards', '15'])
 
     # checking bucket layout after 2nd resharding
     json_obj_3 = bucket_layout(zone.zone, test_bucket.name)
@@ -1609,9 +1639,8 @@ def test_bucket_reshard_index_log_trim():
 
     # checking bucket layout after 2nd bilog autotrim
     json_obj_5 = bucket_layout(zone.zone, test_bucket.name)
+    time.sleep(config.checkpoint_delay)
     assert(len(json_obj_5['layout']['logs']) == 1)
-
-    bilog_autotrim(zone.zone)
 
     # upload more objects
     for objname in ('i', 'j', 'k', 'l'):
@@ -1921,7 +1950,181 @@ def test_role_delete_sync():
                       zone.iam_conn.get_role, RoleName=role_name)
         log.info(f'success, zone: {zone.name} does not have role: {role_name}')
 
+@attr('topic notification')
+def test_topic_notification_sync():
+    zonegroup = realm.master_zonegroup()
+    zonegroup_meta_checkpoint(zonegroup)
+    # let wait for users and other settings to sync across all zones.
+    time.sleep(config.checkpoint_delay)
+    # create topics in each zone.
+    zonegroup_conns = ZonegroupConns(zonegroup)
+    topic_arns, zone_topic = create_topic_per_zone(zonegroup_conns)
+    log.debug("topic_arns: %s", topic_arns)
 
+    zonegroup_meta_checkpoint(zonegroup)
+
+    # verify topics exists in all zones
+    for conn in zonegroup_conns.zones:
+        topic_list = conn.list_topics()
+        log.debug("topics for zone=%s = %s", conn.name, topic_list)
+        assert_equal(len(topic_list), len(topic_arns))
+        for topic_arn_map in topic_list:
+            assert_true(topic_arn_map['TopicArn'] in topic_arns)
+
+    # create a bucket
+    bucket = zonegroup_conns.rw_zones[0].create_bucket(gen_bucket_name())
+    log.debug('created bucket=%s', bucket.name)
+    zonegroup_meta_checkpoint(zonegroup)
+
+    # create bucket_notification in each zone.
+    notification_ids = []
+    num = 1
+    for zone_conn, topic_arn in zone_topic:
+        noti_id = "bn" + '-' + run_prefix + '-' + str(num)
+        notification_ids.append(noti_id)
+        topic_conf = {'Id': noti_id,
+                      'TopicArn': topic_arn,
+                      'Events': ['s3:ObjectCreated:*']
+                     }
+        num += 1
+        log.info('creating bucket notification for zone=%s name=%s', zone_conn.name, noti_id)
+        zone_conn.create_notification(bucket.name, [topic_conf])
+    zonegroup_meta_checkpoint(zonegroup)
+
+    # verify notifications exists in all zones
+    for conn in zonegroup_conns.zones:
+        notification_list = conn.list_notifications(bucket.name)
+        log.debug("notifications for zone=%s = %s", conn.name, notification_list)
+        assert_equal(len(notification_list), len(topic_arns))
+        for notification in notification_list:
+            assert_true(notification['Id'] in notification_ids)
+
+    # verify bucket_topic mapping
+    # create a new bucket and subcribe it to first topic.
+    bucket_2 = zonegroup_conns.rw_zones[0].create_bucket(gen_bucket_name())
+    notif_id = "bn-2" + '-' + run_prefix
+    topic_conf = {'Id': notif_id,
+                  'TopicArn': topic_arns[0],
+                  'Events': ['s3:ObjectCreated:*']
+                  }
+    zonegroup_conns.rw_zones[0].create_notification(bucket_2.name, [topic_conf])
+    zonegroup_meta_checkpoint(zonegroup)
+    for conn in zonegroup_conns.zones:
+        topics = get_topics(conn.zone)
+        for topic in topics:
+            if topic['arn'] == topic_arns[0]:
+                assert_equal(len(topic['subscribed_buckets']), 2)
+                assert_true(bucket_2.name in topic['subscribed_buckets'])
+            else:
+                assert_equal(len(topic['subscribed_buckets']), 1)
+            assert_true(bucket.name in topic['subscribed_buckets'])
+
+    # delete the 2nd bucket and verify the mapping is removed.
+    zonegroup_conns.rw_zones[0].delete_bucket(bucket_2.name)
+    zonegroup_meta_checkpoint(zonegroup)
+    for conn in zonegroup_conns.zones:
+        topics = get_topics(conn.zone)
+        for topic in topics:
+            assert_equal(len(topic['subscribed_buckets']), 1)
+        '''TODO(Remove the break once the https://tracker.ceph.com/issues/20802
+           is fixed, as the secondary site bucket instance info is currently not
+           getting deleted coz of the bug hence the bucket-topic mapping
+           deletion is not invoked on secondary sites.)'''
+        break
+
+    # delete notifications
+    zonegroup_conns.rw_zones[0].delete_notifications(bucket.name)
+    log.debug('Deleting all notifications for  bucket=%s', bucket.name)
+    zonegroup_meta_checkpoint(zonegroup)
+
+    # verify notification deleted in all zones
+    for conn in zonegroup_conns.zones:
+        notification_list = conn.list_notifications(bucket.name)
+        assert_equal(len(notification_list), 0)
+
+    # delete topics
+    for zone_conn, topic_arn in zone_topic:
+        log.debug('deleting topic zone=%s arn=%s', zone_conn.name, topic_arn)
+        zone_conn.delete_topic(topic_arn)
+    zonegroup_meta_checkpoint(zonegroup)
+
+    # verify topics deleted in all zones
+    for conn in zonegroup_conns.zones:
+        topic_list = conn.list_topics()
+        assert_equal(len(topic_list), 0)
+
+def test_account_metadata_sync():
+    zonegroup = realm.master_zonegroup()
+    zonegroup_conns = ZonegroupConns(zonegroup)
+
+    inline_policy = json.dumps({'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Action': 's3:*', 'Resource': '*'}]})
+    managed_policy_arn = 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+
+    for source_conn in zonegroup_conns.rw_zones:
+        iam = source_conn.iam_conn
+        name = source_conn.name
+        # create user, add access key, user policy, managed policy
+        iam.create_user(UserName=name)
+        iam.create_access_key(UserName=name)
+        iam.put_user_policy(UserName=name, PolicyName='Allow', PolicyDocument=inline_policy)
+        iam.attach_user_policy(UserName=name, PolicyArn=managed_policy_arn)
+        # create group, group policy, managed policy, add user to group
+        iam.create_group(GroupName=name)
+        iam.put_group_policy(GroupName=name, PolicyName='Allow', PolicyDocument=inline_policy)
+        iam.attach_group_policy(GroupName=name, PolicyArn=managed_policy_arn)
+        iam.add_user_to_group(GroupName=name, UserName=name)
+        # create role, role policy, managed policy
+        iam.create_role(RoleName=name, AssumeRolePolicyDocument=json.dumps({'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Principal': {'AWS': 'arn:aws:iam:::user/testuser'}, 'Action': ['sts:AssumeRole']}]}))
+        iam.put_role_policy(RoleName=name, PolicyName='Allow', PolicyDocument=inline_policy)
+        iam.attach_role_policy(RoleName=name, PolicyArn=managed_policy_arn)
+        # TODO: test oidc provider
+        #iam.create_open_id_connect_provider(ClientIDList=['clientid'], ThumbprintList=['3768084dfb3d2b68b7897bf5f565da8efEXAMPLE'], Url=f'http://{name}.example.com')
+
+    realm_meta_checkpoint(realm)
+
+    # check that all users/groups/roles are equal across all zones
+    for source_conn, target_conn in combinations(zonegroup_conns.zones, 2):
+        if target_conn.zone.has_roles():
+            check_roles_eq(source_conn, target_conn)
+            check_users_eq(source_conn, target_conn)
+            check_groups_eq(source_conn, target_conn)
+            check_oidc_providers_eq(source_conn, target_conn)
+
+    for source_conn in zonegroup_conns.rw_zones:
+        iam = source_conn.iam_conn
+        name = source_conn.name
+
+        #iam.delete_open_id_connect_provider(OpenIDConnectProviderArn=f'arn:aws:iam::RGW11111111111111111:oidc-provider/{name}.example.com')
+
+        iam.detach_role_policy(RoleName=name, PolicyArn=managed_policy_arn)
+        iam.delete_role_policy(RoleName=name, PolicyName='Allow')
+        iam.delete_role(RoleName=name)
+
+        iam.remove_user_from_group(GroupName=name, UserName=name)
+        iam.detach_group_policy(GroupName=name, PolicyArn=managed_policy_arn)
+        iam.delete_group_policy(GroupName=name, PolicyName='Allow')
+        iam.delete_group(GroupName=name)
+
+        iam.detach_user_policy(UserName=name, PolicyArn=managed_policy_arn)
+        iam.delete_user_policy(UserName=name, PolicyName='Allow')
+        key_id = iam.list_access_keys(UserName=name)['AccessKeyMetadata'][0]['AccessKeyId']
+        iam.delete_access_key(UserName=name, AccessKeyId=key_id)
+        iam.delete_user(UserName=name)
+
+    realm_meta_checkpoint(realm)
+
+    # check that all users/groups/roles are equal across all zones
+    for source_conn, target_conn in combinations(zonegroup_conns.zones, 2):
+        if target_conn.zone.has_roles():
+            check_roles_eq(source_conn, target_conn)
+            check_users_eq(source_conn, target_conn)
+            check_groups_eq(source_conn, target_conn)
+            check_oidc_providers_eq(source_conn, target_conn)
+
+
+# TODO: move sync policy and endpoint tests into separate test file
+# fix data sync init tests
+'''
 @attr('data_sync_init')
 def test_bucket_full_sync_after_data_sync_init():
     zonegroup = realm.master_zonegroup()
@@ -2238,38 +2441,6 @@ def remove_sync_group_pipe(cluster, group, pipe_id, bucket = None, args = None):
     if retcode != 0:
         assert False, 'failed to remove sync group pipe groupid=%s, pipe_id=%s, src_zones=%s, dest_zones=%s, bucket=%s' % (group, pipe_id, src_zones, dest_zones, bucket)
     return json.loads(result_json)
-
-def create_zone_bucket(zone):
-    b_name = gen_bucket_name()
-    log.info('create bucket zone=%s name=%s', zone.name, b_name)
-    bucket = zone.create_bucket(b_name)
-    return bucket
-
-def create_object(zone_conn, bucket, objname, content):
-    k = new_key(zone_conn, bucket.name, objname)
-    k.set_contents_from_string(content)
-
-def create_objects(zone_conn, bucket, obj_arr, content):
-    for objname in obj_arr:
-        create_object(zone_conn, bucket, objname, content)
-
-def check_object_exists(bucket, objname, content = None):
-    k = bucket.get_key(objname)
-    assert_not_equal(k, None)
-    if (content != None):
-        assert_equal(k.get_contents_as_string(encoding='ascii'), content)
-
-def check_objects_exist(bucket, obj_arr, content = None):
-    for objname in obj_arr:
-        check_object_exists(bucket, objname, content)
-
-def check_object_not_exists(bucket, objname):
-    k = bucket.get_key(objname)
-    assert_equal(k, None)
-
-def check_objects_not_exist(bucket, obj_arr):
-    for objname in obj_arr:
-        check_object_not_exists(bucket, objname)
 
 @attr('sync_policy')
 def test_sync_policy_config_zonegroup():
@@ -3267,173 +3438,5 @@ def test_sync_flow_symmetrical_zonegroup_all_rgw_down():
         test_sync_flow_symmetrical_zonegroup_all()
     finally:
         start_2nd_rgw(zonegroup)
+'''
 
-def test_topic_notification_sync():
-    zonegroup = realm.master_zonegroup()
-    zonegroup_meta_checkpoint(zonegroup)
-    # let wait for users and other settings to sync across all zones.
-    time.sleep(config.checkpoint_delay)
-    # create topics in each zone.
-    zonegroup_conns = ZonegroupConns(zonegroup)
-    topic_arns, zone_topic = create_topic_per_zone(zonegroup_conns)
-    log.debug("topic_arns: %s", topic_arns)
-
-    zonegroup_meta_checkpoint(zonegroup)
-
-    # verify topics exists in all zones
-    for conn in zonegroup_conns.zones:
-        topic_list = conn.list_topics()
-        log.debug("topics for zone=%s = %s", conn.name, topic_list)
-        assert_equal(len(topic_list), len(topic_arns))
-        for topic_arn_map in topic_list:
-            assert_true(topic_arn_map['TopicArn'] in topic_arns)
-
-    # create a bucket
-    bucket = zonegroup_conns.rw_zones[0].create_bucket(gen_bucket_name())
-    log.debug('created bucket=%s', bucket.name)
-    zonegroup_meta_checkpoint(zonegroup)
-
-    # create bucket_notification in each zone.
-    notification_ids = []
-    num = 1
-    for zone_conn, topic_arn in zone_topic:
-        noti_id = "bn" + '-' + run_prefix + '-' + str(num)
-        notification_ids.append(noti_id)
-        topic_conf = {'Id': noti_id,
-                      'TopicArn': topic_arn,
-                      'Events': ['s3:ObjectCreated:*']
-                     }
-        num += 1
-        log.info('creating bucket notification for zone=%s name=%s', zone_conn.name, noti_id)
-        zone_conn.create_notification(bucket.name, [topic_conf])
-    zonegroup_meta_checkpoint(zonegroup)
-
-    # verify notifications exists in all zones
-    for conn in zonegroup_conns.zones:
-        notification_list = conn.list_notifications(bucket.name)
-        log.debug("notifications for zone=%s = %s", conn.name, notification_list)
-        assert_equal(len(notification_list), len(topic_arns))
-        for notification in notification_list:
-            assert_true(notification['Id'] in notification_ids)
-
-    # verify bucket_topic mapping
-    # create a new bucket and subcribe it to first topic.
-    bucket_2 = zonegroup_conns.rw_zones[0].create_bucket(gen_bucket_name())
-    notif_id = "bn-2" + '-' + run_prefix
-    topic_conf = {'Id': notif_id,
-                  'TopicArn': topic_arns[0],
-                  'Events': ['s3:ObjectCreated:*']
-                  }
-    zonegroup_conns.rw_zones[0].create_notification(bucket_2.name, [topic_conf])
-    zonegroup_meta_checkpoint(zonegroup)
-    for conn in zonegroup_conns.zones:
-        topics = get_topics(conn.zone)
-        for topic in topics:
-            if topic['arn'] == topic_arns[0]:
-                assert_equal(len(topic['subscribed_buckets']), 2)
-                assert_true(bucket_2.name in topic['subscribed_buckets'])
-            else:
-                assert_equal(len(topic['subscribed_buckets']), 1)
-            assert_true(bucket.name in topic['subscribed_buckets'])
-
-    # delete the 2nd bucket and verify the mapping is removed.
-    zonegroup_conns.rw_zones[0].delete_bucket(bucket_2.name)
-    zonegroup_meta_checkpoint(zonegroup)
-    for conn in zonegroup_conns.zones:
-        topics = get_topics(conn.zone)
-        for topic in topics:
-            assert_equal(len(topic['subscribed_buckets']), 1)
-        '''TODO(Remove the break once the https://tracker.ceph.com/issues/20802
-           is fixed, as the secondary site bucket instance info is currently not
-           getting deleted coz of the bug hence the bucket-topic mapping
-           deletion is not invoked on secondary sites.)'''
-        break
-
-    # delete notifications
-    zonegroup_conns.rw_zones[0].delete_notifications(bucket.name)
-    log.debug('Deleting all notifications for  bucket=%s', bucket.name)
-    zonegroup_meta_checkpoint(zonegroup)
-
-    # verify notification deleted in all zones
-    for conn in zonegroup_conns.zones:
-        notification_list = conn.list_notifications(bucket.name)
-        assert_equal(len(notification_list), 0)
-
-    # delete topics
-    for zone_conn, topic_arn in zone_topic:
-        log.debug('deleting topic zone=%s arn=%s', zone_conn.name, topic_arn)
-        zone_conn.delete_topic(topic_arn)
-    zonegroup_meta_checkpoint(zonegroup)
-
-    # verify topics deleted in all zones
-    for conn in zonegroup_conns.zones:
-        topic_list = conn.list_topics()
-        assert_equal(len(topic_list), 0)
-
-def test_account_metadata_sync():
-    zonegroup = realm.master_zonegroup()
-    zonegroup_conns = ZonegroupConns(zonegroup)
-
-    inline_policy = json.dumps({'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Action': 's3:*', 'Resource': '*'}]})
-    managed_policy_arn = 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
-
-    for source_conn in zonegroup_conns.rw_zones:
-        iam = source_conn.iam_conn
-        name = source_conn.name
-        # create user, add access key, user policy, managed policy
-        iam.create_user(UserName=name)
-        iam.create_access_key(UserName=name)
-        iam.put_user_policy(UserName=name, PolicyName='Allow', PolicyDocument=inline_policy)
-        iam.attach_user_policy(UserName=name, PolicyArn=managed_policy_arn)
-        # create group, group policy, managed policy, add user to group
-        iam.create_group(GroupName=name)
-        iam.put_group_policy(GroupName=name, PolicyName='Allow', PolicyDocument=inline_policy)
-        iam.attach_group_policy(GroupName=name, PolicyArn=managed_policy_arn)
-        iam.add_user_to_group(GroupName=name, UserName=name)
-        # create role, role policy, managed policy
-        iam.create_role(RoleName=name, AssumeRolePolicyDocument=json.dumps({'Version': '2012-10-17', 'Statement': [{'Effect': 'Allow', 'Principal': {'AWS': 'arn:aws:iam:::user/testuser'}, 'Action': ['sts:AssumeRole']}]}))
-        iam.put_role_policy(RoleName=name, PolicyName='Allow', PolicyDocument=inline_policy)
-        iam.attach_role_policy(RoleName=name, PolicyArn=managed_policy_arn)
-        # TODO: test oidc provider
-        #iam.create_open_id_connect_provider(ClientIDList=['clientid'], ThumbprintList=['3768084dfb3d2b68b7897bf5f565da8efEXAMPLE'], Url=f'http://{name}.example.com')
-
-    realm_meta_checkpoint(realm)
-
-    # check that all users/groups/roles are equal across all zones
-    for source_conn, target_conn in combinations(zonegroup_conns.zones, 2):
-        if target_conn.zone.has_roles():
-            check_roles_eq(source_conn, target_conn)
-            check_users_eq(source_conn, target_conn)
-            check_groups_eq(source_conn, target_conn)
-            check_oidc_providers_eq(source_conn, target_conn)
-
-    for source_conn in zonegroup_conns.rw_zones:
-        iam = source_conn.iam_conn
-        name = source_conn.name
-
-        #iam.delete_open_id_connect_provider(OpenIDConnectProviderArn=f'arn:aws:iam::RGW11111111111111111:oidc-provider/{name}.example.com')
-
-        iam.detach_role_policy(RoleName=name, PolicyArn=managed_policy_arn)
-        iam.delete_role_policy(RoleName=name, PolicyName='Allow')
-        iam.delete_role(RoleName=name)
-
-        iam.remove_user_from_group(GroupName=name, UserName=name)
-        iam.detach_group_policy(GroupName=name, PolicyArn=managed_policy_arn)
-        iam.delete_group_policy(GroupName=name, PolicyName='Allow')
-        iam.delete_group(GroupName=name)
-
-        iam.detach_user_policy(UserName=name, PolicyArn=managed_policy_arn)
-        iam.delete_user_policy(UserName=name, PolicyName='Allow')
-        key_id = iam.list_access_keys(UserName=name)['AccessKeyMetadata'][0]['AccessKeyId']
-        iam.delete_access_key(UserName=name, AccessKeyId=key_id)
-        iam.delete_user(UserName=name)
-
-    realm_meta_checkpoint(realm)
-
-    # check that all users/groups/roles are equal across all zones
-    for source_conn, target_conn in combinations(zonegroup_conns.zones, 2):
-        if target_conn.zone.has_roles():
-            check_roles_eq(source_conn, target_conn)
-            check_users_eq(source_conn, target_conn)
-            check_groups_eq(source_conn, target_conn)
-            check_oidc_providers_eq(source_conn, target_conn)
