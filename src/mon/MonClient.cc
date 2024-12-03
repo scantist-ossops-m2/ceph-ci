@@ -1403,6 +1403,13 @@ int MonClient::handle_auth_request(
 	       << auth_method << dendl;
     return -EOPNOTSUPP;
   }
+
+  auto ac = &auth_meta->authorizer_challenge;
+  if (auth_meta->skip_authorizer_challenge) {
+    ldout(cct, 10) << __func__ << " skipping challenge on " << con << dendl;
+    ac = nullptr;
+  }
+
   bool was_challenge = (bool)auth_meta->authorizer_challenge;
   bool isvalid = ah->verify_authorizer(
     cct,
@@ -1415,7 +1422,7 @@ int MonClient::handle_auth_request(
     &con->peer_caps_info,
     &auth_meta->session_key,
     &auth_meta->connection_secret,
-    &auth_meta->authorizer_challenge);
+    ac);
   if (isvalid) {
     handle_authentication_dispatcher->ms_handle_authentication(con);
     return 1;
